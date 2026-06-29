@@ -1,0 +1,1068 @@
+ 
+ 
+Abstract— 
+Reinforcement 
+learning 
+(RL), 
+given 
+its 
+adaptability and generality, has great potential to optimize 
+online traffic signal control strategies. Although studies have 
+proposed various RL-based signal controllers and validated 
+them offline, very few examine the robustness of the trained RL-
+based controllers when deployed in a dynamic traffic 
+environment. This paper proposed a multi-agent reinforcement 
+learning algorithm for traffic signal control and developed a 
+general multi-agent optimization simulation tool to evaluate 
+different signal control methods. A transfer learning technique 
+is applied to test the robustness of the proposed algorithm and 
+traditional control approaches under different traffic scenarios, 
+including stochastic traffic flow, varying traffic volume, and 
+uncertain sensor data. The experimental results show that the 
+proposed RL-based control method is robust under stochastic 
+traffic flow and variation traffic demand patterns, and it 
+outperforms the fixed-time and vehicle-actuated methods. 
+However, it is unstable in the case of highly noisy sensor data. 
+Also, the trained RL-based controller can continuously learn 
+online and improve its performance by interacting with the 
+dynamic traffic environment, especially when the traffic is 
+congested, and the sensor has noisy observations.  
+ INTRODUCTION 
+The trends toward urbanization are accelerating globally, 
+with 55% of the population projected to live in cities by 2050 
+[1]. The rising demand for travel has been outpacing the 
+expansion of road capacity in cities, which leads to traffic 
+congestion and negative externalities, such as green gas 
+emission and energy consumption. Traffic signal control, 
+focusing on increasing road capacity, has long been used as 
+an effective traffic management strategy. Traditional traffic 
+signal control approaches used in practice are fixed-time and 
+vehicle actuated [2].  A fixed-time controller determines the 
+optimal signal timing plans using historical traffic 
+information, while an actuated signal controller reacts to real-
+time traffic conditions and adjusts signal timings, in most 
+cases, using greedy strategies (e.g., myopic with no 
+consideration of future traffic conditions).  
+To overcome these limitations, the adaptive signal 
+control approach has been proposed and widely studied [3, 
+4]. It adapts the signal timing plans based on both the 
+observed and anticipated traffic conditions [5]. Many studies 
+developed mathematical models for adaptive signal control 
+[6-9]. Such models suffer from the assumption on the traffic 
+ 
+Chunliang Wu is with the Institute of Transport Studies, Department of 
+Civil Engineering, Monash University, Clayton, VIC, 3800, Australia (e-
+mail: Chunliang.Wu@monash.edu).  
+Zhenliang Ma is with the Institute of Transport Studies, Department of 
+Civil Engineering, Monash University, Clayton, VIC, 3800, Australia (e-
+mail: Mike.Ma@monash.edu). 
+dynamics, which could be highly complex, dynamic, and 
+stochastic. Thus, it is hardly possible to describe it precisely 
+in practice. With the advancement of information 
+communication technologies (ICT) in transportation, many 
+model-free control approaches, such as fuzzy logic and 
+heuristic algorithms, have been proposed [10-12], but they 
+require expert knowledge in design and usually have low 
+converging rate, which limits their ability for online use. 
+In light of the limitations of the optimal control-based 
+signal control approaches, self-learning-based signal control 
+has been widely studied in the computer science field and 
+recently attracted increasing interests in transportation 
+sectors. Reinforcement learning (RL), one of machine 
+learning techniques, enables agents to interact with the 
+dynamic environment to learn optimal behavior by trial and 
+error [13]. It can find (sub)optimal control policy by self-
+learning and does not need human intervention. Many studies 
+developed RL-based signal controllers and affirmed their 
+better offline performance, in terms of accuracy at the 
+converged state, by comparing with traditional traffic signal 
+control methods [14-16]. However, it is not clear about their 
+performance for online applications. Actually, there would 
+be no purpose for an RL-based signal controller that is not 
+applied in an online traffic environment, as they are meant to 
+control dynamic systems.  
+The research aims to develop a general multi-agent RL-
+based signal control platform and explore the robustness of 
+traffic signal control algorithms under various settings. The 
+platform integrates an RL controller in python and a micro 
+traffic simulator in VISSIM. It is general and capable of 
+evaluating a spectrum of traffic control strategies under 
+varied traffic scenarios, such as network layouts, traffic 
+demand, and flow patterns. The paper proposes a 
+decentralized multi-agent RL-based signal control method 
+for online applications, which is scalable to the network of 
+different scales. A transfer learning technique is designed to 
+test the robustness of the proposed RL-based algorithm and 
+state-of-the-art signal control methods under scenarios of 
+varied congestion conditions (e.g., extremely congested), 
+traffic flow patterns (e.g., random arrivals), and information 
+uncertainty (e.g., observation noise). To the best of our 
+knowledge, this is the first attempt to test the robustness of 
+the optimal multi-agent RL signal control model with 
+transfer learning techniques.
+Inhi Kim is with the Institute of Transport Studies, Department of Civil 
+Engineering, Monash University, Clayton, VIC, 3800, Australia 
+(corresponding author; e-mail: Inhi.Kim@monash.edu).  
+Multi-Agent Reinforcement Learning for Traffic Signal Control: 
+Algorithms and Robustness Analysis 
+Chunliang Wu, Student Member, IEEE, Zhenliang Ma, and Inhi Kim 
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+ 
+ 
+TABLE I.  A SUMMARY OF RL-BASED TRAFFIC SIGNAL CONTROL METHODS
+References 
+RL Algorithm 
+RL Value Function 
+Approximator 
+Phase 
+sequence 
+State 
+Reward 
+Network 
+Scale 
+Benchmark 
+Performance 
+metric 
+Wiering [17] 
+Model-based 
+Q-learning 
+Table 
+Variable 
+Position of 
+vehicles 
+Delay 
+6 
+Fixed, 
+Random, 
+Greedy 
+Accuracy 
+Arel, et al. [18] 
+Q-learning 
+Neural network 
+Variable 
+Delay 
+Delay 
+5 
+LQF 
+Accuracy 
+Aslani, et al. 
+[19] 
+Q-learning, 
+SARSA, 
+Actor-critic 
+Tile coding 
+Fixed 
+Queue, Arrival 
+vehicles, Phase 
+Queue, Arrival 
+vehicles 
+50 
+Fixed-time 
+Accuracy, 
+Robustness 
+El-Tantawy, et 
+al. [14] 
+Q-learning, 
+SARSA, TD(λ) 
+Table 
+Fixed, 
+Variable 
+Queue, Arrival 
+vehicles, Delay 
+Delay, Queue, 
+Stops 
+59 
+Fixed-time, 
+Actuated 
+Accuracy 
+Mousavi, et al. 
+[15] 
+Q-learning, 
+Actor-critic 
+DNN 
+Fixed 
+Image 
+Delay 
+1 
+Fixed-time 
+Accuracy 
+Li, et al. [20] 
+Q-learning 
+DNN 
+Fixed 
+Queue 
+Queue 
+1 
+Conventional 
+RL 
+Accuracy 
+Liang, et al. 
+[16] 
+Q-learning 
+DNN 
+Fixed 
+Position and 
+speed of 
+vehicles 
+Waiting time 
+1 
+Fixed-time 
+Accuracy 
+Rodrigues and 
+Azevedo [21] 
+Q-learning 
+DNN 
+Fixed, 
+Variable 
+Queue, Phase 
+Queue 
+1 
+Fixed-time, 
+Actuated 
+Accuracy, 
+Robustness 
+Chu, et al. [22] 
+Actor-critic 
+DNN 
+Variable 
+Delay, Arrival 
+vehicles 
+Queue, Delay 
+25 
+Greedy, IQL 
+Accuracy 
+ RELATED WORK 
+This section focuses on the studies that applied RL for 
+traffic signal control.  Table І summarizes and compares the 
+studies with respect to the following aspects: RL algorithms, 
+RL value function approximators, control strategies (phases, 
+states, and rewards), experiment designs (road network scale, 
+benchmark, and performance metrics). 
+Two types of RL algorithms, namely model-based and 
+model-free approaches, are used for the design of traffic 
+signal controllers [14, 17, 19]. For the model-based approach, 
+an exact model is required to describe the environment 
+adequately, and the agent uses it to find an optimal policy 
+[23]. Although the model-based RL method is more efficient 
+in convergence and data requirement compared with the 
+model-free RL method, building an exact model describing 
+the stochastic traffic environment is not trivial or hardly 
+possible. Thus, the model-free RL method is more frequently 
+used in the literature. The model-free RL is further divided 
+into value-based (Q-learning and State-action-reward-state-
+action (SARSA)) and policy-based (Actor-critic) methods 
+[14, 22]. Earlier studies mainly used the discrete model-free 
+RL, which stores the estimated state-action values in tabular 
+form [17]. However, it is impossible to trace all station-action 
+pairs in a complex traffic environment, given the massive 
+number of station-action pairs. To address that challenge, 
+several 
+studies 
+proposed 
+various 
+value 
+function 
+approximators such as tile coding and neural network to 
+estimate state-action pairs [18, 19]. Recently, with the rise of 
+machine learning, deep learning algorithms are endowed 
+with strong predictive ability. Thus, several studies have 
+attempted to use deep neural networks (DNN) to approximate 
+objective functions [15, 16, 20]. One common issue is that 
+most of those studies focus on signal control for one 
+intersection.   
+Regardless of the solution algorithm, the key challenges 
+for an effective RL-based signal controller are definitions of 
+states, actions, and rewards, which are problem-specific. In 
+the previous studies, queue length, cumulative vehicle delay, 
+and the number of vehicles arriving at intersections are 
+commonly used to characterize the environment state. More 
+recently, some studies attempt to use an image as the state to 
+obtain more comprehensive traffic environment information 
+[15]. However, extracting useful information from images 
+needs a large number of samples, and the training process is 
+time-consuming. Even if a model can continuously extract 
+traffic state information, it does not necessarily guarantee that 
+an agent can learn a better signal control policy. Action 
+definition is based on signal phases. For the multi-phase 
+intersections, studies often assume that the agents can 
+randomly select a phase without considering the pre-defined 
+phase sequence. Frequently changing phase sequence is not 
+practical and could confuse drivers and cause safety concerns 
+[16]. Also, the immediate reward is usually measured by 
+queue length and travel delay. However, the travel delay of 
+vehicles is rather difficult to collect in the real-world.  
+Another challenge is how to guarantee the robustness of 
+the signal controllers under a real traffic environment with 
+complex and dynamic traffic and noisy observations from 
+sensors. Most studies in the literature validated the proposed 
+RL-based algorithms offline about their convergence 
+accuracy; however, it is not clear about the robustness of 
+these algorithms in an online traffic environment.  Aslani, et 
+al. [19] firstly attempted to test the robustness of different RL 
+algorithms 
+against 
+system 
+disturbances 
+for 
+multi 
+intersections. They found that the value-based RL is lack of 
+robustness under perturbations. After training for a couple of 
+hours, the policy-based RL can handle the disturbances. It is 
+worth noting that tile coding is used as an approximator to 
+estimate the value-function. The estimation accuracy of this 
+method is questionable. It might lead to the instability of RL-
+based control algorithms. Rodrigues and Azevedo [21] 
+designed an RL-based controller for an isolated intersection 
+and evaluated its robustness under varying demand and 
+sensor failures. They found that the RL algorithm performs 
+better only when the phase sequence is varied. They also 
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+ 
+pointed out that in order to develop a robust RL-based signal 
+control algorithm, it is essential to extract more 
+comprehensive traffic state information for offline training.  
+The paper addresses the gaps and the contribution is 
+threefold: (1) developing a general optimization and 
+simulation platform for multi-agent RL-based traffic signal 
+control; (2) proposing a decentralized multi-agent RL model 
+and solution algorithm for online applications with available 
+data in the real-world; (3) examining the robustness of multi-
+agent RL algorithms under scenarios of stochastic arrivals, 
+varied traffic demand as well as information uncertainties. 
+ PROBLEM STATEMENT 
+The considered road network consists of multi-
+intersections. Let I  denotes the number of intersections. 
+Each intersection equips with a signal controller including 
+multi-signal groups. A signal group has three signals 
+including green, yellow, and red. Without loss of generality, 
+only red and green signals are considered. A signal controller 
+can communicate with neighboring signal controllers. Real-
+time traffic flow information at intersections is available 
+(from camera or loop detectors). The objective is to propose 
+an online self-learning algorithm to adapt traffic signal 
+timings at multi-intersections to reduce traffic congestion.  
+Fig. 1 shows the research framework. The problem is 
+modeled using Markov Decision Process (MDP) framework 
+with the objective of minimizing vehicle delay. A learning-
+based signal controller is developed using RL algorithms and 
+trained in an offline environment. Then, the learned 
+knowledge is transferred to the signal controller in an online 
+traffic environment. The robustness of the proposed method 
+is tested under different scenarios, including random arrivals, 
+varying traffic demand patterns, and system disturbances. 
+ METHOD 
+A. MDP Control 
+We formulate the traffic signal control problem using 
+MDP framework. The elements of MDP include states, 
+actions, and rewards. 
+1) States: The state for each intersection consists of four 
+components. The first component is the current phase of the 
+intersection i . The second one is the elapsed time of the 
+current green signal. The third state vector is the total number 
+of vehicles in the lanes (discharging in the same signal 
+phase). This indicator can be obtained using the following 
+steps. The cameras at the intersection firstly collect the 
+number of vehicles in each lane. Depending on the view 
+distance of cameras, the number of vehicles on a section of 
+road can be obtained, such as vehicles within 100 m of the 
+intersection i . Next, the lanes have the same signal phase are 
+combined into a group. For example, the lane has the same 
+background color are combined in Fig. 2. Then, the vehicles 
+in the same group are summed. Finally, this state vector is 
+
+
+1
+2
+,
+,...,
+i
+i
+i
+n
+q q
+q
+, where 
+i
+n
+q  is the number of vehicles in the 
+lanes with the same signal phase, and n  is the number of 
+signal phases at the intersection i . The forth state vector is 
+the current phase of the neighboring intersections of the 
+intersection i . 
+2) Actions: In this research, the phase sequence is fixed 
+for all intersections for safety concerns in practice. There are 
+two actions for each intersection that can be selected. One is 
+to extend the current phase. Another is to terminate the 
+current phase and change it to the next phase. To guarantee 
+the stability of learning, the signal controller will select an 
+action every 
+t
+ seconds, e.g. 10 seconds. In addition, to 
+reduce the exploration space and improve the robustness, we 
+constrain that the signal controller must change to the next 
+phase if vehicle detectors (located in the lanes discharging 
+vehicles) are occupied for less than a certain threshold of the 
+current time step, e.g. 30%. The minimum and maximum 
+duration of each signal phase are also set.  
+3) Reward function: It is hard to collect vehicle delay 
+data in practice. Thus, the immediate reward for a given 
+intersection i  is denoted as the number of vehicles passing 
+through it at the time step 
+t
+: 
+.
+i
+i
+i
+t
+t
+t
+t
+r
+p
+p
+
+
+
+                                (1) 
+This measure can be collected from loop detectors (green 
+colored in Fig. 2). 
+ 
+Figure 1.  The framework of this research. 
+ 
+Figure 2.  Illustration of data acquisition devices at an intersection with 
+four phases. 
+ Control Algorithm 
+Each signal controller is a learning-based agent and 
+independently learns its own control strategy. Suppose that at 
+a time t , the agent at the intersection i  receives the state of 
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+ 
+the environment 
+i
+ts . It then selects an action 
+i
+i
+ta
+A
+
+. After 
+taking this action, the agent receives a reward 
+i
+tr , and the 
+traffic environment moves to the next state 
+1
+i
+ts . The goal of 
+the learning-based agent i  is to find an optimal policy 
+*
+ 
+that maximizes the expected rewards from all states [13]. 
+Q-learning, one of the RL algorithms, is applied in this 
+research to solve the above RL problem. Q-learning uses a 
+value 
+function 
+
+
+,
+Q s a
+ to 
+estimate 
+the 
+expected 
+performance of taking an action a  in a given state s . It 
+updates the estimated value function based on a greedy action 
+with the highest Q-value. In fact, this action might not be 
+taken. The Q-values are updated as follows: 
+          
+
+
+
+
+
+
+
+
+
+
+1
+,
+,
+max
+,
+,
+,
+t
+t
+t
+t
+t
+t
+t
+t
+a
+Q s a
+Q s a
+r
+Q s
+a
+Q s a
+
+
+
+
+
+
+
+          (2) 
+where 
+tr  is the reward received when the environment moves 
+from the state 
+ts  to the state 
+1
+ts , 
+
+
+0,1
+
+ is a learning rate, 
+
+
+0,1
+
+ is a discount factor, and 
+
+
+1
+max
+,
+t
+a
+Q s
+a
+
+ represents 
+the maximum attainable award in the state 
+1
+ts . A higher 
+learning rate  means Q-values are updated quickly, and 
+vice versa. Also, a higher discount factor  indicates that the 
+agent concerns more about long-term future rewards.  
+The state-action pairs of traffic signal control problems 
+are too large to store them in a finite Q-table. Thus, this 
+research applies a deep neural network (DNN) as a function 
+approximation to estimate the Q-value function. To 
+accelerate the convergence speed and improve the stability of 
+deep Q network (DQN), a dueling architecture is used as 
+shown in Fig. 3. The Q-value function is estimated using two 
+separate streams. One is used for estimating the state-value 
+function 
+
+
+;
+V s 
+. The other is used for estimating the 
+advantage function 
+
+
+, ;
+A s a 
+ which characterizes the 
+advantage of taking action a  in the state s [24]. The Q-value 
+function is calculated as follows: 
+   
+
+
+
+
+
+
+
+
+'
+, ; ,
+;
+1
+, ;
+-
+,
+';
+,
+a
+Q s a
+V s
+A s a
+A s a
+A
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         (3)  
+where  and  are the parameters of two streams, and
+
+
+'
+1
+,
+';
+a
+A s a
+A
+
+
+ is the average advantage of all actions.  
+The training process of the dueling architecture is the 
+same as the standard DQN architecture to minimize the 
+following loss functions at iteration i : 
+ 
+  
+               
+
+
+
+
+
+2
+, , , '
+, ;
+,
+i
+i
+s a r s
+i
+i
+L
+y
+Q s a
+
+
+
+
+
+
+
+            (4) 
+with  
+                             
+
+
+'
+max
+',
+';
+.
+i
+a
+y
+r
+Q s a
+
+
+
+
+                   (5) 
+where 
+ is the parameters of a fixed and separate target 
+network [24]. The gradient descent algorithm is used to 
+update the parameter . 
+Also, to address the instability of the learning process and 
+speed up learning, experience relay buffer is used to store the 
+previous experience, and a mini-batch of experience from 
+this buffer is randomly selected to train the deep neural 
+networks. By using this technique, the temporal correlations 
+between successive samples are broken. 
+ Transfer Learning 
+As mentioned, this research aims to evaluate the 
+robustness of the proposed RL algorithm in a real traffic 
+environment. Transfer learning is used. Transfer learning is 
+to apply knowledge learned in solving a source task (e.g., 
+training tasks) to a target task (e.g., test tasks) [25]. In our 
+context, transfer learning is to transfer the offline trained RL 
+signal control model to an online environment, while the 
+trained model will keep learning and adjusting with new 
+observations available in real-time.  
+For a value-based RL, three main types of knowledge 
+could 
+be 
+transferred, 
+including 
+samples, 
+function 
+approximators, and parameters. The simplest version of 
+transfer learning is to reuse the samples collected from 
+different source tasks in a similar task. The function 
+approximators, such as DNN can also be reused to a new task. 
+Normally, these approximators can represent a certain task, 
+and they will be refined continuously in solving a new task. 
+The RL algorithms include a set of parameters such as 
+learning rate and discount factor. The parameters used in a 
+source task can be transferred as the initial values in a target 
+task. In this research, both the function approximators and RL 
+parameters from the training task are transferred to the test 
+task. 
+ 
+Figure 3.  Dueling architecture. 
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+ 
+ CASE STUDY 
+In this section, we design experiments to evaluate the 
+performance of our proposed control method and examine its 
+robustness in different scenarios compared with signal 
+control methods often used in practice.  
+ Experiment Design 
+1) Simulation Environment: The experiments are 
+conducted on a developed platform integrating a RL 
+controller and microsimulation environment in VISSIM. The 
+VISSIM provides a user-friendly Graphical User Interface 
+(GUI). Via GUI, different types of road networks can be set. 
+Also, the RL controller, built-in Python, communicates with 
+VISSIM through the COM Interface. Via the COM, the RL 
+controller can collect the traffic state information in real-time 
+and control the traffic signals in the road network. A road 
+network with four signalized intersections (in Fig. 4) is used 
+for the experiments. The distance between the two 
+intersections is 150m. The geometry of each intersection is 
+the same shown in Fig. 2. The signal controller, installed at 
+each intersection, contains four phases with a fixed phase 
+sequence. The minimal and maximal duration of each phase 
+is set to be 10s and 50s, respectively. The system is controlled 
+in a decentralized mode shown in Fig. 4.  
+To improve the robustness of our trained RL model and 
+reduce the overfitting problem, the traffic volume of each link 
+changes every 10 mins for the base case. Table II shows the 
+average traffic volume per hour of each link. We assume that 
+traffic flow is evenly distributed in each lane, and vehicles do 
+not change their lanes when signal plans change. Also, traffic 
+flow from different directions is not always oversaturated. 
+2) Evaluation Metrics: The objective of the proposed 
+method is to minimize vehicle delay. Thus, this research will 
+evaluate whether this independent control method will reduce 
+the average delay of the whole network.  
+3) Baseline Control Methods: Two traditional control 
+methods are used for comparison, including the fixed-time 
+control and actuated control.  The signal plan of fixed-time 
+control is optimized using the Webster method [26].  For the 
+actuated control, the minimum duration of each phase is set 
+to be 10s. The discharging rate of each phase is different. 
+Each phase has a different maximum duration, which is set 
+based on the green time of each phase in the fixed-time 
+control. To reduce the wasted green time, the detector is 
+installed at 50m from the stop line and the gap out time is set 
+to be 4s. It means that if a vehicle traverses the loop detector 
+that is activated, the current phase will be extended by 4s. 
+ Experiment Setting 
+1) Simulation Parameters: For the base scenario, the 
+RL-based model is trained for 150 episodes. Each episode is 
+simulated for the 3600s with 5 mins warm-up time. Then, the 
+knowledge learned from the base scenarios is transferred 
+online to optimize signal timings in the test scenarios. Note 
+that to collect enough experience for online learning, the 
+parameters of DNN are fixed for a few episodes, e.g. 6 
+episodes. After that, they are updated. 
+ 
+ 
+TABLE II. THE TRAFFIC VOLUME OF EACH LINK 
+ 
+Link 
+Volume 
+(1000 
+veh/h) 
+A 
+B 
+C 
+D 
+E 
+F 
+G 
+H 
+I 
+J 
+2.1 
+1.3 
+1.4 
+1.3 
+1.4 
+1.3 
+1.4 
+1.3 
+1.4 
+2.1 
+ 
+ 
+Figure 4.  The geometry of the road network and the agent-based control 
+framework for the four signalized intersections. 
+2) RL Model Parameters: For the RL algorithm, the 
+learning rate  and discount factor  are set to be 0.0001 
+and 0.9, respectively. The minibatch size is 32, and the replay 
+buffer size is 20,000. To obtain maximum future rewards, 
+exploration vs. exploitation trade-off is a dilemma frequently 
+faced in selecting an action. In this research, the -greedy 
+approach is adopted. The exploration rate is from 95% to 5% 
+during the first 50 training episodes.  
+ Performance Validation  
+Fig. 5 demonstrates the converging process for the four 
+intersection agents during the offline training episodes. It can 
+be seen that during the first 50 episodes, the cumulative 
+rewards received by agents constantly increase, and then they 
+tend to be stable. As mentioned before, the agents learn the 
+optimal control policy by continuous trial and error during 
+the first 50 episodes.  After that, the agents strengthen the 
+knowledge they have learned. It is worth noting that there is 
+a slight decrease in the cumulative reward for the agent at 
+intersection 2. The reason for this might be that the traffic 
+state of the intersection 2 is relatively non-stationary 
+compared with that of the intersection 1 and 4. The state of 
+the intersection 2 is determined not only by itself but also by 
+the two neighboring intersections. It indicates that the 
+exploration space for this agent is larger than other 
+intersections.  Also, the agents are allowed to have a 5 % 
+chance to explore new control policies. It might lead to the 
+cumulative rewards for the agent at intersection 2 fluctuate.   
+Fig. 6 shows the performance of the proposed algorithm 
+and two control methods. After the 50 offline training 
+episodes, the average delay per vehicle for the agent-based 
+system tends to converge to a suboptimal value, and the 
+performance of the proposed algorithm is better than the 
+baseline control methods.  Also, the partial enlargement of 
+Fig. 6 shows that with the increase in the training time, the 
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+ 
+average delay of the agent-based system decreases. It 
+indicates that the agents update their control policy when they 
+have more experience. The final training results show that the 
+average delay per vehicle in the whole road network of the 
+agent-based system reduces 29.1% and 16.1% compared with 
+the fixed-time control and the actuated control methods, 
+respectively.  
+ 
+Figure 5.  The cumulative reward for the four intersection agents during 
+the offline training episodes. 
+ 
+Figure 6.  The average delay per vehicle in the road network during the 
+offline training episodes. 
+ Sensitivity Analysis 
+To examine the robustness of the offline trained RL 
+model in an online environment, we design three scenarios, 
+including stochastic traffic flow, varying demand, and 
+uncertain observations.   
+1) Stochastic Traffic Flow: Different random seeds are 
+used for each simulation episode to describe stochastic traffic 
+flow. Fig. 7 demonstrates that the average delay of the entire 
+road network for the three control methods varies with the 
+random traffic flow. Although the average delay of the agent-
+based system changes greater than the other two methods in 
+random arrivals, its performance is better than them.  
+2) Traffic Demand Patterns: We test the performance of 
+the proposed algorithm under low and high traffic demand. 
+For the low and high traffic demand, we use 0.8 times and 
+1.2 times the demand of the base scenario, respectively. Fig. 
+8 and Fig. 9 show that the performance of the agent-based 
+system is better than the fixed-time and actuated control 
+methods under low and high demand scenarios. Note that the 
+vertical lines in Figs. 8-10 represent that the parameters of 
+DNN are fixed for six episodes. After that, they are updated. 
+The 
+agent-based 
+system 
+continuously 
+improves 
+its 
+performance by interacting with the online environment, 
+especially under the high demand scenario. 
+ 
+Figure 7.  The performance of the proposed algorithm and benchmarks 
+under stochastic flow during the online testing episodes. 
+ 
+Figure 8.  The performance of the proposed algorithm and benchmarks 
+under low traffic demand during the online testing episodes. 
+ 
+Figure 9.  The performance of the proposed algorithm and benchmarks 
+under high traffic demand during the online testing episodes. 
+3) Sensor Noise: In practice, the data collected from 
+sensors might have noise. Thus, in this research, synthetic 
+noise is added to the observations. The cameras do not always 
+obtain the number of vehicles on the approaching lanes 
+accurately. Gaussian noise distribution is applied to simulate 
+this situation. For example, if the sensor noise is 10, it 
+indicates the number of vehicles collected from the devices 
+floats up and down by ten on the basis of the exact value. Fig. 
+10 shows that the performance of the RL-based method is 
+relatively stable when the sensor noise is less than 20. Also, 
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+ 
+although the RL-based method has a bad performance at the 
+beginning of online testing when the sensor data is too noisy, 
+it will keep improving its performance as the online testing 
+time increases. 
+ 
+Figure 10.  The performance of the proposed algorithm and benchmarks 
+under uncertain sensor data during the online testing episodes. 
+ CONCLUSION 
+This research proposes a decentralized multi-agent RL 
+algorithm for traffic signal control. A transfer learning 
+technique is applied to test the robustness of the proposed 
+RL-based algorithm and the methods commonly used in 
+practice under scenarios including stochastic traffic flow, 
+varying traffic demand, and information uncertainty. The 
+results show that the online performance of a well-designed 
+RL signal control algorithm is better than the fixed-time and 
+actuated methods. Also, the agent-based system enables to 
+update its control policies by interacting with an online traffic 
+environment, which is impossible for the rule-based control 
+methods.  
+In the future, this research can be extended to investigate 
+the robustness of RL-based signal control methods in a 
+complex traffic environment such as a real network with 
+route choice possibilities and changes in traffic split 
+fractions. Also, future work can study how other theories, 
+such as optimal control theory, can be applied to strengthen 
+the robustness of RL-based signal control methods.  
+REFERENCES 
+ 
+[1] 
+J. A. Goldstone, "The new population bomb: the four megatrends 
+that will change the world," Foreign Aff., vol. 89, p. 31, 2010. 
+[2] 
+K.-L. A. Yau, J. Qadir, H. L. Khoo, M. H. Ling, and P. 
+Komisarczuk, "A Survey on Reinforcement Learning Models 
+and Algorithms for Traffic Signal Control," ACM Computing 
+Surveys, vol. 50, no. 3, pp. 1-38, 2017. 
+[3] 
+Y. Wang, X. Yang, H. Liang, and Y. Liu, "A Review of the Self-
+Adaptive Traffic Signal Control System Based on Future Traffic 
+Environment," Journal of Advanced Transportation, vol. 2018, 
+pp. 1-12, 2018. 
+[4] 
+K. Pandit, D. Ghosal, H. M. Zhang, and C.-N. Chuah, "Adaptive 
+traffic signal control with vehicular ad hoc networks," IEEE 
+Transactions on Vehicular Technology, vol. 62, no. 4, pp. 1459-
+1471, 2013. 
+[5] 
+M. Aslani, M. S. Mesgari, and M. Wiering, "Adaptive traffic 
+signal control with actor-critic methods in a real-world traffic 
+network with different traffic disruption events," Transportation 
+Research Part C: Emerging Technologies, vol. 85, pp. 732-752, 
+2017. 
+[6] 
+P. Hunt, D. Robertson, R. Bretherton, and M. C. Royle, "The 
+SCOOT on-line traffic signal optimisation technique," Traffic 
+Engineering & Control, vol. 23, no. 4, 1982. 
+[7] 
+P. R. Lowrie, "SCATS: The Sydney co-ordinated adaptive traffic 
+system–Principles, methodol-16 ogy, algorithms," in Proc. IEE 
+International Conference on Road Traffic Signalling, London, 
+1982, vol. 17, pp. 67-70. 
+[8] 
+N. H. Gartner, "OPAC: Strategy for Demand-responsive 
+Decentralized Traffic Signal Control," IFAC Proceedings 
+Volumes, vol. 23, no. 2, pp. 241-244, 1990. 
+[9] 
+P. Mirchandani and L. Head, "A real-time traffic signal control 
+system system: architecture, algorithms, and analysis," 
+Transportation Research Part C: Emerging Technologies, vol. 9, 
+no. 6, pp. 415-432, 2001. 
+[10] 
+J. Qiao, N. Yang, and J. Gao, "Two-stage fuzzy logic controller 
+for signalized intersection," IEEE Transactions on Systems, Man, 
+and Cybernetics-Part A: Systems and Humans, vol. 41, no. 1, pp. 
+178-184, 2010. 
+[11] 
+D. Srinivasan, M. C. Choy, and R. L. Cheu, "Neural Networks 
+for Real-Time Traffic Signal Control," IEEE Transactions on 
+Intelligent Transportation Systems, vol. 7, no. 3, pp. 261-272, 
+2006. 
+[12] 
+J. Lee, B. Abdulhai, A. Shalaby, and E.-H. Chung, "Real-Time 
+Optimization for Adaptive Traffic Signal Control Using Genetic 
+Algorithms," Journal of Intelligent Transportation Systems, vol. 
+9, no. 3, pp. 111-122, 2006. 
+[13] 
+K. Arulkumaran, M. P. Deisenroth, M. Brundage, and A. A. 
+Bharath, "Deep Reinforcement Learning: A Brief Survey," IEEE 
+Signal Processing Magazine, vol. 34, no. 6, pp. 26-38, 2017. 
+[14] 
+S. El-Tantawy, B. Abdulhai, and H. Abdelgawad, "Design of 
+Reinforcement Learning Parameters for Seamless Application of 
+Adaptive Traffic Signal Control," Journal of Intelligent 
+Transportation Systems, vol. 18, no. 3, pp. 227-245, 2014. 
+[15] 
+S. S. Mousavi, M. Schukat, and E. Howley, "Traffic light control 
+using 
+deep 
+policy-gradient 
+and 
+value-function-based 
+reinforcement learning," IET Intelligent Transport Systems, vol. 
+11, no. 7, pp. 417-423, 2017. 
+[16] 
+X. Liang, X. Du, G. Wang, and Z. Han, "A Deep Reinforcement 
+Learning Network for Traffic Light Cycle Control," IEEE 
+Transactions on Vehicular Technology, vol. 68, no. 2, pp. 1243-
+1253, 2019. 
+[17] 
+M. Wiering, "Multi-agent reinforcement learning for traffic light 
+control," in Machine Learning: Proceedings of the Seventeenth 
+International Conference (ICML'2000), 2000, pp. 1151-1158. 
+[18] 
+I. Arel, C. Liu, T. Urbanik, and A. G. Kohls, "Reinforcement 
+learning-based multi-agent system for network traffic signal 
+control," IET Intelligent Transport Systems, vol. 4, no. 2, 2010. 
+[19] 
+M. Aslani, S. Seipel, M. S. Mesgari, and M. Wiering, "Traffic 
+signal 
+optimization 
+through 
+discrete 
+and 
+continuous 
+reinforcement learning with robustness analysis in downtown 
+Tehran," Advanced Engineering Informatics, vol. 38, pp. 639-
+655, 2018. 
+[20] 
+L. Li, Y. Lv, and F.-Y. Wang, "Traffic signal timing via deep 
+reinforcement learning," IEEE/CAA Journal of Automatica 
+Sinica, vol. 3, no. 3, pp. 247-254, 2016. 
+[21] 
+F. Rodrigues and C. L. Azevedo, "Towards Robust Deep 
+Reinforcement Learning for Traffic Signal Control: Demand 
+Surges, Incidents and Sensor Failures," in 2019 IEEE Intelligent 
+Transportation Systems Conference (ITSC), 2019, pp. 3559-
+3566: IEEE. 
+[22] 
+T. Chu, J. Wang, L. Codeca, and Z. Li, "Multi-Agent Deep 
+Reinforcement Learning for Large-Scale Traffic Signal Control," 
+IEEE Transactions on Intelligent Transportation Systems, pp. 1-
+10, 2019. 
+[23] 
+J. Jin and X. Ma, "Hierarchical multi-agent control of traffic 
+lights based on collective learning," Engineering Applications of 
+Artificial Intelligence, vol. 68, pp. 236-248, 2018. 
+[24] 
+Z. Wang, T. Schaul, M. Hessel, H. Van Hasselt, M. Lanctot, and 
+N. De Freitas, "Dueling network architectures for deep 
+reinforcement learning," arXiv preprint arXiv:1511.06581, 2015. 
+[25] 
+M. Wiering and M. Van Otterlo, "Reinforcement learning," 
+Adaptation, learning, and optimization, vol. 12, p. 3, 2012. 
+[26] 
+F. V. Webster, "Traffic signal settings," 1958. 
+ 
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:37 UTC from IEEE Xplore.  Restrictions apply. 

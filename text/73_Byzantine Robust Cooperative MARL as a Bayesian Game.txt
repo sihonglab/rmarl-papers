@@ -1,0 +1,2686 @@
+Published as a conference paper at ICLR 2024
+BYZANTINE ROBUST COOPERATIVE MULTI-AGENT RE-
+INFORCEMENT LEARNING AS A BAYESIAN GAME
+Simin Li1, Jun Guo1, Jingqiao Xiu1, Ruixiao Xu1, Xin Yu1, Jiakai Wang2,
+Aishan Liu1, 4, Yaodong Yang3 ∗, Xianglong Liu1, 2, 4 ∗
+1SKLSDE Lab, Beihang University, China
+2Zhongguancun Laboratory, China
+3Institute of Artificial Intelligence, Peking University & BigAI, China
+4Institute of data space, Hefei Comprehensive National Science Center, China
+ABSTRACT
+In this study, we explore the robustness of cooperative multi-agent reinforcement
+learning (c-MARL) against Byzantine failures, where any agent can enact arbitrary,
+worst-case actions due to malfunction or adversarial attack. To address the uncer-
+tainty that any agent can be adversarial, we propose a Bayesian Adversarial Robust
+Dec-POMDP (BARDec-POMDP) framework, which views Byzantine adversaries
+as nature-dictated types, represented by a separate transition. This allows agents to
+learn policies grounded on their posterior beliefs about the type of other agents,
+fostering collaboration with identified allies and minimizing vulnerability to adver-
+sarial manipulation. We define the optimal solution to the BARDec-POMDP as an
+ex interim robust Markov perfect Bayesian equilibrium, which we proof to exist
+and the corresponding policy weakly dominates previous approaches as time goes
+to infinity. To realize this equilibrium, we put forward a two-timescale actor-critic
+algorithm with almost sure convergence under specific conditions. Experiments
+on matrix game, Level-based Foraging and StarCraft II indicate that, our method
+successfully acquires intricate micromanagement skills and adaptively aligns with
+allies under worst-case perturbations, showing resilience against non-oblivious
+adversaries, random allies, observation-based attacks, and transfer-based attacks.
+1
+INTRODUCTION
+Cooperative multi-agent reinforcement learning (c-MARL) (Rashid et al., 2018; Yu et al., 2021; Kuba
+et al., 2021) has shown remarkable efficacy in managing groups of agents with aligned interests in
+complex tasks (Vinyals et al., 2019; Berner et al., 2019). Nevertheless, real-world applications often
+deviates from the presumption of full cooperation. In robot swarm control (Hüttenrauch et al., 2019),
+individual robots may act unpredictably due to hardware or software malfunctions, or even display
+worst-case adversarial actions if compromised by a non-oblivious adversary (Gleave et al., 2019; Lin
+et al., 2020; Dinh et al., 2023; Liu et al., 2019; 2020a;b; 2023; Wang et al., 2021). Such uncertainty
+of allies undermine the cooperative premise of c-MARL, rendering the learned policy non-robust.
+In single-agent reinforcement learning (RL), robustness under uncertainty is addressed through a
+maximin optimization between an uncertainty set and a robust agent within the framework of robust
+Markov Decision Processes (MDPs) (Nilim & El Ghaoui, 2005; Iyengar, 2005; Wiesemann et al.,
+2013; Pinto et al., 2017; Tessler et al., 2019; Zhang et al., 2020a). However, ensuring robustness in
+c-MARL when dealing with uncertain allies presents a greater challenge. This is largely due to the
+potential for Byzantine failure (Yin et al., 2018; Xue et al., 2021), situations where defenders are left
+in the dark regarding which ally may be compromised and what their resulting actions might be.
+To address Byzantine failures, we employ a Bayesian game approach, which treats Byzantine
+adversaries as types assigned by nature, with each agent operating unaware of others’ type. We
+formalize robust c-MARL as a Bayesian Adversarial Robust Dec-POMDP (BARDec-POMDP),
+where existing robust MARL researches (Li et al., 2019; Sun et al., 2022; Phan et al., 2020; 2021)
+can be reinterpreted as pursuing an ex ante equilibrium (Shoham & Leyton-Brown, 2008), viewing
+∗Corresponding Authors. E-mails: yaodong.yang@pku.edu.cn, xlliu@buaa.edu.cn.
+1
+arXiv:2305.12872v3  [cs.GT]  17 Jun 2024
+
+Published as a conference paper at ICLR 2024
+all other agents as potential adversaries. However, these methods might not yield optimal outcomes
+as they can mask the trade-offs between the equilibria that cooperative and robustness-focused agents
+aim for. Moreover, this approach can result in overly conservative strategies (Li et al., 2019; Sun
+et al., 2022), given the low likelihood of adversaries taking control of all agents.
+Instead, we seek an ex interim mixed-strategy robust Markov perfect Bayesian equilibrium, which
+weakly dominates the policy of ex ante equilibrium in previous robust MARL studies as time goes to
+infinity. Agents in our ex interim equilibrium makes decisions based on its inferred posterior belief
+over other agents, enhancing cooperation with allies and defense against adversaries concurrently. To
+realize this equilibrium, we derive a robust Harsanyi-Bellman equation for value function update and
+introduce a two-timescale actor-critic algorithm, with almost sure convergence under certain assump-
+tions. Experiments in matrix game, Level-based Foraging and StarCraft II shows our defense exhibits
+intricate micromanagement skills and adaptively aligns with allies under worst-case perturbations.
+Consequently, our defense outperforms existing baselines under non-oblivious adversaries, random
+allies, observation-based attacks and transfer-based attacks by large margins.
+Contribution.
+Our contributions are two-fold: first, we theoretically formulate Byzantine adver-
+saries in c-MARL as a BARDec-POMDP, and concurrently pursues robustness and cooperation by
+targeting an ex interim equilibrium. Secondly, to achieve this equilibrium, we devise an actor-critic
+algorithm that ensures almost sure convergence under certain conditions. Empirically, our method
+exhibits greater resilience against a broad spectrum of adversaries on three c-MARL environments.
+Related Work.
+Our research belongs to the field of robust RL, theoretically framed as robust
+MDPs (Nilim & El Ghaoui, 2005; Iyengar, 2005; Tamar et al., 2013; Wiesemann et al., 2013). This
+framework trains a defender to counteract a worst-case adversary amid uncertainty, which can stem
+from environment transitions (Pinto et al., 2017; Mankowitz et al., 2019), actions (Tessler et al.,
+2019), states (Zhang et al., 2020a; 2021) and rewards (Wang et al., 2020). In robust MARL, action
+uncertainty has been a central focus. M3DDPG (Li et al., 2019) enhances robustness in MARL
+through agents taking jointly worst-case actions under a small perturbation budget. Evaluation
+was done via one agent consistently introducing worst-case perturbations. This is later known as
+adversarial policy (Gleave et al., 2019) or non-oblivious adversary (Dinh et al., 2023), a practical
+and detrimental form of attack. Follow-up works either enhanced M3DDPG (Sun et al., 2022) or
+defended against uncertain adversaries by presupposing each agent as potentially adversarial (Nisioti
+et al., 2021; Phan et al., 2020; 2021), which our BARDec-POMDP formulation interprets as seeking
+a conservative ex ante equilibrium. Another approach by Kalogiannis et al. (2022) studies a special
+case that the adversary is known. Besides action perturbation, studies have also explored robust
+MARL under uncertainties in reward (Zhang et al., 2020c), environmental dynamics (Zhao et al.,
+2020), and observations (Han et al., 2022; He et al., 2023; Zhou & Liu, 2023).
+Bayesian games and their MARL applications represents another relevant field. With roots in
+Harsanyi’s pioneering work (Harsanyi, 1967), Bayesian games have been used to analyze games with
+incomplete information by transforming them into complete information games featuring chance
+moves made by nature. Within MARL, Bayesian games have been utilized to coordinate varying
+agent types, a concept known as ad hoc coordination (Albrecht & Ramamoorthy, 2015; Albrecht
+et al., 2016; Stone et al., 2010; Barrett et al., 2017). This problem was theoretically framed as a
+stochastic Bayesian game and solved using the Harsanyi-Bellman ad hoc coordination algorithm
+(Albrecht & Ramamoorthy, 2015). Subsequent research has concentrated on agents with varying
+types (Ravula, 2019), open ad hoc teamwork (Rahman et al., 2022), and human coordination (Tylkin
+et al., 2021; Strouse et al., 2021). Our work differs from these works by assuming a worst-case,
+non-oblivious adversary with conflicting goals, whereas in ad hoc coordination, agents have common
+goals and non-conflicting secondary objectives (Grosz & Kraus, 1999; Mirsky et al., 2022).
+2
+PROBLEM FORMULATION
+2.1
+COOPERATIVE MARL AND ITS FORMULATION
+The problem of c-MARL can be formulated as a Decentralized Partially Observable Markov Decision
+Process (Dec-POMDP) (Oliehoek & Amato, 2016), defined as a tuple:
+G := ⟨N, S, O, O, A, P, R, γ⟩,
+2
+
+Published as a conference paper at ICLR 2024
+where N = {1, ..., N} is the set of N agents, S is the global state space, O = ×i∈N Oi is the
+observation space, with O the observation emission function. A = ×i∈N Ai is the joint action space,
+P : S × A →∆(S) is the state transition probability, mapping from current state and joint actions
+to a probability distribution over the state space. R : S × A →R is the shared reward function for
+cooperative agents and γ ∈[0, 1) is the discount factor.
+At time t and global state st ∈S, each agent i adds current observation oi
+t to its history and gets
+Hi
+t = [oi
+0, ai
+0, ...oi
+t]. Then, each agent i selects its action ai
+t ∈Ai using its policy πi(·|Hi
+t), which
+maps current history to its action space. The global state then transitions to st+1 according to
+transition probability P(st+1|st, at), with at = {a1
+t, ..., aN
+t } the joint actions. Each agent receives
+a shared reward rt = R(st, at). The goal of all agents is to learn a joint policy π = Q
+i∈N πi that
+maximize the long-term return J(π) = E [P∞
+t=0 γtrt|s0, at ∼π(·|Ht)].
+2.2
+BAYESIAN ADVERSARIAL ROBUST DEC-POMDP
+In numerous real-world situations, some allies may experience Byzantine failure (Yin et al., 2018;
+Xue et al., 2021) and thus, not perform cooperative actions as expected. This includes random actions
+due to hardware/software error and adversarial actions if being controlled by an adversary, which
+violates the fully cooperative assumption in Dec-POMDP. We propose Bayesian Adversarial Robust
+Dec-POMDP (BARDec-POMDP) to cope with uncertainties in agent actions, defined as follows:
+ˆG := ⟨N, S, Θ, O, O, A, Pα, P, R, γ⟩,
+where N, S, O, O, A, γ represent the number of agents, global state space, observation space,
+observation emission function, joint action space and discount factor, following Dec-POMDP.
+Environment
+Agents
+Action Perturbation
+Figure 1: Framework of c-MARL with Byzantine
+adversaries. The action taken by agents with θi =
+1 are replaced by the adversary policy ˆπi.
+As depicted in Fig. 1, BARDec-POMDP views
+the Byzantine adversary as an uncertain tran-
+sition characterized by type θ and adversarial
+policy ˆπ. At the start of each episode, a type θ
+is selected from the type space Θ = ×i∈N Θi,
+with θi = {0, 1}. θi = 0 indicates the agent
+is cooperative and Θi = 1 signifies adversaries.
+At time t, if agent i is assigned θi = 1, the ac-
+tion ai
+t taken by cooperative agent i with policy
+πi(·|Hi
+t) is replaced by action ˆai
+t sampled from
+an adversary with policy ˆπi(·|Hi
+t, θ). The attack
+process is characterized by action perturbation
+probability Pα(at|at, ˆπ, θ) = Q
+i∈N ˆπi(·|Hi
+t, θ)·θi +δ(ai
+t −ai
+t)·(1−θi) that maps joint actions at
+to joint actions with perturbations at, where δ(·) is the Dirac delta function. Note that the actions of
+cooperative agents and adversaries are taken simultaneously. Finally, the state transition probability
+P(st+1|st, at) takes the perturbed actions and output the state of next timestep. The shared reward
+rt = R(st, at) for (cooperative) agents is defined over perturbed actions. Given type θ, the value
+function can be defined as Vθ(s) = E [P∞
+t=0 γtrt|s0 = s, at ∼π(·|Ht), ˆat ∼ˆπ(·|Ht, θ)]. We leave
+the goal of adversary and robust agents to Section. 2.3 and 2.4 below.
+Our BARDec-POMDP formulation is flexible and draws close connection with current literature.
+Regarding type space, Dec-POMDP can be viewed as a BARDec-POMDP with Θ = 0N. Robust
+MARL approaches, such as M3DDPG (Li et al., 2019) and ROMAX (Sun et al., 2022) assumes agents
+are entirely adversarial, which refers to type space Θ = 1N. Subsequent robust MARL researchs
+(Phan et al., 2020; 2021; Nisioti et al., 2021), though not explicitly defining the type space, can be
+integrated in our BARDec-POMDP. Our formulation also draws inspiration from state-adversarial
+MDP (Zhang et al., 2020a) which considers adversary as a part of decision making process, and
+probabilistic action robust MDP (Tessler et al., 2019) by their formulation of action perturbation.
+2.3
+THREAT MODEL
+The robustness towards action perturbations in both single and multi-agent RL has gained prominence
+since the pioneering works of (Tessler et al., 2019; Li et al., 2019). Action uncertainties, formulated
+as a type of adversarial attack known as adversarial policy (Gleave et al., 2019; Wu et al., 2021; Guo
+et al., 2021), or non-oblivious adversary (Dinh et al., 2023), represent a pragmatic and destructive
+3
+
+Published as a conference paper at ICLR 2024
+form of attack that is challenging to counter. In line with these works, we propose a practical threat
+model with certain assumptions on attackers and defenders.
+Assumption 2.1 (Attacker’s capability and limitations). At the onset of an episode, the attacker can
+select θ and arbitrarily manipulate the actions of agents with type θi = 1. Within an episode, the
+type cannot be altered and we assume there is only one attacker.
+Our main focus in this paper is to model action uncertainties of unknown agents in c-MARL as types
+shaped by nature and to advance corresponding solution concept. In line with (Li et al., 2019), we
+assume one agent is vulnerable to action perturbations in each episode. In real-world, the type space
+can be more complicated, potentially involving adversaries controlling multiple agents (Nisioti et al.,
+2021), perturbing actions intermittently (Lin et al., 2017), or featuring a non-binary type space (Xie
+et al., 2022). These variations can be viewed as straightforward extensions of our work.
+Proposition 2.1 (Existence of worst-case adversary). For any robust c-MARL with fixed agent policy,
+a worst-case (i.e., most harmful) adversary exists.
+Proof sketch. Since defender policies are fixed, they can be considered part of the environment
+transitions for attackers. Thus, the attackers solve an RL problem. See full proof in Appendix. A.1.
+Assumption 2.2 (Defender’s capability and limitations). The defender can use all available informa-
+tion during training stage, including global state and information of other agents. However, during
+testing, the defender relies solely on partial observations and is agnostic of the type of other agents.
+The defender’s policy is fixed during an attack and must resist the worst-case adversary ˆπ∗.
+2.4
+SOLUTION CONCEPT
+(a) ex ante
+Expectation
+Attack
+(b) ex interim
+Adaptive 
+Adjustment
+Attack
+Cooperative
+Equilibrium
+Robust
+Equilibrium
+Adversarial
+Attack
+Uncertainty
+Set
+Figure 2: ex ante RMPBE obscures differences between each
+type by taking expectation, while our ex interim RMPBE
+adapts to current type.
+In this section, we first introduce
+the non-optimal solution concept seek
+by existing robust c-MARL methods,
+then pose our optimal solution con-
+cept for BARDec-POMDP. Specifi-
+cally, existing robust c-MARL meth-
+ods blindly maximize reward without
+considering the type of others. This
+is akin to an ex ante equilibrium in
+Bayesian game (Shoham & Leyton-
+Brown, 2008), where agents make de-
+cisions based on the prior belief about
+the types of other agents.
+Definition 2.1 (ex ante robustness). A joint cooperative policy πEA
+∗
+= (πEA,i
+∗
+)i∈N and adversarial
+policy ˆπEA
+∗
+= (ˆπEA,i
+∗
+)i∈N forms an ex ante robust Markov perfect Bayesian equilibrium (RMPBE),
+if for all p(θ), s ∈S, H ∈(O × A)∗,
+(πEA
+∗
+(·|H), ˆπEA
+∗
+(·|H, θ)) ∈arg max
+π(·|H)
+Ep(θ)
+h
+min
+ˆπ(·|H,θ) Vθ(s)
+i
+,
+(1)
+with Vθ(s) = P
+a∈A Pα(a|a, ˆπ, θ) Q
+i∈N πi(ai|Hi)(R(s, a) + γ P
+s′∈S P(s′|s, a)Vθ(s′)).
+By maximizing the expected value under prior p(θ) over types, as illustrated in Fig. 2, the policy
+might struggle to balance the different equilibrium corresponding to cooperation and robustness
+against different agents as (Byzantine) adversaries. In contrast, we propose a more refined ex interim
+robustness concept, such that under current history, each agent make optimal decisions to maximize
+their expected value from their posterior belief of current type, with following assumptions:
+Assumption 2.3. Assume belief and policy are updated under following conditions: (1) Consistency.
+At each timestep t, each agent updates its belief bi
+t = p(θ|Hi
+t) of the current type by Bayes’ rule. (2)
+Sequential rationality. Each policy maximizes the expected value function under belief bi.
+Here we use πi(·|Hi, bi) to denote the explicit dependence on belief bi. The two conditions are
+common in dynamic games with incomplete information (Shoham & Leyton-Brown, 2008).
+4
+
+Published as a conference paper at ICLR 2024
+Definition 2.2 (ex interim robustness). Under Assumption 2.3 and let b = (bi)i∈N , a joint cooperative
+policy πEI
+∗
+= (πEI,i
+∗
+)i∈N and adversarial policy ˆπEI
+∗
+= (ˆπEI,i
+∗
+)i∈N forms an ex interim robust
+Markov perfect Bayesian equilibrium, if ∀s ∈S, H ∈(O × A)∗,
+(πEI
+∗(·|H, b), ˆπEI
+∗(·|H, θ)) ∈arg max
+π(·|H,b)
+Ep(θ|H)
+h
+min
+ˆπ(·|H,θ) Vθ(s))
+i
+.
+(2)
+Note that both ex ante and ex interim RMPBE requires optimality of each individual agent i. To
+reduce notation complexity, we use joint policy and belief instead.
+Proposition 2.2 (Existence of RMPBE). Assume a BARDec-POMDP of finite agents, finite set of
+state, observation and action space, agents use stationary policies, the type space Θ is a compact set,
+then ex ante and ex interim mixed strategy robust Markov perfect Bayesian equilibrium exists.
+Proof sketch. The proof is done by first showing the policy and its corresponding value function,
+with uncertainties of the current type and presence of the adversaries, satisfy the requirements of
+Kakutani’s fixed point theorem. Next, by Kakutani’s fixed point theorem, there always exists an
+optimal fixed point corresponding to a mixed strategy RMPBE. See full proof in Appendix. A.2.
+Unlike c-MARL with optimal deterministic policies (Oliehoek et al., 2008), in robust c-MARL,
+a pure-strategy equilibrium is not guaranteed to exist. This is intuitive since zero-sum games do
+not always have a pure-strategy equilibrium. The finding suggests the optimal policies for robust
+c-MARL are stochastic. Next, we show the relation between ex ante and ex interim equilibrium.
+Proposition 2.3. Under Assumption 2.3, given finite type space and the prior of each type is not zero,
+as t →∞, πEI
+∗(·|Ht, bt) weakly dominates πEA
+∗
+(·|Ht) under the worst-case adversary.
+Proof sketch. As t →∞, by the consistency of Bayes’ rule, the belief converges to the true type.
+Thus, ex interim policies that maximize the value function under the true type are guaranteed to
+weakly dominate (i.e., have value higher or equal to) ex ante policies. See full proof in Appendix A.3.
+3
+ALGORITHM
+In this section, we explain how to find the optimal solution in Definition 2.2. We start by defining the
+robust Harsanyi-Bellman equation, an update rule of value function which converges to a fixed point.
+Then, we develop a two-timescale actor-critic algorithm that considers belief of others’ type, which
+ensures almost sure convergence under assumptions in stochastic approximation theory.
+3.1
+ROBUST HARSANYI-BELLMAN EQUATION
+We first define the Bellman-type update of value functions for our ex interim equilibrium. Considering
+the Q function before and after action perturbation, we can formulate the Q function via cumulative
+reward, with posterior belief bi = p(θ|Hi) over type:
+Qi(s, a, bi) =Ep(θ|Hi)
+"
+E
+" ∞
+X
+t=0
+γtrt
+s0 = s, a0 = a, at ∼π(·|Ht, bt), ˆat ∼ˆπ(·|Ht, θ)
+##
+,
+(3)
+Qi(s, a, bi) =Ep(θ|Hi)
+"
+E
+" ∞
+X
+t=0
+γtrt
+s0 = s, a0 = a, at ∼π(·|Ht, bt), ˆat ∼ˆπ(·|Ht, θ)
+##
+,
+(4)
+The two Q functions are defined with different purpose. Qi(s, a, bi) is the expected Q function before
+action perturbation, suitable for decision making of defenders, such as fictitious self-play (Heinrich &
+Silver, 2016) and soft actor-critic (Haarnoja et al., 2018). In this way, the action perturbation can be
+viewed as part of the environment transition, resulting in P(s′|s, a, ˆπ, θ) = P(s′|s, a)·Pα(a|a, ˆπ, θ).
+On the other hand, Qi(s, a, bi) is the Q function with actions taken by the adversary, suitable for
+policy gradients (Sutton & Barto, 2018) and decision making of the adversary. For Qi(s, a, Hi),
+the action perturbation is integrated into the policy of robust agents, resulting in a mixed policy
+π(ˆa|H, b, θ) = Pα(a|a, ˆπ, θ) · π(a|H, b) = (1 −θ) · π(a|H, b) + θ · ˆπ(ˆa|H, θ). The relationship
+between the two Q functions is as follows:
+Qi(s, a, bi) =
+X
+θ∈Θ
+p(θ|Hi)
+X
+ˆa∈A
+Pα(at|at, ˆπ, θ)Qi(s, a, bi).
+(5)
+5
+
+Published as a conference paper at ICLR 2024
+Next, we formulate the Bellman-type equation for the two Q functions, which we call the robust
+Harsanyi-Bellman equation. This update differs from the conventional approach by considering the
+posterior belief over other agents and the worst-case adversary.
+Definition 3.1. We define the robust Harsanyi-Bellman equation for Q function as:
+Qi
+∗(s, a, bi) = max
+π(·|H,b) min
+ˆπ(·|H,θ)
+X
+θ∈Θ
+p(θ|Hi)
+X
+s′∈S
+X
+ˆa∈A
+P(s′|s, a, ˆπ, θ)
+h
+R(s, a) + γ
+X
+a′∈A
+π(a′|H′, b′)Qi
+∗(s′, a′, b′i)
+i
+,
+(6)
+Qi
+∗(s, a, bi) = max
+π(·|H,b) min
+ˆπ(·|H,θ)R(s, a) + γ
+X
+s′∈S
+P(s′|s, a)
+X
+θ∈Θ
+p(θ|H′i)
+X
+a′∈A
+π(a′|H′, b′, θ)Qi
+∗(s′, a′, b′i).
+(7)
+This Q function can be estimated via Temporal Difference (TD) loss.
+Proposition 3.1 (Convergence). Assume the belief is updated via Bayes’ rule, the space of state,
+actions and belief are finite, updating value functions by robust Harsanyi-Bellman equation converge
+to the optimal value Qi
+∗(s, a, bi) and Qi
+∗(s, a, bi).
+Proof sketch. The proof is done by combining the standard convergence proof of Q function with
+adversaries and Bayesian belief update, and showing our Q function forms a contraction mapping.
+Next, applying Banach’s fixed point theorem completes the proof. See full proof in Appendix. A.4.
+3.2
+ACTOR-CRITIC ALGORITHM FOR ex interim ROBUST EQUILIBRIUM
+Armed with the robust Harsanyi-Bellman equation, we propose an actor-critic algorithm to achieve
+our proposed ex interim equilibrium with almost sure convergence under certain assumptions. We
+first derive the policy gradient theorem for robust c-MARL. Assume policies of robust agents and
+adversaries are parameterized by πϕ := (πi
+ϕi)i∈N and ˆπ ˆϕ := (ˆπi
+ˆϕi)i∈N respectively, forming a mixed
+policy πϕ, ˆϕ = (1 −θ) · πϕ + θ · ˆπ ˆϕ. Define the performance for a robust agent i in the episodic case
+as Ji(ϕ) = Es∼ρπ(s)[V i(s, bi)] and (zero-sum) adversary as Ji(ˆϕ) = Es∼ρπ(s)[−V i(s, bi)], where
+ρπ(s) is the state visitation frequency. The policy gradients for πϕ and ˆπ ˆϕ are then defined as:
+Theorem 3.1. The policy gradient theorem for robust agent and adversary i is:
+∇ϕiJi(ϕi) = Es∼ρπ(s),a∼πϕ, ˆ
+ϕ(a|H,b,θ)
+
+(1 −θi)∇log πϕi(ai|Hi, bi)Qi(s, a, bi)
+
+,
+(8)
+∇ˆϕiJi(ˆϕi) = Es∼ρπ(s),a∼πϕ, ˆ
+ϕ(a|H,b,θ)
+h
+−θi∇log ˆπ ˆϕi(ˆai|Hi, θ)Qi(s, a, bi)
+i
+.
+(9)
+The policy gradient naturally depends on Qi(s, a, bi), which is related to policy gradient and decision
+of adversaries. Specifically, θ cuts off the gradient of robust agents πϕi with θi = 1 and cut off the
+gradient of adversary ˆπ ˆϕi with θi = 0. The detailed derivation is deferred to Appendix. A.5.
+Convergence. In zero-sum Markov games, achieving convergence through policy gradients remains
+challenging, with current theoretical results being dependent on specific conditions (Daskalakis
+et al., 2020; Zhang et al., 2020b; Kalogiannis et al., 2022). In this paper, we prove that, under
+certain assumptions in stochastic approximation theory (Borkar, 1997; Borkar & Meyn, 2000; Borkar,
+2009), applying a two-timescale update for both adversaries and defenders, as stated in Theorem
+3.1, guarantees almost sure convergence (i.e., converge with probability 1) to an ex interim RMPBE.
+A detailed proof is provided in Appendix A.6 as an application of stochastic approximation. With
+this two-timescale update, the adversary’s policy is updated on a faster timescale and is essentially
+equilibrated, while the defender’s policy is updated on a slower timescale and remains quasi-static.
+Despite these advances, establishing finite sample, global convergence guarantees without restrictive
+assumptions remains an open problem, warranting future research.
+Finally, we suggest update rules for critic and belief networks. Assuming the critic Qi
+ψ(s, a, bi) is
+parameterized by ψ. As for belief bi, the calculation of bi via Bayes’ rule requires assess to the policy
+6
+
+Published as a conference paper at ICLR 2024
+of other agents, which is not possible during deployment. To remedy this, we approximate the belief
+bi = maxξ pξ(θ|Hi) using a neural network parameterized by ξ. The objectives to update critic and
+belief network are:
+min
+ψ
+ R(s, a) −γQi
+ψ(s′, a′, b′i) + Qi
+ψ(s, a, bi)
+2 ,
+(10)
+min
+ξ
+−θ log
+ pξ(θ|Hi)
+
+−(1 −θ) log
+ 1 −pξ(θ|Hi)
+
+,
+(11)
+with critic trained via TD loss and belief network trained by binary cross entropy loss. See the
+pseudo-code for our algorithm in Appendix. B.
+4
+EXPERIMENTS
+(a) Toy
+(b) LBF
+(c) SMAC
+Figure 3: Environments used in our experiments. The toy iterative matrix game is proposed by Han
+et al. (2022). We use map 12x12-4p-3f-c for LBF and map 4m vs 3m for SMAC.
+Environments. To validate the efficacy of our proposed approach, we conducted experiments on
+three benchmark cooperative MARL environments, as shown in Fig. 7. Environments include a toy
+iterative matrix game proposed by (Han et al., 2022), rewarding XNOR or XOR actions at different
+state, 12x12-4p-3f-c of Level-Based Foraging (LBF) (Papoudakis et al., 2020) and 4m vs 3m of
+the StarCraft Multi-agent Challenge (SMAC) (Samvelyan et al., 2019), which reduce to 3m in the
+presence of an adversary.
+Baselines. Our comparative study includes MADDPG (Lowe et al., 2017), M3DDPG (Li et al.,
+2019), MAPPO (Yu et al., 2021), RMAAC He et al. (2023), ex ante robust MAPPO (EAR-MAPPO),
+a MAPPO variant of (Phan et al., 2020; Zhang et al., 2020c) that considers ex ante equilibrium,
+which is also an ablation of our approach without belief. We dubbed our method ex interim robust
+MAPPO (EIR-MAPPO) and add an ideal case which grants access to true type, labelled “True
+Type”. It’s worth noting that we couldn’t directly adapt M3DDPG onto the MAPPO framework
+due to its reliance on Q(s, a), a component not compatible with MAPPO’s use of V (s) as a critic.
+More experiment details are given in Appendix. C. For fair comparison, all methods use the same
+codebase, network structure and hyperparameters. Code and demo videos available at https:
+//github.com/DIG-Beihang/EIR-MAPPO.
+Evaluation protocol. In each environment with N cooperative agents, the robust policy was trained
+using five random seeds. Attack results were compiled by launching attacks on each of the N agents
+using the same five seeds, yielding a total of 5 × N attacks per environment. We plot all results with
+95% confidence interval.
+Evaluated attacks. We consider four types of threats. (1) Non-oblivious adversaries (Gleave et al.,
+2019): we fix the trained policy and deployed a zero-sum, worst-case adversarial policy to attack each
+agents separately. (2) Random agents: an agent perform random actions from a uniform distribution,
+possibly via hardware or software failure (labelled as “random”). (3) Noisy observations: we add
+ℓ∞bounded adversarial noise (Lin et al., 2020) with perturbation budgets ϵ ∈{0.2, 0.5, 1.0} to the
+observation of an agent (denoted as “ϵ =”). (4) Transferred adversaries: attackers initially train a
+policy on a surrogate algorithm, then directly transfer the attack to target other algorithms.
+4.1
+ROBUSTNESS OVER NON-OBLIVIOUS ATTACKS
+We first evaluate our performance under the most arduous non-oblivious attack, where an adversary
+can manipulate any agent in cooperative tasks and execute arbitrary learned worst-case policy.
+The cooperation and attack performance on three environments are given in Fig. 4. Across all
+environments, our EIR-MAPPO consistently delivers robust performance close to the maximum
+7
+
+Published as a conference paper at ICLR 2024
+MADDPG
+MAPPO
+True Type
+EIR-MAPPO
+M3DDPG
+EAR-MAPPO
+0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0
+Timesteps
+1e7
+50
+60
+70
+80
+90
+100
+Reward
+Cooperative, Toy
+0
+5
+10
+15
+20
+Reward
+Cooperative, SMAC 4m vs 3m
+Cooperative, LBF 12x12-4p-3f-c
+0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0
+Timesteps
+1e7
+0
+1
+2
+3
+4
+5
+1e6
+Adversary, SMAC 4m vs 3m
+Timesteps
+0
+5
+10
+15
+20
+Reward
+0
+10
+20
+30
+40
+50
+0
+1
+2
+3
+4
+5
+1e6
+Timesteps
+Adversary, Toy
+Reward
+Adversarial, LBF 12x12-4p-3f-c
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+0
+1
+2
+3
+4
+5
+1e6
+Timesteps
+Reward
+0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0
+Timesteps
+1e7
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Reward
+RMAAC
+Figure 4: Cooperative and robust performance on three c-MARL environments. EIR-MAPPO
+achieves higher robust performance against non-oblivious adversaries and have cooperative perfor-
+mance on par with baselines. Reported on 5 seeds for cooperation and 5 × N attacks.
+reward achievable in each environment under attack (50 for Toy, 1.0 for LBF, 20 for SMAC),
+outperforming baselines by large margins and displays robustness equalling the ideal True Type
+defense. Concurrently, EIR-MAPPO maintains cooperative performance on par with MAPPO.
+Swayed
+Allies
+(a) MADDPG/M3DDPG
+Unfocused
+Fire
+(b) MAPPO/RMAAC
+Unfocused
+Fire
+Bad Kiting
+(c) EAR-MAPPO
+Focus
+Fire
+Kiting
+(d) EIR-MAPPO
+Figure 5: Agent behaviors under attack. Red square indicates the adversary agent. Existing methods
+are either swayed, having unfocused fire or perform bad kiting. In contrast, our EIR-MAPPO learns
+kiting and focused fire simultaneously, under the presence of a worst-case adversary.
+As illustrated in Fig. 5, a detailed examination of each method’s behaviour under attack enriches
+our comprehension of robustness, with adversaries marked by a red square. First, MADDPG and
+M3DDPG can be easily swayed by adversaries. In Fig. 5a, a downward-moving adversary easily
+diverts two victims from the battle, resulting in a single victim facing three opponents. As for MAPPO
+and RMAAC, agents fail to master useful micromanagement strategies, such as kiting or focused fire
+during combat1. Consequently, the agent do not exihibit any cooperation skills under attack and are
+not skillful enough to win the game. As for EAR-MAPPO, agents occasionally demonstrate kiting
+but fall short in executing focused fire. They spread fire over two enemies instead of concentrating
+fire on one. Furthermore, even successful kiting can be compromised. In Fig. 5c, the adversary
+advances, causing two half-health agents to mistakenly believe that an ally is coming to its aid, and
+thus retreats to kite the enemy. This, however, leaves another low-health ally vulnerable to enemy fire
+and immediately being eliminated. Finally, we find that both EIR-MAPPO and True Type demonstrate
+focused fire and kiting, proving resistant to adversarial agents. Illustrated in Fig. 5d, two low-health
+agents retreat to avoid being eliminated, while an agent with high health advances to shield its allies,
+showcasing classic kiting behaviour. Moreover, allies coordinate to eliminate enemies, leaving one
+enemy nearly unscathed and another at half health.
+4.2
+ROBUSTNESS OVER VARIOUS TYPE OF ATTACKS
+Apart from the worst-case oblivious adversary, c-MARL can encounter various uncertainties in real
+world, ranging from allies taking random actions, having uncertainties in observations, or a transferred
+1Micromanagements are granular control strategies for agents to win in StarCraft II (Samvelyan et al., 2019).
+Kiting enables agents to evade enemy fire by stepping outside the enemy’s attack range, thereby compelling the
+enemy to give chase rather than attack; focused fire requires taking enemies down one after another.
+8
+
+Published as a conference paper at ICLR 2024
+adversary trained on alternate algorithms. We examine the robust performance of all methods under
+such diverse uncertainties in Fig. 6. The rows signify uncertainties while the columns represent the
+evaluated methods. Diagonal entries (i.e., blocks with the same uncertainty and evaluated method)
+denote non-oblivious attacks. For each uncertainty (column), the method of highest reward was
+marked by a red square. Furthermore, since the True Type represents an ideal scenario, if it secures
+the highest reward, we mark the method that gained the second-highest reward as well.
+Uncertainties
+LBF 12x12-4p-3f-c
+SMAC 4m vs 3m
+=0.2
+=0.5
+=1.0
+MADDPG
+M3DDPG
+MAPPO
+RMAAC
+EAR-MAPPO
+EIR-MAPPO
+True Type
+MADDPG
+M3DDPG
+MAPPO
+RMAAC
+EAR-MAPPO
+EIR-MAPPO
+True Type
+MADDPG
+M3DDPG
+MAPPO
+RMAAC
+EAR-MAPPO
+EIR-MAPPO
+True Type
+Random
+Average
+Toy
+4.8
+6.02 10.63 10.7 16.01 19.38 18.52
+8.01 3.13 11.25 11.93 17.17 18.78 19.58
+6.48 4.91 7.93 10.72 16.44 19.49 18.94
+6.0
+5.42 9.67 9.43 16.35 19.54 18.24
+6.89 5.73
+9.6 10.32 11.76 18.89 18.38
+7.22 4.73 10.81 10.71 15.69 16.82 18.52
+7.11 5.74 9.39 10.98 14.86 19.23 16.9
+8.84 6.63 13.29 12.92 17.04 19.53 19.4
+16.18 12.03 11.96 19.48 14.87 19.63 18.91
+14.39 11.33 9.28 18.78 12.23 17.87 17.71
+11.62 10.86 9.19 19.22 12.23 17.4 17.52
+8.87 6.96 10.27 13.2 14.97 18.78 18.42
+5
+10
+15
+MADDPG
+M3DDPG
+MAPPO
+RMAAC
+EAR-MAPPO
+EIR-MAPPO
+True Type
+0.01 0.12 0.79 0.51 0.84 0.88 0.84
+0.06 0.03 0.78 0.65 0.88 0.89 0.84
+0.09 0.13 0.53 0.54 0.88 0.91 0.85
+0.09 0.12 0.68 0.31 0.88 0.91 0.81
+0.1
+0.12 0.79 0.61 0.64 0.87 0.82
+0.04 0.11 0.73 0.61 0.81 0.82 0.82
+0.07 0.13 0.77
+0.6
+0.83 0.87 0.82
+0.14 0.17 0.87 0.74 0.88 0.89 0.88
+0.81 0.84 0.97 0.95 0.98 0.99 0.99
+0.64 0.55 0.75 0.83
+0.9
+0.96 0.94
+0.36 0.26 0.74 0.78 0.82 0.93 0.88
+0.22 0.23 0.77 0.65 0.85
+0.9
+0.86
+0.2
+0.4
+0.6
+0.8
+0.0
+8.38 72.76 69.41 64.33 55.06 51.54
+5.58 0.01 72.13 69.32 69.45 50.15 52.68
+76.51 74.85 4.75 39.67 62.29 85.91 49.18
+49.91 49.91 42.0 7.69 75.46 76.64 50.85
+45.77 45.6 43.82 64.32 17.16 65.18 46.22
+56.21 55.3 58.89 57.11 59.31 44.14 52.27
+52.23 52.01 37.99 51.66 47.07 55.93 42.23
+50.03 50.27 49.18 49.72 49.86 50.4 50.3
+99.7 87.18 59.44 87.04 73.94 80.01 46.66
+50.42 33.88 14.82 61.1 28.71 47.03 43.61
+50.04 34.22 5.88 61.59 21.58 44.18 43.6
+48.76 44.69 41.97 56.24 51.74 59.51 48.1
+0
+20
+40
+60
+80
+Figure 6: Evaluating robustness over diverse attacks, row indicates uncertainties and column indicates
+evaluated methods. EIR-MAPPO achieves improved robustness on almost all uncertainties in LBF
+and SMAC, while having higher robustness on average in Toy. Results averaged over 5 × N attacks.
+We first emphasize the effectiveness of our EIR-MAPPO approach. Considering the average reward
+gained under a broad range of uncertainties, our EIR-MAPPO surpasses baselines by 5.81% on Toy,
+5.88% on LBF, and 25.45% on SMAC. Notably, EIR-MAPPO and True Type yields highest reward
+in almost all LBF and SMAC environments. In toy environment, owing to the existence of two
+pure-strategy equilibria, algorithms and attacks deploying deterministic strategies can occasionally
+yield higher rewards by chance. However, given its superior worst-case robustness, our EIR-MAPPO
+consistently delivers commendable results under all uncertainties.
+Our second observation focuses on the relationship between action and observation perturbations. As
+an algorithm designed to counteract observation uncertainties, RMAAC is robust against observation
+perturbations, but fails to counter unseen action perturbations. In contrast, our EIR-MAPPO maintains
+its robustness against observation perturbations, even though it has not encountered the attack before.
+This resilience is due to the fact that observational attacks ultimately affect agents’ choices of actions,
+which reduces observation uncertainty to a form of action uncertainty.
+5
+CONCLUSIONS
+In this paper, we study robust c-MARL against Byzantine threat, where agents in this system to
+fail, or being compromised by an adversary. We frame the problem as a Dec-POMDP and define
+its solution as an ex interim RMPBE, such that the equilibrated policy weakly dominates ex ante
+solutions in prior research, when time goes to infinity. To actualize this equilibrium, we introduce
+Harsanyi-Bellman equation for value function updates, and an actor-critic algorithm with almost sure
+convergence under specific conditions. Experimental results show that under worst-case adversarial
+perturbation, our method can learn intricate and adaptive cooperation skills, and can withstand
+non-oblivious, random, observation-based, and transferred adversaries. As future work, we plan to
+apply our method to c-MARL applications, including robot swarm control (Hüttenrauch et al., 2019),
+traffic light management (Chu et al., 2019), and power grid maintenance (Xi et al., 2018).
+9
+
+Published as a conference paper at ICLR 2024
+6
+ACKNOWLEDGEMENTS
+This work was supported by the National Key Research and Development Plan of China
+(2022ZD0116405) and National Natural Science Foundation of China (62306025, 62022009,
+62132010 and 62206009).
+REFERENCES
+Stefano V Albrecht and Subramanian Ramamoorthy. A game-theoretic model and best-response
+learning method for ad hoc coordination in multiagent systems. arXiv preprint arXiv:1506.01170,
+2015.
+Stefano V Albrecht, Jacob W Crandall, and Subramanian Ramamoorthy. Belief and truth in hypothe-
+sised behaviours. Artificial Intelligence, 235:63–94, 2016.
+Karl J Astrom et al. Optimal control of markov processes with incomplete state information. Journal
+of mathematical analysis and applications, 10(1):174–205, 1965.
+Samuel Barrett, Avi Rosenfeld, Sarit Kraus, and Peter Stone. Making friends on the fly: Cooperating
+with new teammates. Artificial Intelligence, 242:132–171, 2017.
+Christopher Berner, Greg Brockman, Brooke Chan, Vicki Cheung, Przemysław D˛ebiak, Christy
+Dennison, David Farhi, Quirin Fischer, Shariq Hashme, Chris Hesse, et al. Dota 2 with large scale
+deep reinforcement learning. arXiv preprint arXiv:1912.06680, 2019.
+Daniel S Bernstein, Robert Givan, Neil Immerman, and Shlomo Zilberstein. The complexity of
+decentralized control of markov decision processes. Mathematics of operations research, 27(4):
+819–840, 2002.
+Vivek S Borkar. Stochastic approximation with two time scales. Systems & Control Letters, 29(5):
+291–294, 1997.
+Vivek S Borkar. Stochastic approximation: a dynamical systems viewpoint, volume 48. Springer,
+2009.
+Vivek S Borkar and Sean P Meyn. The ode method for convergence of stochastic approximation and
+reinforcement learning. SIAM Journal on Control and Optimization, 38(2):447–469, 2000.
+Tianshu Chu, Jie Wang, Lara Codecà, and Zhaojian Li. Multi-agent deep reinforcement learning for
+large-scale traffic signal control. IEEE Transactions on Intelligent Transportation Systems, 21(3):
+1086–1095, 2019.
+Junyoung Chung, Caglar Gulcehre, KyungHyun Cho, and Yoshua Bengio. Empirical evaluation of
+gated recurrent neural networks on sequence modeling. arXiv preprint arXiv:1412.3555, 2014.
+Constantinos Daskalakis, Dylan J Foster, and Noah Golowich. Independent policy gradient methods
+for competitive reinforcement learning. Advances in neural information processing systems, 33:
+5527–5540, 2020.
+Christian Schroeder de Witt, Tarun Gupta, Denys Makoviichuk, Viktor Makoviychuk, Philip HS
+Torr, Mingfei Sun, and Shimon Whiteson. Is independent learning all you need in the starcraft
+multi-agent challenge? arXiv preprint arXiv:2011.09533, 2020.
+Persi Diaconis and David Freedman. On the consistency of bayes estimates. The Annals of Statistics,
+pp. 1–26, 1986.
+Le Cong Dinh, David Henry Mguni, Long Tran-Thanh, Jun Wang, and Yaodong Yang. Online markov
+decision processes with non-oblivious strategic adversary. Autonomous Agents and Multi-Agent
+Systems, 37(1):15, 2023.
+Arlington M Fink. Equilibrium in a stochastic n-person game. Journal of science of the hiroshima
+university, series ai (mathematics), 28(1):89–93, 1964.
+10
+
+Published as a conference paper at ICLR 2024
+Adam Gleave, Michael Dennis, Cody Wild, Neel Kant, Sergey Levine, and Stuart Russell. Adversarial
+policies: Attacking deep reinforcement learning. arXiv preprint arXiv:1905.10615, 2019.
+Barbara J Grosz and Sarit Kraus. The evolution of sharedplans. Foundations of rational agency, pp.
+227–262, 1999.
+Wenbo Guo, Xian Wu, Sui Huang, and Xinyu Xing. Adversarial policy learning in two-player
+competitive games. In International Conference on Machine Learning, pp. 3910–3919. PMLR,
+2021.
+Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft actor-critic: Off-policy
+maximum entropy deep reinforcement learning with a stochastic actor. In International conference
+on machine learning, pp. 1861–1870. PMLR, 2018.
+Songyang Han, Sanbao Su, Sihong He, Shuo Han, Haizhao Yang, and Fei Miao. What is the solution
+for state adversarial multi-agent reinforcement learning? arXiv preprint arXiv:2212.02705, 2022.
+John C Harsanyi. Games with incomplete information played by “bayesian” players, i–iii part i. the
+basic model. Management science, 14(3):159–182, 1967.
+Sihong He, Songyang Han, Sanbao Su, Shuo Han, Shaofeng Zou, and Fei Miao. Robust multi-agent
+reinforcement learning with state uncertainty. Transactions on Machine Learning Research, 2023.
+Johannes Heinrich and David Silver. Deep reinforcement learning from self-play in imperfect-
+information games. arXiv preprint arXiv:1603.01121, 2016.
+Maximilian Hüttenrauch, Sosic Adrian, Gerhard Neumann, et al. Deep reinforcement learning for
+swarm systems. Journal of Machine Learning Research, 20(54):1–31, 2019.
+Garud N Iyengar. Robust dynamic programming. Mathematics of Operations Research, 30(2):
+257–280, 2005.
+Fivos Kalogiannis, Ioannis Anagnostides, Ioannis Panageas, Emmanouil-Vasileios Vlatakis-
+Gkaragkounis, Vaggos Chatziafratis, and Stelios Stavroulakis. Efficiently computing nash equilibria
+in adversarial team markov games. arXiv preprint arXiv:2208.02204, 2022.
+Erim Karde¸s, Fernando Ordóñez, and Randolph W Hall. Discounted robust stochastic games and an
+application to queueing control. Operations research, 59(2):365–382, 2011.
+Jakub Grudzien Kuba, Ruiqing Chen, Muning Wen, Ying Wen, Fanglei Sun, Jun Wang, and Yaodong
+Yang. Trust region policy optimisation in multi-agent reinforcement learning. arXiv preprint
+arXiv:2109.11251, 2021.
+Shihui Li, Yi Wu, Xinyue Cui, Honghua Dong, Fei Fang, and Stuart Russell. Robust multi-agent
+reinforcement learning via minimax deep deterministic policy gradient. In Proceedings of the
+AAAI conference on artificial intelligence, volume 33, pp. 4213–4220, 2019.
+Jieyu Lin, Kristina Dzeparoska, Sai Qian Zhang, Alberto Leon-Garcia, and Nicolas Papernot. On the
+robustness of cooperative multi-agent reinforcement learning. In 2020 IEEE Security and Privacy
+Workshops (SPW), pp. 62–68. IEEE, 2020.
+Yen-Chen Lin, Zhang-Wei Hong, Yuan-Hong Liao, Meng-Li Shih, Ming-Yu Liu, and Min Sun. Tactics
+of adversarial attack on deep reinforcement learning agents. arXiv preprint arXiv:1703.06748,
+2017.
+Aishan Liu, Xianglong Liu, Jiaxin Fan, Yuqing Ma, Anlan Zhang, Huiyuan Xie, and Dacheng Tao.
+Perceptual-sensitive gan for generating adversarial patches. In AAAI, 2019.
+Aishan Liu, Tairan Huang, Xianglong Liu, Yitao Xu, Yuqing Ma, Xinyun Chen, Stephen J Maybank,
+and Dacheng Tao. Spatiotemporal attacks for embodied agents. In ECCV, 2020a.
+Aishan Liu, Jiakai Wang, Xianglong Liu, Bowen Cao, Chongzhi Zhang, and Hang Yu. Bias-based
+universal adversarial patch attack for automatic check-out. In ECCV, 2020b.
+11
+
+Published as a conference paper at ICLR 2024
+Aishan Liu, Jun Guo, Jiakai Wang, Siyuan Liang, Renshuai Tao, Wenbo Zhou, Cong Liu, Xianglong
+Liu, and Dacheng Tao. X-adv: Physical adversarial object attacks against x-ray prohibited item
+detection. In USENIX Security Symposium, 2023.
+Ryan Lowe, Yi Wu, Aviv Tamar, Jean Harb, OpenAI Pieter Abbeel, and Igor Mordatch. Multi-agent
+actor-critic for mixed cooperative-competitive environments. Advances in neural information
+processing systems, 30, 2017.
+Daniel J Mankowitz, Nir Levine, Rae Jeong, Yuanyuan Shi, Jackie Kay, Abbas Abdolmaleki, Jost To-
+bias Springenberg, Timothy Mann, Todd Hester, and Martin Riedmiller. Robust reinforcement
+learning for continuous control with model misspecification. arXiv preprint arXiv:1906.07516,
+2019.
+Reuth Mirsky, Ignacio Carlucho, Arrasy Rahman, Elliot Fosong, William Macke, Mohan Sridharan,
+Peter Stone, and Stefano V Albrecht. A survey of ad hoc teamwork research. In Multi-Agent
+Systems: 19th European Conference, EUMAS 2022, Düsseldorf, Germany, September 14–16, 2022,
+Proceedings, pp. 275–293. Springer, 2022.
+Arnab Nilim and Laurent El Ghaoui. Robust control of markov decision processes with uncertain
+transition matrices. Operations Research, 53(5):780–798, 2005.
+Eleni Nisioti, Daan Bloembergen, and Michael Kaisers. Robust multi-agent q-learning in cooperative
+games with adversaries. In Proceedings of the AAAI Conference on Artificial Intelligence, 2021.
+Frans A Oliehoek and Christopher Amato. A concise introduction to decentralized POMDPs. Springer,
+2016.
+Frans A Oliehoek, Matthijs TJ Spaan, and Nikos Vlassis. Optimal and approximate q-value functions
+for decentralized pomdps. Journal of Artificial Intelligence Research, 32:289–353, 2008.
+Georgios Papoudakis, Filippos Christianos, Lukas Schäfer, and Stefano V Albrecht. Benchmark-
+ing multi-agent deep reinforcement learning algorithms in cooperative tasks. arXiv preprint
+arXiv:2006.07869, 2020.
+Bei Peng, Tabish Rashid, Christian Schroeder de Witt, Pierre-Alexandre Kamienny, Philip Torr,
+Wendelin Böhmer, and Shimon Whiteson. Facmac: Factored multi-agent centralised policy
+gradients. Advances in Neural Information Processing Systems, 34:12208–12221, 2021.
+Thomy Phan, Thomas Gabor, Andreas Sedlmeier, Fabian Ritz, Bernhard Kempter, Cornel Klein,
+Horst Sauer, Reiner Schmid, Jan Wieghardt, Marc Zeller, et al. Learning and testing resilience
+in cooperative multi-agent systems. In Proceedings of the 19th International Conference on
+Autonomous Agents and MultiAgent Systems, pp. 1055–1063, 2020.
+Thomy Phan, Lenz Belzner, Thomas Gabor, Andreas Sedlmeier, Fabian Ritz, and Claudia Linnhoff-
+Popien. Resilient multi-agent reinforcement learning with adversarial value decomposition. In
+Proceedings of the AAAI Conference on Artificial Intelligence, volume 35, pp. 11308–11316, 2021.
+Lerrel Pinto, James Davidson, Rahul Sukthankar, and Abhinav Gupta. Robust adversarial rein-
+forcement learning. In International Conference on Machine Learning, pp. 2817–2826. PMLR,
+2017.
+Arrasy Rahman, Ignacio Carlucho, Niklas Höpner, and Stefano V Albrecht.
+A general learn-
+ing framework for open ad hoc teamwork using graph-based policy learning. arXiv preprint
+arXiv:2210.05448, 2022.
+Tabish Rashid, Mikayel Samvelyan, Christian Schroeder, Gregory Farquhar, Jakob Foerster, and Shi-
+mon Whiteson. Qmix: Monotonic value function factorisation for deep multi-agent reinforcement
+learning. In International conference on machine learning, pp. 4295–4304. PMLR, 2018.
+Manish Chandra Reddy Ravula. Ad-hoc teamwork with behavior-switching agents. PhD thesis, 2019.
+Mikayel Samvelyan, Tabish Rashid, Christian Schroeder De Witt, Gregory Farquhar, Nantas Nardelli,
+Tim GJ Rudner, Chia-Man Hung, Philip HS Torr, Jakob Foerster, and Shimon Whiteson. The
+starcraft multi-agent challenge. arXiv preprint arXiv:1902.04043, 2019.
+12
+
+Published as a conference paper at ICLR 2024
+John Schulman, Philipp Moritz, Sergey Levine, Michael Jordan, and Pieter Abbeel. High-dimensional
+continuous control using generalized advantage estimation. arXiv preprint arXiv:1506.02438,
+2015.
+John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy
+optimization algorithms. arXiv preprint arXiv:1707.06347, 2017.
+Yoav Shoham and Kevin Leyton-Brown. Multiagent systems: Algorithmic, game-theoretic, and
+logical foundations. Cambridge University Press, 2008.
+Peter Stone, Gal Kaminka, Sarit Kraus, and Jeffrey Rosenschein. Ad hoc autonomous agent teams:
+Collaboration without pre-coordination. In Proceedings of the AAAI Conference on Artificial
+Intelligence, volume 24, pp. 1504–1509, 2010.
+DJ Strouse, Kevin McKee, Matt Botvinick, Edward Hughes, and Richard Everett. Collaborating
+with humans without human data. Advances in Neural Information Processing Systems, 34:
+14502–14515, 2021.
+Chuangchuang Sun, Dong-Ki Kim, and Jonathan P How. Romax: Certifiably robust deep multiagent
+reinforcement learning via convex relaxation. In 2022 International Conference on Robotics and
+Automation (ICRA), pp. 5503–5510. IEEE, 2022.
+Richard S Sutton and Andrew G Barto. Reinforcement learning: An introduction. MIT press, 2018.
+Aviv Tamar, Huan Xu, and Shie Mannor. Scaling up robust mdps by reinforcement learning. arXiv
+preprint arXiv:1306.6189, 2013.
+Chen Tessler, Yonathan Efroni, and Shie Mannor. Action robust reinforcement learning and applica-
+tions in continuous control. In International Conference on Machine Learning, pp. 6215–6224.
+PMLR, 2019.
+Paul Tylkin, Goran Radanovic, and David C Parkes. Learning robust helpful behaviors in two-
+player cooperative atari environments. In Proceedings of the 20th International Conference on
+Autonomous Agents and MultiAgent Systems, pp. 1686–1688, 2021.
+Oriol Vinyals, Igor Babuschkin, Wojciech M Czarnecki, Michaël Mathieu, Andrew Dudzik, Junyoung
+Chung, David H Choi, Richard Powell, Timo Ewalds, Petko Georgiev, et al. Grandmaster level in
+starcraft ii using multi-agent reinforcement learning. Nature, 575(7782):350–354, 2019.
+Jiakai Wang, Aishan Liu, Zixin Yin, Shunchang Liu, Shiyu Tang, and Xianglong Liu. Dual attention
+suppression attack: Generate adversarial camouflage in physical world. In CVPR, 2021.
+Jingkang Wang, Yang Liu, and Bo Li. Reinforcement learning with perturbed rewards. In Proceedings
+of the AAAI conference on artificial intelligence, volume 34, pp. 6202–6209, 2020.
+Muning Wen, Jakub Kuba, Runji Lin, Weinan Zhang, Ying Wen, Jun Wang, and Yaodong Yang. Multi-
+agent reinforcement learning is a sequence modeling problem. Advances in Neural Information
+Processing Systems, 35:16509–16521, 2022.
+Wolfram Wiesemann, Daniel Kuhn, and Berç Rustem. Robust markov decision processes. Mathe-
+matics of Operations Research, 38(1):153–183, 2013.
+Xian Wu, Wenbo Guo, Hua Wei, and Xinyu Xing. Adversarial policy training against deep rein-
+forcement learning. In 30th USENIX Security Symposium (USENIX Security 21), pp. 1883–1900,
+2021.
+Lei Xi, Jianfeng Chen, Yuehua Huang, Yanchun Xu, Lang Liu, Yimin Zhou, and Yudan Li. Smart
+generation control based on multi-agent reinforcement learning with the idea of the time tunnel.
+Energy, 153:977–987, 2018.
+Annie Xie, Shagun Sodhani, Chelsea Finn, Joelle Pineau, and Amy Zhang. Robust policy learning
+over multiple uncertainty sets. In International Conference on Machine Learning, pp. 24414–24429.
+PMLR, 2022.
+13
+
+Published as a conference paper at ICLR 2024
+Wanqi Xue, Wei Qiu, Bo An, Zinovi Rabinovich, Svetlana Obraztsova, and Chai Kiat Yeo. Mis-spoke
+or mis-lead: Achieving robustness in multi-agent communicative reinforcement learning. arXiv
+preprint arXiv:2108.03803, 2021.
+Dong Yin, Yudong Chen, Ramchandran Kannan, and Peter Bartlett. Byzantine-robust distributed
+learning: Towards optimal statistical rates. In International Conference on Machine Learning, pp.
+5650–5659. PMLR, 2018.
+Chao Yu, Akash Velu, Eugene Vinitsky, Yu Wang, Alexandre Bayen, and Yi Wu. The surprising
+effectiveness of ppo in cooperative, multi-agent games. arXiv preprint arXiv:2103.01955, 2021.
+Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Mingyan Liu, Duane Boning, and Cho-Jui
+Hsieh. Robust deep reinforcement learning against adversarial perturbations on state observations.
+Advances in Neural Information Processing Systems, 33:21024–21037, 2020a.
+Huan Zhang, Hongge Chen, Duane Boning, and Cho-Jui Hsieh. Robust reinforcement learning on
+state observations with learned optimal adversary. arXiv preprint arXiv:2101.08452, 2021.
+Kaiqing Zhang, Bin Hu, and Tamer Basar. On the stability and convergence of robust adversarial
+reinforcement learning: A case study on linear quadratic systems. Advances in Neural Information
+Processing Systems, 33:22056–22068, 2020b.
+Kaiqing Zhang, Tao Sun, Yunzhe Tao, Sahika Genc, Sunil Mallya, and Tamer Basar. Robust multi-
+agent reinforcement learning with model uncertainty. Advances in neural information processing
+systems, 33:10571–10583, 2020c.
+Eric Zhao, Alexander R Trott, Caiming Xiong, and Stephan Zheng. Ermas: Learning policies robust
+to reality gaps in multi-agent simulations. 2020.
+Yifan Zhong, Jakub Grudzien Kuba, Siyi Hu, Jiaming Ji, and Yaodong Yang. Heterogeneous-agent
+reinforcement learning. arXiv preprint arXiv:2304.09870, 2023.
+Ziyuan Zhou and Guanjun Liu. Robustness testing for multi-agent reinforcement learning: State
+perturbations on critical agents. arXiv preprint arXiv:2306.06136, 2023.
+14
+
+Published as a conference paper at ICLR 2024
+APPENDIX FOR "BYZANTINE ROBUST COOPERATIVE
+MULTI-AGENT REINFORCEMENT LEARNING
+AS
+A
+BAYESIAN GAME"
+A
+PROOFS AND DERIVATIONS
+A.1
+PROOF OF PROPOSITION 2.1
+In this section, we proof a worst-case adversary always exist for any BARDec-POMDP with fixed
+defenders. Considering different numbers of adversaries (i.e., P
+i∈N ), with fixed defenders, the
+attackers can be seen as solving a POMDP or Dec-POMDP, where optimal solution exists.
+First, if P
+i∈N θi = 0, no adversary exists and the environment is reduced to a fully cooperative
+setting. Since adversary do not even exist, the problem becomes vacuous, and any ˆπ achieves the
+same (optimal) result.
+Second, if P
+i∈N θi = 1, the problem is reduced to a POMDP Gα := ⟨S, O, O, A, ˆP, Pα, Rα, γ⟩for
+adversary, where S the global state space, O the observation space for adversary, O is the observation
+emission function, A is the action space of adversary, Rα : S × A →R is the reward function for
+adversary. Actions taken by adversary i are sampled via adversarial policy ˆai
+t ∼ˆπi(·|Hi
+t, θ). The
+environment transition for adversary is defined as ˆP(st+1|st, ˆai
+t) = P(st+1|st, at) · Pα(at|π, θt, ˆai
+t),
+where at is the mixed joint actions after perturbation in BARDec-POMDP. Here, P(st+1|st, at) is the
+environment transition in BARDec-POMDP, which combines with the transition Pα(at|π, θ, ˆai
+t) =
+Q
+i∈N δ(ai
+t −ˆai
+t) · θi + πi(·|Hi
+t) · (1 −θi) represents the decision of π, which is fixed and treated as
+a part of environment transition. Following the proof of Astrom et al. (1965), there always exists an
+optimal policy for POMDP. Thus, there exists an optimal adversary.
+Third, with P
+i∈N θi > 1, the problem is reduced to a Dec-POMDP ⟨N, S, Oα, O, A, ˆP, Rα, γ⟩,
+with S the global state space, Oα = ×i∈{θi=1}Oi is the observation space of adversaries, O is the
+observation emission function, A = ×i∈{θi=1}Ai action space of adversaries, Rα : S × Aα →
+R is the reward function for adversary. Actions taken by adversary are sampled via adversarial
+policy ˆat ∼ˆπ(·|Ht, θ). The environment transition for adversary is defined as ˆP(st+1|st, ˆat) =
+P(st+1|st, at) · Pα(at|π, θ, ˆat). Here, P(st+1|st, ˆat) is the environment transition for BARDec-
+POMDP, with the effect of the policy of π merged in transition Pα(at|π, θ, ˆat) = Q
+i∈N δ(ai
+t −ˆai
+t) ·
+θi + πi(·|Hi
+t) · (1 −θi), which is fixed and treated as a part of transition function. Following the
+proof of Bernstein et al. (2002), there always exists an optimal policy for Dec-POMDP. Thus, there
+exists an optimal adversary.
+A.2
+PROOF OF PROPOSITION 2.2
+We proof this by showing our BARDec-POMDP satisfies the requirement of Kakutani’s fixed point
+theorem. Our proof is an extension of Karde¸s et al. (2011), which shows equilibrium exists in robust
+stochastic games. In the following proof, we will first state existing results, then shows the existence
+of our ex interim RMPBE as a generalization of the proof of (Karde¸s et al., 2011) considering
+Bayesian update and transforming action uncertainty as a kind of environment uncertainty. The
+existence proof of ex ante RMPBE rise as a corollary.
+A.2.1
+PRELIMINARIES
+We first introduce existing results.
+Theorem A.1 (Kakutani’s fixed point theorem). If X is a closed, bounded, and convex set in a
+Euclidean space, and ϕ is an upper semicontinuous correspondence mapping X into the family of
+closed, convex subsets of X, then ∃x ∈X, s.t. x ∈ϕ(x).
+Next, we brief the definition of robust stochastic game and its equilibrium concept before we introduce
+the main result of Karde¸s et al. (2011).
+15
+
+Published as a conference paper at ICLR 2024
+In a stochastic game G =< N, S, A, P, R, γ > with finite state and actions, where N is the indicator
+of agents, S is the state space, A = ×i∈N Ai is the joint action space, P : S × A →∆(S) is
+the state transition probability, R : S × A × N →RN is the reward function that maps state and
+actions to reward of each agent, γ is the discount factor. Let s ∈S, ai ∈Ai, with a the joint actions,
+π : S →∆(A) is the policy for agent i with πi(ai|s), ri = R(s, a, i) is the reward for agent i.
+A robust stochastic game is a stochastic game with perturbed reward ˆrt ∈Rα and environment
+transition ˆP(s′|s, a) ∈Pα, with Rα and Pα are the bounded perturbation range.
+Define the expected value function V i
+π,ˆr, ˆ
+P(s) under perturbed reward and environment transition
+recursively through the following Bellman equation:
+V i
+π,ˆr, ˆ
+P(s) =
+X
+a∈A
+πi(ai|s)
+Y
+j̸=i
+πj(aj|s)[ˆri +
+X
+s′∈S
+ˆP(s′|s, a)V i
+π(s′)],
+the worst-case value function V i
+π,ˆr∗, ˆ
+P∗(s) is defined as V i
+π,ˆr, ˆ
+P(s) = minˆr, ˆ
+P V i
+π,ˆr∗, ˆ
+P∗(s). The equi-
+librium policy, if exists, is thus ∀i ∈N, s ∈S, a ∈A, πi
+∗(·|s) ∈arg maxπi(·|s) V i
+π(s), with
+corresponding value as V i
+{πi∗,π−i},ˆr∗, ˆ
+P∗(s) = maxπi V i
+π,ˆr∗, ˆ
+P∗(s).
+Next, let π(·|s) = Q
+i∈N πi(·|s) be the joint policy, and the set of value functions for each agent
+as Vπ,ˆr, ˆ
+P(s) = (V 1
+π,ˆr, ˆ
+P(s), V 2
+π,ˆr, ˆ
+P(s), ..., V N
+π,ˆr, ˆ
+P(s)). Define mappings β and ϕ by β(π−i) =
+{V i|V i = maxπi minˆr, ˆ
+P V i
+{πi,π−i},ˆr, ˆ
+P(s)} and ϕ(π−i) = {πi|β(π−i) = V i
+{πi∗,π−i},ˆr∗, ˆ
+P∗(s)} to be
+the set of value functions and optimal policies.
+Theorem A.2 (Karde¸s et al. (2011)). Assume uncertainties in transition probabilities and payoffs
+belongs to compact sets, all agents use stationary strategies, then the set of functions {Vπ,ˆr, ˆ
+P(s), ˆr ∈
+Rα, ˆP ∈Pα} is equicontinuous and Vπ,ˆr∗, ˆ
+P∗(s) continuous on all its variables. ϕ(π−i) is an upper
+semicontinuous correspondence mapping ∆(A) in a convex and closed subsets of ∆(A), which
+satisfies the assumptions of Kakutani’s fixed point theorem.
+We are now ready to construct our proof.
+A.2.2
+EXISTENCE OF EX INTERIM RMPBE
+We first state the existence of ex interim RMPBE. The proof is conducted by transforming BARDec-
+POMDP to a Dec-POMDP with environmental uncertainties, and applying Bayesian update to value
+functions. Note that we include some results of Karde¸s et al. (2011) for a self-contained proof.
+First, by definition of our BARDec-POMDP, it can be transformed to a robust Dec-POMDP
+with adversary in environmental dynamics. This is done by combining environment transition
+P(st+1|st, a) with action perturbation probability Pα(ˆa|a, ˆπ, θ), resulting in P(st+1|st, a, ˆπ, θ) =
+P(st+1|st, ˆa) · Pα(ˆa|a, ˆπ, θ). Thus, the robust Dec-POMDP can be seen as a particular case of
+stochastic game with shared reward, partial observations and uncertainties in perturbations. Thus,
+some results of Karde¸s et al. (2011) can be taken for our proof. Before that, let us redefine some
+notations for clarity of our proof.
+Let us redefine the expected value function Vθ(s) using the following Bellman equation:
+V i
+π,ˆπ,θ(s) =
+X
+a∈A
+πi(ai|Hi, bi)
+Y
+j̸=i
+πj(aj|Hj, bj)[ri +
+X
+s′∈S
+X
+ˆa∈A
+P(s′|s, a, ˆπ, θ)Vπ,ˆπ,θ(s′)].
+Note that V i
+π,ˆπ,θ(s) assumes the type θ is known, thus there is no uncertainty over θ and the
+function is not updated by robust Harsanyi-Bellman equation. The expected value function with
+belief, V i
+π,ˆπ,bi(s), is defined by V i
+π,ˆπ,bi(s) = Ep(θ|H)[V i
+π,ˆπ,θ(s)].
+The worst-case value func-
+tion V i
+π,ˆπ∗,θ(s) and V i
+π,ˆπ∗,bi(s) are defined as V i
+π,ˆπ∗,θ(s) = minˆπ V i
+π,ˆπ,θ(s) and V i
+π,ˆπ∗,bi(s) =
+minˆπ V i
+π,ˆπ,bi(s). With optimal (equilibrium) policy defined as π∗, the corresponding value is
+V i
+{πi∗,π−i},ˆπ∗,bi(s) = maxπi V i
+π,ˆπ∗,bi(s). The mappings β and ϕ are similarly defined β(π−i) =
+{V i|V i = maxπi minˆπ V i
+{πi,π−i},ˆπ,bi(s)} and ϕ(π−i) = {πi|β(π−i) = V i
+{πi∗,π−i},ˆπ∗,bi(s)} to be
+the set of value functions and optimal policies. By Proposition. 3.1, the optimal value at each s ∈S
+is unique, which we denote it as vi
+s.
+16
+
+Published as a conference paper at ICLR 2024
+Lemma A.1 (Equicontinuity of {V i
+π,ˆπ,bi(s), ˆπ ∈∆(A)}). For every ϵ > 0, ∃δ > 0, for any
+(π1, Vπ1,ˆπ,bi
+1(s′
+1), bi
+2) and (π2, Vπ2,ˆπ,bi
+2(s′
+2), bi
+2), |π1−π2|+|Vπ1,ˆπ,bi(s′
+1)−Vπ2,ˆπ,bi(s′
+2)|+|b1−b2| <
+δ, then, ∀ˆπ ∈∆(A), |Vπ1,ˆπ,bi(s1) −Vπ2,ˆπ,bi(s2)| < ϵ.
+Proof. By Lemma 1 of Karde¸s et al. (2011), the equicontinuity of {V i
+π,ˆπ,θ(s), ˆπ ∈∆(A)} holds, if
+we consider ˆπ as uncertainties in P(s′|s, a, ˆπ, θ). All we need now is to extend the proof considering
+belief bi.
+|Vπ1,ˆπ,bi(s1) −Vπ2,ˆπ,bi(s2)|
+=|Ep(θ|Hi
+1)[Vπ1,ˆπ,θ(s1)] −Ep(θ|Hi
+2)[Vπ2,ˆπ,θ(s2)]|
+=
+
+X
+θ∈Θ
+[p(θ|Hi
+1) · Vπ1,ˆπ,θ(s1) −p(θ|Hi
+2) · Vπ2,ˆπ,θ(s2)]
+
+=
+
+X
+θ∈Θ
+[p(θ|Hi
+1) · (Vπ1,ˆπ,θ(s1) −Vπ2,ˆπ,θ(s2)) + (p(θ|Hi
+1) −p(θ|Hi
+2)) · Vπ2,ˆπ,θ(s2)
+
+≤
+X
+θ∈Θ
+
+|p(θ|Hi
+1) · (Vπ1,ˆπ,θ(s1) −Vπ2,ˆπ,θ(s2))| + |(p(θ|Hi
+1) −p(θ|Hi
+2)) · Vπ2,ˆπ,θ(s2)|
+
+≤
+X
+θ∈Θ
+[|p(θ|Hi
+1)| · |Vπ1,ˆπ,θ(s1) −Vπ2,ˆπ,θ(s2)| + |(p(θ|Hi
+1) −p(θ|Hi
+2)| · |Vπ2,ˆπ,θ(s2)|]
+Since p(θ|Hi
+1) is a probability function, we have p(θ|Hi
+1)
+≤
+1.
+Since reward is finite,
+and |Vπi,ˆπ,θ(si)|, i ∈1, 2 is defined by discount factor γ, |Vπi,ˆπ,θ(si)| is also bounded, i.e.,
+|Vπi,ˆπ,θ(si)| ≤K.
+Now, let
+|Vπ1,ˆπ,θ(s1) −Vπ2,ˆπ,θ(s2)| < δ1 = min{ϵ, 1}
+2 · |Θ|
+,
+|(p(θ|Hi
+1) −p(θ|Hi
+2)| < δ2 = min{ϵ, 1}
+2 · K
+,
+and let δ = min{δ1, δ2}, we have:
+|Vπ1,ˆπ,bi(s1) −Vπ2,ˆπ,bi(s2)|
+≤
+X
+θ∈Θ
+[|p(θ|Hi
+1)| · |Vπ1,ˆπ,θ(s1) −Vπ2,ˆπ,θ(s2)| + |(p(θ|Hi
+1) −p(θ|Hi
+2)| · |Vπ2,ˆπ,θ(s2)|]
+=
+X
+θ∈Θ
+[|p(θ|Hi
+1)| · δ1] +
+X
+θ∈Θ
+[δ2 · |Vπ2,ˆπ,θ(s2)|]
+≤ϵ/2 + ϵ/2 = ϵ.
+Thus, the set of functions {V i
+π,ˆπ,bi(s), ˆπ ∈∆(A)} is equicontinuous.
+Lemma A.2. ϕ(π−i) is a convex set.
+Proof. The proof follows Theorem 4 of Karde¸s et al. (2011). By Lemma 2 of Karde¸s et al. (2011), the
+pointwise minimum of an equicontinuous set of function is continuous, V i
+π,ˆπ∗,bi(s) = minˆπ V i
+π,ˆπ,bi(s)
+is continuous on all its variables. Besides, V i
+π,ˆπ∗,bi(s) is defined by a discounted factor and is bounded.
+Thus, the maxima of V i
+π,ˆπ∗,bi(s) exists.
+Second, in Proposition 3.1, we have proof that updating Q function by robust Harsanyi-Bellman
+equation yields an optimal robust Q value.
+It rise as a simple corollary that the optimal
+V value, V i
+{πi∗,π−i},ˆπ∗,bi(s) exists.
+By equality V i
+{πi∗,π−i},ˆπ∗,bi(s) =
+maxπi(ai|Hi,bi) minˆπ
+P
+a∈A πi(ai|Hi, bi) Q
+j̸=i πj(aj|Hj, bj) [ri+ P
+s′∈S
+P
+ˆa∈A P(s′|s, a, ˆπ, θ) V i
+{πi
+∗,π−i},ˆπ∗,bi(s′),
+ϕ(π−i) ̸= ∅.
+17
+
+Published as a conference paper at ICLR 2024
+Third,
+by Lemma 3 of Karde¸s et al. (2011),
+the value function considering worst-
+case
+adversary
+V i
+π,ˆπ∗,bi(s)
+=
+minˆπ
+P
+a∈A πi(ai|Hi, bj) Q
+j̸=i πj(aj|Hj, bj)[ri
++
+P
+s′∈S
+P
+ˆa∈A
+P
+θ∈Θ p(θ|Hi)P(s′|s, a, ˆπ, θ)Vπ,ˆπ,bi(s′)] is concave in πi with fixed π−i and
+V i
+π,ˆπ∗,bi(s′) 2.
+Finally, we show the convexity of ϕ(π−i). Let πi
+1,∗, πi
+2,∗∈ϕ(π−i), with fixed π−i. By definition
+of V i
+{πi∗,π−i},ˆπ∗,bi(s), ∀π, s ∈S, b ∈∆(Θ), i ∈N, V i
+{πi
+1,∗,π−i},ˆπ∗,bi(s) = V i
+{πi
+2,∗,π−i},ˆπ∗,bi(s) ≥
+V i
+π,ˆπ∗,bi(s). Thus, ∀λ ∈[0, 1], we also have λV i
+{πi
+1,∗,π−i},ˆπ∗,bi(s) + (1 −λ)V i
+{π2,∗,π−i},ˆπ∗,bi(s) ≥
+V i
+π,ˆπ∗,bi(s).
+By concavity of V i
+π,ˆπ∗,bi(s), V i
+{πi∗,π−i},ˆπ∗,bi(s) = λV i
+{πi
+1,∗,π−i},ˆπ∗,bi(s) + (1 −
+λ)V i
+{πi
+2,∗,π−i},ˆπ∗,bi(s) ≤V i
+{λπi
+1,∗+(1−λ)πi
+2,∗,π−i},ˆπ∗,bi(s). Since by Proposition 3.1, V i
+π,ˆπ∗,bi(s) is
+optimal and unique. Thus, λπi
+1,∗+ (1 −λ)πi
+2,∗∈ϕ(π−i), ϕ(π−i) is a convex set.
+Next, we first introduce several lemmas, then show ϕ(x) is an upper semicontinuous correspondence.
+Lemma A.3. Let T be the robust Harsanyi-Bellman operator defined in Appendix.
+A.6.
+T V i
+{πi∗,π−i},ˆπ∗,bi(s) is continuous in π−i.
+The set {T V{πi∗,π−i},ˆπ,bi(s)| V i
+{πi∗,π−i},ˆπ∗,bi(s)
+is bounded} is equicontinuous.
+Proof.
+By Lemma 4 of Karde¸s et al. (2011), T V i
+{πi∗π−i},ˆπ∗,θ(s) is continuous and the set
+{T V{πi∗,π−i},ˆπ,bi(s)|V i
+{πi∗,π−i},ˆπ∗,θ(s) is bounded} is equicontinuous. Since T V i
+{πi∗,π−i},ˆπ∗,bi(s) =
+T Ep(θ|H))[V i
+{πi∗,π−i},ˆπ∗,θ(s)], the expectation of a continuous function is still continuous, and the
+expectation over a equicontinuous set is still equicontinuous. This completes the proof.
+Lemma A.4. Define the optimal value as vi = {vi
+1, vi
+2, ...vi
+S}. If πi
+n →πi, π−i
+n →π−i, β(π−i
+n ) →
+vi and πi
+n ∈ϕ(π−i
+n ), then πi ∈ϕ(π−i), i.e., ϕ(π−i) is an upper semicontinuous correspondence.
+Proof.
+The proof is by Lemma 5 of Fink (1964).
+We re-write it here using our notation
+to make the proof self-contained.
+Specifically, ∀s ∈S, H ∈(O × A)∗, b ∈∆(Θ).
+De-
+fine function f(·) as f(Vπ,ˆπ∗,bi(s)) = minˆπ(ˆa|H,θ)
+P
+a∈A πi(ai|Hi, bi) Q
+j̸=i πj(aj|Hj, bj)[ri +
+P
+s′∈S
+P
+ˆa∈A
+P
+θ∈Θ p(θ|Hi)P(s′|s, a, ˆπ, bi)Vπ,ˆπ∗,bi(s′)]. Recall vi
+s is the fixed point. Let πi
+∗∈
+ϕ(π−i), |f(vi
+s) −vi
+s| ≤|f(vi
+s) −f(β(π−i
+n |s))| + |f(β(π−i
+n |s)) −vi
+s| = |f(vi
+s) −f(β(π−i
+n |s))| +
+|β(π−i
+n |s) −vi
+s| →0 as n →∞.
+Now we need to show when π−i
+n →π−i and β(π−i
+n ) →vi, β(π−i|s) = vi
+s. We have |vi
+s −T vi
+s| ≤
+|vi
+s −β(π−i
+n |s)|+|β(π−i
+n |s)−T β(π−i
+n |s)|+|T β(π−i
+n |s)−T vi
+s|. By our assumption, β(π−i
+n ) →vi
+and πi
+n ∈ϕ(π−i
+n ) as n →∞, |vi
+s −β(π−i
+n |s)| →0, |T β(π−i
+n |s) −T vi
+s| →0. By Lemma A.3,
+|β(π−i
+n |s) −T β(π−i
+n |s)| →0. Thus, |vi
+s −T vi
+s| →0 as n →∞. As β(π−i) = {V i|V i =
+maxπi minˆπ V i
+{πi,π−i},ˆπ,bi(s) = vi
+s}, β(π−i|s) = vi
+s.
+As we have β(π−i|s) = vi
+s, we have vi
+s = T vi
+s and is a fixed point. Thus, vi
+s = f(vi
+s) = β(π−i|s) =
+minπi V i
+{πi,π−i},ˆπ∗,bi(s). As a consequence, πi ∈ϕ(π−i), ϕ(π−i) is an upper semicontinuous
+correspondence.
+Now, we have proofed ϕ is an upper semicontinuous correspondence (Lemma. A.4), mapping ∆(A)
+into the family of convex subsets of ∆(A) (Lemma. A.2). Since ϕ(π−i) is an upper semicontinuous
+correspondence, it is also a closed set for any π. Thus, the result satisfies the requirement of
+Kakutani’s fixed point theorem, with equilibrium policy ϕ(π−i).
+A.2.3
+EXISTENCE OF EX INTERIM RMPBE
+The existence of ex ante RMPBE follows the proof of ex interim RMPBE, but having a prior belief
+p(θ) that is never updated. Since the expectation over p(θ) is a linear combination and p(θ) is
+bounded, the addition of p(θ) do not violate the convergence and continuity of value functions. The
+proof thus follows the result of ex interim RMPBE.
+2Note that Lemma 3 of Karde¸s et al. (2011) considers cost, which is the negative of reward. While in their
+proof, the function considering cost is convex. Taking the negative of a convex function is thus concave.
+18
+
+Published as a conference paper at ICLR 2024
+A.3
+PROOF OF PROPOSITION 3.2
+For convenience of notations, Let us redefine the value function under worst-case adversary and type
+θ at time t, but additionally adding π, ˆπ into the notation of Vθ(s) for clarity, resulting in
+V π,ˆπ∗
+θ
+(s) =
+min
+ˆπ(·|H,θ)
+X
+a∈A
+Pα(a|a, ˆπ, θ)
+Y
+i∈N
+πi(ai|Hi)(R(s, a) + γ
+X
+s′∈S
+P(s′|s, a)V π,ˆπ∗
+θ
+(s′)).
+We can then redefine the value function for ex ante RMPBE as V π,ˆπ∗
+p
+(θ)(s) = Ep(θ)[V π,ˆπ∗
+θ
+(s)] and
+the value function for ex interim RMPBE as V π,ˆπ∗
+b
+(s) = Ep(θ|H)[V π,ˆπ∗
+θ
+(s)].
+Next, for each θ ∈Θ, with time t →∞, we have bt = p(θ|Ht) →θ by consistency of Bayes’ rule
+Diaconis & Freedman (1986), if ∀θ ∈Θ, p(θ) ̸= 0 and with finite type space Θ. The resulting value
+function at t →∞is thus:
+V πEI
+∗
+,ˆπEI
+∗
+bt→∞
+(s) = V πEI
+∗
+,ˆπEI
+∗
+θ
+(s) ≥V π,ˆπ∗
+θ
+(s),
+where ˆπ∗is always the optimal adversarial policy for current π. The rest follows. As for the expected
+return of ex ante robustness for θ, we get:
+V πEA
+∗
+,ˆπEA
+∗
+p(θ)
+(s) = Ep(θ)
+h
+V πEA
+∗
+,ˆπEA
+∗
+θ
+(s))
+i
+.
+During evaluation, ∀p(θ), at t →∞, since current type θ is known and do not change, the return
+conditions on θ, instead of expectations on θ. As a consequence, the value function of ex ante and
+ex interim equilibrium is V πEA
+∗
+,ˆπEA
+∗
+θ
+(s) and V πEI
+∗
+,ˆπEI
+∗
+θ
+(s), respectively. At t →∞and ∀θ ∈Θ, we
+have bt = p(θ|Ht) →θ, and following inequality holds:
+V πEI
+∗
+,ˆπEI
+∗
+θ
+(s) ≥V πEA
+∗
+,ˆπEA
+∗
+θ
+(s),
+which use the fact V πEI
+∗
+,ˆπEI
+∗
+θ
+(s) ≥V π,ˆπ∗
+θ
+(s). Considering to the gap between V π,ˆπ∗
+θ
+(s) and V π,ˆπ∗
+p(θ) (s),
+a sufficient condition for this equality to hold is when the type space Θ contains one type only. Note
+that even at t →∞, the relation between expected value function V
+πEA
+∗
+,ˆπEA
+∗,θ
+p(θ)
+(s) of ex ante equilibrium
+and V πEI
+∗
+,ˆπEI
+∗
+θ
+(s) of ex interim equilibrium is still not known. This is because the ex ante equilibrium
+can get high expected values by simply “believing” it in some prior p(θ) that yields high value.
+However, since the belief is not correct, the resulting policy is non-optimal in any type at t →∞.
+A.4
+PROOF OF PROPOSITION 3.3
+Overview. We first proof the contraction mapping of Q(s, a, bi) by combining standard proof of the
+contraction mapping of Q function and Bayesian belief update. Afterwards, applying Banach’s fixed
+point theorem completes the proof. The convergence of Q(s, a, bi) follows the same vein.
+We first show the proof for Q-function for Qi
+∗(s, a, bi). The proof incorporates our robust Harsanyi-
+Bellman equation in the contraction mapping proof of robust MDP (Iyengar, 2005). Based on
+Bellman equation in Definition 3.1, let ∆(Θ) be a probability over Θ, the optimal Q-function of a
+contraction operator T , defined from a generic function Q : S × A × ∆(Θ) →R can be defined as:
+(T Qi)(s, a, bi) = max
+π(·|o,b) min
+ˆπ(·|o,θ) R(s, a) + γ
+"X
+s′∈S
+P(s′|s, a)
+X
+θ∈Θ
+p(θ|Hi)
+X
+ˆa′∈A
+π(a′|H′, b′, θ)Qi
+∗(s′, a′, b′i)
+#
+.
+Next, we show T forms a contraction operator, such that for any two Q function Qi
+1 and Qi
+2, assuming
+T Qi
+1(s, a, bi) ≥T Qi
+2(s, a, bi), the following holds:
+19
+
+Published as a conference paper at ICLR 2024
+||T Qi
+1 −T Qi
+2||∞≤γ||Qi
+1 −Qi
+2||∞,
+Specifically, for ϵ > 0 and with fixed a ∈A, s ∈S, b ∈∆(Θ), H ∈(O × A)∗for Q1 and Q2,
+min
+ˆπ(·|H,θ) R(s, ˆa) + γ
+"X
+s′∈S
+P(s′|s, a)
+X
+θ∈Θ
+p(θ|Hi)
+X
+a′∈A
+π(ˆa′|H′, b′, θ)Qi
+1(s′, a′, b′i)
+#
+≥T Qi
+1 −ϵ.
+Note that updating belief by Bayes’ rule is required for consistency of b′i. We require fixed Hi
+as well since the calculation of belief and Q function depends on Hi. Now we can also choose a
+conditional policy measure of the adversary ˆπs, such that:
+Eˆπs
+"
+R(s, ˆa) + γ
+"X
+s′∈S
+P(s′|s, ˆa)
+X
+θ∈Θ
+p(θ|Hi)
+X
+ˆa′∈A
+π(ˆa′|H′, b′, θ)Qi
+2(s′, ˆa′, b′i)
+##
+≤
+min
+ˆπ(·|o,θ) R(s, ˆa) + γ
+"X
+s′∈S
+P(s′|s, ˆa)
+X
+θ∈Θ
+p(θ|Hi)
+X
+ˆa′∈A
+π(ˆa′|H′, b′, θ)Qi
+2(s′, ˆa′, b′i)
+#
++ϵ.
+Then,
+0 ≤T Qi
+1 −T Qi
+2
+≤
+ 
+min
+ˆπ(·|H,θ) R(s, ˆa) + γ
+"X
+s′∈S
+P(s′|s, a)
+X
+θ∈Θ
+p(θ|Hi)
+X
+ˆa′∈A
+π(ˆa′|H′, b′, θ)Qi
+1(s′, ˆa′, b′i)
+#
++ϵ
+!
+−
+ 
+min
+ˆπ(·|H,θ) R(s, a) + γ
+"X
+s′∈S
+P(s′|s, a)
+X
+θ∈Θ
+p(θ|Hi)
+X
+a′∈A
+π(a′|H′, b′, θ)Qi
+2(s′, a′, b′i)
+#!
+≤
+ 
+Eˆπs
+"
+R(s, a) + γ
+"X
+s′∈S
+P(s′|s, a)
+X
+θ∈Θ
+p(θ|Hi)
+X
+a′∈A
+π(a′|H′, b′, θ)Qi
+1(s′, a′, b′i)
+##
++ ϵ
+!
+−
+ 
+Eˆπs
+"
+R(s, a) + γ
+"X
+s′∈S
+P(s′|s, a)
+X
+θ∈Θ
+p(θ|Hi)
+X
+a′∈A
+π(a′|H′, b′, θ)Qi
+2(s′, a′, b′i)
+##
+−ϵ
+!
+= γEˆπs
+
+Qi
+1 −Qi
+2
+
++ 2ϵ ≤γEˆπs
+Qi
+1 −Qi
+2
+ + 2ϵ ≤γEˆπs||Qi
+1 −Qi
+2||∞+ 2ϵ.
+Thus, we have:
+||T Qi
+1 −T Qi
+2||∞≤γ||Qi
+1 −Qi
+2||∞+ 2ϵ,
+and since by definition, ϵ is arbitrary, then we have ||T Qi
+1 −T Qi
+2||∞≤γ||Qi
+1 −Qi
+2||∞.
+Finally, since T is a contraction operator on a Banach space, by Banach’s fixed point theorem,
+updating Qi(s, a, bi) by Bellman operator T will converge to the optimal value function Qi
+∗(s, a, bi).
+In the same way, the convergence of Qi(s, a, bi) is again done by robust Harsanyi-Bellman
+equation, Qi
+∗(s, a, bi) =
+max
+π(·|H,b) min
+ˆπ(·|H,θ)
+P
+θ∈Θ p(θ|Hi) P
+s′∈S
+P
+ˆa∈A P(s′|s, a, ˆπ, θ)[R(s, a) +
+γ P
+a′∈A π(a′|H′, b′)Qi
+∗(s′, a′, b′i)]. Expanding the function in the same way above completes
+the proof.
+20
+
+Published as a conference paper at ICLR 2024
+A.5
+PROOF OF THEOREM 4.1
+We first discuss the policy gradient with πϕi(ai|Hi, bi):
+∇ϕiV i(s, bi) =∇ϕi
+"X
+a∈A
+πϕ, ˆϕ(a|H, b, θ)Qi(s, a, bi)
+#
+=∇ϕi
+"X
+a∈A
+
+(1 −θ) · πϕ(a|H, b) + θ · ˆπ ˆϕ(ˆa|H, θ)
+
+Qi(s, a, bi)
+#
+=
+X
+a∈A
+h
+(1 −θi)∇ϕiπϕi(ai|Hi, bi) · Qi(s, a, bi) + πϕ, ˆϕ(a|H, b, θ)∇ϕiQi(s, a, bi)
+i
+=
+X
+a∈A
+"
+(1 −θi)∇ϕiπϕi(ai|Hi, bi) · Qi(s, a, bi) + πϕ, ˆϕ(ˆa|H, b, θ)∇ϕi
+h
+R(s, a)
++ γ
+X
+s′∈S
+X
+a′∈A
+P(s′|s, a)
+X
+θ∈Θ
+p(θ|H)πϕ, ˆϕ(a′|H′, b′, θ)Qi(s′, a′, b′i)
+i
+,
+=
+X
+a∈A
+"
+(1 −θi)∇ϕiπϕi(ai|oi, bi) · Qi(s, a, bi) + πϕ, ˆϕ(a|H, b, θ)
+h
+γ(1 −θi)∇ϕi
+πϕi(a′|H′, b′) + γ
+X
+s′∈S
+X
+a′∈A
+P(s′|s, a)πϕ, ˆϕ(a′|H′, b′, θ)
+X
+θ∈Θ
+p(θ|H)∇ϕiQi(s′, a′, b′i)
+i
+,
+=
+X
+s′∈S
+∞
+X
+t=0
+Pr(s →s′, t, π)
+X
+ˆa∈A
+(1 −θi)∇ϕiπϕi(ai|Hi, bi) · Qi(s, a, bi).
+Considering ∇ϕiJi(ϕi), we have
+∇ϕiJi(ϕi) =∇ϕiV i(s0, bi)
+=
+X
+s∈S
+∞
+X
+t=0
+Pr(s0 →s, t, π)
+X
+a∈A
+(1 −θi)∇ϕiπϕi(ai|Hi, bi) · Qi(s, a, bi)
+=
+X
+s∈S
+η(s)
+X
+a∈A
+(1 −θi)∇ϕiπϕi(ai|Hi, bi) · Qi(s, a, bi)
+=
+X
+s′∈S
+η(s′)
+X
+s∈S
+η(s)
+P
+s′∈S η(s′)
+X
+a∈A
+(1 −θi)∇ϕiπϕi(ai|Hi, bi) · Qi(s, a, bi)
+=
+X
+s′∈S
+η(s′)
+X
+s∈S
+ρπ(s)
+X
+a∈A
+(1 −θi)πϕi(ai|Hi, bi) · Qi(s, a, bi)
+∝
+X
+s∈S
+ρπ(s)
+X
+a∈A
+(1 −θi)∇ϕiπϕi(ai|Hi, bi) · Qi(s, a, bi).
+Using the log-derivative trick, we have:
+∇ϕiJi(ϕi) ∝
+X
+s∈S
+ρπ(s)
+X
+a∈A
+(1 −θi)∇ϕiπϕi(ai|Hi, bi) · Qi(s, a, bi)
+=
+X
+s∈S
+ρπ(s)
+X
+a∈A
+(1 −θi)πϕi(ai|Hi, bi) · Qi(s, a, bi)∇ϕiπϕi(ai|Hi, bi)
+πϕi(ai|Hi, bi)
+=Es∼ρπ(s),a∼π(·|H,b,θ)[(1 −θi)∇ϕi ln πϕi(ai|Hi, bi) · Qi(s, a, bi)].
+21
+
+Published as a conference paper at ICLR 2024
+The proof of π ˆϕi(ˆai|oi, θ) basically follows the same method.
+∇ˆϕiV i(s, bi) =∇ˆϕi
+"X
+a∈A
+πϕ, ˆϕ(a|H, b, θ)Qi(s, a, bi)
+#
+=∇ˆϕi
+"X
+a∈A
+
+(1 −θ) · πϕ(a|H, b) + θ · ˆπ ˆϕ(ˆa|H, θ)
+
+Qi(s, a, bi)
+#
+=
+X
+a∈A
+h
+θi · ∇ˆϕi ˆπ ˆϕi(ˆai|Hi, θ) · Qi(s, a, bi) + πϕ, ˆϕ(ˆa|H, b, θ)∇ˆϕiQi(s, a, bi)
+i
+=
+X
+a∈A
+"
+θi · ∇ˆϕi ˆπ ˆϕi(ˆai|Hi, θ) · Qi(s, a, bi) + πϕ, ˆϕ(ˆa|H, b, θ)∇ˆϕi
+h
+R(s, a)
++ γ
+X
+s′∈S
+X
+a′∈A
+P(s′|s, a)
+X
+θ∈Θ
+p(θ|H)πϕ, ˆϕ(a′|H′, b′, θ)Qi(s′, ˆa′, b′i)
+i
+,
+=
+X
+a∈A
+"
+θi · ∇ˆϕi ˆπ ˆϕi(ˆai|Hi, θ) · Qi(s, a, bi) + πϕ, ˆϕ(a|H, b, θ)
+h
+γ · θi · ∇ˆϕi
+ˆπ ˆϕi(ˆa′i|H′i, θ) + γ
+X
+s′∈S
+X
+a′∈A
+P(s′|s, a)
+X
+θ∈Θ
+p(θ|H)πϕ, ˆϕ(ˆa′|H′, b′, θ)∇ϕiQi(s′, a′, b′i)
+i
+,
+=
+X
+s′∈S
+∞
+X
+t=0
+Pr(s →s′, t, π)
+X
+a∈A
+θi · ∇ˆϕi ˆπ ˆϕi(ˆai|Hi, θ) · Qi(s, a, bi).
+Considering ∇ϕiJi(ϕi) and use the log-derivative trick same as above, we get:
+∇ˆϕiJi(ˆϕi) ∝
+X
+s∈S
+ρπ(s)
+X
+a∈A
+θi · ∇ˆϕi ˆπ ˆϕi(ˆai|Hi, θ) · Qi(s, a, bi)
+=
+X
+s∈S
+ρπ(s)
+X
+a∈A
+θiˆπ ˆϕ(ˆai|Hi, θ) · Qi(s, ˆa, bi)
+∇ˆϕi ˆπ ˆϕi(ˆai|Hi, θ)
+ˆπ ˆϕi(ˆai|Hi, θ)
+=Es∼ρπ(s),a∼π(·|H,b,θ)[θi∇ˆϕi ln ˆπ ˆϕi(ˆai|Hi, θ) · Qi(s, a, bi)].
+This completes the proof.
+A.6
+CONVERGENCE PROOF OF THEOREM 3.1
+We proof this via stochastic approximation theory of Borkar (Borkar, 1997; Borkar & Meyn, 2000;
+Borkar, 2009), where the robust agent is quasi-static and the adversary is essentially equilibrated
+(Borkar & Meyn, 2000). One notable difference is, since the type in our work was sampled from
+prior distribution θ ∼p(θ), we take the expectation with respect to p(θ) to follow the notation of
+stochastic approximation theory.
+Proposition A.1 (Convergence). Theorem 3.1 in main paper converge to robust Bayesian Markov
+Perfect equilibrium a.s. if the following assumption holds.
+Assumption A.1. Given step n, learning rate of π and ˆπ as α(n) and β(n) with α(n), β(n) ∈
+(0, 1), denote the probability of having an adversary as pθi = p(θi = 1), such that ∀i ∈N,
+P
+t α(n)(1−pθi) = P
+n β(n)pθi = ∞, P
+t(α(n)(1−pθi))2 +(β(n)pθi)2 < ∞, α(n)(1−pθi)
+β(n)pθi)
+→0.
+Note that the assumption slightly differs from standard stochastic approximation, since adversaries
+and robust agents are not uniformly explored.
+Assumption A.2. ∀i ∈N, θ ∈Θ, Qi(s, a, θ) is Lipshitz continuous. As a corollary, Qi(s, a, bi) =
+Ep(θ|Hi)[Qi(s, a, θ)] is Lipshitz continuous.
+Assumption A.3. Let ν(s, a, θ) denote the number of visit to state s and action a under θi.
+∀s, a, θ, ν(s, a, θ) →∞.
+22
+
+Published as a conference paper at ICLR 2024
+Assumption A.4. The error in stochastic approximation (i.e., inaccuracy in critic value, environment
+noise, beliefetc.) constitutes martingale difference sequences with respect to the increasing σ-fields.
+Assumption A.5. ∀θ ∈Θ, a global asymptotically stable ex interim equilibrium (πEI
+∗, ˆπEI
+∗) exists.
+Assumption A.6. ∀θ ∈Θ, supt(||πEI
+n || + ||ˆπEI
+n ||) < ∞.
+proof. We can write the update rule of π and ˆπ in their Ordinary Differential Equation (ODE) form:
+Eθi∼p(θi)[πi
+n+1] =Eθi∼p(θi)[πi
+n] + α(ν(s, a))(1 −pθi)Eθi∼p(θi)[∇log πi
+n(R(s, a)
++
+X
+s′∈S
+P(s′|s, a)
+X
+θ∈Θ
+p(θ|H′i)
+X
+a∈A
+πn(a′|H′, b′, θ)Qi
+n(s′, a′, b′i))],
+Eθi∼p(θi)[ˆπi
+n+1] =Eθi∼p(θi)[ˆπi
+n] + β(ν(s, a))pθiEθi∼p(θi)[∇log ˆπi
+n(R(s, a)
++
+X
+s′∈S
+P(s′|s, a)
+X
+θ∈Θ
+p(θ|H′i)
+X
+ˆa∈A
+πn(a′|H′, b′, θ)Qi
+n(s′, a′, b′i))].
+where we assume Qi
+n(s′, a′, b′i) is the learned critic, updated at a faster timescale than α(n) and
+β(n), following Assumption 1.1-1.5, such that Qi is essentially equilibrated. The error terms are
+embedded in Qi
+n(s′, a′, H′i). Thus, the update rule of πi and ˆπi follows the general update rule of
+stochastic optimization (Borkar, 2009):
+xn+1 =xn + α(n)[h(xn, yn) + M (1)
+n+1],
+yn+1 =yn + α(n)[g(xn, yn) + M (2)
+n+1].
+Thus, by Theorem 4.1 in (Borkar & Meyn, 2000) or Theorem 2 in (Borkar, 2009), πn and ˆπn converge
+to equilibrium.
+B
+ADDITIONAL DETAILS ON ALGORITHM
+We implement our algorithm on top of MAPPO (Yu et al., 2021). MAPPO is an widely used
+multi-agent extension of PPO and consistently achieves strong performance on many benchmark
+environments. Note that our method do not include algorithm-specific structures, which means it can
+easily be applied to other actor-critic based algorithms, such as IPPO (de Witt et al., 2020), HATRPO
+(Kuba et al., 2021), MAT (Wen et al., 2022) etc. easily. However, while technically possible, we
+do not suggest a MADDPG implementation (Lowe et al., 2017) of our algorithm. This is because
+MADDPG provide deterministic output, but pure-strategy robust Markov perfect Perfect Bayesian
+equilibrium is not guaranteed to exist, as we have shown in Appedix. ?? by a counterexample.
+One important thing to notice is that we empirically find using larger learning rate for adversaries
+during training of EIR-MAPPO do not always work well in all environments. For example, the
+learning dynamics of adversary in our toy environment can be unstable even with learning rate 5e −4,
+and get worse if the learning rate further increase, which is much smaller than the convergence rate
+suggested by previous papers (Daskalakis et al., 2020). We empirically find adversaries using slightly
+higher learning rates than robust agents works well, but requires extensive tuning. To tackle this
+problem, we maintain the central assumption of two-timescale updates (i.e., updating the adversary
+faster and the robust agent slower), but instead update the adversary for more rollouts (denoted by
+interval in our algorithm), while update the victim for less rollouts. This do not violate our proof
+in Appendix A.6, since taking expectations to policy update brings the same result.
+We closely follow the implementation details of MAPPO and PPO (Schulman et al., 2017), including
+parameter sharing, generalized advantage estimation (GAE) (Schulman et al., 2015), and other
+tricks in the codebase of MAPPO, available at https://github.com/marlbenchmark/
+on-policy. Note that we use fixed learning rate for both adversary and robust agents. pξ(θ|Hi)
+is a GRU (Chung et al., 2014) with input pξ(bi|oi, hi), where hi is the hidden state that summarize
+observations in previous timesteps and oi is observation of current timestep.
+23
+
+Published as a conference paper at ICLR 2024
+Algorithm 1 ex interim robust c-MARL (EIR-MAPPO).
+Input: Policy network of robust agents πϕ, adversary ˆπ ˆ
+ϕi, value function Vψ, belief network pξ.
+Output: Trained policy network of robust agents πϕ.
+1: for k = 0, 1, 2, ... K do
+2:
+Sample θ ∼p(θ). Initialize τ = [].
+3:
+for t = 0, 1, 2, ... T do
+4:
+∀i ∈N, perform rollout under bi
+t = pξ(θ|Hi
+t), at ∼πϕ(·|Ht, bt), ˆat ∼ˆπ ˆ
+ϕi(·|Ht, θ) and
+st+1 ∼P(st+1|st, at, θ, ˆπ), receive Hi
+t+1 and rt.
+5:
+τ ←τ ∪(bt, at, ˆat, st+1, Ht+1, rt, Ht, θ).
+6:
+end for
+7:
+for i = 0, 1, 2, ... N do
+8:
+if k % interval == 0 then
+9:
+Using τ, calculate Ai
+ψ(s, a, bi) by GAE; calculate bi by pξ.
+10:
+ϕ ←ϕi + αϕ(1 −θi)∇log πϕ(ai|Hi, bi)Ai
+ψ(s, a, bi).
+// Shared parameters
+11:
+ˆϕ ←ϕi −α ˆϕθi∇log ˆπ ˆϕ(ai|Hi, θ)Ai
+ψ(s, a, bi).
+12:
+ψ ←ψ + αψ∇ψ(r −γQi
+ψ(s′, a′, b′i) + Qi
+ψ(s, a, bi))2
+13:
+ξ ←ξ −αξ∇ξ(θ log
+ pξ(θ|Hi)
+
++ (1 −θ) log(1 −pξ(θ|Hi))
+14:
+else
+15:
+ˆϕ ←ϕi −α ˆϕθi∇log ˆπ ˆϕ(ai|Hi, θ)Ai
+ψ(s, a, bi). // Update adversaries for
+more rollouts, with others fixed.
+Empirically stabilize
+training.
+16:
+end if
+17:
+end for
+18: end for
+C
+ADDITIONAL DETAILS ON EXPERIMENTS
+C.1
+ENVIRONMENT DETAILS
+(a) Toy
+(b) LBF
+(c) SMAC
+Figure 7: Environments used in our experiments. The toy game is proposed by (Han et al., 2022).
+We use map 3m in SMAC (Samvelyan et al., 2019) and map 12x12-4p-4f in LBF (Papoudakis et al.,
+2020).
+In this section, we introduce more details on environment. Again, we add the figure of environments
+in Fig. 7. Next, we introduce the tasks, actions and reward of each environments as follows.
+Toy environment.
+The toy environment was first proposed by (Han et al., 2022) to study the effect
+of state-based attacks on c-MARL. In this game, two agents play simultaneously for 100 iterations to
+achieve maximum coordination. Specifically, in state s1, two agents seeks same actions (XNOR gate),
+while state s2 seeks two agents seeks different actions (XOR gate). During attack, the adversary can
+take over each agent, and perform actions to maximally attack another agent. The attack requires the
+robust agent to simultaneously identify other agents as adversary or allies, while taking cooperative
+actions if other agent is an ally, and take randomized action if other agent is an adversary.
+Level-Based Foraging environment.
+Level-Based Foraging environment (Papoudakis et al., 2020)
+aims at a set of agents to cooperatively achieve maximum reward in food collection process. Each
+24
+
+Published as a conference paper at ICLR 2024
+agents are assigned different “levels”, while the food can only be collected via agents with level
+higher than the food. Note that we use the cooperative setting in LBF, which majority agents (except
+the adversary) have to collaborate jointly to achieve the goal. While there do not exist a commonly
+used testbed in LBF, we use 12x12-4p-4f in our experiment.
+We also need to notice that, in LBF environment, an adversary is capable of physically interfere with
+other agents, such as blocking the way of others or intentionally colliding with other agents, resulting
+in a deadlock ever since. While Gleave et al. (2019) cited an important aspect of adversarial policy as
+“not to physically interfere with others”, we turn the collision in LBF off to represent this.
+StarCraft Multi-Agent Challenge environment.
+StarCraft Multi-Agent Challenge environment
+(Samvelyan et al., 2019) is the most commly used testbed for c-MARL, which agents control a team
+of red agents and seeks to win a team of blue agents with built-in AIs. We adapt the map 3m proposed
+in SMAC testbed to 4m vs 3m, with one agent as adversary. Thus, the map can still be viewed as 3m,
+albeit with one adversary agents trying to fool its teammates. Note that the adversary cannot attack
+its allies by design of SMAC environment.
+C.2
+IMPLEMENTATION DETAILS
+The implementation of MAPPO, RMAAC, EAR-MAPPO and EIR-MAPPO are based on the orig-
+inal codebase of MAPPO (https://github.com/marlbenchmark/on-policy). The
+implementation of MADDPG and M3DDPG resembles the code of FACMAC (Peng et al., 2021)
+(https://github.com/oxwhirl/facmac) and Heterogeneous-Agent Reinforcement Learn-
+ing (HARL) codebase (https://github.com/PKU-MARL/HARL). Our code are available in
+supplementary files, and will be open sourced after this paper is accepted.
+For all environments, we set p(θ = 0N) = 0.5 and p(θ = 1i) = 0.5/N, where 1i denotes the
+one-hot vector with θi = 1 and others 0. This probability of selecting p(θ) remains fixed throughout
+training process. During training, we store the model of robust agents with improved robustness
+without decreasing cooperation reward, evaluated on the adversary during training. While testing, we
+held all parameters in robust agents fixed, including policy and belief network. Then, a black-box
+adversary was trained following the approach of adversarial policy. The adversary also follows a
+CTDE approach, assuming assess to state, reward and local observation during training, and use local
+observation only in testing. For fair comparison, we attack all baselines by PPO (Schulman et al.,
+2017).
+As for M3DDPG, note that the original version of M3DDPG (Li et al., 2019) are designed for
+continuous control only, where actions are continuous and can be perturbed by a small value, while
+in discrete control, one will have to completely change the action, or not changing the action at all.
+To solve that, we add the noise perturbation to the action probability of MADDPG and send it to
+Q function instead. We also find using large ϵ for M3DDPG will make the policy impossible to
+converge in fully cooperative settings: since M3DDPG add perturbations directly to each agents,
+resulting in an overly challenging setting. As such, we select the largest ϵ which enables maximum
+cooperation result in each setting.
+As for RMAAC, the perturbation in training is set to ϵ = 0.5 following their original paper, except
+for ϵ = 0.05 in toy environment since otherwise the policy will not converge in normal training.
+Next, we present all hyperparameters of each environment in the table below. These hyparameters
+follows the default in previous papers, including MAPPO (Yu et al., 2021), HARL (Zhong et al.,
+2023) and FACMAC (Peng et al., 2021).
+25
+
+Published as a conference paper at ICLR 2024
+Table 1: Hyperparameters for MAPPO, RMAAC, EAR-MAPPO, EIR-MAPPO in toy environment.
+Hyperparameter
+Value
+Hyperparameter
+Value
+Hyperparameter
+Value
+rollouts
+10
+mini-batch num
+1
+PPO epoch
+5
+gamma
+0.99
+max grad norm
+10
+PPO clip
+0.05
+gain
+0.01
+max episode len
+200
+entropy coef
+0.01
+actor network
+MLP
+actor lr
+5e-5
+eval episode
+32
+hidden dim
+128
+critic lr
+5e-5
+optimizer
+Adam
+belief network
+GRU
+adversary lr
+5e-5
+Huber loss
+True
+use PopArt
+True
+belief lr
+5e-5
+Huber delta
+10
+adversary interval
+10
+GAE lambda
+0.95
+RMAAC ϵ
+0.05
+Table 2: Hyperparameters for MADDPG and M3DDPG in toy environment.
+Hyperparameter
+Value
+Hyperparameter
+Value
+Hyperparameter
+Value
+rollouts
+10
+mini-batch num
+1
+gamma
+0.99
+actor network
+MLP
+actor lr
+5e-5
+eval episode
+32
+hidden dim
+256
+critic lr
+5e-5
+optimizer
+Adam
+buffer size
+1000000
+batch size
+1000
+epsilon
+0.1
+Table 3: Hyperparameters for the PPO adversary in toy environment.
+Hyperparameter
+Value
+Hyperparameter
+Value
+Hyperparameter
+Value
+rollouts
+10
+mini-batch num
+1
+PPO epoch
+5
+gamma
+0.99
+max grad norm
+10
+PPO clip
+0.05
+gain
+0.01
+max episode len
+200
+entropy coef
+0.01
+actor network
+MLP
+adversary lr
+5e-5
+eval episode
+32
+hidden dim
+128
+critic lr
+5e-5
+optimizer
+Adam
+use PopArt
+True
+Huber loss
+True
+Huber delta
+10
+GAE lambda
+0.95
+Table 4: Hyperparameters for MAPPO, RMAAC, EAR-MAPPO, EIR-MAPPO in SMAC environ-
+ment.
+Hyperparameter
+Value
+Hyperparameter
+Value
+Hyperparameter
+Value
+rollouts
+20
+mini-batch num
+1
+PPO epoch
+5
+gamma
+0.95
+max grad norm
+10
+PPO clip
+0.05
+gain
+0.01
+max episode len
+200
+entropy coef
+0.01
+actor network
+MLP
+actor lr
+5e-4
+eval episode
+32
+hidden dim
+128
+critic lr
+5e-4
+optimizer
+Adam
+belief network
+GRU
+adversary lr
+5e-4
+Huber loss
+True
+use PopArt
+True
+belief lr
+5e-4
+Huber delta
+10
+adversary interval
+5
+GAE lambda
+0.95
+RMAAC ϵ
+0.05
+Table 5: Hyperparameters for MADDPG and M3DDPG in SMAC environment.
+Hyperparameter
+Value
+Hyperparameter
+Value
+Hyperparameter
+Value
+rollouts
+20
+mini-batch num
+1
+gamma
+0.99
+actor network
+MLP
+actor lr
+5e-4
+eval episode
+32
+hidden dim
+256
+critic lr
+5e-4
+optimizer
+Adam
+buffer size
+1000000
+batch size
+1000
+epsilon
+0.01
+26
+
+Published as a conference paper at ICLR 2024
+Table 6: Hyperparameters for the PPO adversary in SMAC environment.
+Hyperparameter
+Value
+Hyperparameter
+Value
+Hyperparameter
+Value
+rollouts
+20
+mini-batch num
+1
+PPO epoch
+5
+gamma
+0.99
+max grad norm
+10
+PPO clip
+0.05
+gain
+0.01
+max episode len
+200
+entropy coef
+0.01
+actor network
+MLP
+adversary lr
+5e-4
+eval episode
+32
+hidden dim
+128
+critic lr
+5e-4
+optimizer
+Adam
+use PopArt
+True
+Huber loss
+True
+Huber delta
+10
+GAE lambda
+0.95
+Table 7: Hyperparameters for MAPPO, RMAAC, EAR-MAPPO, EIR-MAPPO in LBF environment.
+Hyperparameter
+Value
+Hyperparameter
+Value
+Hyperparameter
+Value
+rollouts
+20
+mini-batch num
+1
+PPO epoch
+5
+gamma
+0.99
+max grad norm
+10
+PPO clip
+0.05
+gain
+0.01
+max episode len
+200
+entropy coef
+0.01
+actor network
+MLP
+actor lr
+5e-4
+eval episode
+32
+hidden dim
+128
+critic lr
+5e-4
+optimizer
+Adam
+belief network
+GRU
+adversary lr
+5e-4
+Huber loss
+True
+use PopArt
+True
+belief lr
+5e-4
+Huber delta
+10
+adversary interval
+5
+GAE lambda
+0.95
+RMAAC ϵ
+0.05
+Table 8: Hyperparameters for MADDPG and M3DDPG in LBF environment.
+Hyperparameter
+Value
+Hyperparameter
+Value
+Hyperparameter
+Value
+rollouts
+20
+mini-batch num
+1
+gamma
+0.99
+actor network
+MLP
+actor lr
+5e-5
+eval episode
+32
+hidden dim
+256
+critic lr
+5e-5
+optimizer
+Adam
+buffer size
+1000000
+batch size
+1000
+epsilon
+0.1
+Table 9: Hyperparameters for the PPO adversary in LBF environment.
+Hyperparameter
+Value
+Hyperparameter
+Value
+Hyperparameter
+Value
+rollouts
+20
+mini-batch num
+1
+PPO epoch
+5
+gamma
+0.99
+max grad norm
+10
+PPO clip
+0.05
+gain
+0.01
+max episode len
+200
+entropy coef
+0.01
+actor network
+MLP
+adversary lr
+5e-4
+eval episode
+32
+hidden dim
+128
+critic lr
+5e-4
+optimizer
+Adam
+use PopArt
+True
+Huber loss
+True
+Huber delta
+10
+GAE lambda
+0.95
+27

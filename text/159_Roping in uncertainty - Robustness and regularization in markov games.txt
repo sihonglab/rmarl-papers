@@ -1,0 +1,3811 @@
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+Jeremy McMahan 1 Giovanni Artiglio 1 Qiaomin Xie 1
+Abstract
+We study robust Markov games (RMG) with s-
+rectangular uncertainty. We show a general equiv-
+alence between computing a robust Nash equilib-
+rium (RNE) of a s-rectangular RMG and comput-
+ing a Nash equilibrium (NE) of an appropriately
+constructed regularized MG. The equivalence re-
+sult yields a planning algorithm for solving s-
+rectangular RMGs, as well as provable robustness
+guarantees for policies computed using regular-
+ized methods. However, we show that even for
+just reward-uncertain two-player zero-sum matrix
+games, computing an RNE is PPAD-hard. Conse-
+quently, we derive a special uncertainty structure
+called efficient player-decomposability and show
+that RNE for two-player zero-sum RMG in this
+class can be provably solved in polynomial time.
+This class includes commonly used uncertainty
+sets such as L1 and L∞ball uncertainty sets.
+1. Introduction
+Offline reinforcement learning (RL) and RL in simulated en-
+vironments are effective ways to deal with situations where
+traditional online RL would be too risky or costly. However,
+these approaches suffer from the sim-to-real gap in which
+slight differences in the models can lead to policies with
+poor performance in the true environment. To combat the
+sim-to-real gap, robust policies were studied using the frame-
+work of robust Markov decision processes (RMDP) (Satia &
+Lave, 1973) and later robust Markov Games (RMG) (Zhang
+et al., 2020b). Robust approaches have been effective in
+the real world, especially for navigating UAVs in mission-
+critical multi-agent environments (Chen et al., 2023) and
+in queuing systems (Kardes¸ et al., 2011). In practice, reg-
+ularization has been a popular approach to improving the
+robustness and convergence of multi-agent RL algorithms
+with empirical success.
+1University of Wisconsin-Madison, USA. Correspondence to:
+Jeremy McMahan <jmcmahan@cs.wisc.edu>.
+Proceedings of the 41 st International Conference on Machine
+Learning, Vienna, Austria. PMLR 235, 2024. Copyright 2024 by
+the author(s).
+A robust Markov game (S, {Ai}i∈[N], P ⋆, r⋆, H, U) is de-
+fined by a standard Markov game (MG) G⋆:= (P ⋆, r⋆),
+called the nominal game, and an uncertainty set U :=
+P × Ur that describes all possible models that could be
+realized. Here, P is the set of possible transition kernels,
+and Ur is the set of possible reward functions. A common
+solution concept for RMGs is the Markov-perfect robust
+Nash Equilibrium (MPRNE). A policy π is an MPRNE
+if, for each stage game (h, s), π is a mutual best response
+assuming the worst-case model for each player.
+Unlike classical RMDPs, solving RMGs is already difficult
+when only the reward function has uncertainty. Specifically,
+a single-stage game with reward uncertainty can capture
+arbitrary general-sum games and so is PPAD-hard to solve.
+Surprisingly, unlike traditional game theory, even the two-
+player zero-sum version of reward-uncertain RMGs with
+|S| = H = 1 and the minimal (s, a)-rectangularity assump-
+tion is PPAD-hard to solve. Similarly, two-player zero-sum
+RMGs with only transition uncertainty and H = 2 periods
+are also PPAD-hard to solve. Thus, solving even simple
+RMGs is already a computational challenge.
+Although many advances have been made for RMDPs,
+RMGs are much less understood. The seminal paper (Zhang
+et al., 2020b) devised algorithms to learn a robust NE (RNE)
+for RMGs but only proved asymptotic convergence of their
+methods. On the other hand, Blanchet et al. (2023) proposed
+provably sample-efficient algorithms to learn an RNE for the
+special case of (s, a)-rectangular RMGs, but their methods
+require an efficient planning oracle that does not currently
+exist in the literature. Creating such a planning oracle is
+one of the goals of this work. Lastly, adding a regularizer to
+the value function of an MG has shown promise to improve
+robustness empirically, but formal guarantees have not been
+shown in the multi-agent setting (Zhang et al., 2020a).
+Our Contributions.
+We study the computational com-
+plexity of computing MPRNE for RMGs with s-rectangular
+uncertainty. We show that computing an MPRNE of an
+RMG with s-rectangular uncertainty can be done by com-
+puting a Markov-perfect NE (MPNE) of an appropriately
+designed regularized MG. In particular, the regularizer cor-
+responds to the support function of the uncertainty set for
+the stage game. Furthermore, we show that for most well-
+known regularization functions, such as entropy and ℓp norm
+1
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+regularizers, the set of MPNE for a regularized game corre-
+sponds exactly to the set of MPRNE for an RMG with an
+interpretable uncertainty. This fact implies that for common
+classes of regularizers and uncertainty sets, the problems of
+solving RMGs and regularized MGs are polynomial-time
+equivalent. Thus, any efficient off-the-shelf algorithm for
+regularized MGs can be used to efficiently compute robust
+policies, confirming the empirical phenomenon mathemati-
+cally.
+We also show that many useful classes of RMGs with s-
+rectangular reward uncertainty can be solved in polynomial
+time. As in classical game theory, our first step is to ex-
+tend the notion of zero-sum games to the robust setting.
+Although the zero-sum property does not guarantee effi-
+ciency, our proof of computational hardness reveals a key
+structural bottleneck to efficiency: general-sum behavior
+is simulated whenever the support function output of the
+reward uncertainty set involves a product of each player’s
+policy. In contrast, if the support function decomposes into
+separate parts for both players, σ(π) = Ω1(π1) + Ω2(π2),
+we show the equivalent regularized MG is also zero-sum.
+Thus, our planning algorithm runs in polynomial time so
+long as the uncertainty satisfies what we call the efficiently
+player-decomposable assumption. This assumption permits
+many standard sets such as L1 and L∞-ball uncertainty sets.
+1.1. Related Work
+Robust MDPs.
+Robust MDPs have been studied under
+many different uncertainty structures. The original structure,
+called (s, a)-rectangularity, was first introduced in (Satia &
+Lave, 1973; Nilim & El Ghaoui, 2003). Many attempts to
+generalize (s, a)-rectangularity have led to a rich family of
+rectangularity notions including s-rectangularity (Epstein &
+Schneider, 2003; Wiesemann et al., 2013), r-rectangularity
+(Goh et al., 2018; Goyal & Grand-Cl´ement, 2023), k-
+rectangularity (Mannor et al., 2016), and d-rectangularity
+(Ma et al., 2023b). Many standard MDP techniques have
+also been extended to the robust setting including dynamic
+programming (Iyengar, 2005; Ho et al., 2018), policy itera-
+tion (Kaufman & Schaefer, 2013; Ho et al., 2021), policy
+gradient (Kumar et al., 2023; Wang et al., 2023), and func-
+tion approximation (Lim & Autef, 2019; Tamar et al., 2014).
+Regularized MDP techniques also successfully solve robust
+MDPs due to a general equivalence for many uncertainty
+sets (Derman et al., 2021; 2023; Kumar et al., 2022) includ-
+ing both (s, a) and s-rectangularity.
+In the learning setting, standard RL approaches have
+been successfully “robustified” including model-based ap-
+proaches (Wang & Zou, 2021), Q-learning (Liu et al., 2022),
+policy gradient (Wang & Zou, 2022; Badrinath & Kalathil,
+2021), and kernel methods (Lim & Autef, 2019). Strong the-
+oretical results have also pinned down the sample complex-
+ity of many methods (Panaganti & Kalathil, 2022; Shi & Chi,
+2023; Yang et al., 2022). In fact, Pinto et al. (2017) showed
+that robust learning is equivalent to learning in adversarial
+games and this is further exploited using game-theoretical
+techniques (Hayashi et al., 2005).
+Robust MGs.
+Robust normal form games were first in-
+troduced by Aghassi & Bertsimas (2006). Perchet (2020)
+showed that robust games can be reduced to general sum
+games, but computationally efficient methods have yet to be
+established. The notion of robustness has been extended to
+Markov games (Zhang et al., 2020b; Kardes¸ et al., 2011). A
+sample efficient approach for learning robust policies under
+(s, a)-rectangularity is derived by Blanchet et al. (2023), but
+their method relies on a planning oracle that has yet to be
+derived in the literature. Our work provides the efficient
+planning oracle needed to make those methods tractable
+and extends beyond just (s, a)-rectangularity. In contrast,
+Ma et al. (2023a) addresses the problem of learning a ro-
+bust CCE with low sample complexity whereas we focus on
+computing the stronger solution concept of robust NE.
+Regularization in MDP and MGs.
+Various regulariza-
+tion methods have been extensively used in MDPs (Kumar
+et al., 2023; Geist et al., 2019) and games (Grill et al., 2019;
+Cen et al., 2021; Zhang et al., 2023; Mertikopoulos & Sand-
+holm, 2016), with diverse motivations, such as improved
+exploration (Lee et al., 2018), stability (Schulman et al.,
+2017) and convergence (Cen et al., 2021; Zhan et al., 2023).
+Popular regularizers include a variety of entropy functions
+and KL divergence. Recent works relate regularization to
+robustness in MDP/RL (Brekelmans et al., 2022; Eysenbach
+& Levine, 2021; Husain et al., 2021). In particular, Derman
+et al. (2023) provides an equivalence between regulariza-
+tion and robustness in MDPs. However, the robustness-
+regularization duality is much less understood in games.
+Our work fills this gap and opens the path to efficient plan-
+ning and learning algorithms for achieving robustness in
+games via regularization.
+Notation.
+For an integer N, we denote [N]
+:=
+{1, 2, . . . , N}. We define the extended reals by R = R ∪
+{−∞, ∞}. For a given finite set Z, we denote by ∆(Z) the
+probability simplex over Z, and denote by RZ the class of
+real-valued functions defined over Z. For a set M ⊂RZ,
+the characteristic function δM : RZ →R is defined as
+δM(x) = 0 if x ∈M and +∞otherwise. The Legendre-
+Fenchel transform of δM is the so-called support function
+σM : RZ →R, with σM(y) := supx∈M⟨x, y⟩. For a com-
+pact set W ⊂Rn, we denote the interior of W by int(W) ⊂
+W, and the boundary of W by Bd(W) = W \ int(W).
+With slight overload of notation, ⟨·, ·⟩denotes the standard
+inner product when the inputs are vectors, and denotes the
+2
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+Frobenius (also known as component-wise) inner product
+when the inputs are matrices of the same dimensions. We
+will overload the functions such as log(·) and exp(·) to take
+vector inputs, meaning the function is applied in an entry-
+wise manner. That is, for a vector x = (x1, . . . , xn)⊤∈
+Rn, the notation exp(x) := (exp(x1), . . . , exp(xn))⊤∈
+Rn. For a matrix B ∈Rm×n, we denote by ∥B∥p→q =
+sup
+
+∥Bx∥q
+: x ∈Rn with ∥x∥p = 1
+	
+the opera-
+tor norm on the space Rm×n, where ∥·∥p denotes the
+vector ℓp-norm.
+The dual to a norm ∥·∥is defined as
+∥v∥∗= sup∥u∥≤1⟨u, v⟩. For any number p ∈[0, ∞],
+we use p∗∈[0, ∞] to denote its conjugate satisfying
+1
+p + 1
+p∗= 1. Therefore, the dual norm of ∥·∥p is ∥·∥p∗.
+2. Preliminaries
+In this work, we consider H-horizon Markov games (MG)
+of N players, with a finite state space S, and a finite ac-
+tion space Ai for each player i ∈[N].
+We let A :=
+A1 × A2 · · · × AN denote the joint action space and let
+a = (a1, . . . , aN) ∈A denote a joint action of N players.
+Without loss of generality, we assume that the initial state s1
+is fixed 1. For such a MG, we use G = (P, r) to represent
+the game model, where P = {Ph : S × A →∆(S)}h∈[H]
+is the transition kernel, and r = {ri,h}i∈[N],h∈[H] is the de-
+terministic reward function, with ri,h(s, a) being the reward
+for player i ∈[N] given that the joint action a is applied at
+state s at step h.
+A Markovian policy for player i is denoted by πi = {πi,h :
+S →∆(Ai)}h∈[H], with πi,h(·|s) being the the strategy of
+player i at state s at step h. We use π := (π1, . . . , πN) to
+represent a product joint policy of the N players. For each
+player i ∈[N], π−i denotes the joint policy of all players
+except player i. Let Πi be the set of all Markov policies
+for player i, and Π := Π1 × Π2 × · · · × ΠN be the set
+of all product Markov joint policies of the N players, and
+Π−i = Π1 × · · · × Πi−1 × Πi+1 · · · × ΠN. We overload
+the notation ∆(A) := ∆(A1)×· · · ∆(AN) to represent the
+space of all product joint policy of the N players at every
+single state.
+2.1. Robust Markov Game
+Robust solution concept.
+Recall that a robust Markov
+game (RMG) (S, {Ai}i∈[N], P ⋆, r⋆, H, U) is defined by a
+standard MG G⋆:= (P ⋆, r⋆), called the nominal game, and
+an uncertainty set U := P × Ur that describes all possible
+models. Here, P is the set of possible transition kernels, and
+Ur is the set of possible reward functions. Given a product
+joint policy π, for each player i ∈[N] we define the robust
+1For the case that the initial state is stochastic, one can add
+s0 as the initial state and set the initial state distribution as the
+transition kernel from s0 to s1.
+value functions of π with respect to the uncertainty set U as
+follows: ∀s ∈S, µ ∈∆(A), h ∈[H],
+V π
+i,h(s) := inf
+G∈U V
+π
+i,h(s, G),
+(1)
+Qπ
+i,h(s, µ) := inf
+G∈U Ea∼µ
+h
+Q
+π
+i,h(s, a, G)
+i
+,
+(2)
+where V
+π
+i,h(·, G) and Q
+π
+i,h(·, ·, G) are the standard value
+functions for the MG G = (P, r) (cf. equations (10)-(11)
+in Appendix B). Similar to the Bellman equation for stan-
+dard MG, we have a robust Bellman equation, as stated in
+Proposition B.1.
+We let V †,π−i
+i,h
+(s) denote the optimal value for player i start-
+ing from state s at step h, given a product Markov joint
+policy π−i of all players except player i, i.e.,
+V †,π−i
+i,h
+(s) = sup
+π′
+i∈Πi
+V π′
+i×π−i
+i,h
+(s), ∀s ∈S, h ∈[H].
+(3)
+A policy πi that attains the optimal value V †,π−i
+i,h
+(s), for
+all s ∈S, h ∈[H] is a robust best response policy to a
+given π−i. It is well-known that when π−i is Markovian,
+the best response amongst all history-dependent policies is
+Markovian, as it reduces to solving a single-agent robust
+MDP problem (Iyengar, 2005). Our work will focus on
+Markov policies πi as above. Compared with the best re-
+sponse policy in standard MGs, the robust best response
+policy maximizes the robust value function of each player i
+given other players’ policy π−i, leading to the notion of ro-
+bust Nash equilibrium (Zhang et al., 2020b; Blanchet et al.,
+2023).
+Definition 2.1. A joint product policy π = {πh}h∈[H] is a
+Markov perfect robust Nash equilibrium if it holds that
+V π
+i,h(s) = V †,π−i
+i,h
+(s),
+∀i ∈[N], h ∈[H], s ∈S.
+Rectangularity. It is common to choose the uncertainty set
+centered around the nominal model G⋆:= (P ⋆, r⋆). In this
+work, we consider reward uncertainty sets of the form Ur =
+r⋆+ R. We allow the reward uncertainty sets to potentially
+depend on the players’ policy π ∈Π, denoted by Ur(π) =
+r⋆+ R(π). When the context is clear, we will drop the
+notation (π) for the ease of exposition. As the robust MDP
+literature (Wiesemann et al., 2013; Derman et al., 2023;
+Nilim & El Ghaoui, 2003), we consider uncertainty sets that
+satisfy certain rectangular condition.
+Definition 2.2. [s-rectangular Uncertainty Set] The uncer-
+tainty sets U := P × Ur with Ur = r⋆+ R satisfy
+P = ×(s,h)∈S×[H]Ps,h,
+Ur = ×(i,s,h)∈[N]×S×[H]Ur
+i,s,h,
+where Ps,h ⊂RS×A and Ur
+i,s,h = r⋆
+i,h(s, ·)+Ri,s,h ⊂RA
+are closed, convex sets.
+3
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+Definition 2.3. [(s, a)-Rectangular Uncertainty Set] A spe-
+cial case of s-rectangularity is a (s, a)-rectangular uncer-
+tainty set:
+P = ×(s,a,h)∈S×A×[H]Ps,a,h,
+Ur = ×(i,s,a,h)∈[N]×S×A×[H]Ur
+i,s,a,h,
+where Ps,a,h
+⊂
+∆(S) and Ur
+i,s,a,h
+=
+r⋆
+i,h(s, a) +
+Ri,s,a,h ⊂R are closed, convex sets.
+We remark that the state-action value function defined in (2)
+is different from the classical setting. The new definition
+here allows us to provide a unified framework for both s-
+rectangular and (s, a)-rectangular uncertainty sets.
+Robust suboptimality gap.
+Given a joint policy π, for
+each player i ∈[N], we define the robust suboptimality gap
+at step h as
+RNEGapi,h(π, s) := V †,π−i
+i,h
+(s) −V π
+i,h(s).
+(4)
+That is, the RNE gap measures the suboptimality gap of
+player i’s policy πi against its robust best response pol-
+icy given all other players’ policy π−i. It is clear that
+RNEGapi,h(π, s) ≥0 for all product joint π and all
+s ∈S and h ∈[H]. For any MPRNE policy π∗, we
+have RNEGapi,h(π∗, s) = 0.
+Existence of RNE.
+Recall that the reward uncertainty
+sets can depend on the players’ policy π ∈Π, denoted
+by Ur(π). We consider the following assumption on the
+reward uncertainty sets, which ensures the existence of ro-
+bust Nash equilibrium. We first define the continuity of
+a point-to-set function. Consider a function f that maps
+each z ∈Rd1 to a set in Rd2. The function f is con-
+tinuous at z ∈Rd1 if it satisfies the following: for each
+ϵ > 0, there exists δ(ϵ) > 0 such that for all z′ ∈Rd1
+with ∥z −z′∥∞< δ(ϵ), it holds that D
+ f(z), f(z′)
+
+:=
+max
+
+supy∈f(z) infy′∈f(z′) ∥y −y′∥∞,
+supy′∈f(z′) infy∈f(z) ∥y −y′∥∞
+	
+< ϵ.
+Assumption 2.1.
+Consider s-rectangular uncertainty
+set.
+For each π
+∈
+Π, the reward uncertainty set
+Ur(π) = ×(i,s,h)∈[N]×S×[H]Ur
+i,s,h(π), where Ur
+i,s,h(π) =
+r⋆
+i,h(s, ·) + Ri,s,h(π) ⊂RA satisfies the following for all
+(i, s, h) ∈[N] × S × H:
+1. Bounded game value: There exists a constant Lr
+such that for each r ∈Ur
+i,s,h(π), it holds that Lr ≤
+Ea∼π(·|s) [r(a)] .
+2. Convexity: The support function σRi,s,h(π) : RA →
+(−∞, +∞] of Ri,s,h(π), defined as σRi,s,h(π)(y) :=
+supx∈Ri,s,h(π) ⟨x, y⟩,
+satisfies that σRi,s,h(π)
+ −
+πi,h(s)π⊤
+−i,h(s)
+
+is convex in πi,h(s) and continuous
+at all π ∈Bd(Π).
+3. Continuity: The set Ri,s,h(·) is continuous at all π ∈
+int(Π); and supy∈Ri,s,h(π) ∥y∥∞< ∞for all π ∈
+int(Π).
+We remark that a special reward uncertainty set that is policy-
+independent and bounded satisfies Assumption 2.1 (Aghassi
+& Bertsimas, 2006). Such uncertainty set has been con-
+sidered in discounted Markov games (Kardes¸ et al., 2011;
+Zhang et al., 2020b). In this paper, we consider more gen-
+eral reward uncertainty sets. Importantly, the boundedness
+condition in Assumption 2.1 does not require the uncertainty
+set to be uniformly bounded. This relaxation allows us to
+consider uncertainty sets based on log-barrier functions.
+The following theorem states that a robust Nash equilibrium
+(RNE) always exists. The proof is provided in Section C.
+A similar existence result has been proved for the case
+with only (s, a)-rectangular transition uncertainty (Blanchet
+et al., 2023).
+Theorem 2.1.
+(Existence of RNE). Given a RMG
+(S, {Ai}i∈[N], P ⋆, r⋆, H, U) with s-rectangular uncer-
+tainty set U satisfying Assumption 2.1, the robust Nash
+equilibrium defined in Definition (2.1) always exists. More-
+over, a joint policy π† = {π†
+h}h∈[H] defined as follows is
+an MPRNE:
+π†
+h(· | s) ∈NE
+
+{Qπ†
+i,h(s, ·)}i∈[N]
+
+, ∀s ∈S, h ∈[H],
+where NE(·) denotes the Nash equilibrium of a general-sum,
+normal-form game.
+2.2. Regularized Markov Games
+A regularized Markov game with N players can be
+described by a tuple (S, {Ai}i∈[N], P, r, H, Ω), with
+G = (P, r) being a standard MG model.
+Here Ω:=
+(Ωi,h)i∈[N],h∈[H] is a set of policy regularization functions
+such that for all (i, h) ∈[N] × [H], Ωi,h : S × ∆(A) →R
+is convex in πi,h given a fixed π−i. Given a joint policy
+π ∈Π, the regularized value functions for each player i are
+defined as follows: ∀s ∈S, a ∈A, h ∈[H],
+eV π
+i,h(s, G) = Eπ
+P
+h H
+X
+t=h
+ri,t(st, at) −Ωi,t(st, πt)|sh = s
+i
+,
+eQπ
+i,h(s, a, G) = ri,h(s, a)+
+Eπ
+P
+h
+H
+X
+t=h+1
+ri,t(st, at) −Ωi,t(st, πt)|sh = s, ah = a
+i
+.
+A common solution concept for regularized MG is the
+Markov perfect Nash equilibrium (MPNE).
+Definition 2.4. A joint product policy π = {πh}h∈[H] is
+an MPNE for a regularized MG if it holds that eV π
+i,h(s) =
+supπ′
+i∈Πi eV π′
+i×π−i
+i,h
+(s), ∀i ∈[N], h ∈[H], s ∈S.
+4
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+3. Markov Games with Reward Uncertainty
+In this section, we consider robust Markov games with only
+reward uncertainty. To solve such RMGs, we take inspira-
+tion from the single-player setting. We follow the ideas of
+Derman et al. (2023) to show that solving RMGs can be
+done through solving regularized MGs. In fact, for many
+common regularizers, the reverse is also true, which im-
+plies regularization yields robust solutions. Importantly, the
+equivalence results mean existing efficient, regularized MG
+solvers can be used off-the-shelf to efficiently solve robust
+MGs. Proofs for the results in this section are deferred to
+Appendix D.
+3.1. Matrix Games
+To build intuition for our results, we first study matrix games
+with N players since they can be viewed as a simple Markov
+game with S = H = 1. Already through matrix games,
+we see that reward uncertainty is much more complex to
+handle than in the single-agent setting. Nevertheless, by
+understanding the support functions induced by uncertainty
+sets, we can derive equivalent regularized matrix games.
+Reward Structure.
+We consider s-rectangular reward un-
+certainty set of the form U = r⋆+ R, where r⋆∈U is
+the nominal model, and R = ×i∈[N]Ri with Ri ⊂RA.
+Recall that the uncertainty set R can potentially depend on
+the players’ joint policy π ∈∆(A). We observe that the
+robust value for player i can be simplified to
+V π
+i
+= inf
+r∈U Ea∼π [ri(a)] = inf
+r∈U π⊤
+i riπ−i.
+Here, we view ri as a matrix in RAi×A−i, πi as a column
+vector in RAi and π−i as a column vector in RA−i. By
+Proposition C.2, we can equivalently rewrite the robust value
+function as follows:
+V π
+i
+= π⊤
+i r⋆
+i π−i −σRi(−πiπ⊤
+−i),
+(5)
+where σRi(y) = supx∈Ri⟨x, y⟩denotes the support func-
+tion of Ri.
+Equivalence between Robustness and Regularization.
+If we consider the support function σRi as a regularizer,
+equation (5) shows an equivalence between player i’s ro-
+bust game value V π
+i
+and the value eV π
+i (s, G⋆) in a σRi-
+regularized game. Note that the RNE of the matrix game
+is a product joint policy π† such that π†
+i is the robust best
+response policy to π†
+−i. That is,
+π†
+i ∈arg sup
+πi∈∆(Ai)
+V
+πi×π†
+−i
+i
+= arg sup
+πi∈∆(Ai)
+eV
+πi×π†
+−i
+i
+(s, G⋆),
+which implies an equivalence between solving a robust game
+and solving a regularized game.
+Theorem 3.1. Consider a robust matrix game G with un-
+certainty set U = r⋆+ R satisfying Assumption 2.1, where
+r⋆∈U is the nominal model, and R = ×i∈[N]Ri. Con-
+sider a regularized normal form game G′ with payoff matrix
+r⋆and the regularizer function Ωi : ∆(A) →R for each
+player i ∈[N] defined as Ωi(π) := σRi(−πiπ⊤
+−i). Then,
+π is a RNE of robust game G if and only if π is a NE of
+regularized game G′.
+We provide the proof of Theorem 3.1 in Appendix D.1.
+Corollary 3.2. Robust matrix games can be solved using
+any planning algorithm for regularized games.
+Interpretable Equivalence.
+Thus, we see that we can
+solve a given robust game by solving a particular regular-
+ized game. However, since our reduction maps robust games
+to very specialized regularized games, it is unclear whether
+commonly used regularized methods can be used to solve
+robust games. Fortunately, we can show for many common
+classes of regularizers, solutions to the regularized game cor-
+respond to the solutions of robust games with interpretable
+uncertainty sets.
+Theorem 3.3. Consider a regularized normal form game G′
+with payoff matrix r⋆and the regularizer Ωi : ∆(A) →R
+for each i ∈[N].
+1. If Ωi is ℓp/ℓq-norm regularization, i.e.
+Ωi(π) :=
+αi ∥−πi∥p ∥π−i∥q for each player i ∈[N], then solv-
+ing for the NE of G′ is equivalent to solving for RNE of
+the robust game G with s-rectangular ball uncertainty
+U = r⋆+ ×i∈[N]Ri, where Ri =
+
+Ri ∈RAi×A−i :
+∥Ri∥q∗→p ≤αi
+	
+.
+2. If Ωi is strongly convex and decomposable with kernel ω,
+i.e., Ωi(π) := τi
+P
+ai πi(ai)ωi(πi(ai)) for each player
+i ∈[N] with τi ≥0, then solving for a NE of G′
+is equivalent to solving for a RNE of robust game G
+with (s, a)-rectangular, policy-dependent uncertainty set
+U(π) = r⋆+ ×i∈[N],a∈ARi,a(π), where
+Ri,a(π) =
+
+τiωi(πi(ai)) + gi(π−i(a−i)),
+ωi(πi(ai)) + gi(π−i(a−i))
+
+⊂R,
+(6)
+with functions ωi, ωi : [0, 1] →R and gi, gi : [0, 1] →R
+are continuous.
+See Appendix D.2 for the proof of Theorem 3.3. We remark
+that the s-rectangular ball-constrained uncertainty set satis-
+fies Assumption 2.1. The policy-dependent uncertainty set
+in (6) also satisfies Assumption 2.1 by properly choosing
+the functions ωi, ωi, gi, gi. Theorem 3.3 implies that the
+shape of the reward uncertainty set determines the equiva-
+lent regularizer function. For example, a ball-constrained
+uncertainty set corresponds to norm regularization. Also,
+5
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+the size of the uncertainty set, e.g., the radius parameter αi,
+determines the magnitude of the regularization factor.
+Corollary 3.4. For any regularizer considered in Theo-
+rem 3.3, solutions to the regularized game are provably
+robust.
+Remark. Observe that as long as the functions for regular-
+ization and uncertainty sets in Theorem 3.3 are efficiently
+computable, then given either a regularized game or a ro-
+bust game, the construction of the equivalent game can be
+done in polynomial time. Therefore, Theorem 3.3 implies
+the problem of computing an RNE of a robust game for
+special classes of uncertainty is polynomial-time equiva-
+lent to the problem of computing an NE of a regularized
+game with special classes of regularizers. This means the
+computational complexity of both problems is the same. In
+particular, an efficient algorithm for one problem implies an
+efficient algorithm for the other.
+Examples of regularization.
+A classical example of de-
+composable regularizers is the negative Shannon entropy
+Ωi(π) = P
+ai∈Ai πi(ai) log πi(ai). Entropy regulariza-
+tion is applied extensively in both single-agent MDP and
+multi-agent games (Kumar et al., 2023; Grill et al., 2019;
+Geist et al., 2019; Zhan et al., 2023; Cen et al., 2021;
+Zhang et al., 2023), and has been shown to accelerate
+the convergence of many learning algorithms. Another
+example is KL divergence regularizer (Schulman et al.,
+2017) Ωi(π) = P
+ai∈Ai πi(ai) log πi(ai)
+µi(ai) = dKL(πi, µi),
+where µi ∈∆(Ai) is a given distribution.
+The litera-
+ture has also considered the negative Tsallis entropy reg-
+ularizer (Lee et al., 2018) Ωi(π) =
+1
+2
+ ∥πi∥2
+2 −1
+
+=
+1
+2
+P
+ai∈Ai
+ πi(ai)2 −πi(ai)
+
+. Theorem 3.3 also applies
+to other regularizers, such as the Renyi entropy regulariza-
+tion (Mertikopoulos & Sandholm, 2016); See Section D.3
+for additional discussion.
+3.2. Markov Games
+The intuition for matrix games extends directly to Markov
+games. The main additional ingredient needed for the anal-
+ysis is backward induction. By applying Theorem 3.1 to
+each stage game, we can construct a regularized MG whose
+MPNE are all MPRNE for the RMG.
+We consider Markov games with s-rectangular reward un-
+certainty of the form U = P ⋆×(r⋆+ R) . Similar to matrix
+games, we see that each player i’s robust value function is
+equivalent to the value function of a regularized MG, as
+stated in the following proposition. The proof is provided
+in Appendix D.4. For notational simplicity, we define,
+[PhV ](s, a) := Es′∼Ph(·|s,a) [V (s′)] .
+Proposition 3.5. Suppose the uncertainty is s-rectangular.
+Given any product joint policy π ∈Π, the robust value
+function
+n
+V π
+i,h
+o
+h∈[H] of each player i ∈[N] satisfies:
+V π
+i,h(s) = Ea∼πh(s)
+
+r⋆
+i,h(s, a) + [P ⋆
+hV π
+i,h+1](s, a)
+
+,
+−σRi,s,h
+ −πi,h(s)π⊤
+−i,h(s)
+
+.
+(7)
+Given the proposition, we can similarly construct a regular-
+ized Markov game as in the matrix game case.
+Theorem 3.6. Consider a robust MG G with s-rectangular
+uncertainty set U = P ⋆× (r⋆+ R). Consider a regu-
+larized MG G′ = (S, {Ai}i∈[N], P ⋆, r⋆, H, Ω), where the
+regularizer functions {Ωi,h}h∈[H] for each player i ∈[N]
+are given by Ωi,h(s, µ) := σRi,s,h
+ −µiµ⊤
+−i
+
+, ∀s ∈S, h ∈
+[H], µ ∈∆(A). Then, π is a MPRNE for G if and only if
+π is a MPNE for G′.
+Corollary 3.7. RMGs with s-rectangular reward uncer-
+tainty can be solved using any planning or learning algo-
+rithm for the equivalent regularized Markov games.
+Remark. The same results from Theorem 3.3 extend to the
+full RMG setting by simply using the same shape of uncer-
+tainty set for each stage (s, h), as stated in Theorem D.1
+in Appendix D.6. In particular, our results apply to the
+well-known regularized game, including ℓp/ℓq-norm regu-
+larization and decomposable regularizers such as entropy
+regularization and KL divergence. In the following, we give
+the example of widely employed entropy regularization.
+Example: Entropy Regularization.
+Consider Shannon
+entropy regularized Markov game with
+Ωi,h(s, µ) = τi
+X
+ai∈Ai
+µi(ai) log µi(ai),
+∀µ ∈∆(A),
+where τi > 0 denotes regularization factor. The regularized
+NE is equivalent to the RNE of a robust MG with (s, a)-
+rectangular policy-dependent uncertainty set U(π) = P ⋆×
+(r⋆+ R(π)) , where R(π) = ×i,s,a,hRi,s,a,h(π) with
+Ri,s,a,h(π) =
+
+τi log πi,h(ai|s), ωi,s,h(πi,h(ai|s))
+
+,
+where the function ωi,s,h : [0, 1] →R is continuous and
+non-negative to ensure that r⋆∈Uπ. The reader can find
+additional details of other regularizers in Section D.6.
+4. Efficient Algorithms for Robust Zero-Sum
+MG
+Although the results from Section 3 provide insights that
+allow us to solve RMGs, they do not yield efficient algo-
+rithms in general. Our reduction may result in general-sum
+regularized games which are hard to solve. As we will see
+shortly, even for a two-player zero-sum Markov game with
+reward uncertainty, computing the RNE is PPAD-hard in
+6
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+general. However, we show that when uncertainty sets sat-
+isfy a natural decomposition assumption, then an MPRNE
+of a two-player zero-sum Markov game can be computed
+in polynomial time. Proofs for the results in this section are
+deferred to Appendix E.
+First, we extend the notion of zero-sum Markov games to
+the robust setting.
+Definition 4.1 (Two-Player Zero-Sum RMG). A RMG G
+is a two-player zero-sum RMG (TPZS RMG) with reward
+uncertainty if N = 2 and for each h ∈[H] and s ∈S,
+r⋆
+2,h(s, ·) = −r⋆
+1,h(s, ·).
+While this is a crucial first step, focusing on TPZS RMGs is
+insufficient to guarantee efficient algorithms. Surprisingly,
+even with the most restrictive notion of (s, a)-rectangularity,
+TPZS RMGs are PPAD-hard to solve. Observe this stands in
+sharp contrast to traditional game theory where two-player
+zero-sum games can be efficiently solved using LP methods.
+Theorem 4.1. Even restricted to the class of (s, a)-
+rectangular uncertainty sets, computing an RNE of a TPZS
+RMG is PPAD-hard even for H = S = 1.
+Proof Sketch. We present a poly-time reduction from the
+problem of computing an NE for a general-sum game to the
+problem of computing an RNE for a two-player zero-sum
+robust matrix game with (s, a)-rectangular reward uncer-
+tainty. Since computing an NE of a general-sum game is
+PPAD-hard, it then follows that computing an RNE for the
+aforementioned class of robust matrix games is also PPAD-
+hard. Let (A, B) be an arbitrary general sum matrix game.
+The idea is to construct a two-player zero-sum robust matrix
+game G defined by (r⋆, R1, R2) so that the set of solutions
+to both games is the same. First, we choose matrices r⋆,
+R1 and R2 satisfying r⋆+ R1 = A and r⋆+ R2 = −B.
+Then, we choose R1 and R2 satisfying −σR1(−π1π⊤
+2 ) =
+π⊤
+1 R1π2 and −σR1(−π1π⊤
+2 ) = π⊤
+1 R2π2. Consequently,
+we see the robust suboptimality gap for G simplifies to,
+RNEGap1(π) + RNEGap2(π)
+=
+max
+π′
+1∈∆(A1)
+
+π′⊤
+1 (r⋆+ R1)π2
+	
+−π⊤
+1 (r⋆+ R1)π2
++
+max
+π′
+2∈∆(A2)
+
+π⊤
+1 (−r⋆−R2)π′
+2
+	
+−π⊤
+1 (−r⋆−R2)π2
+=
+max
+π′
+1∈∆(A1)
+
+π′⊤
+1 Aπ2
+	
+−π⊤
+1 Aπ2
++
+max
+π′
+2∈∆(A2)
+
+π⊤
+1 Bπ′
+2
+	
+−π⊤
+1 Bπ2.
+We see the total suboptimality gap of π for G exactly
+matches the suboptimality gap of π for (A, B). This implies
+the set of solutions to both games is the same as desired.
+The proof of Theorem 4.1 is provided in Appendix E.1.
+Thanks to Theorem 4.1, we cannot hope to solve TPZS
+RMGs even under the simplest (s, a)-rectangularity assump-
+tion. However, the proof reveals key structural properties
+of the uncertainty set that lead to hardness. Specifically,
+we needed the uncertainty sets to satisfy −σR1(−π1π⊤
+2 ) =
+π⊤
+1 R1π2. In particular, observe the support function in-
+volves a product of π1 and π2. This property allowed us to
+simulate a general sum game through the uncertainty sets.
+One way to avoid such hardness is to consider uncer-
+tainty sets that break the support function into two sepa-
+rate pieces: one for π1 and one for π2. Formally, suppose
+that σRi(−πiπ⊤
+−i) = Ωi,i(πi) + Ωi,−i(π−i). Immediately,
+we see that an uncertainty set satisfying −σR1(−π1π⊤
+2 ) =
+π⊤
+1 R1π2 is no longer possible. Even better, by inspecting
+the RNEGap of G, we see that each of the Ωi,−i(π−i) terms
+cancel out, leading to the following RNEGap:
+max
+π′
+1∈∆(A1)
+n
+π′
+1
+⊤r⋆π2 −Ω1,1(π′
+1) + Ω2,2(π2)
+o
+−
+min
+π′
+2∈∆(A2)
+
+π1
+⊤r⋆π′
+2 −Ω1,1(π1) + Ω2,2(π′
+2)
+	
+.
+Observe this is exactly the suboptimality gap of π for a
+TPZS regularized game. Importantly, TPZS regularized
+games can be solved in polynomial time so long as the reg-
+ularizer functions are strongly convex (Facchinei & Pang,
+2003; Cherukuri et al., 2017). Thus, as long as the decom-
+position of σ into Ωfunctions is known or can be computed
+efficiently, solving the robust matrix game can also be done
+efficiently by solving the zero-sum regularized game.
+Definition 4.2 (Efficiently Player-Decomposable). Suppose
+G is a TPZS RMG with s-rectangular reward uncertainty.
+We say that G is efficiently player-decomposable if ∀i ∈
+{1, 2}, s ∈S, h ∈[H], µ ∈∆(A), σRi,s,h(−µiµ⊤
+−i) =
+Ωh
+i,i(µi) + Ωh
+i,−i(µ−i), where each Ωis a strongly convex
+function that is either known in advance or can be computed
+from G in polynomial time.
+Lemma 4.2. Suppose G is a robust matrix game that satis-
+fies Definition 4.2 and G′ is the corresponding regularized
+game constructed in Theorem 3.1. Then, G′ is a TPZS regu-
+larized game with separate regularizers, Ωi = Ωi,i for each
+player i. Therefore, computing an RNE for G can be done
+in polynomial time by solving G′.
+The proof of Lemma 4.2 can be found in Appendix E.2.
+Lemma 4.2 implies we can solve each stage game so long
+as the decomposition holds for each stage. Thus, to solve a
+zero-sum RMG, we can solve each stage’s regularized game
+using backward induction.
+Theorem 4.3. Suppose G is an RMG that satisfies Def-
+inition 4.2 and G′ is the corresponding regularized MG
+constructed in Theorem 3.6. Then, G′ is a TPZS regularized
+MG with separate regularizers, Ωi,h(s, ·) = Ωh
+i,i(s, ·) for
+each player i and stage (s, h). Therefore, computing an
+7
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+MPRNE for G can be done in polynomial time by solving
+G′.
+The proof of Theorem 4.3 is provided in Appendix E.3. We
+immediately have the following result.
+Corollary 4.4. RMGs satisfying Definition 4.2 can be
+solved in polynomial time using any efficient planning or
+learning algorithm for TPZS regularized MGs.
+We point out that the classes of uncertainty set we discussed
+in Theorem 3.3 do not all satisfy Definition 4.2. Specifi-
+cally, case 1. concerning general ball uncertainty does not
+satisfy our decomposition. However, we show very similar
+uncertainty sets do satisfy the conditions and thus can be
+solved efficiently, as stated in the following theorem.
+Theorem 4.5. Consider a regularized MG with payoff ma-
+trix r⋆and the regularizer Ωi,h : S × Π →R for each
+player i ∈[N] and state s ∈S.
+1. If Ωi,h(s, πh) = αi,s,h ∥πi,h(s)∥p is the p-norm regular-
+izer for each i ∈[N], h ∈[H], s ∈S, then solving for
+MPNE of the regularized game is equivalent to solving
+for MPRNE of the robust game with ball constrained un-
+certainty set R1,s,h =
+
+R1 ∈RA1×A2 : ∥R1∥∞→p ≤
+α1,s,h
+	
+and R2,s,h =
+
+R2 ∈RA1×A2 :
+R⊤
+2
+
+∞→p ≤
+α2,s,h
+	
+.
+2. The Markov game version of (s, a)-rectangular, policy-
+dependent reward uncertainty set from part 2. of Theo-
+rem 3.3 carries over without any additional restrictions.
+In either case, both the RMG and regularized MG can be
+solved in polynomial time.
+Remark. As with Theorem 3.3, classical and common regu-
+larizers can be applied as special cases of Theorem 4.5. See
+Appendix D.3 for additional discussion.
+5. Markov Games with Transition Uncertainty
+Up to this point, we have focused on RMGs with reward
+uncertainty. In this section, we consider transition uncer-
+tainty. Similar to before, we show that RMGs with transition
+uncertainty can be solved using regularized MG methods.
+One can easily integrate the results of this section with those
+of Section 3 to characterize general RMGs with both re-
+ward and transition uncertainty. Proofs for the results in this
+section are deferred to Appendix F.
+If G is an RMG with s-rectangular transition uncertainty,
+then the uncertainty set takes the form U = P × {r⋆}. We
+can again derive a robust policy evaluation equation for G
+similar to that in Proposition C.2 for reward uncertainty.
+Proposition 5.1. Consider a RMG G with s-rectangular
+uncertainty set U = P × {r⋆}. Then for each product
+joint Markovian policy π ∈Π, the robust value function
+{V π
+i,h}h∈[H] of each player i ∈[N] satisfies
+V π
+i,h(s) =Ea∼πh(s)
+
+r⋆
+i,h(s, a)
+
+−σPs,h
+ −V π
+i,h+1πh(s)⊤
+(8)
+where [V π
+i,h+1πh(s)⊤](s′, a′) = V π
+i,h+1(s′)πh(a′|s) for
+all s′ ∈S, a′ ∈A.
+Observe that (8) replaces the linear expected future value
+function in a standard MG with a support function σPs,h(·),
+which depends on both the policy and future robust value.
+Depending on the uncertainty set, the support function might
+involve a non-linear transformation of the policy and the
+value function.
+To accommodate the non-linearity, we introduce a gen-
+eralization of regularized Markov games where Ω:=
+(Ωs,h)s∈S,h∈[H] is a finite set of policy-value regularization
+functions such that for all s ∈S, h ∈[H], Ωs,h : ∆(S)A ×
+RS × ∆(A) →R satisfies that for each Ph ∈∆(S)A and
+for each v ∈RS, Ωs,h(Ph, v, ·) is convex. Given a joint pol-
+icy π for a MG with G = (P, r), the general policy-value
+regularized value function is defined recursively as follows:
+∀s ∈S, h ∈[H],
+bV π
+i,h(s, G) :=Ea∼πh(s) [ri,h(s, a)]
+−Ωs,h
+ Ph, −V π
+i,h+1, πh(s)
+
+.
+(9)
+Note that if Ωs,h (Ph, −v, µ)
+=
+⟨Ph, −vµ⊤⟩
+=
+−Ea∼µ [[Phv](s, a)] for all h ∈[H], this regularized MG
+reduces to the standard MG.
+Viewing the support function σPs,h(·) as the policy-value
+regularizer, Proposition 5.1 implies that the RNE of robust
+Markov games with transition uncertainty is equivalent to
+the NE of the regularized Markov game.
+Theorem 5.2. Consider a RMG G with s-rectangular
+uncertainty set U = P × {r⋆}.
+Consider the policy-
+value regularized MG G′ = (S, {Ai}i∈[N], P ⋆, r⋆, H, Ω),
+where the regularizer functions Ω:= (Ωs,h)s,h∈[H] satis-
+fies Ωs,h (P ⋆
+h, −v, µ) = σPs,h
+ −vµ⊤
+, ∀v ∈RS, ∀µ ∈
+∆(A). Then, π is an MPRNE for G if and only if π is an
+MPNE for G′.
+Depending on the uncertainty set Ps,h, the support function
+can be further simplified, leading to efficient computation of
+regularized value functions. Here we give some examples
+of transition uncertainty sets that are commonly considered
+in the literature, including both s-rectangular and (s, a)-
+rectangular sets. We refer readers to Appendix F.3 for the
+proof and discussion of additional examples.
+Corollary 5.3. Consider a robust MG with uncertainty set
+U = P × {r⋆}, where P = ×(s,h)∈S×[H]Ps,h satisfies ball
+8
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+constraints: Ps,h =
+
+P ∈RS×A :
+P −P ⋆
+s,h
+
+q∗→p ≤
+βs,h
+	
+. Then the equivalent policy-value regularized MG
+is associated with the convex regularizer function Ω=
+{Ωs,h}s∈S,h∈[H] such that ∀s ∈S, v ∈RS, µ ∈∆(A),
+Ωs,h (P ⋆
+h, −v, µ) =
+−Ea∼µ [[P ⋆
+hv](s, a)] + βs,h ∥−v∥p
+µ⊤
+q .
+We remark that for the policy-value regularized game in
+Corollary 5.3, the corresponding value function defined in
+(9) reduces to
+bV π
+i,h(s, G⋆) =Ea∼πh(s)
+
+r⋆
+i,h(s, a) + [P ⋆
+h bV π
+i,h+1](s, a)
+
+−βs,h
+ −bV π
+i,h+1
+
+p ∥πh(s)∥q .
+Compared with standard MG, the value function involves an
+additional term that penalizes the ℓp-norm of future rewards
+and ℓq-norm of policy. Note that similar to the case with
+reward uncertainty, the size of the uncertainty set, i.e., the
+radius βs,h, determines the penalty factor.
+When the transition uncertainty set is (s, a)-rectangular,
+the regularizer functions for the equivalent policy-value
+regularized MG admits simpler forms.
+Corollary 5.4. Consider a robust MG with an uncertainty
+set U = P × {r⋆}, where P is (s, a)-rectangular of the
+form P = ×(s,a,h)∈S×A×[H]Ps,a,h, with Ps,a,h ⊂∆(S)
+being compact and convex. Then the equivalent policy-
+value regularized MG is associated with convex regularizers
+Ω= {Ωs,h} such that: ∀s ∈S, v ∈RS, µ ∈∆(A),
+Ωs,h (P ⋆
+h, −v, µ) = Ea∼µ
+
+σPs,a,h(−v)
+
+.
+Various (s, a)-rectangular transition uncertainty sets have
+been considered for robust MDP (Shi et al., 2023; Iyengar,
+2005). The uncertain transitions are typically of the form
+Ps,a,h =
+
+P ∈∆(S) : d(P, P ⋆
+s,a,h) ≤βs,a,h
+	
+,
+where βs,a,h > 0 represents the level of uncertainty, and
+d(·, ·) is a distance metric between two probability distribu-
+tions. Popular distance metrics include Total variation (TV)
+distance, KL distance, Chi-square distance, and Wasser-
+stein distance. For each case, we can obtain equivalent
+policy-value regularizer functions. Here we consider the TV
+distance and defer the discussion of other distance metrics
+to Appendix F.3.3.
+Example.
+Consider a TV uncertainty set given by
+P
+= ×(s,a,h)∈S×A×[H]PTV
+s,a,h with PTV
+s,a,h =
+
+P
+∈
+∆(S) : dTV(P, P ⋆
+s,a,h) ≤βs,a,h}. Here dTV(η, η′) =
+1
+2 ∥η −η′∥1 = 1
+2
+P
+s |η(s) −η′(s)| for any η, η′ ∈∆(S).
+Then the equivalent policy-value regularized MG is asso-
+ciated with convex regularizers Ω= {Ωs,h} such that:
+∀s ∈S, v ∈RS, µ ∈∆(A),
+Ωs,h (P ⋆
+h, −v, µ) = Ea∼µ
+
+−[P ⋆
+hv](s, a) + βs,a,h
+2
+·
+min
+u≥0
+n
+max
+s′
+ v(s′) −u(s′)
+
+−max
+s′
+ v(s′) −u(s′)
+oi
+.
+In particular, the optimization in Ωs,h is convex and can
+be computed in time O(|S| log |S|) (Iyengar, 2005). Com-
+pared with standard MGs, the corresponding regularized
+value function (9) involves an additional penalty that de-
+pends on the policy and future rewards. Similar to the
+ball-constrained uncertainty set, the size of the uncertainty
+set, i.e., radius βs,ah determines the penalty factor. We
+remark that in general, the regularizer function might not in-
+clude the standard linear future value term −[P ⋆
+hv](s, a), as
+shown in Appendix F.3.3 for various transition uncertainty
+sets.
+Computational Hardness. Lastly, we note that even for
+TPSZ RMGs with (s, a)-rectangular transition uncertainty
+and H = 2, computing a MPRNE is PPAD-hard. Thus,
+dealing with transition uncertainty is generally difficult. The
+proof uses transition uncertainty to simulate the same hard
+reward uncertainty instances derived in Theorem 4.1.
+Theorem 5.5. Even restricted to the class of (s, a)-
+rectangular uncertainty sets, computing an MPRNE of a
+TPZS RMG with transition uncertainty is PPAD-hard even
+for S = H = 2.
+6. Conclusions
+In this work, we study RMGs with s-rectangular uncertainty.
+We show that RMGs can be solved using regularized MG
+algorithms. This reduction yields a planning algorithm for
+computing an MPRNE of an RMG. We also show that for
+many commonly used regularizers, the set of MPNE of the
+regularized game is equal to the set of MPRNE of RMGs
+with well-behaved uncertainty sets. This gives proof that
+regularization methods do produce robust policies.
+However, we show even for two-player robust matrix games
+with (s, a)-rectangularity, computing an MPRNE is PPAD-
+hard. This illustrates that the reward uncertainty case is
+already challenging compared to the single-agent setting.
+Despite this, we show whenever the support function of
+the uncertainty set decomposes into a sum of two parts,
+one corresponding to each player’s policy, then our con-
+structed regularized game is zero-sum. Consequently, we
+can compute an MPRNE for two-player zero-sum RMGs
+with efficient player-decomposable reward uncertainty in
+polynomial time.
+9
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+Impact Statement
+This paper presents work whose goal is to advance the field
+of game theory. There are many potential societal con-
+sequences of our work, none of which we feel must be
+specifically highlighted here.
+Acknowledgements
+Q. Xie was supported in part by National Science Founda-
+tion Awards CNS-1955997 and EPCN-2339794. J. McMa-
+han is supported in part by NSF grant 2023239.
+References
+Aghassi, M. and Bertsimas, D. Robust game theory. Math.
+Program., 107(1–2):231–273, jun 2006.
+ISSN 0025-
+5610. doi: 10.1007/s10107-005-0686-0. URL https:
+//doi.org/10.1007/s10107-005-0686-0.
+Badrinath, K. P. and Kalathil, D. Robust reinforcement
+learning using least squares policy iteration with provable
+performance guarantees. In Meila, M. and Zhang, T.
+(eds.), Proceedings of the 38th International Conference
+on Machine Learning, volume 139 of Proceedings of
+Machine Learning Research, pp. 511–520. PMLR, 18–
+24 Jul 2021. URL https://proceedings.mlr.
+press/v139/badrinath21a.html.
+Blanchet, J. and Murthy, K.
+Quantifying distributional
+model risk via optimal transport. Mathematics of Opera-
+tions Research, 44(2):565–600, 2019.
+Blanchet, J., Lu, M., Zhang, T., and Zhong, H. Double
+pessimism is provably efficient for distributionally robust
+offline reinforcement learning: Generic algorithm and
+robust partial coverage, 2023.
+Borwein, J. and Lewis, A. Convex Analysis and Nonlin-
+ear Optimization: Theory and Examples. CMS Books
+in Mathematics. Springer New York, 2010.
+ISBN
+9780387312569.
+URL https://books.google.
+com/books?id=eeL_Cdmowv8C.
+Brekelmans, R., Genewein, T., Grau-Moya, J., Del´etang,
+G., Kunesch, M., Legg, S., and Ortega, P. Your pol-
+icy regularizer is secretly an adversary. arXiv preprint
+arXiv:2203.12592, 2022.
+Cen, S., Wei, Y., and Chi, Y. Fast policy extragradient meth-
+ods for competitive games with entropy regularization.
+Advances in Neural Information Processing Systems, 34:
+27952–27964, 2021.
+Chen, S., Liu, G., Zhou, Z., Zhang, K., and Wang, J. Robust
+multi-agent reinforcement learning method based on ad-
+versarial domain randomization for real-world dual-uav
+cooperation. IEEE Transactions on Intelligent Vehicles,
+pp. 1–13, 2023. doi: 10.1109/TIV.2023.3307134.
+Cherukuri, A., Mallada, E., Low, S., and Cort´es, J. The
+role of convexity in saddle-point dynamics: Lyapunov
+function and robustness. IEEE Transactions on Automatic
+Control, 63(8):2449–2464, 2017.
+Derman, E., Geist, M., and Mannor, S.
+Twice regular-
+ized MDPs and the equivalence between robustness and
+regularization. In Beygelzimer, A., Dauphin, Y., Liang,
+P., and Vaughan, J. W. (eds.), Advances in Neural In-
+formation Processing Systems, 2021.
+URL https:
+//openreview.net/forum?id=x00mCNwbH8Q.
+Derman, E., Men, Y., Geist, M., and Mannor, S. Twice
+regularized markov decision processes: The equivalence
+between robustness and regularization, 2023.
+Epstein, L. and Schneider, M. Recursive multiple-priors.
+Journal of Economic Theory, 113(1):1–31, 2003. URL
+https://EconPapers.repec.org/RePEc:
+eee:jetheo:v:113:y:2003:i:1:p:1-31.
+Eysenbach, B. and Levine, S. Maximum entropy rl (prov-
+ably) solves some robust rl problems. In International
+Conference on Learning Representations, 2021.
+Facchinei, F. and Pang, J.-S. Finite-dimensional variational
+inequalities and complementarity problems. Springer,
+2003.
+Geist, M., Scherrer, B., and Pietquin, O. A theory of regu-
+larized markov decision processes. In International Con-
+ference on Machine Learning, pp. 2160–2169. PMLR,
+2019.
+Goh, J., Bayati, M., Zenios, S. A., Singh, S., and Moore, D.
+Data uncertainty in markov chains: Application to cost-
+effectiveness analyses of medical innovations. Operations
+Research, 66(3):697–715, 2018. doi: 10.1287/opre.2017.
+1685.
+URL https://doi.org/10.1287/opre.
+2017.1685.
+Goyal, V. and Grand-Cl´ement, J.
+Robust markov deci-
+sion processes: Beyond rectangularity.
+Mathematics
+of Operations Research, 48(1):203–226, 2023.
+doi:
+10.1287/moor.2022.1259. URL https://doi.org/
+10.1287/moor.2022.1259.
+Grill, J.-B., Darwiche Domingues, O., Menard, P., Munos,
+R., and Valko, M.
+Planning in entropy-regularized
+markov decision processes and games. In Wallach, H.,
+Larochelle, H., Beygelzimer, A., d'Alch´e-Buc, F., Fox, E.,
+and Garnett, R. (eds.), Advances in Neural Information
+Processing Systems, volume 32. Curran Associates, Inc.,
+2019.
+URL https://proceedings.neurips.
+cc/paper_files/paper/2019/file/
+10
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+50982fb2f2cfa186d335310461dfa2be-Paper.
+pdf.
+Hayashi, S., Yamashita, N., and Fukushima, M. Robust
+nash equilibria and second-order cone complementarity
+problems. Journal of Nonlinear and Convex Analysis, 6:
+283–296, 2005.
+Ho, C. P., Petrik, M., and Wiesemann, W. Fast Bellman
+updates for robust MDPs. In Dy, J. and Krause, A. (eds.),
+Proceedings of the 35th International Conference on Ma-
+chine Learning, volume 80 of Proceedings of Machine
+Learning Research, pp. 1979–1988. PMLR, 10–15 Jul
+2018. URL https://proceedings.mlr.press/
+v80/ho18a.html.
+Ho, C. P., Petrik, M., and Wiesemann, W. Partial policy
+iteration for l1-robust markov decision processes. J. Mach.
+Learn. Res., 22(1), jan 2021. ISSN 1532-4435.
+Husain, H., Ciosek, K., and Tomioka, R. Regularized poli-
+cies are reward robust. In International Conference on
+Artificial Intelligence and Statistics, pp. 64–72. PMLR,
+2021.
+Iyengar, G. N. Robust dynamic programming. Mathematics
+of Operations Research, 30(2):257–280, 2005. ISSN
+0364765X, 15265471.
+URL http://www.jstor.
+org/stable/25151652.
+Kakutani, S. A generalization of brouwer’s fixed point
+theorem. Duke Math. J., 8(1):457–459, 1941.
+Kardes¸, E., Ord´o˜nez, F., and Hall, R. W. Discounted robust
+stochastic games and an application to queueing con-
+trol. Operations Research, 59(2):365–382, 2011. ISSN
+0030364X, 15265463.
+URL http://www.jstor.
+org/stable/23013175.
+Kaufman, D. L. and Schaefer, A. J. Robust modified policy
+iteration. INFORMS Journal on Computing, 25(3):396–
+410, 2013. doi: 10.1287/ijoc.1120.0509. URL https:
+//doi.org/10.1287/ijoc.1120.0509.
+Kumar, N., Levy, K., Wang, K., and Mannor, S. Efficient
+policy iteration for robust markov decision processes via
+regularization, 2022.
+Kumar, N., Derman, E., Geist, M., Levy, K., and Mannor,
+S. Policy gradient for rectangular robust markov decision
+processes, 2023.
+Lee, K., Choi, S., and Oh, S. Sparse markov decision pro-
+cesses with causal sparse tsallis entropy regularization for
+reinforcement learning. IEEE Robotics and Automation
+Letters, 3(3):1466–1473, 2018.
+Lim, S. H. and Autef, A. Kernel-based reinforcement learn-
+ing in robust Markov decision processes.
+In Chaud-
+huri, K. and Salakhutdinov, R. (eds.), Proceedings of
+the 36th International Conference on Machine Learn-
+ing, volume 97 of Proceedings of Machine Learning
+Research, pp. 3973–3981. PMLR, 09–15 Jun 2019.
+URL https://proceedings.mlr.press/v97/
+lim19a.html.
+Liu, Z., Bai, Q., Blanchet, J., Dong, P., Xu, W., Zhou,
+Z., and Zhou, Z.
+Distributionally robust q-learning.
+In Chaudhuri, K., Jegelka, S., Song, L., Szepesvari,
+C., Niu, G., and Sabato, S. (eds.), Proceedings of
+the 39th International Conference on Machine Learn-
+ing, volume 162 of Proceedings of Machine Learn-
+ing Research, pp. 13623–13643. PMLR, 17–23 Jul
+2022. URL https://proceedings.mlr.press/
+v162/liu22a.html.
+Ma, S., Chen, Z., Zou, S., and Zhou, Y. Decentralized robust
+v-learning for solving markov games with model uncer-
+tainty. Journal of Machine Learning Research, 24(371):
+1–40, 2023a.
+URL http://jmlr.org/papers/
+v24/23-0310.html.
+Ma, X., Liang, Z., Blanchet, J., Liu, M., Xia, L., Zhang, J.,
+Zhao, Q., and Zhou, Z. Distributionally robust offline re-
+inforcement learning with linear function approximation,
+2023b.
+Mannor, S., Mebel, O., and Xu, H. Robust mdps with
+k-rectangular uncertainty.
+Math. Oper. Res., 41(4):
+1484–1509, nov 2016. ISSN 0364-765X.
+Mertikopoulos, P. and Sandholm, W. H. Learning in games
+via reinforcement and regularization. Mathematics of
+Operations Research, 41(4):1297–1324, 2016.
+Nilim, A. and El Ghaoui, L. Robustness in markov deci-
+sion problems with uncertain transition matrices. In Pro-
+ceedings of the 16th International Conference on Neural
+Information Processing Systems, NIPS’03, pp. 839–846,
+Cambridge, MA, USA, 2003. MIT Press.
+Panaganti, K. and Kalathil, D.
+Sample complexity
+of robust reinforcement learning with a generative
+model.
+In Camps-Valls, G., Ruiz, F. J. R., and
+Valera, I. (eds.), Proceedings of The 25th Interna-
+tional Conference on Artificial Intelligence and Statis-
+tics, volume 151 of Proceedings of Machine Learn-
+ing Research, pp. 9582–9602. PMLR, 28–30 Mar
+2022. URL https://proceedings.mlr.press/
+v151/panaganti22a.html.
+Perchet, V.
+Finding robust nash equilibria.
+In Kon-
+torovich, A. and Neu, G. (eds.), Proceedings of the
+11
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+31st International Conference on Algorithmic Learn-
+ing Theory, volume 117 of Proceedings of Machine
+Learning Research, pp. 725–751. PMLR, 08 Feb–11 Feb
+2020. URL https://proceedings.mlr.press/
+v117/perchet20a.html.
+Pinto, L., Davidson, J., Sukthankar, R., and Gupta,
+A.
+Robust adversarial reinforcement learning.
+In
+Precup, D. and Teh, Y. W. (eds.), Proceedings of
+the 34th International Conference on Machine Learn-
+ing, volume 70 of Proceedings of Machine Learning
+Research, pp. 2817–2826. PMLR, 06–11 Aug 2017.
+URL https://proceedings.mlr.press/v70/
+pinto17a.html.
+Satia, J. K. and Lave, R. E.
+Markovian decision
+processes
+with
+uncertain
+transition
+probabilities.
+Operations Research, 21(3):728–740, 1973.
+URL
+https://EconPapers.repec.org/RePEc:
+inm:oropre:v:21:y:1973:i:3:p:728-740.
+Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and
+Klimov, O. Proximal policy optimization algorithms.
+arXiv preprint arXiv:1707.06347, 2017.
+Shi, L. and Chi, Y. Distributionally robust model-based
+offline reinforcement learning with near-optimal sample
+complexity, 2023.
+Shi, L., Li, G., Wei, Y., Chen, Y., Geist, M., and Chi, Y.
+The curious price of distributional robustness in reinforce-
+ment learning with a generative model. arXiv preprint
+arXiv:2305.16589, 2023.
+Tamar, A., Mannor, S., and Xu, H. Scaling up robust mdps
+using function approximation. In Xing, E. P. and Jebara, T.
+(eds.), Proceedings of the 31st International Conference
+on Machine Learning, volume 32 of Proceedings of Ma-
+chine Learning Research, pp. 181–189, Bejing, China, 22–
+24 Jun 2014. PMLR. URL https://proceedings.
+mlr.press/v32/tamar14.html.
+Wang, Q., Ho, C. P., and Petrik, M. Policy gradient in robust
+mdps with global convergence guarantee. In Proceedings
+of the 40th International Conference on Machine Learn-
+ing, ICML’23. JMLR.org, 2023.
+Wang, Y. and Zou, S. Online robust reinforcement learning
+with model uncertainty. In Ranzato, M., Beygelzimer,
+A., Dauphin, Y., Liang, P., and Vaughan, J. W. (eds.),
+Advances in Neural Information Processing Systems,
+volume 34, pp. 7193–7206. Curran Associates, Inc.,
+2021.
+URL https://proceedings.neurips.
+cc/paper_files/paper/2021/file/
+3a4496776767aaa99f9804d0905fe584-Paper.
+pdf.
+Wang, Y. and Zou, S. Policy gradient method for robust
+reinforcement learning. In Chaudhuri, K., Jegelka, S.,
+Song, L., Szepesvari, C., Niu, G., and Sabato, S. (eds.),
+Proceedings of the 39th International Conference on Ma-
+chine Learning, volume 162 of Proceedings of Machine
+Learning Research, pp. 23484–23526. PMLR, 17–23 Jul
+2022. URL https://proceedings.mlr.press/
+v162/wang22at.html.
+Wiesemann, W., Kuhn, D., and Rustem, B. Robust markov
+decision processes. Mathematics of Operations Research,
+38(1):153–183, 2013.
+doi: 10.1287/moor.1120.0566.
+URL https://doi.org/10.1287/moor.1120.
+0566.
+Yang, W., Zhang, L., and Zhang, Z.
+Towards theoreti-
+cal understandings of robust markov decision processes:
+Sample complexity and asymptotics, 2022.
+Zhan, W., Cen, S., Huang, B., Chen, Y., Lee, J. D., and Chi,
+Y. Policy mirror descent for regularized reinforcement
+learning: A generalized framework with linear conver-
+gence. SIAM Journal on Optimization, 33(2):1061–1091,
+2023.
+Zhang, F., Tan, V. Y. F., Wang, Z., and Yang, Z. Learning
+regularized monotone graphon mean-field games, 2023.
+Zhang, K., Kakade, S., Basar, T., and Yang, L. Model-
+based multi-agent rl in zero-sum markov games with
+near-optimal sample complexity.
+In Larochelle, H.,
+Ranzato, M., Hadsell, R., Balcan, M., and Lin, H. (eds.),
+Advances in Neural Information Processing Systems,
+volume 33, pp. 1166–1178. Curran Associates, Inc.,
+2020a.
+URL https://proceedings.neurips.
+cc/paper_files/paper/2020/file/
+0cc6ee01c82fc49c28706e0918f57e2d-Paper.
+pdf.
+Zhang, K., SUN, T., Tao, Y., Genc, S., Mallya, S., and
+Basar, T.
+Robust multi-agent reinforcement learning
+with model uncertainty.
+In Larochelle, H., Ranzato,
+M., Hadsell, R., Balcan, M., and Lin, H. (eds.),
+Advances in Neural Information Processing Systems,
+volume 33, pp. 10571–10583. Curran Associates, Inc.,
+2020b.
+URL https://proceedings.neurips.
+cc/paper_files/paper/2020/file/
+774412967f19ea61d448977ad9749078-Paper.
+pdf.
+12
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+A. Useful Technical Results
+In this section, we state some existing results that are useful in our analysis.
+Theorem A.1 (Fenchel-Rockafellar duality (Borwein & Lewis, 2010, Theorem 3.3.5)). Consider the problems:
+(P)
+min
+x f(x) + g(Ax)
+(D)
+max
+y
+−f ∗(−A∗y) −g∗(y)
+where f : X →R and g : Y →R are proper, closed convex functions, and A : X →Y is a linear map. If the regularity
+condition 0 ∈core(dom(g) −A(dom(f))) holds2, then the primal (P) and dual (D) optimal values are equal.
+Lemma A.2 (Induced norm of rank-1 matrices). For any vectors u, v, we have
+uv⊤
+p→q = ∥u∥q ∥v∥p∗.
+Proof. By definition of matrix-induced norm, we have
+uv⊤
+p→q = sup
+x:x̸=0
+uv⊤x
+
+q
+∥x∥p
+= sup
+x:x̸=0
+v⊤x
+ · ∥u∥q
+∥x∥p
+positive homogeneity of norms
+= ∥u∥q · sup
+x:x̸=0
+v⊤x
+
+∥x∥p
+= ∥u∥q · ∥v∥p∗.
+definition of dual norm of ∥·∥p .
+Lemma A.3 (Dual norm of induced matrix norm). For any matrix R, we have
+sup
+R:∥R∥p→q≤1
+
+R, xy⊤
+= ∥x∥q∗∥y∥p =
+xy⊤
+p∗→q .
+Proof. By definition of dual norms, there exists a vector u with ∥u∥q = 1 such that ⟨u, x⟩= ∥x∥q∗. Similarly, there exists
+v with ∥v∥p∗= 1 such that ⟨v, y⟩= ∥y∥p. Then the matrix R0 := uv⊤satisfies
+
+R0, xy⊤
+= Tr
+ R⊤
+0 xy⊤
+= Tr
+ y⊤(vu⊤)x
+
+= ⟨u, x⟩⟨v, y⟩= ∥x∥q∗∥y∥p
+and, by Lemma A.2,
+∥R0∥p→q =
+uv⊤
+p→q = ∥u∥q ∥v∥p∗= 1.
+So
+sup
+∥R∥p→q≤1
+
+R, xy⊤
+≥
+
+R0, xy⊤
+= ∥x∥q∗∥y∥p .
+On the other hand, for any R with ∥R∥p→q ≤1, we have
+
+R, xy⊤
+= x⊤Ry ≤∥x∥q∗∥Ry∥q ≤∥x∥q∗∥y∥p ,
+hence sup∥R∥p→q≤1
+
+R, xy⊤
+≤∥x∥q∗∥y∥p. This proves the first equality in the lemma.
+The second equality follows from Lemma A.2.
+2Given C ⊂Rd, we say that x ∈core(C) if for all z ∈Rd, there exists a small enough t ∈R such that x + tz ∈C (Borwein &
+Lewis, 2010).
+13
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+B. Properties of Robust Markov Games
+Recall that given a joint policy π ∈Π for a MG G = (P, r), the value function and the state-action function for each player
+i is defined as: ∀s ∈S, a ∈A, h ∈[H],
+V
+π
+i,h(s, G) := Eπ
+P
+h H
+X
+t=h
+ri,t(st, at) | sh = s
+i
+,
+(10)
+Q
+π
+i,h(s, a, G) := Eπ
+P
+h H
+X
+t=h
+ri,t(st, at) | sh = s, ah = a
+i
+,
+(11)
+where the expectation Eπ
+P [·] is taken with respect to the trajectory {sh, ah, rh}h∈[H] induced by the transition kernel P and
+the joint policy π, i.e., ah ∼πh(sh) and sh+1 ∼Ph(·|sh, ah). It is convenient to set V
+π
+i,H+1(s, G) ≡Q
+π
+i,H+1(s, a, G) ≡0
+for the terminal reward.
+B.1. Robust Markov Game Bellman Equation
+Similar to the Bellman equation for standard MG, we have the following robust Bellman equation.
+Proposition B.1. (Robust Bellman Equation). Under Assumption 2.2, for any joint policy π = {πh}h∈[H] ∈Π, the
+following Bellman equations hold:
+V π
+i,h(s) =Qπ
+i,h (s, πh(· | s)) ,
+(12)
+Qπ
+i,h(s, µ) =
+inf
+rh∈Ur
+s,h
+Ea∼µ [ri,h(s, a)] +
+inf
+Ph∈Ps,h Ea∼µ
+
+[PhV π
+i,h+1](s, a)
+
+,
+(13)
+where Ur
+s,h := ×i∈[N]Ur
+i,s,h.
+Proof. Blanchet et al. (2023) established the robust Bellman Equation for robust Markov game with S × A-rectangular
+transition uncertainty set. We extend the result to Markov games with general S-uncertainty set, including both reward
+function uncertainty and transition uncertainty. Throught out the proof, for each game model G = (P, r), we will use
+Gh :=
+ {Pt}H
+t=h, {rt}H
+t=h
+
+to denote the model parameters from step h to the terminal step H. With this notation, we note
+that for a standard Markov game with model G, the value functions satisfy
+V
+π
+i,h(s, G) = V
+π
+i,h(s, Gh),
+Q
+π
+i,h(s, a, G) = Q
+π
+i,h(s, a, Gh).
+To facilitate the proof, we introduce the following shorthands to denote the uncertainty sets from step h to the terminal step
+H:
+Ph := ×(s,t)∈S×{t,t+1,...,H}Ps,t,
+Ur,h := ×(i,s,t)∈[N]×S×{t,t+1,...,H}Ur
+i,s,t,
+Uh := Ph × Ur,h.
+Let Ph := ×s∈SPs,h and Ur
+h := ×(i,s)∈[N]×SUr
+i,s,h.
+We will prove the following stronger results via induction from step h = H to 1: given any π ∈Π, for each player i ∈[N],
+there exists a game model bG = ( bP, br) such that: (1) Robust Bellman equations (12)-(13) hold; (2) the robust value functions
+satisfy
+V π
+i,h(s) = V
+π
+i,h(s, bGh),
+, ∀s ∈S,
+(14)
+Qπ
+i,h(s, µ) = Ea∼µ
+h
+Q
+π
+i,h(s, a, bGh)
+i
+,
+∀s ∈S, µ ∈∆(A).
+(15)
+1. (Base case): For h = H, by the definition of robust state-action value function in (2), it follows that (13) holds. We
+also have
+Qπ
+i,H(s, µ) = inf
+G∈U Ea∼µ
+h
+Q
+π
+i,H(s, a, G)
+i
+= inf
+r∈Ur Ea∼µ [ri,H(s, a)] =
+inf
+rH(s,·)∈Ur
+s,H
+Ea∼µ [ri,H(s, a)] .
+14
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+By Assumption 2.2, one can thus find a single reward function brH ∈Ur
+s,H = ×iUr
+i,s,H such that for each s ∈S,
+brH(s, ·) ∈
+arg inf
+rH(s,·)∈Ur
+s,H
+Ea∼µ [ri,H(s, a)] .
+Therefore,
+Qπ
+i,H(s, µ) = Ea∼µ [bri,H(s, a)] = Ea∼µ
+h
+Q
+π
+i,H(s, a, bGH)
+i
+.
+(16)
+By definition of robust value function in (1), we have
+V π
+i,H(s) = inf
+G∈U V
+π
+i,H(s, G)
+(I)
+= inf
+G∈U Ea∼πH(s)
+h
+Q
+π
+i,H(s, a, G)
+i (II)
+= Qπ
+i,H(s, πH(s))
+(III)
+=
+Ea∼πH(s)
+h
+Q
+π
+i,H(s, a, bGH)
+i
+(V I)
+= V
+π
+i,H(s, bGH),
+where equalities (I) and (V I) follow from the Bellman equations (10)-(11) of standard Markov game, equality (II)
+follows from the definition of robust Q-function in (2), and (III) holds due to (16). We complete the proof of the base
+case.
+2. (Induction step): Now suppose that (12)-(13) and (14)-(15) hold for all t > h.
+Thus there exists bGh+1 :=
+
+{ bPt}H
+t=h+1, {brt}H
+t=h+1
+
+such that
+V π
+i,h+1(s) = V
+π
+i,h+1(s, bGh+1),
+, ∀s ∈S.
+(17)
+By the definition of robust state-action value function in (2), we have: ∀s ∈S, µ ∈∆(A),
+Qπ
+i,h(s, µ) :=
+inf
+Gh∈Uh Ea∼µ
+h
+Q
+π
+i,h(s, a, Gh)
+i
+=
+inf
+{Pt}H
+t=h∈Ph,{rt}H
+t=h∈Ur,h Ea∼µ
+h
+ri,h(s, a) + Es′∼Ph(·|s,a)
+h
+V
+π
+i,h+1(s′, Gh+1)
+ii
+(I)
+=
+inf
+rh(s,·)∈Ur
+s,h
+Ea∼µ [ri,h(s, a)] +
+inf
+{Pt}H
+t=h∈Ph,{rt}H
+t=h+1∈Ur,h+1 Ea∼µ
+h
+Es′∼Ph(·|s,a)
+h
+V
+π
+i,h+1(s′, Gh+1)
+ii
+≤
+inf
+rh(s,·)∈Ur
+s,h
+Ea∼µ [ri,h(s, a)]
+|
+{z
+}
+T1
++
+inf
+Ph∈Ph Ea∼µ
+h
+Es′∼Ph(·|s,a)
+h
+V
+π
+i,h+1(s′, bGh+1)
+ii
+|
+{z
+}
+T2
+,
+(18)
+where the equality (I) follows from the rectangular uncertainty set assumption and the fact that the first only depends
+on the reward function at state s and step h. We thus can find a single reward function brh ∈Ur
+hthat attains the minimum
+value of the term T1 for each state s ∈S; we can also find a single transition kernel bPh ∈Ph that it attains the
+minimum value of T2.
+On the other hand, by (17) and the definition of robust value function in (1), we have
+Qπ
+i,h(s, µ) ≤
+inf
+rh(s,·)∈Ur
+s,h
+Ea∼µ [ri,h(s, a)] +
+inf
+Ph∈Ph Ea∼µ
+
+Es′∼Ph(·|s,a)
+
+V π
+i,h+1(s)
+
+(19)
+=
+inf
+rh(s,·)∈Ur
+s,h
+Ea∼µ [ri,h(s, a)]
++
+inf
+Ph∈Ph Ea∼µ
+"
+Es′∼Ph(·|s,a)
+"
+inf
+{Pt}H
+t=h+1∈Ph+1,{rt}H
+t=h+1∈Ur,h+1 V
+π
+i,h+1(s′, Gh+1)
+##
+=
+inf
+rh(s,·)∈Ur
+s,h
+Ea∼µ [ri,h(s, a)] +
+inf
+{Pt}H
+t=h∈Ph,{rt}H
+t=h+1∈Ur,h+1 Ea∼µ
+h
+Es′∼Ph(·|s,a)
+h
+V
+π
+i,h+1(s′, Gh+1)
+ii
+= Qπ
+i,h(s, µ),
+where the last equality follows from the definition of robust state-action value function in (2). Therefore, all the
+inequality above are equalities. In particular, equation (19) proves the robust Bellman equation (13) for step h. In
+addition, from (18), we have
+Qπ
+i,h(s, µ) = Ea∼µ [bri,h(s, a)] + Ea∼µ
+h
+Es′∼b
+Ph(·|s,a)
+h
+V
+π
+i,h+1(s′, bGh+1)
+ii
+= Ea∼µ
+h
+Q
+π
+i,h(s, a, bGh)
+i
+,
+(20)
+15
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+which proves (15) for step h.
+Next we will show that V π
+i,h(s) satisfies (12) and (14). By definition of robust value function in (1), we have
+V π
+i,h(s) =
+inf
+{Pt}H
+t=h∈Ph,{rt}H
+t=h∈Ur,h Eπ
+P
+" H
+X
+t=h
+ri,h(st, at) | sh = s
+#
+=
+inf
+{Pt}H
+t=h∈Ph,{rt}H
+t=h∈Ur,h Ea∼πh(s)
+"
+Eπ
+P
+" H
+X
+t=h
+ri,h(st, at) | sh = s, ah = a
+##
+(I)
+=
+inf
+{Pt}H
+t=h∈Ph,{rt}H
+t=h∈Ur,h Ea∼πh(s)
+h
+Q
+π
+i,h(s, a, Gh)
+i
+≤Ea∼πh(s)
+h
+Q
+π
+i,h(s, a, bGh)
+i
+(II)
+= Qπ
+i,h(s, πh(s))
+(III)
+=
+inf
+Gh∈Uh Ea∼πh(s)
+h
+Q
+π
+i,h(s, a, Gh)
+i
+(V I)
+=
+inf
+Gh∈Uh V
+π
+i,h(s, Gh)
+(V )
+= V π
+i,h(s),
+where (I) follows from the definition of state-action value function definition (11), (II) follows from (20), (III) holds
+due to the definition of robust state-action value function definition (2), (V I) is true from Bellman equation of Markov
+game, and (V ) holds by definition in (1). Therefore, the inequality above is equality. Note that (II) proves the Bellman
+equation (12). In addition, we have
+V π
+i,h(s) = Ea∼πh(s)
+h
+Q
+π
+i,h(s, a, bGh)
+i
+= V
+π
+i,h(s, bGh).
+We complete the proof of step h.
+This finishes the proof of Proposition B.1.
+C. Proof of Existence of Robust NE
+In this section, we provide the proof of Theorem 2.1 on the existence of robust Nash equilibrium. We first consider matrix
+games in Section C.1 and then proceed to Markov games in Section C.2.
+C.1. Matrix Games with Reward Uncertainty
+We first consider matrix games with reward uncertainty. In particular, the reward uncertainty set is of the form U = r⋆+ R
+with R = ×i∈[N]Ri, where Ri ⊂RA contains the possible reward functions for player i. Here we allow the reward
+uncertainty sets to potentially depend on the players’ policy π = (π1, . . . , πN) with πi ∈∆(Ai), denoted by U(π) =
+r⋆+ R(π) with R(π) = ×i∈[N]Ri(π). The existence of RNE has been established for the setting where the uncertainty
+set is fixed and policy-independent (Zhang et al., 2020b; Kardes¸ et al., 2011; Aghassi & Bertsimas, 2006). Here we extend
+the result to more general uncertainty sets.
+Our proof uses Kakutani’s Fixed Point Theorem (Kakutani, 1941). We first state a relevant definition, followed by Kakutani’s
+theorem below. For a mapping from a closed, bounded, convex set E in a Euclidean space into the family of all closed,
+covex subsets of E, upper semicontinuity is defined as follows.
+Definition C.1. A point-to-set mapping ϕ : E →2E is called upper semicontinuous (u.s.c.) if
+yn ∈ϕ(xn),
+n = 1, 2, 3, . . .
+lim
+n→∞xn = x,
+lim
+n→∞yn = y,
+16
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+imply that y ∈ϕ(x).
+Theorem C.1 (Kakutani’s Fixed Point Theorem (Kakutani, 1941)). If E is a closed, bounded, and convex set in a Euclidean
+space, and ϕ is an upper semicontinuous point-to-set mapping of E into the family of closed, convex subsets of E, then
+∃x ∈E s.t. x ∈ϕ(x).
+C.1.1. PROPERTIES OF ROBUST VALUE FUNCTIONS
+To apply Kakutani’s Fixed Point Theorem, we first establish some properties of the worst-case expected payoff functions,
+i.e., robust value function, defined as
+Fi(π) ≜
+inf
+r∈U(π) π⊤
+i riπ−i.
+Here we view ri ∈U(π) as a matrix in RAi×A−i, πi ∈RAi as a column vector in and π−i ∈RA−i. We begin by deriving
+an equivalent equation for the robust value function.
+Proposition C.2. For each player i ∈[N], given any product joint policy π ∈Π of all players, the robust value for player i
+satisfies
+Fi(π) = π⊤
+i r⋆
+i π−i −σRi(π)(−πiπ⊤
+−i),
+(21)
+where σRi(π)(·) is the support function of the reward uncertainty set Ri(π).
+Proof. Recall that the characteristic function δRi(π) : RA →{0, ∞} over a set Ri(π) ⊆RA is defined as δRi(π)(x) = 0
+if x ∈Ri(π) and +∞otherwise. The Legendre-Fenchel transform of δRi(π), i.e., the support function σRi(π) : RA →
+(−∞, +∞], is defined as
+σRi(π)(y) :=
+sup
+x∈Ri(π)
+⟨x, y⟩= sup
+x∈RA
+
+⟨y, x⟩−δRi(π)(x)
+	
+.
+(22)
+By the form of the uncertainty set U(π) = r⋆+ ×Ri(π), given any π ∈Π, we have
+Fi(π) =
+inf
+r∈U(π) π⊤
+i riπ−i
+=
+inf
+x∈Ri(π) π⊤
+i (r⋆
+i + x)π−i
+=
+inf
+x∈Ri(π) π⊤
+i xπ−i + π⊤
+i r⋆
+i π−i
+=
+inf
+x∈RA{π⊤
+i xπ−i + δRi(π)(x)} + π⊤
+i r⋆
+i π−i.
+We now proceed to apply Fenchel-Rockafellar duality theorem (Theorem A.1) to the minimization term. Fix player
+i’s policy πi and all other players’ policy π−i. We define the function f : RA →R as f(x) = π⊤
+i xπ−i for each
+x ∈RA. Consider the identity mapping IdA : RA →RA. Then dom(f) = RA, dom(δRi(π)) = Ri(π), and thus
+core(dom(δRi(π)) −IdA(dom(f))) = core(Ri(π) −RA) = core(RA) = RA. Note that 0 ∈RA. We now can apply
+Fenchel-Rockafellar duality, noting that (IdA)∗= IdA and (δRi(π))∗(y) = σRi(π)(y):
+inf
+x∈RA{f(x) + δRi(π)(x)} = −inf
+y∈RA{f ∗(−y) + δ∗
+Ri(π)(y)} = −inf
+y∈RA{f ∗(−y) + σRi(π)(y)}.
+We have
+f ∗(−y)
+=
+sup
+x∈RA{⟨x, −y⟩−π⊤
+i xπ−i}
+=
+sup
+x∈RA
+X
+ai∈Ai
+X
+a−i∈A−i
+x(ai, a−i) [−y(ai, a−i) −πi(ai)π−i(a−i)]
+=
+(
+0
+if −y(ai, a−i) −πi(ai)π−i(a−i) = 0 ∀ai ∈Ai, a−i ∈A−i
++∞
+otherwise
+Note that y ∈RA such that y(ai, a−i) = −πi(ai)π−i(a−i) is exactly the negative outer product of πi and π−i, i.e.,
+y = −πiπ⊤
+−i. Therefore, we have
+Fi(π) = −inf
+y∈RA{f ∗(−y) + σRi(π)(y)} + π⊤
+i r⋆
+i π−i = π⊤
+i r⋆
+i π−i −σRi(π)(−πiπ⊤
+−i).
+17
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+Lemma C.3. Under Assumption 2.1, for each agent i ∈[N], Fi(π) is continuous on Π.
+Proof. Here we focus on the case where the uncertainty set U(π) is well-defined for each π ∈int(Π). The proof for
+the setting where U(π) is well-defined for all π ∈Π follows similarly. Recall that for an arbitrary π ∈int(Π), we
+have σRi(π)(−πiπ⊤
+−i) := supx∈Ri(π)
+
+x, −πiπ⊤
+−i
+
+= supx∈RA
+
+−πiπ⊤
+−i, x
+
+−δRi(π)(x)
+	
+. For each x ∈Ri(π), by
+Assumption 2.1, we have
+
+x, −πiπ⊤
+−i
+
+= −Ea∼π [x(a)] ≤−Lr < +∞.
+Therefore, the sup attains its maximum on the closed set Ri(π). We denote the maximizer by x∗(π) ∈Ri(π).
+Let us consider ϵ > 0. Consider δ(ϵ, π) given by
+¯δ(ϵ, π) = min
+1
+2
+inf
+z∈Bd(Π) ∥π −z∥∞, δ
+ ϵ
+3
+
+,
+min{ϵ, 1}
+6|A| · max{rmax, M}
+
+,
+where M := maxx∈Ri(π) ∥x∥∞. For each π′ ∈Π such that ∥π −π′∥∞< ¯δ(ϵ, π), we have π′ ∈int(Π). By Assumption
+2.1, D
+ Ri(π), Ri(π′)
+
+<
+ϵ
+3. Thus there exist ˆx′ ∈Ri(π′) and ˆx ∈Ri(π) such that ∥ˆx −x∗(π′)∥∞<
+ϵ
+3 and
+∥ˆx′ −x∗(π)∥∞< ϵ
+3.
+By Proposition C.2, we have
+Fi(π′) −Fi(π) = (π′
+i)⊤r⋆
+i π′
+−i −
+sup
+x∈Ri(π′)
+
+x, −π′
+i(π′
+−i)⊤
+−π⊤
+i r⋆
+i π−i +
+sup
+x∈Ri(π)
+
+x, −πiπ⊤
+−i
+
+≤
+
+r⋆, π′
+i(π′
+−i)⊤−πiπ⊤
+−i
+
+−
+
+ˆx′, −π′
+i(π′
+−i)⊤
++
+
+x∗(π), −πiπ⊤
+−i
+
+=
+
+r⋆, π′
+i(π′
+−i)⊤−πiπ⊤
+−i
+
+−
+
+ˆx′ −x∗(π), −π′
+i(π′
+−i)⊤
++
+
+x∗(π), π′
+i(π′
+−i)⊤−πiπ⊤
+−i
+
+≤|A| ∥r⋆
+i ∥∞
+π′
+i(π′
+−i)⊤−πiπ⊤
+−i
+
+∞+ ∥ˆx′ −x∗(π)∥∞+ |A| ∥x∗(π)∥∞
+πiπ⊤
+−i −π′
+i(π′
+−i)⊤
+∞
+≤|A|rmax · 2 ∥π −π′∥∞+ ∥ˆx′ −x∗(π′)∥∞+ |A| · M · 2 ∥π −π′∥∞
+< ϵ
+3 + ϵ
+3 + ϵ
+3
+= ϵ.
+For the other direction, we have
+Fi(π) −Fi(π′) = π⊤
+i r⋆
+i π−i −σRi(π)(−πiπ⊤
+−i) −(π′
+i)⊤r⋆
+i π′
+−i + σRi(π′)(−π′
+i(π′
+−i)⊤)
+= π⊤
+i r⋆
+i π−i −
+sup
+x∈Ri(π)
+
+x, −πiπ⊤
+−i
+
+−(π′
+i)⊤r⋆
+i π′
+−i +
+sup
+x∈Ri(π′)
+
+x, −π′
+i(π′
+−i)⊤
+≤
+
+r⋆, πiπ⊤
+−i −π′
+i(π′
+−i)⊤
+−
+
+ˆx, −πiπ⊤
+−i
+
++
+
+x∗(π′), −π′
+i(π′
+−i)⊤
+=
+
+r⋆, πiπ⊤
+−i −π′
+i(π′
+−i)⊤
+−
+
+ˆx, π′
+i(π′
+−i)⊤−πiπ⊤
+−i
+
++
+
+x∗(π′) −ˆx, −π′
+i(π′
+−i)⊤
+≤|A| ∥r⋆
+i ∥∞
+πiπ⊤
+−i −π′
+i(π′
+−i)⊤
+∞+ |A| ∥ˆx∥∞
+πiπ⊤
+−i −π′
+i(π′
+−i)⊤
+∞+ ∥x∗(π′) −ˆx∥∞
+≤|A|rmax · 2 ∥π −π′∥∞+ |A| · M · 2 ∥π −π′∥∞+ ∥ˆx −x∗(π′)∥
+< ϵ
+3 + ϵ
+3 + ϵ
+3
+= ϵ.
+Therefore, Fi(·) is continuous in int(Π). By Assumption 2.1, the support function σRi(π)
+ −πiπ⊤
+−i
+
+is continuous in the
+boundary of the compact set Π. From Proposition C.2, we have that Fi(·) is also continuous in Bd(Π). Therefore, Fi(·) is
+continuous in Π.
+Lemma C.4. Under Assumptions 2.2 and 2.1, for each agent i ∈[N], Fi(π) is concave in πi given a fixed π−i.
+Proof. By Proposition C.2, the concavity of Fi(π) in πi follows by the convexity of the support function σRi(π)
+ −
+πiπ⊤
+−i
+
+.
+18
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+C.1.2. EXISTENCE OF RNE
+Theorem C.5. Under Assumptions 2.2 and 2.1, the robust matrix game has an equilibrium.
+Proof. We first construct a point-to-set mapping. Note that Π is closed, bounded and convex. We define ϕ : Π →2Π as
+ϕ(π) :=
+(
+z ∈Π | zi ∈arg max
+ui∈∆(Ai)
+Fi(ui, π−i), i = 1, . . . , N
+)
+.
+We next show that ϕ satisfies all the conditions in the Kakutani’s Fixed Point Theorem.
+By Lemma C.3, Fi(ui, π−i) is continuous. By Weierstrass’ Theorem, the maximum of this continuous function on a
+compact set ∆(Ai) exists, i.e., arg maxui∈∆(Ai) Fi(ui, π−i) ̸= ∅. We thus have ϕ(π) ̸= ∅for each π ∈Π.
+Next, we show that ϕ(π) is a convex set for each π ∈Π. Suppose that z, w ∈ϕ(π). By the definition of ϕ, for each i ∈[N]
+and ∀yi ∈∆(Ai), we have
+Fi(zi, π−i) = Fi(wi, π−i) ≥Fi(yi, π−i).
+Hence, for each λ ∈[0, 1], we have
+λFi(zi, π−i) + (1 −λ)Fi(wi, π−i) ≥Fi(yi, π−i).
+By the concavity of Fi from Lemma C.4,
+Fi(λzi + (1 −λ)wi, π−i) ≥λFi(zi, π−i) + (1 −λ)Fi(wi, π−i) ≥Fi(yi, π−i).
+Therefore, λz + (1 −λ)w ∈ϕ(π).
+We now show that ϕ is upper semi-continuous. Suppose that πn ∈Π with limn→∞πn = π, and zn ∈ϕ(πn) with
+limn→∞zn = z. By the definition of ϕ,for each n and i ∈[N] and ∀yi ∈∆(Ai), we have
+Fi(zn
+i , πn
+−i) ≥Fi(yi, πn
+−i).
+By the continuity of Fi, if we take the limit on both sides, we have
+Fi(zi, π−i) ≥Fi(yi, π−i).
+Hence z ∈ϕ(π). Therefore, ϕ is upper semi-continuous.
+Together, we show that ϕ satisfies all the conditions of Kakutani’s Fixed Point Theorem (Theorem C.1). Therefore, there
+exists π ∈Π, such that π ∈ϕ(π). That is, there exists an equilibrium in the robust matrix game.
+C.2. Markov Games: Proof of Theorem 2.1
+Proof. We define,
+π†
+h(s) ∈NE(Qπ†
+h (s, ·)).
+(23)
+We will show that the above policy π† is well defined. By definition of NE and (12), this means that,
+V π†
+i,h (s) = Qπ†
+i,h(s, π†
+h(s)) =
+sup
+u∈∆(Ai)
+Qπ†
+i,h(s, (u, π†
+−i,h(s))).
+We show the stronger claim that for the policy π† defined above,
+V π†
+i,h (s) = sup
+˜πi∈Πi
+V
+(˜πi,π†
+−i)
+i,h
+(s),
+∀h ∈[H], s ∈S, i ∈[N],
+(24)
+where Πi denotes the set of policies for agent i. We proceed by induction on h.
+19
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+1. (Base Case) Suppose that h = H. For each s ∈S, by Theorem C.5, there exists an equilibrium for the robust matrix
+game with reward uncertainty set ×i∈[N]Ui,s,H. Therefore, π†
+H(s) in (23) is well defined. We also have,
+V π†
+i,H(s) =
+sup
+u∈∆(Ai)
+Qπ†
+i,H
+ s, (u, π†
+−i,H(s))
+
+=
+sup
+u∈∆(Ai)
+inf
+rH∈Ur
+s,H
+Ea∼(u,π†
+−i,H(s)) [ri,H(s, a)]
+= sup
+˜πi∈Πi
+inf
+rH∈Ur
+s,H
+Ea∼(˜πi,H(s),π†
+−i,H(s)) [ri,H(s, a)]
+= sup
+˜πi∈Πi
+V
+(˜πi,π†
+−i)
+i,H
+(s).
+The second equality follows from (13) and the fourth equality follows from (12). The third equality follows since π† is
+Markovian.
+Overall, we see that (24) holds for h = H.
+2. (Inductive Step) Suppose that h < H. For any i ∈[N] and s ∈S, for each µ ∈∆(A), we define
+Fi,s,h(µ) = Qπ†
+i,h
+ s, µ
+
+=
+inf
+rh∈Ur
+s,h(µ)
+inf
+Ph∈Ps,h Ea∼µ
+h
+ri,h(s, a) + [PhV π†
+i,h+1](s, a)
+i
+.
+Following the same line of argument for the proof of Theorem C.5 for a robust matrix game, we can show that Fi,s,h(µ)
+is continuous and concave, and consequently, there exists an equilibrium for the stage game with the expected payoff
+{Fi,s,h}i∈[N]. Therefore, the NE π†
+h(s) in (23) is well defined. We see that,
+V π†
+i,h (s) =
+sup
+u∈∆(Ai)
+Qπ†
+i,h
+ s, (u, π†
+−i,h(s))
+
+=
+sup
+u∈∆(Ai)
+inf
+rh∈Ur
+s,h
+inf
+Ph∈Ps,h Ea∼(˜πi,h(s),π†
+−i,h(s))
+h
+ri,h(s, a) + [PhV π†
+i,h+1](s, a)
+i
+≤sup
+˜πi∈Πi
+inf
+rh∈Ur
+s,h
+inf
+Ph∈Ps,h Ea∼(˜πi,h(s),π†
+−i,h(s))
+
+ri,h(s, a) + [PhV
+(˜πi,π†
+−i)
+i,h+1
+](s, a)
+
+=
+sup
+˜πi,h(s)∈∆(Ai)
+inf
+rh∈Ur
+s,h
+inf
+Ph∈Ps,h Ea∼(˜πi,h(s),π†
+−i,h(s))
+
+ri,h(s, a) + sup
+˜πi∈Πi
+[PhV
+(˜πi,π†
+−i)
+i,h+1
+](s, a)
+
+≤
+sup
+˜πi,h(s)∈∆(Ai)
+inf
+rh∈Ur
+s,h
+inf
+Ph∈Ps,h Ea∼(˜πi,h(s),π†
+−i,h(s))
+
+ri,h(s, a) + Es′∼Ph(s,a)
+
+sup
+˜πi∈Πi
+V
+(˜πi,π†
+−i)
+i,h+1
+(s′)
+
+=
+sup
+˜πi,h(s)∈∆(Ai)
+inf
+rh∈Ur
+s,h
+inf
+Ph∈Ps,h Ea∼(˜πi,h(s),π†
+−i,h(s))
+h
+ri,h(s, a) + Es′∼Ph(s,a)
+h
+V π†
+i,h+1(s′)
+ii
+=
+sup
+˜πi,h(s)∈∆(Ai)
+Qπ†
+i,h
+ s, (˜πi,h(s), π†
+−i,h(s))
+
+= V π†
+i,h (s).
+The first two equalities use (23) and (13), respectively. The first inequality follows by allowing player i to also deviate
+at future steps. The second inequality uses Jensen’s inequality. The following equality follows from the induction
+hypothesis. The last two equalities use (13) and (23) respectively.
+Next, since the starting and ending terms are the same, all inequalities must be equalities. In particular, the first
+inequality is equality, which is the relationship we wanted to show after applying (23) and (13). Since this relationship
+holds for arbitrary s ∈S and i ∈[N], we see that (24) holds at time h.
+This completes the proof of (24). The fact that π† is an NE then immediately follows from the h = 1 case.
+20
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+D. Analysis of Markov Games with Reward Uncertainty
+D.1. Proof of Theorem 3.1
+Let us first recall the definition of regularized value functions for a regularized Markov game (S, {Ai}i∈[N], P, r, H, Ω),
+with G = (P, r). Given a joint policy π ∈Π, for each player i, ∀s ∈S, a ∈A, h ∈[H],
+eV π
+i,h(s, G) = Eπ
+P
+h H
+X
+t=h
+ri,t(st, at) −Ωi,t(πt(st))|sh = s
+i
+,
+(25)
+eQπ
+i,h(s, a, G) = ri,h(s, a) + Eπ
+P
+h
+H
+X
+t=h+1
+(ri,t(st, at) −Ωi,t(πt(st))) |sh = s, ah = a
+i
+.
+(26)
+Proof. By the definition of the expected payoff eV π
+i
+in (25) for each player i in a regularized game, for each product joint
+policy π ∈Π, we have
+eV π
+i (r⋆) = π⊤
+i r⋆
+i π−i −Ωi(π) = π⊤
+i r⋆
+i π−i −σRi(−πiπ⊤
+−i).
+For the robust game, by Proposition C.2, for each π ∈Π, the robust value of player i satisfies:
+V π
+i
+= π⊤
+i r⋆
+i π−i −σRi(−πiπ⊤
+−i) = eV π
+i (r⋆).
+Consider any RNE π† of the robust game. By definition, we have
+π†
+i ∈arg max
+πi∈∆(Ai)
+V
+πi×π†
+−i
+i
+= arg max
+πi∈∆(Ai)
+eV
+πi×π†
+−i
+i
+(r⋆),
+which implies that π† is an NE of the regularized game. Following a similar argument, we can conclude that any NE of the
+regularized game is an RNE of the robust game.
+D.2. Proof of Theorem 3.3
+Proof. For ball constrained uncertainty set Ri :=
+n
+Ri ∈RAi×A−i : ∥Ri∥q∗→p ≤αi
+o
+, we have
+σRi(−πiπ⊤
+−i) = sup
+Ri∈Ri
+⟨Ri, −πiπ⊤
+−i⟩
+=
+sup
+Ri:∥Ri∥q∗→p≤αi
+⟨Ri, −πiπ⊤
+−i⟩
+= αi
+sup
+Ri:∥Ri∥q∗→p≤1
+⟨Ri, −πiπ⊤
+−i⟩
+= αi ∥−πi∥p ∥π−i∥q
+= Ωi(π),
+where the second to last equality follows from Lemma A.3 on the dual norm of matrix operator norm. The equivalence
+between the robust game and the regularized games immediately follow from Theorem 3.1.
+For the (s, a)-rectangular policy-dependent uncertainty set, let Ri(π) := ×a∈ARi,a(π). We have
+σRπ
+i (−πiπ⊤
+−i) =
+sup
+Ri∈Ri(π)
+⟨Ri, −πiπ⊤
+−i⟩
+= −
+X
+ai
+X
+a−i
+[−τiωi(πi(ai)) −gi(π−i(a−i))] πi(ai)π−i(a−i)
+= τi
+X
+ai
+πi(ai)ωi(πi(ai)) +
+X
+a−i
+gi(π−i(a−i))π−i(a−i).
+By Proposition C.2, the robust best response policy br(π−i) for player i is given by the following optimization problem:
+arg
+sup
+πi∈∆(Ai)
+V πi×π−i
+i
+21
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+= arg
+sup
+πi∈∆(Ai)
+
+π⊤
+i r⋆
+i π−i −σRπ
+i (−πiπ⊤
+−i)
+	
+= arg
+sup
+πi∈∆(Ai)
+
+
+π⊤
+i r⋆
+i π−i −τi
+X
+ai
+πi(ai)ωi(πi(ai)) −
+X
+a−i
+gi(π−i(a−i))π−i(a−i)
+
+
+
+≡arg
+sup
+πi∈∆(Ai)
+(
+π⊤
+i r⋆
+i π−i −τi
+X
+ai
+πi(ai)ωi(πi(ai))
+)
+= arg
+sup
+πi∈∆(Ai)
+
+π⊤
+i r⋆
+i π−i −Ωi(π)
+	
+which gives the best response policy w.r.t. π−i for the regularized game with regularizer Ω= {Ωi}. Therefore, solving the
+RNE of the robust game is equivalent to solving the NE of the regularized normal-form game.
+D.3. Examples of Game Regularization
+As pointed out in Section 3.1, we can apply Theorem 3.3 to popular regularization schemes in games, including negative
+Shannon entropy regularization, KL divergence regularization, and Tsallis entropy regularization. Here we provide details
+of the {ωi} functions for the reward function uncertainty set and two more examples of regularizers studied in games.
+• The negative Shannon entropy: Ωi(π) = P
+ai∈Ai πi(ai) log πi(ai). Thus we can define ωi(πi(ai)) := log πi(ai).
+• The KL divergence regularizer: Ωi(π) = P
+ai∈Ai πi(ai) log πi(ai)
+µi(ai) = dKL(πi, µi), where µi ∈∆(Ai) is a given
+distribution. We can let ωi(πi(ai)) := log πi(ai)
+µi(ai).
+• The Tsallis entropy regularizer Ωi(π) = 1
+2
+P
+ai∈Ai(πi(ai)2−πi(ai)). Thus we can define ωi(πi(ai)) := 1
+2(πi(ai)−1).
+• The Renyi (negative) entropy regularizer: Ωi(π) = −(1 −q)−1 log
+ P
+ai∈Ai πi(ai)q
+for a given q ∈(0, 1), and thus
+we can let (with a slight abuse of notation) ωi(πi, ai) := −(1 −q)−1 log
+P
+a′
+i∈Ai πi(a′
+i)q
+.
+D.4. Proof of Proposition 3.5
+Proof. From Proposition B.1 we have that
+V π
+i,h(s) =
+inf
+rh∈Ur
+s,h
+Ea∼πh(s) [ri,h(s, a)] + Ea∼πh(s)
+
+[P ⋆
+hV π
+i,h+1](s, a)
+
+.
+We proceed with backward induction over h. In the base case at step h = H, there is no further future transitions, thus
+∀s ∈S and each i ∈[N]
+V π
+i,H(s)
+=
+inf
+rH∈Ur
+s,H
+Ea∼πH(s) [ri,H(s, a)]
+=
+Ea∼πH(s)
+
+inf
+rH∈Ur
+s,H
+ri,H(s, a)
+
+=
+Ea∼πH(s)
+
+r⋆
+i,H(s, a)
+
+−σRi,s,H
+ −πi,H(s)π⊤
+−i,H(s)
+
+where the last equality holds from Proposition C.2.
+Now suppose that (7) holds for all steps t > h. Then ∀s ∈S and each i ∈[N], we have
+V π
+i,h(s)
+=
+inf
+rh∈Ur
+s,h
+Ea∼πh(s) [ri,h(s, a)] + Ea∼πh(s)
+
+[P ⋆
+hV π
+i,h+1](s, a)
+
+=
+Ea∼πh(s)
+"
+inf
+rh∈Ur
+s,h
+ri,h(s, a)
+#
++ Ea∼πh(s)
+
+[P ⋆
+hV π
+i,h+1](s, a)
+
+=
+Ea∼πh(s)
+
+r⋆
+i,h(s, a) + [P ⋆
+hV π
+i,h+1](s, a)
+
+−σRi,s,h
+ −πi,h(s)π⊤
+−i,h(s)
+
+,
+which completes the proof for the induction step.
+22
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+D.5. Proof of Theorem 3.6
+Proof. For the robust MG, by Proposition 3.5, for each π ∈Π, the robust value functions of player i satisfy:
+V π
+i,h(s) = Ea∼πh(s)
+
+r⋆
+i,h(s, a) + [P ⋆
+hV π
+i,h+1](s, a)
+
+−σRi,s,h
+ −πi,h(s)π⊤
+−i,h(s)
+
+.
+We can use backward induction from h = H to 1 to show that
+V π
+i,h(s) = eV π
+i,h(s, G⋆),
+∀s ∈S, ∀h ∈[H].
+At the base step h = H, from Proposition 3.5, we have for ∀s ∈S and each i ∈[N]
+V π
+i,H(s)
+=
+Ea∼πH(s)
+
+r⋆
+i,H(s, a)
+
+−σRi,s,H
+ −πi,H(s)π⊤
+−i,H(s)
+
+=
+Ea∼πH(s)
+
+r⋆
+i,H(s, a)
+
+−Ωi,H(π, s)
+=
+eV π
+i,H(s, G⋆)
+Now assume that for t > h that
+V π
+i,t(s) = eV π
+i,t(s, G⋆),
+∀s ∈S, ∀i ∈[N]
+and that π† = (π†
+1, . . . , π†
+N) is an NE for the regularized game at steps t > h. Then ∀s ∈S and each i ∈[N]
+V π
+i,h(s)
+=
+Ea∼πh(s)
+
+r⋆
+i,h(s, a) + [P ⋆
+hV π
+i,h+1](s, a)
+
+−σRi,s,h
+ −πi,h(s)π⊤
+−i,h(s)
+
+=
+Ea∼πh(s)
+h
+r⋆
+i,h(s, a) + [P ⋆
+h ˜V π
+i,h+1](s, a)
+i
+−Ωi,h(π, s)
+=
+eV π
+i,h(s, G⋆)
+Thus V π
+i,h(s) = eV π
+i,h(s, G⋆), ∀s ∈S, ∀h ∈[H], ∀i ∈[N].
+Consider any RNE π† of the robust MG. By definition, we have
+π†
+i ∈arg max
+πi∈∆(Ai)
+V
+πi×π†
+−i
+i,1
+(s1) = arg max
+πi∈∆(Ai)
+eV
+πi×π†
+−i
+i,1
+(s1, G⋆),
+which implies that π† is an NE of the regularized MG. Following a similar argument, we can conclude that any NE of the
+regularized MG is an RNE of the robust MG.
+D.6. Examples of Regularized Markov Game and Equivalent Robust Markov Game
+Theorem D.1. Consider a regularized MG G′ = (S, {Ai}i∈[N], P ⋆, r⋆, H, Ω) with regularizer functions Ω:=
+(Ωi,h)i∈[N],h∈[H] .
+1. If Ωi,h(s, µ) = αi,s,h ∥µi∥p ∥µ−i∥q is the ℓp/ℓq-norm regularizer for each i ∈[N], h ∈[H], s ∈S and ∀µ ∈∆(A),
+then solving for MPNE of the regularized game G′ is equivalent to solving for MPRNE of the robust game G with
+s-rectangular ball constrained reward uncertainty set Ur = r⋆+ ×i,s,hRi,s,h,
+Ri,s,h =
+
+Ri ∈RAi×A−i : ∥Ri∥q∗→p ≤αi,s,h
+	
+,
+where q∗satisfies
+1
+q∗+ 1
+q = 1.
+2. If Ωi,h is decomposable with kernel ω, i.e., Ωi,h(s, µ) := τi,s,h
+P
+ai∈Ai µi(ai)ωi,s,h
+ µi(ai)
+
+, i ∈[N], h ∈[H], s ∈S,
+with τi,s,h ≥0, and Ωi,h(s, µ) is convex in µi for each given µ−i. Then solving for NE of the regularized game G′
+is equivalent to solving for RNE of robust game with (s, a)-rectangular policy-dependent uncertainty set U(π) =
+r⋆+ ×i,s,a,hRi,s,a,h(π), where
+Ri,s,a,h(π) =
+h
+τi,s,hωi,s,h (πi,h(ai|s)) + gi,s,h (π−i,h(a−i|s)) ,
+ωi,s,h (πi,h(ai|s)) + gi,s,h(π−i,h(a−i|s))
+i
+⊂R,
+with functions ωi,s,h, ωi,s,h : [0, 1] →R and gi,s,h, gi,s,h : [0, 1] →R are continuous.
+The proof follows easily from Theorem 3.3 using backward induction.
+23
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+D.6.1. EXAMPLES OF MARKOV GAME REGULARIZATION
+We can apply Theorem D.1 above to popular regularization schemes in Markov games. Below we provide four examples
+with the corresponding {ωi} functions for the reward function uncertainty set.
+• The negative Shannon entropy: Ωi,h(s, µ) = P
+ai∈Ai µi(ai) log µi(ai). Thus we can define ωi,s,h(πi,h(ai|s)) :=
+log πi,h(ai|s).
+• The KL divergence regularizer: Ωi,h(s, µ) = P
+ai∈Ai µi(ai) log µi(ai)
+νi(ai) = dKL(µi, νi), where νi ∈∆(Ai) is a given
+distribution. We can let ωi,s,h(πi,h(ai|s)) := log πi,h(ai|s)
+νi(ai) .
+• The Tsallis entropy regularizer Ωi,h(s, µ) = 1
+2
+P
+ai∈Ai(µi(ai)2 −µi(ai)). Thus we can define ωi,s,h(πi,h(ai|s)) :=
+1
+2(πi,h(ai|s) −1).
+• The Renyi (negative) entropy regularizer: Ωi,h(s, µ) = −(1 −q)−1 log
+ P
+ai∈Ai µi(ai)q
+for a given q ∈(0, 1). Thus
+we can let (with a slight abuse of notation) ωi,s,h(πi,h(·|s), ai) := −(1 −q)−1 log
+P
+a′
+i∈Ai πi,h(a′
+i|s)q
+.
+E. Analysis of Robust Zero-Sum Markov Games
+E.1. Proof of Theorem 4.1
+Proof. We present a poly-time reduction from the problem of computing an NE for a general-sum game to the problem
+of computing an RNE for a two-player zero-sum robust matrix game with (s, a)-rectangular reward uncertainty. Since
+computing an NE of a general-sum game is PPAD-hard, it then follows that computing an RNE for the aforementioned class
+of robust matrix games is also PPAD-hard. Let (A, B) be an arbitrary general sum matrix game. WLOG we can further
+assume that A, B ≤0. To construct the robust matrix game instance, we first define r = −A+B
+2
+and r = A+B
+2
+. Then, we
+map (A, B) to the robust matrix game G defined by r⋆= A −r, R1 = {r ∈Rn1×n2 | r ≤r ≤r}, and R2 = −R1.
+To prove the reduction is correct, we show that π is an NE for (A, B) if and only if π is an RNE for G. First, we observe
+that for player 1,
+−σR1(−π1π⊤
+2 ) = −sup
+r≤R≤r
+⟨R, −π1π⊤
+2 ⟩
+= −sup
+r≤R≤r
+−π⊤
+1 Rπ2
+=
+inf
+r≤R≤r π⊤
+1 Rπ2
+= π⊤
+1 rπ2.
+Using Proposition C.2, we see the robust suboptimality gap for player 1 under π is exactly,
+D1(π) =
+max
+π′
+1∈∆(A1)
+
+π′⊤
+1 (r⋆+ r)π2
+	
+−(π⊤
+1 (r⋆+ r)π2).
+Similarly, we observe that −σ−R1(−π1π⊤
+2 ) = π⊤
+1 (−r)π2. Thus, the robust suboptimality gap for player 2 under π is
+exactly,
+D2(π) =
+max
+π′
+2∈∆(A2)
+
+π⊤
+1 (−r⋆−r)π′
+2
+	
+−(π⊤
+1 (−r⋆−r)π2).
+Putting these together, the RNE gap for π is,
+RNEGap(π) =
+max
+π′
+1∈∆(A1)
+
+π′⊤
+1 (r⋆+ r)π2
+	
++
+max
+π′
+2∈∆(A2)
+
+π⊤
+1 (−r⋆−r)π′
+2
+	
+−π⊤
+1 (r⋆+ r)π2 −π⊤
+1 (−r⋆−r)π2
+=
+max
+π′
+1∈∆(A1)
+
+π′⊤
+1 Aπ2
+	
++
+max
+π′
+2∈∆(A2)
+
+π⊤
+1 Bπ′
+2
+	
+−π⊤
+1 Aπ2 −π⊤
+1 Bπ2.
+Observe this last term is exactly the NE gap for (A, B). Thus, minimizing the optimality gaps for both games is equivalent
+which implies the set of RNEs for G is exactly the set of NEs for (A, B). In particular, this means that π is an NE for (A, B)
+if and only if π is an RNE for G. Thus, the reduction is correct.
+24
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+Lastly, we note that G can easily be computed in linear time in the size of (A, B) just by computing the average and
+difference of matrices. Thus, the reduction can be done in polynomial time.
+By simply defining R1(a) = [r(a), r(a)] and R2(a) = [−r(a), −r(a)] the same proof applies to (s, a)-rectangularity.
+E.2. Proof of Lemma 4.2
+Proposition C.2 implies that, the robust value for player i satisfies,
+V π
+i
+= π⊤
+i r⋆
+i π−i −σRi(−πiπ⊤
+−i)
+Now, suppose that the characteristic function could be decomposed into σRi(−πiπ⊤
+−i) = Ωi,i(πi) + Ωi,−i(π−i). Then the
+robust suboptimality gap for player i takes the form,
+V †,π−i
+i
+(s) −V π
+i (s) =
+max
+π′
+i∈∆(A1)
+n
+π′
+i
+⊤r⋆
+i π−i −σRi(−π′
+iπ⊤
+−i)
+o
+−
+ π⊤
+i r⋆
+i π−i −σRi(−πiπ⊤
+−i)
+
+=
+max
+π′
+i∈∆(A1)
+n
+π′
+i
+⊤r⋆
+i π−i −Ωi,i(π′
+i) −Ωi,−i(π−i)
+o
+−
+ π⊤
+i r⋆
+i π−i −Ωi,i(πi) −Ωi,−i(π−i)
+
+=
+max
+π′
+i∈∆(A1)
+n
+π′
+i
+⊤r⋆
+i π−i −Ωi,i(π′
+i)
+o
+−
+ π⊤
+i r⋆
+i π−i −Ωi,i(πi)
+
+.
+Next, we define Ωi(πi) := Ωi,i(πi). We see the RNE gap takes the form,
+RNEGap =
+max
+π′
+1∈∆(A1)
+n
+π′
+1
+⊤r⋆π2 −Ω1(π′
+1)
+o
+−
+ π⊤
+1 r⋆
+1π2 −Ω1(π1)
+
++
+max
+π′
+2∈∆(A2)
+
+π1
+⊤(−r⋆)π′
+2 −Ω2(π′
+2)
+	
+−
+ π⊤
+1 (−r⋆)π2 −Ω2(π2)
+
+=
+max
+π′
+1∈∆(A1)
+n
+π′
+1
+⊤r⋆π2 −Ω1(π′
+1) + Ω2(π2)
+o
+−
+min
+π′
+2∈∆(A2)
+
+π1
+⊤r⋆π′
+2 −Ω1(π1) + Ω2(π′
+2)
+	
+This exactly matches the RNEGap for the zero-zum regularized game with regularization functions Ω1 and Ω2. Thus,
+solving the original two-player zero-sum robust game is equivalent to solving the two-player zero-sum regularized game
+with regularization functions Ω1 and Ω2. Furthermore, since Ω1,1 and Ω2,2 are strongly convex by assumption, we know
+this regularized game can be solved in polynomial time (Zhang et al., 2020a).
+E.3. Proof of Theorem 4.3
+Proof. The proof is nearly immediate given the proof of Theorem 3.6, Lemma 4.2, and the definition of regularized MGs.
+For completeness, we give a formal proof below. We follow the proof of Theorem 3.6 and show the constructed regularized
+game is TPZS. We proceed by backward induction on h. For the base case, we consider h = H. Fix any policy π. For any
+s ∈S and i ∈[N], we know by (7),
+V π
+i,H(s) = Ea∼πH(s)
+
+r⋆
+i,H(s, a)
+
+−σRi,s,H
+ −πi,H(s)π⊤
+−i,H(s)
+
+.
+Since σRi,s,H
+ −πi,H(s)π⊤
+−i,H(s)
+
+= ΩH
+i,i(πi,H(s)) + ΩH
+i,−i(π⊤
+−i,H(s)) by Definition 4.2, Lemma 4.2 implies an NE for
+the robust stage game is equivalent to an NE for the corresponding TPZS regularized game.
+For the inductive step, suppose that h < H. Fix any policy π. For any s ∈S and i ∈[N], again we know by (7),
+V π
+i,H(s) = Ea∼πH(s)
+
+r⋆
+i,h(s, a) + [P ⋆
+hV π
+i,h+1](s, a)
+
+−σRi,s,h
+ −πi,h(s)π⊤
+−i,h(s)
+
+.
+From the proof of Theorem 3.6, we know that [P ⋆
+hV π
+i,h+1](s, a) = [P ⋆
+h ˜V π
+i,h+1](s, a). Furthermore, the induction hypothesis
+implies the future game is TPZS and so admits a unique NE value ˜V π
+i,h+1(s′) = ˜V ∗
+i,h+1(s′) for each s′ ∈S. Define
+25
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+r′
+i,h(s, a) := r⋆
+i,h(s, a) + [P ⋆
+h ˜V ∗
+i,h+1](s, a). Since σRi,s,h
+
+−πi,h(s)π⊤
+−i,h(s)
+
+= Ωh
+i,i(πi,h(s)) + Ωh
+i,−i(π⊤
+−i,h(s)) by
+Definition 4.2, we see that solutions to the robust stage game correspond to a TPZS regularized game by Lemma 4.2.
+Furthermore, this regularized game is exactly the regularized stage game of G′. This completes the proof.
+E.4. Proof of Theorem 4.5
+Proof. The two cases of efficiently decomposable structures are
+1. For the ball constrained uncertainty case R1,s,h =
+
+R1 ∈RA1×A2 : ∥R1∥∞→p ≤α1,s,h
+	
+and R2,s,h =
+
+R2 ∈
+RA1×A2 :
+R⊤
+2
+
+∞→p ≤α2,s,h
+	
+.
+We can show the decomposability for each player. For player 1, we have
+σR1,s,h(−π1,h(s)π⊤
+2,h(s)) =
+sup
+R1∈R1,s,h
+⟨R1, −π1,h(s)π⊤
+2,h(s)⟩
+=
+sup
+R1:∥R1∥∞→p≤α1,s,h
+⟨R1, −π1,h(s)π⊤
+2,h(s)⟩
+= α1,s,h
+sup
+R1:∥R1∥∞→p≤1
+⟨R1, −π1,h(s)π⊤
+2,h(s)⟩
+= α1,s,h ∥−π1,h(s)∥p
+Similarly, for player 2, we have
+σR2,s,h(−π1,h(s)π⊤
+2,h(s)) =
+sup
+R2∈R2,s,h
+⟨R2, −π1,h(s)π⊤
+2,h(s)⟩
+=
+sup
+R2:∥R⊤
+2 ∥∞→p≤α2,s,h
+⟨R2, −π1,h(s)π⊤
+2,h(s)⟩
+= α2,s,h
+sup
+R2:∥R⊤
+2 ∥∞→p≤1
+⟨R2, −π1,h(s)π⊤
+2,h(s)⟩
+= α2,s,h ∥−π2,h(s)∥p
+where the last equality for both player views follows from Lemma A.3 on the dual norm of matrix operator norm. Thus
+we obtain decombosable Ωi,h(s, πi,h(s)) = αi,s,h ∥πi,h(s)∥p.
+2. For the decomposable kernel case,
+Ri,s,a,h(π) =
+h
+τi,s,hωi,s,h (πi,h(ai|s)) + gi,s,h (π−i,h(a−i|s)) , ωi,s,h (πi,h(ai|s)) + gi,s,h(π−i,h(a−i|s))
+i
+⊂R,
+with parameters τi,s,h ≥0, functions ωi,s,h, ωi,s,h : [0, 1] →R and gi,s,h, gi,s,h : [0, 1] →R.
+This is the same structure as in Theorem D.1, and thus we know the decomposable regularizer is Ωi,h(s, π) =
+τi,s,h
+P
+ai πi,h(ai|s)ωi,s,h(πi,h(ai|s)).
+With each case of Ωi,h shown to be decomposable, we can proceed as in Theorem D.1. The MPRNE of the RMG, and
+MPNE of the corresponding regularized MG, are found by solving for the respective NE for each s ∈S at each h ∈[H].
+For either case, for each s ∈S, we have from Theorem 3.3 that at each step h = H we can efficiently solve the RNE
+through the corresponding regularized NE. Then we can proceed via backward induction to solve the NE for all h, as done
+in Theorem 3.6.
+F. Analysis of Markov Games with Transition Uncertainty
+F.1. Proof of Proposition 5.1
+Proof. We will prove the proposition via an induction from step h = H to 1.
+For the base case h = H, as there is no transition, (8) holds by the definition of the robust value function.
+26
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+Now suppose that (8) holds for all t ≥h + 1. By Proposition B.1, we have
+V π
+i,h(s) = Ea∼πh(s)
+
+r⋆
+i,h(s, a)
+
++
+inf
+Ph∈Ps,h Ea∼πh(s)
+
+[PhV π
+i,h+1](s, a)
+
+= Ea∼πh(s)
+
+r⋆
+i,h(s, a)
+
++
+inf
+Ph∈Ps,h Ea∼πh(s),s′∼Ph(·|s,a)
+
+V π
+i,h+1(s′)
+
+= Ea∼πh(s)
+
+r⋆
+i,h(s, a)
+
++
+inf
+Ph∈Ps,h⟨Ph, V π
+i,h+1πh(s)⊤⟩
+= Ea∼πh(s)
+
+r⋆
+i,h(s, a)
+
+−
+sup
+Ph∈Ps,h
+⟨Ph, −V π
+i,h+1πh(s)⊤⟩
+= Ea∼πh(s)
+
+r⋆
+i,h(s, a)
+
+−σPs,h
+ −V π
+i,h+1πh(s)⊤
+.
+F.2. Proof of Theorem 5.2
+Proof. For the robust MG, by Proposition 5.1, for each π ∈Π, the robust value functions of player i satisfy:
+V π
+i,h(s) = Ea∼πh(s)
+
+r⋆
+i,h(s, a)
+
+−σPs,h
+ −V π
+i,h+1πh(s)⊤
+,
+∀s ∈S, ∀h ∈[H].
+We can use backward induction from h = H to 1 to show that
+V π
+i,h(s) = bV π
+i,h(s, G⋆),
+∀s ∈S, ∀h ∈[H].
+Consider any RNE π† of the robust MG. By definition, we have
+π†
+i ∈arg max
+πi∈∆(Ai)
+V
+πi×π†
+−i
+i,1
+(s1) = arg max
+πi∈∆(Ai)
+bV
+πi×π†
+−i
+i,1
+(s1, G⋆),
+which implies that π† is an NE of the regularized MG. Following similar argument, we can conclude that any NE of the
+regularized MG is an RNE of the robust MG.
+F.3. Examples of Transition Uncertainty Sets
+F.3.1. PROOF OF COROLLARY 5.3
+Proof. For ball constrained uncertainty set Ps,h =
+n
+P ∈RS×A :
+P −P ⋆
+s,h
+
+q∗→p ≤βs,h
+o
+, we have
+σPs,h
+ −vµ⊤
+=
+sup
+Ph∈Ps,h
+⟨Ph, −vµ⊤⟩
+= ⟨P ⋆
+h, −vµ⊤⟩+
+sup
+∥P ′
+h∥p→q∗≤βs,h
+⟨P ′
+h, −vµ⊤⟩
+= −Ea∼µ [[P ⋆
+hv](s, a)] + βs,h
+sup
+∥P ′
+h∥p→q∗≤1
+⟨P ′
+h, −vµ⊤⟩
+(I)
+= −Ea∼µ [[P ⋆
+hv](s, a)] + βs,h ∥−v∥p
+µ⊤
+q
+= Ωs,h (P ⋆
+h, −v, µ)
+where equality (I) follows from Lemma A.3 on the dual norm of matrix operator norm. The equivalence between the robust
+game and the regularized game immediately follows from Theorem 5.2.
+F.3.2. PROOF OF COROLLARY 5.4
+Proof. By Theorem 5.2, it is sufficient to verify that the support function σPs,h(·) is equivalent to the specified regularizer
+function Ωs,h for each uncertainty set. When the transition uncertainty set is (s, a)-rectangular with the form P =
+27
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+×(s,a,h)∈S×A×[H]Ps,a,h, for each s ∈S, h ∈[H], the support function σPs,h can be simplified. In particular, for each
+v ∈RS, µ ∈∆(A), we have
+σPs,h(−vµ⊤) =
+sup
+P ∈Ps,h
+⟨P, −vµ⊤⟩
+=
+sup
+P ={Pa′}a′∈A:Pa′∈Ps,a′,h
+Ea∼µ [⟨Pa, −v⟩]
+(I)
+= Ea∼µ
+"
+sup
+Pa∈Ps,a,h
+⟨Pa, −v⟩
+#
+(II)
+= Ea∼µ
+
+σPs,a,h(−v)
+
+,
+(27)
+where (I) holds due to the independence of uncertainty sets {Ps,a,h}a∈A and (II) follows from the definition of support
+function.
+F.3.3. EXAMPLES OF S × A-RECTANGULAR TRANSITION UNCERTAINTY SETS
+We first formally introduce various distance metric for distributions.
+1. Total variation distance: for any η, ν ∈∆(S), dTV(η, ν) = 1
+2 ∥η −ν∥1 = 1
+2
+P
+s |η(s) −ν(s)|.
+2. Kullback-Leibler (KL) distance: for any η, ν ∈∆(S), dKL(η, ν) = P
+s∈S η(s) log η(s)
+ν(s).
+3. Chi-square distance: for any η, ν ∈∆(S), dχ2(η, ν) = P
+s
+(η(s)−ν(s))2
+ν(s)
+.
+4. Wasserstein distance: consider p-Wasserstein metric w.r.t. to a metric ρ(·), i.e., for any η, ν ∈∆(S), dWp(η, ν) :=
+ infγ∼Γ(η,ν) E(x,y)∼γ [ρ(x, y)p]
+1/p , where Γ(η, ν) denotes the set of all couplings of η and ν.
+Corollary F.1. Consider a robust MG (S, {Ai}i∈[N], P ⋆, r⋆, H, U) with uncertainty set U = P × {r⋆}, where P is
+(s, a)-rectangular.
+1. If P is a KL uncertainty set given by P = ×(s,a,h)∈S×A×[H]PKL
+s,a,h with PKL
+s,a,h =
+
+P ∈∆(S) : dKL(P, P ⋆
+s,a,h) ≤
+βs,a,h
+	
+, then the equivalent policy-value regularized MG (S, {Ai}i∈[N], P ⋆, r⋆, H, Ω) is associated with the following
+convex regularizer: ∀s ∈S, v ∈RS, µ ∈∆(A),
+Ωs,h (P ⋆
+h, −v, µ) = Ea∼µ
+
+min
+λ≥0
+
+βs,a,hλ + λ log
+
+(P ⋆
+s,a,h)⊤exp
+ −v
+λ
+
+.
+(28)
+2. If P is a Chi-square uncertainty set given by P = ×(s,a,h)∈S×A×[H]Pχ2
+s,a,h with Pχ2
+s,a,h =
+
+P ∈∆(S) :
+dχ2(P, P ⋆
+s,a,h) ≤βs,a,h
+	
+, then the equivalent policy-value regularized MG (S, {Ai}i∈[N], P ⋆, r⋆, H, Ω) is asso-
+ciated with the following convex regularizer: ∀s ∈S, v ∈RS, µ ∈∆(A),
+Ωs,h (P ⋆
+h, −v, µ) = Ea∼µ
+
+max
+u≥0
+n
+(P ⋆
+s,a,h)⊤(v −u) −
+q
+βs,a,h VarP ⋆
+s,a,h(v −u)
+o
+;
+(29)
+3. If P is a total variation uncertainty set given by P = ×(s,a,h)∈S×A×[H]PTV
+s,a,h with PTV
+s,a,h =
+
+P ∈∆(S) :
+dTV(P, P ⋆
+s,a,h) ≤βs,a,h}, then the equivalent policy-value regularized MG (S, {Ai}i∈[N], P ⋆, r⋆, H, Ω) is associated
+with the following convex regularizer: ∀s ∈S, v ∈RS, µ ∈∆(A),
+Ωs,h (P ⋆
+h, −v, µ) = Ea∼µ
+
+−[P ⋆
+hv](s, a) + βs,a,h
+2
+min
+u≥0
+
+max
+s′
+ v(s′) −u(s′)
+
+−max
+s
+ v(s) −u(s)
+
+;
+(30)
+4. Wasserstein uncertainty set: If the uncertainty set P is S × A-rectangular given by P = ×(s,a,h)∈S×A×[H]PWp
+s,a,h with
+PWp
+s,a,h =
+
+P ∈∆(S) : dWp(P, P ⋆
+s,a,h) ≤βs,a,h
+	
+,
+Ωs,h (P ⋆
+h, −v, µ) = Ea∼µ
+
+inf
+λ≥0
+
+λβs,a,h + E˜s∼P ⋆
+s,a,h
+
+sup
+s′∈S
+
+−v(s′) −λρ(˜s, s′)
+	
+.
+(31)
+28
+
+Roping in Uncertainty: Robustness and Regularization in Markov Games
+Proof. By Corollary 5.4, it is sufficient to analyze the support function σPs,a,h for each case.
+1. KL uncertainty set: From the strong duality result on KL constrained set (Iyengar, 2005, Lemma 4.1) the optimization
+problem in the support function σPs,a,h(−v) is equivalent to
+min
+λ≥0
+
+βs,a,hλ + λ log
+
+(P ⋆
+s,a,h)⊤exp
+ −v
+λ
+
+,
+(32)
+which is convex in λ and can be solved efficiently. By (27), we have σPs,h(−vµ⊤) = Ωs,h (P ⋆
+h, −v, µ) with Ωs,h
+defined in (28).
+2. Chi-square uncertainty set: From the strong duality result on χ2-distance constrained set (Iyengar, 2005, Lemma 4.2),
+the optimization problem in the support function σPs,a,h(−v) is equivalent to
+min
+u≥0
+n
+−(P ⋆
+s,a,h)⊤(v −u) +
+q
+βs,a,h VarP ⋆
+s,a,h (v −u)
+o
+,
+(33)
+where VarP ⋆
+s,a,h (v −u) = (P ⋆
+s,a,h)⊤(v −u)2 −
+
+(P ⋆
+s,a,h)⊤(v −µ)
+2
+and the convex optimization problem (33) can
+be solved with complexity O(|S| log |S|). By (27), we have σPs,h(−vµ⊤) = Ωs,h (P ⋆
+h, −v, µ) with Ωs,h defined in
+(29).
+3. TV uncertainty set: From the strong duality result on TV-constrained set (Iyengar, 2005, Lemma 4.3), the optimization
+problem in the support function σPs,a,h(−v) is equivalent to
+−(P ⋆
+s,a,h)⊤v + βs,a,h
+2
+min
+u≥0
+n
+max
+s′
+(v(s′) −u(s′)) −max
+s′
+(v(s′) −u(s′))
+o
+,
+(34)
+which can be solved with complexity O(|S| log |S|). By (27), we have σPs,h(−vµ⊤) = Ωs,h (P ⋆
+h, −v, µ) with Ωs,h
+defined in (30).
+4. Wasserstein uncertainty set: From the strong duality result (Blanchet & Murthy, 2019, Theorem 1), it holds that
+σPs,a,h(−v) =
+sup
+P ∈P
+Wp
+s,a,h
+EP [−v] = inf
+λ≥0
+
+λβs,a,h + E˜s∼P ⋆
+s,a,h
+
+sup
+s′∈S
+{−v(s′) −λρ(˜s, s′)}
+
+,
+which yields the equivalent regualrizer function Ωs,h defined in (30).
+F.4. Proof of Theorem 5.5
+Proof. Given a general-sum game (A, B) we construct a transition-uncertain RMG that recovers the same properties as the
+reward-uncertain RMG from the proof of Theorem 4.1. Then, the proof of hardness follows exactly as before.
+We define r and r exactly as before. Then, we define the nominal reward model by r⋆
+1(s1, a) = A(a) −r(a), r⋆
+2(s1, a) =
+r(a), and r⋆
+2(s2, a) = r(a). Here, we use the subscript to denote the time step, not the player number since the game is
+zero-sum. Lastly, we define Ps,a = ∆(S) to allow all possible transitions. Note, that we only need to define the transition
+uncertainty for the first step since H = 2. We assume the start state is s1 so let r⋆
+2(s1, a) be arbitrary.
+It is then clear that the worst model for the first player deterministically sends it to state s1, which yields a reward of
+π⊤
+1 (r⋆+ r)π2 as before. Similarly, the worst model for the second player deterministically sends it to state s2 which yields
+a reward of π⊤
+1 (−r⋆−r)π2 as before. Thus, the earlier proof then applies and shows the problem is PPAD-hard to solve.
+29

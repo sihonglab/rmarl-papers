@@ -1,0 +1,5906 @@
+Distributionally Robust Markov Games with Average Reward
+Zachary Roch 1 Yue Wang 1 2
+Abstract
+We
+propose
+and
+study
+distributionally
+ro-
+bust
+Markov
+games
+(DR-MGs)
+with
+the
+average-reward criterion as a crucial framework
+for multi-agent decision-making under model mis-
+matches and over extended horizons. Under a
+standard irreducible assumption, we first derive
+a correspondence between the optimal policies
+and the solutions of the robust Bellman equation,
+based on which we further show the existence of
+a stationary Nash Equilibrium (NE) of the game.
+We further study DR-MGs under a more general
+weakly communicating setting. We construct a
+set-valued map based on the constant-gain opti-
+mal robust Bellman operator and show that its
+value is a subset of the best-response policies. We
+further prove that this map admits a fixed point,
+which implies the existence of NE. We then de-
+sign two algorithms, Robust Nash-Iteration and
+robust TD Descent, with provably convergent
+guarantees. Finally, we show that the NE un-
+der average-reward can be approximated by the
+ones for the discounted DR-MGs as the discount
+factor approaches one. Our studies provide a com-
+prehensive theoretical and algorithmic foundation
+for decision-making in complex, uncertain, and
+long-running multi-player environments.
+1. Introduction
+A Markov Game (MG) or stochastic game provides a
+powerful mathematical framework for modeling sequential
+decision-making in competitive multi-agent environments
+(Shapley, 1953; Filar & Vrieze, 1996; Littman, 1994; Fink,
+1964). Solving an MG involves finding an equilibrium
+policy profile for all players, where each player aims to
+1Department of Electrical and Computer Engineering, Uni-
+versity of Central Florida, Orlando, Florida, USA. 2Department
+of Computer Science,
+University of Central Florida,
+Or-
+lando, Florida, USA. Correspondence to:
+Zachary Roch
+<zachary.roch@ucf.edu>, Yue Wang <yue.wang@ucf.edu>.
+Proceedings of the 43 rd International Conference on Machine
+Learning, Seoul, South Korea. PMLR 306, 2026. Copyright 2026
+by the author(s).
+maximize their own cumulative reward. However, a critical
+challenge in practice is the potential for a mismatch between
+the assumed MG model and the true underlying environ-
+ment. This discrepancy, commonly called the Sim-to-Real
+gap (McMahan et al., 2024), can arise from various sources,
+including environmental non-stationarity, inherent modeling
+errors, exogenous disturbances, or even adversarial attacks
+(Bukharin et al., 2023; Ma et al., 2023). Consequently,
+policies derived from a misspecified model can exhibit sig-
+nificantly degraded performance when deployed.
+To address this vulnerability, the framework of distribution-
+ally robust Markov Games (DR-MGs) has been developed
+(Zhang et al., 2020; Kardes¸ et al., 2011), extending the prin-
+ciples of distributionally robust Markov Decision Processes
+(MDPs) (Bagnell et al., 2001; Nilim & El Ghaoui, 2003;
+Iyengar, 2005) to the multi-agent setting. Instead of relying
+on a single, fixed MG model, the robust approach seeks to
+find an equilibrium that optimizes the worst-case perfor-
+mance over a predefined uncertainty set of plausible game
+models under potential model mismatches. The resulting
+robust equilibrium provides a performance guarantee across
+all models within this set, thereby ensuring each agent’s
+resilience against model mismatch.
+The nature of a DR-MG problem is fundamentally shaped
+by the optimality criterion used. Much of the prior work
+has concentrated on the finite-horizon (Ma et al., 2023;
+Shi et al., 2025; 2024; Jiao & Li, 2024; Li et al., 2025;
+Blanchet et al., 2023) or discounted-reward setting (Zhang
+et al., 2020; Kardes¸ et al., 2011), where the objective is to
+maximize the expected reward over a finite number of steps
+or a discounted sum of rewards.
+In these formulations, the influence of future rewards dimin-
+ishes exponentially, which often simplifies analysis as the
+results are less dependent on the long-term chain structure
+of the underlying game. However, despite the analytical ele-
+gance of these settings, policies learned under them can be
+suboptimal for multi-agent systems designed to operate over
+extended or indefinite time horizons, such as in warehouse
+robotics (Krnjaic et al., 2024), communication networks
+(Qu et al., 2020), autonomous vehicle coordination (Peake
+et al., 2020), financial markets (Vadori et al., 2024), or even
+peer-to-peer energy trading (Qiu et al., 2021). In these sce-
+narios, the long-term average reward is a more natural and
+1
+arXiv:2508.03136v4  [cs.MA]  21 Jun 2026
+
+Distributionally Robust Markov Games with Average Reward
+meaningful performance measure. However, the study of
+DR-MGs under the average-reward criterion is nascent and
+fraught with complexities not present in the discounted or
+finite-horizon cases. The analysis of average-reward games
+hinges on the limiting behavior of the underlying stochastic
+process, making it markedly more intricate (Sobel, 1971).
+For instance, a general non-robust vanilla Markov game with
+average reward may not have a stationary Nash Equilibrium
+(Filar & Vrieze, 1996); the direct correspondence between
+stationary policies and the limit points of state-action fre-
+quencies, a cornerstone of discounted analysis, breaks down
+in the average-reward setting even for single-agent MDPs,
+except under restrictive structural assumptions (Puterman,
+2014; Atia et al., 2021). This difficulty is compounded
+in the multi-agent context, where strategic interactions are
+intertwined with the uncertain, complex dynamics.
+Moreover, none of the methods for DR-MGs under the dis-
+counted reward or finite horizon can be extended to the
+average-reward setting (also see our detailed discussion in
+Section 3). The existence of (non-stationary) Nash Equi-
+librium under finite horizon is derived through backward
+induction (Blanchet et al., 2023), which does not apply to
+infinite-horizon settings. The existence of a stationary Nash
+Equilibrium under the discounted reward criterion is de-
+rived in (Kardes¸ et al., 2011), which, however, heavily relies
+on the uniqueness of the solution to the discounted robust
+Bellman equation (Iyengar, 2005) and hence cannot be ap-
+plied to the average reward setting. To date, the literature
+on average-reward DR-MGs remains sparse, leaving fun-
+damental questions about the structure of robust equilibria
+and the design of convergent solution algorithms largely
+unanswered.
+In this paper, we develop a comprehensive study of DR-MGs
+under the average-reward formulation. Our contributions
+are summarized as follows.
+Existence of Robust Nash Equilibrium: We first study the
+solvability of average reward DR-MGs, i.e., the existence of
+robust NE. We first note that, under the irreducible setting,
+finding the best response policy of an agent is equivalent to
+finding the solution to the robust Bellman equation under
+average reward. Based on such an equivalence, we show that
+its solution set is convex and semi-continuous, which further
+implies the fixed point of the best-response mapping and the
+existence of a stationary Nash Equilibrium. We further study
+the more general weakly communicating DR-MGs, where
+such correspondence fails. We instead construct a proxy
+mapping based on the Bellman equation and show that it is
+a subset of the best-response mapping. After characterizing
+the convexity and continuity of the mapping, we prove the
+existence of NE. These results address the fundamental
+solvability question under these complex, robust, and long-
+term horizon competitive scenarios.
+Convergent Algorithms: We then design concrete algo-
+rithms to find the robust NE in average reward DR-MGs.
+Inspired by the standard Nash value iteration approach, we
+first propose a robust Nash iteration algorithm. Under some
+additional assumptions on the game structure and a norm-
+form game NE computing oracle, we prove the convergence
+to a robust NE of our algorithm. Moreover, to bypass these
+assumptions and the computation oracle, we further develop
+an equivalent characterization of the NE in terms of tempo-
+ral difference error, whose minimizer is shown to be a robust
+NE. We then design a two-time-scale algorithm to minimize
+the TD error. The algorithm does not require any NE oracle,
+and can be executed efficiently. We further develop its sta-
+tionary convergence guarantee. Our studies hence provide
+the first comprehensive and algorithmic understanding of
+solving average-reward DR-MGs.
+Connection to Discounted Equilibria: We further study
+the connection between the DR-MGs under average and
+discounted reward. We show that the robust NE under the
+average reward can be effectively approximated by the ro-
+bust NE under the discounted reward with a discount factor
+large enough. Such a connection enables us to solve the com-
+plicated and challenging average reward DR-MGs through
+the discounted ones, utilizing their element mathematical
+properties and extensively developed algorithms.
+2. Preliminaries and Problem Formulation
+Markov Decision Processes.
+A Markov decision
+process (MDP) (S, A, P, r) is specified by:
+a state
+space S, an action space A, a transition kernel P =
+{pa
+s ∈∆(S), a ∈A, s ∈S}1, where pa
+s is the distribution
+of the next state over S upon taking action a in state s (with
+pa
+s,s′ denoting the probability of transitioning to s′), and a
+reward function r : S × A →[0, 1]. At each time step t,
+the agent at state st takes an action at, at which point the
+environment transitions to the next state st+1 according to
+pat
+st , and produces a reward signal r(st, at) ∈[0, 1] to the
+agent. We write rt = r(st, at) for convenience.
+A stationary policy π : S →∆(A) is a distribution
+over A for any given state s, meaning the agent takes
+action a at state s with probability π(a|s).
+The goal
+of an MDP is to maximize the cumulative reward. The
+more extensively studied criterion is the discounted reward,
+whose objective function is the discounted value function:
+V π
+P (s) ≜Eπ,P [P∞
+t=0 γtrt|S0 = s], where γ ∈[0, 1) is
+some discount factor. When long-term performance is of
+interest, the average reward is generally adopted as the
+criterion of choice. The average reward induced by fol-
+lowing policy π starting from state s ∈S is defined as
+gπ
+P(s) ≜lim infn→∞Eπ,P
+ 1
+n
+Pn−1
+t=0 rt|S0 = s
+
+.
+1∆(S): the (|S| −1)-dimensional probability simplex on S.
+2
+
+Distributionally Robust Markov Games with Average Reward
+Markov Games. Markov games (MGs) are the extension
+of MDPs under the multi-agent setting (Littman, 1994),
+specified by (N, S, A = ×i∈N Ai, {ri}i∈N , P), where
+N = {1, 2, . . . , N} is the set of all agents or players, S
+is the state space that all agents operate within, Ai denotes
+agent i’s action space. In an MG, both rewards and state
+transitions are determined by the joint actions of all agents.
+At some state s, all agents act simultaneously by taking a
+joint action a = (a1, . . . , aN) ∈A. Agent i receives a re-
+ward of ri(s, a) for all i ∈N, and the next state is generated
+following the transition kernel Pa
+s.
+In MGs, each agent i has its own policy πi, resulting in a
+joint (product) policy π = (π1, ..., πN). Each agent shares
+different goals as they have different reward functions to
+optimize their own value function/average reward based on
+their own reward and the joint policy: V π
+P,i or gπ
+P,i. Due
+to possible conflicting goals between agents, an MG aims
+to find some equilibria among all agents. In this work,
+we focus our study on the stationary Nash Equilibrium
+(NE). More specifically, a stationary NE is a product policy
+π⋆= (π⋆
+1, ..., π⋆
+N), such that no single agent can improve
+its objective function by deviating from it, while the others
+stick to π⋆:
+V π⋆
+P,i (ρ) ≥V
+(π⋆
+−i,πi)
+P,i
+(ρ), ∀i ∈N, ∀πi ∈Πi,
+(1)
+for some initial distribution ρ and V π
+P,i(ρ) ≜Es∼ρ[V π
+P,i(s)],
+and Πi denotes the set of stationary policies for agent i, π⋆
+−i
+denotes the joint policy of all other agents except i from π⋆,
+and (π⋆
+−i, πi) is the joint policy. The existence of a station-
+ary NE is derived for MGs with discounted reward (Fink,
+1964) and average-reward MGs with additional structural
+assumptions (Filar & Vrieze, 1996).
+Distributionally Robust Markov Games. Different from
+MGs, distributionally robust Markov games (DR-MGs)
+do not have a fixed transition kernel, but rather an uncer-
+tainty set P of transition kernels. We consider the stan-
+dard (s, a)-rectangular uncertainty set P = ×(s,a)∈S×APa
+s
+(Iyengar, 2005; Nilim & El Ghaoui, 2003; Zhang et al.,
+2020; Blanchet et al., 2023; Shi et al., 2024), where the
+uncertainty set is independently defined over all (s, a) pairs.
+After all agents take their joint action a at state s, the next
+state is determined by an arbitrary kernel Pa
+s ∈Pa
+s . In DR-
+MGs, agents adopt the principle of pessimism and optimize
+for the worst-case performance, which is defined as the ro-
+bust value function V π
+P,i(ρ) ≜minP∈P V π
+P,i(ρ), and robust
+average reward gπ
+P,i(ρ) ≜minP∈P gπ
+P,i(ρ). The notion of
+Nash Equilibrium is similarly defined in terms of worst-case
+performance. In this paper, we focus on DR-MGs with aver-
+age reward whose Nash Equilibrium is some product policy
+π⋆such that for some initial state distribution ρ,
+gπ⋆
+P,i(ρ) ≥g
+(π⋆
+−i,πi)
+P,i
+(ρ), ∀i ∈N, ∀πi.
+(2)
+3. Hardness in Average-Reward DR-MGs
+DR-MGs under finite-horizon or discounted reward are ex-
+tensively studied recently (Zhang et al., 2020; Jiao & Li,
+2024; Blanchet et al., 2023; Shi et al., 2025; Ma et al., 2023;
+Kardes¸ et al., 2011; McMahan et al., 2024), yet extend-
+ing them to the average-reward setting is non-trivial. At
+a high level, two issues make the average-reward regime
+qualitatively more challenging: (1). the presence of a player-
+specific environment that selects worst-case transition ker-
+nels, which breaks the usual min–max duality even in dis-
+counted zero-sum games; and (2). The intricate structure of
+(robust) average reward, which depends sensitively on the
+chain decomposition and is far less tractable.
+Player-specific environment and failure of min–max du-
+ality. In a standard (non-robust) Markov game with a fixed
+transition kernel P, the existence of equilibria in multi-
+player general-sum MGs was established by (Fink, 1964).
+In two-player zero-sum games with discounted reward, the
+analysis is built on a clean saddle-point structure.
+Let
+r1 = −r2 = r and denote by V (π1,π2)
+P,r
+(ρ) the γ-discounted
+value of player 1 under joint policy (π1, π2) and initial dis-
+tribution ρ. Then the classical result of (Shapley, 1953)
+shows that
+max
+π1 min
+π2 V (π1,π2)
+P,r
+(ρ) = min
+π2 max
+π1 V (π1,π2)
+P,r
+(ρ),
+(3)
+and any maximizer/minimizer pair in (3) is a stationary
+discounted NE. Similar arguments, combined with the limit
+γ →1, underlie many existence results for non-robust
+average-reward Markov games; see, e.g., (Filar & Vrieze,
+1996; Sennott, 1994; Rieder, 1995).
+In the distributionally robust setting, the situation changes
+qualitatively. The model uncertainty is encoded by an am-
+biguity set P of transition kernels. Conceptually, this intro-
+duces a ”player-specific environment” (rather than a mono-
+lithic adversarial third player) that aims to minimize the
+specific agent’s payoff, potentially propelling the overall
+system into different recurrent classes depending on the
+agents’ joint policy. Crucially, because different agents have
+different reward functions, in general their associated worst-
+case kernels need not coincide. Consequently, even in a
+two-player zero-sum game with strictly opposing rewards
+(r1 = −r2 = r), the robust value functions are not strictly
+opposing (VP,r1 ̸= −VP,r2), forcing this to be treated as a
+general-sum game.
+See that the robust counterpart of (3) splits into
+two distinct problems.
+From the perspective of
+player
+1
+(maximizer),
+the
+worst-case
+is
+governed
+by
+maxπ1 minπ2 minP ∈P V (π1,π2)
+P,r
+(ρ),
+while
+from
+the
+perspective
+of
+player
+2
+(minimizer),
+whose
+reward
+is
+−r,
+the
+worst
+case
+is
+governed
+by
+minπ2 maxπ1 maxP ∈P V (π1,π2)
+P,r
+(ρ).
+In
+general,
+these
+3
+
+Distributionally Robust Markov Games with Average Reward
+two values need not coincide:
+max
+π1 min
+π2 min
+P ∈P V (π1,π2)
+P,r
+(ρ) ̸= min
+π2 max
+π1 max
+P ∈P V (π1,π2)
+P,r
+(ρ),
+meaning that in general-sum games, the min–max duality
+which guarantees a saddle-point in non-robust studies breaks
+down for DR-MGs. In fact, there is no saddle-point struc-
+ture to exploit for discounted and zero-sum settings, and this
+problem is only exacerbated in general-sum or multi-player
+settings. Therefore, establishing the existence of an equilib-
+rium is significantly harder as neither Shapley’s fixed-point
+argument or standard discounted saddle-point theory can be
+directly reused to establish NE existence in robust games.
+One might hope to recover average-reward NE by letting
+the discount factor γ →1 in robust discounted games,
+using uniform convergence of robust value functions to
+interchange the order of max, min, and lim (Wang et al.,
+2023b). However, the failure of min–max duality already
+at the discounted level implies that this limit approach still
+does not yield NE existence for average-reward DR-MGs,
+and it does not apply at all to multi-player general-sum
+games.
+Complicated structure of robust average reward and an
+impossibility example. The second difficulty comes from
+the structure of the (robust) average reward itself. Even with-
+out robustness, Markov games under the average-reward
+criterion need not admit a stationary NE in general (Filar &
+Vrieze, 1996; Wikecek & Altman, 2015; Lozovanu, 2016;
+Thuijsman, 1997). The usual link between stationary poli-
+cies and stationary/occupancy distributions breaks down
+except under additional structural assumptions such as ir-
+reducibility or unichain conditions (Puterman, 2014; Atia
+et al., 2021). This makes it substantially harder to reason
+about long-run behavior and to construct equilibria.
+Robustness further complicates the picture. The robust av-
+erage reward must account for the worst-case choice of
+transition kernels; the resulting robust Bellman equations
+are nonlinear, may admit multiple solutions, and their solv-
+ability and uniqueness are largely unresolved in prior work
+(Wang et al., 2023b;c; Wang & Si, 2025). In particular, ex-
+isting algorithms for robust average-reward reinforcement
+learning either rely on incorrect Bellman solvability claims
+or bypass the average-reward Bellman equation altogether
+via discounted reductions. As a consequence, neither the
+techniques for discounted DR-MGs (Kardes¸ et al., 2011;
+Zhang et al., 2020) nor those for non-robust average-reward
+MGs (Guo & Yang, 2008; Hern´andez-Lerma & Lasserre,
+2000; Guo & Hern´andez-Lerma, 2003; Zheng & Guo, 2024;
+Nowak, 1999; IWASE et al., 1976; K¨uenle & Schurath,
+2003; Tanaka & Wakuta, 1977; Ja´skiewicz & Nowak, 2001;
+Wikecek & Altman, 2015) can be directly transplanted to
+distributionally robust average-reward games.
+To illustrate that these issues are not merely technical, we
+show that, without any structural assumptions, average-
+reward DR-MGs may fail to admit any stationary NE.
+Lemma 3.1. There exists a finite-state, two-player zero-sum
+DR-MG under the average-reward criterion that admits no
+stationary robust Nash equilibrium.
+The construction uses a simple three-state, two-action zero-
+sum DR-MG. The underlying Markov chains induced by the
+ambiguity set are multi-chain, where the adversary can dis-
+continuously alter the chain structure to force the agent into
+different recurrent classes based on changes in its policy.
+Lemma 3.1 demonstrates that average reward DR-MGs are
+ill-posed without some structural assumptions. In the re-
+mainder of the paper, we therefore focus on two standard
+classes of average-reward problems where such a structure is
+present: in Section 4 we study irreducible DR-MGs, where
+every induced Markov chain under any stationary joint pol-
+icy and any admissible kernel belongs to a single recurrent
+class; and in Section 5 we relax this to weakly communicat-
+ing DR-MGs, which allow multiple recurrent classes but
+still admit a well-defined optimal robust average reward.
+4. NE of Irreducible DR-MGs
+As discussed above, the existence of a NE cannot be guaran-
+teed without any structural assumptions. In this section, we
+first study a relatively easier setting, where the underlying
+DR-MG is assumed to be irreducible.
+Assumption 4.1. For any deterministic joint policy π and
+any transition kernel P ∈P, the induced Markov chain
+(S, A, Pπ) is irreducible, i.e., all states belong to a single
+recurrent class. Moreover, P is compact and convex.
+Remark 4.2. Irreducibility is a standard assumption (slightly
+stronger than the unichain assumption (Wang et al., 2023b;c;
+2024; Roch et al., 2025b;a)) in robust average reward studies
+(Xu et al., 2025b;a). Under this assumption, the robust
+average reward gπ
+P(ρ) = gπ
+P(s) is always a constant over
+all initial states, ensuring the tractability of robust average
+reward. Hence in this section, we omit the initial state and
+interchangeably use gπ
+P gπ
+P(ρ), and gπ
+P(s).
+In non-robust average reward MG studies, the NE can be
+proved by studying the induced stationary/occupancy distri-
+bution (Wikecek & Altman, 2015). However, when consid-
+ering robustness, the worst-case stationary distribution set
+becomes much more complicated. For example, it is non-
+convex (Wang et al., 2022a; Zhang et al., 2024b; Ma et al.,
+2025), whereas the convexity is necessary in non-robust
+proofs and hence cannot be adapted. We thus propose a
+direct approach by studying the best response mapping.
+Definition 4.3 (Best Response mapping). In an average-
+reward DR-MG, fix agent i and the joint policy π−i of all
+other agents. The best response mapping of agent i w.r.t.
+4
+
+Distributionally Robust Markov Games with Average Reward
+π−i is a set-valued mapping defined as
+BRi(π−i) ≜
+
+πi : g(π−i,πi)
+P,i
+= max
+µi g(π−i,µi)
+P,i
+
+.
+(4)
+That is, the best response policy is agent i’s optimal policy
+when other agents fix their policies. A standard result in
+game theory literature (Osborne, 2003; Fudenberg & Ti-
+role, 1991) is that, π⋆is a Nash Equilibrium if and only if
+π⋆
+i ∈BRi(π⋆
+−i), ∀i ∈N, i.e., π⋆is a fixed point of the BR
+mapping: π⋆∈BR(π⋆) = (×iBRi(π−i)). Hence, proving
+the existence of NE is equivalent to showing the BR map-
+ping has a fixed point, which is generally obtained through
+the Kakutani fixed point theorem (Lemma D.4). Our studies
+will similarly follow this direction. We first show that it is
+sufficient to reduce to single-agent cases.
+Lemma 4.4. If for any i ∈N and any product policy π−i,
+BRi(π−i) is nonempty, convex, and BRi(·) is upper semi-
+continuous (see Lemma D.4 for definitions), then the BR
+mapping has a fixed point, and there exists a robust NE.
+4.1. Induced Distributionally Robust MDPs
+We then develop a framework of induced distributionally ro-
+bust MDPs to provide a framework for multi-agent studies.
+Definition 4.5 (Induced Distributionally Robust MDP).
+Given a distributionally robust Markov game MG
+=
+(N, S, A, P, r) and an agent i ∈N. The induced distri-
+butionally robust MDP of the MG by a joint policy π−i is
+defined as Mi(π−i) ≜(S, Ai, Pπ−i, rπ−i), where
+(Pπ−i)ai
+s ≜
+n
+X
+a−i∈A−i
+π−i(a−i|s)P
+P ∈P(ai,a−i)
+s
+o
+,
+rπ−i(s, ai) ≜
+X
+a−i∈A−i
+π−i(a−i|s)ri(s, (ai, a−i)).
+(5)
+Clearly, Mi(π−i) is a single-agent distributionally robust
+MDP for agent i. Due to rectangularity of P, Pπ−i is
+(s, ai)-rectangular, and P
+a−i π−i(a−i|s)σP
+(ai,a−i)
+s
+(V ) =
+σ(Pπ−i)
+ai
+s (V ), where σPa
+s (V ) ≜minP ∈Pa
+s PV is the sup-
+port function for a specific state-action pair. Moreover, per
+Assumption 4.1, Mi(π−i) is also compact and irreducible,
+which reduces the DR-MG to a single-agent problem.
+However, even the single-agent average reward robust RL
+is not fully studied. Specifically, the most essential tool, its
+robust Bellman equation, is not well studied: its solvability
+or characterizations of solutions are not yet justified (an in-
+correct proof is given in (Wang et al., 2023b) for the single-
+agent setting), therefore making the connection between
+optimal policies and the robust Bellman equation unclear.
+Although a huge body of existing work develops convergent
+algorithms for single-agent robust average-reward MDPs,
+their convergence guarantees either rely on the incorrect
+result in (Wang et al., 2023b), e.g., (Wang et al., 2023c;
+Roch et al., 2025a), or bypass its solvability through dis-
+counted proxy (Xu et al., 2025b;a; Chatterjee et al., 2024;
+Meggendorfer et al., 2025). Moreover, there are no prior
+studies on the uniqueness of these solutions. We hence de-
+rive the following foundational results under Assumption
+4.1 (proofs are deferred to Section D).
+Theorem 4.6. Under Assumption 4.1.
+(1).
+Denote
+any worst-case transition kernel w.r.t.
+gπ
+P by Pw
+≜
+arg minP∈P gπ
+P. Then the gain/bias of (π, Pw) : (gπ
+Pw, hπ
+Pw)
+is the unique solution to the equation:
+V (s) =
+X
+a
+π(a|s)(r(s, a) −g + σPa
+s (V )).
+(6)
+The uniqueness is in the sense that, for any solution (g, V ) to
+(6), it holds that g = gπ
+P, V = hπ
+Pw + ce, for some constant
+c and e = (1, ..., 1).2
+(2). The robust Bellman optimality equation
+V (s) = max
+a {r(s, a) −g + σPa
+s (V )}
+(7)
+has a unique solution (up to some vector ce).
+Our results therefore prove the solvability and uniqueness
+of the robust Bellman equation, especially (6), solidifying
+the connection between the robust average reward and its
+solutions. It allows us to evaluate any policy by solving
+a (nonlinear) Bellman equation, while simultaneously cer-
+tifying the existence of a worst-case kernel realizing the
+robust average reward. Then, the robust Bellman optimality
+equation provides a complete characterization of optimality
+in irreducible DR-MDPs.
+We further highlight that our results are fundamental to char-
+acterizing the complicated structure of the average reward.
+For instance, it is discussed in (Wang et al., 2023c) that (6)
+may have non-unique solutions even up to constant vectors,
+which we rule out under Assumption 4.1. Our proof tech-
+niques are also different from the non-robust ones, which
+rely on the Laurent series of the non-robust average reward
+(Puterman, 2014), whereas we directly show that the con-
+structed pair (gπ
+Pw, hπ
+Pw) is a solution.
+4.2. Existence of a Nash Equilibrium
+With the results derived for single-agent robust Bellman
+equations, we can then show the following results.
+Theorem 4.7. (1). For any distributionally robust MDP un-
+der Assumption 4.1, the optimal policy set arg maxπ gπ
+P
+is convex.
+(2).
+For any convergent policy sequences
+2Even if there exist multiple worst-case kernels, their gain/bias
+are all identical up to ce. We denote this unique solution by hπ
+P.
+5
+
+Distributionally Robust Markov Games with Average Reward
+{πn
+−i} →π−i and {µn
+i } →µi, if µn
+i is an optimal ro-
+bust policy of the induced distributionally robust MDP
+(S, Ai, Pπn
+−i, rπn
+−i) for agent i ∈N, then µi is also op-
+timal for (S, Ai, Pπ−i, rπ−i).
+As BRi(π−i) is the set of optimal robust policies of the
+(induced) distributionally robust MDP (S, Ai, Pπ−i, rπ−i),
+this result hence directly implies the convexity of BRi(π−i).
+And for (2), the inducing policy πn
+−i varies, resulting in a dis-
+tributionally robust MDP sequence with different dynamics.
+Hence, we need to reveal the equicontinuity and uniform
+convergence of induced distributionally robust MDPs. Simi-
+larly, this proof relies on Theorem 4.6.
+We highlight that the proof is not a direct extension from
+its counterpart under the discounted reward, as we need to
+tackle the non-contraction of the Bellman equation, whereas
+the discounted Bellman equation is a contraction and admits
+a unique solution. Also, compared to non-robust studies, we
+need to additionally tackle the non-linearity and uncertainty
+transition kernel introduced by the worst-case consideration.
+We also highlight that our proof heavily relies on the solv-
+ability and uniqueness (up to constant vectors) of (6), which
+enables us to fully characterize the optimal policies through
+the robust Bellman optimality equation. For instance, for
+convexity, when interpolating between two optimal poli-
+cies π1 and π2, the corresponding worst-case kernel P w
+could shift and differ from the ones of π1 and π2. Our re-
+sults, however, ensure that the intersection of the optimality
+half-spaces remains convex, despite the kernel shift and the
+concave nature of the robust operator.
+Combining all of the above results, we can finally show
+the existence of a Nash Equilibrium, which is the most
+fundamental property of the game.
+Theorem 4.8 (Existence of a Nash Equilibrium). Under
+Assumption 4.1, a robust Nash equilibrium exists.
+5. NE of Weakly Communicating DR-MGs
+In this section, we extend our existence result from irre-
+ducible DR-MGs to a more general class of weakly commu-
+nicating DR-MGs. The weakly communicating assumption
+is known to be the weakest standard structural assumption
+under which efficient algorithms and sharp structural results
+are available for average-reward control; see, e.g., (Wikecek
+& Altman, 2015; Bertsekas, 2007; Wan et al., 2021).
+Assumption 5.1 (Weakly communicating DR-MG). The
+uncertainty set P is convex and compact. Moreover, for any
+i and π−i and any transition kernel P ∈P, the state space
+can be decomposed as S = Si
+0 ∪Si
+1, with Si
+0 ∩Si
+1 = ∅,
+such that: (1). Every state in Si
+0 is transient under every
+stationary joint policy; (2). For any two states s, s′ ∈Si
+1,
+there exist a stationary policy πi such that P
+ SN = s′ |
+S0 = s, (πi, π−i), P
+
+> 0 for some N. Additionally, for
+any π−i, the corresponding optimal robust Bellman equation
+(7) has a unique solution (up to constant shifts).
+Remark 5.2. The uniqueness of the optimal bias function
+(up to a constant shift) is a standard requirement in average-
+reward settings (Wan et al., 2021). We emphasize that this
+condition only applies to the optimal robust Bellman equa-
+tion, not the Bellman equation for every policy π; thus it is
+strictly weaker than the unichain assumption. A weakly
+communicating robust MDP can fail to be unichain while
+still having a unique optimal bias function. This uniqueness
+is critical as it ensures our proxy map Gi(π−i) (defined
+subsequently) is well-defined and upper hemicontinuous
+(proved in the Appendix), preventing discontinuous jumps
+in the maximizer sets Ms(π−i) that would occur if multiple
+distinct bias solutions existed.
+As in the non-robust case, weakly communicating is strictly
+weaker than irreducibility: it only requires accessibility un-
+der some policy, rather than under all joint policies. Under
+Assumption 5.1, only the optimal robust average reward
+g⋆
+P(s) is constant across initial states, whereas the robust
+average reward gπ
+P(s) of a general stationary policy π may
+depend on s (Puterman, 2014; Atia et al., 2021; Wang & Si,
+2025; Feinberg & Shwartz, 2012). The solvability guaran-
+tees for weakly communicating robust Bellman equations
+are weaker (Wan et al., 2021; Wan & Sutton, 2022; Wan
+et al., 2024). There is no understanding on the Bellman
+equation for a fixed policy in (6), and the solvability of the
+robust Bellman optimality equation was recently established
+by (Wang & Si, 2025) as follows.
+Lemma 5.3. (Wang & Si, 2025) Under Assumption 5.1,
+the optimal robust Bellman equation
+V (s) = max
+a∈A
+n
+r(s, a) −g + σPa
+s (V )
+o
+,
+s ∈S, (8)
+admits a solution (g⋆, h⋆), with g⋆= g⋆
+P(ρ) equal to the
+optimal robust average reward for any initial distribution ρ.
+Compared with the irreducible case (Theorem 4.6), these
+results are strictly weaker. Theorem 4.6 gives solvability of
+the robust Bellman equation for every stationary policy π,
+as well as a tight correspondence between optimal policies
+and solutions of the optimal Bellman equation. Under As-
+sumption 5.1, Lemma 5.3 guarantees solvability only for the
+optimal equation (8); The equation associated with a fixed
+policy π may fail to have a solution, and one can no longer
+characterize optimal policies solely via the Bellman equa-
+tions. As a consequence, the proof strategy of irreducible
+DR-MGs cannot be directly reused.
+Remark 5.4. The uniqueness part in Assumption 5.1 is also
+assumed in non-robust settings, e.g., (Wan et al., 2021),
+which is used to ensure convergence stability. Notably, the
+commonly used unichain assumption (Wang et al., 2023b;c)
+satisfies this uniqueness (see Lemma E.1).
+6
+
+Distributionally Robust Markov Games with Average Reward
+To study the NE of weakly communicating DR-MGs, we
+construct a proxy set-valued map, derived from solutions
+of the optimal robust Bellman equation, and show that
+this map is contained in the true best-response map. Fix
+a player i and a stationary joint policy π−i of all other
+players, and consider the induced single-agent DR-MDP
+Mi(π−i) = (S, Ai, Pπ−i, rπ−i
+i
+). Applying Lemma 5.3 to
+Mi(π−i) yields a unique solution (g⋆
+π−i, h⋆
+π−i) of the opti-
+mal Bellman equation, with g⋆
+π−i equal to the optimal robust
+average reward.
+For each s ∈S and any ν ∈∆(Ai) of player i, we define
+the one-step Bellman functional F π−i
+s
+(ν) as
+X
+ai∈Ai
+ν(ai)
+
+rπ−i
+i
+(s, ai) −g⋆
+π−i + σ(P
+π−i
+s,ai )(h⋆
+π−i)
+
+,
+(9)
+where rπ−i
+i
+(s, ai) and (Pπ−i
+s,ai) is the induced uncertainty
+slice at (s, ai). Intuitively, F π−i
+s
+(ν) is the robust one-step
+Bellman return at state s when player i plays ν(· | s) and
+the others follow π−i. We then define the Bellman-greedy
+response set of player i w.r.t. π−i by
+Gi(π−i) ≜
+
+ν ∈Πi|ν(s) = arg
+max
+µ∈∆(Ai) F π−i
+s
+(µ), ∀s
+	
+.
+Thus, Gi(π−i) consists of stationary policies that are point-
+wise maximizers of the optimal Bellman right-hand side for
+the induced DR-MDP Mi(π−i).
+Different from the irreducible case, we show a slightly
+weaker result Gi(π−i) ⊆BRi(π−i), i.e., Gi(π−i) is a sub-
+set of the best-response set, which is sufficient to establish
+existence of Nash equilibria.
+Finally, define the joint map G(π) ≜×i∈N Gi(π−i) on
+the product policy space. If each Gi satisfies the condi-
+tions of Kakutani’s fixed-point theorem (Lemma D.4), then
+G admits a fixed point π⋆∈G(π⋆), and the inclusion
+Gi(π−i) ⊆BRi(π−i) guarantees that this π⋆is also a fixed
+point of the best-response map BR and hence a robust NE.
+We summarize our main results in the next theorem, whose
+proofs are deferred to Appendix E.
+Theorem 5.5 (NE of weakly communicating DR-MGs).
+Suppose the average-reward DR-MG satisfies Assump-
+tion 5.1, then it has a stationary robust Nash equilibrium.
+Our results hence imply that DR-MGs with an average re-
+ward are also solvable under the weakly communicating
+settings. Different from irreducible cases, our proof tech-
+niques are fundamentally different and rely on the strong
+duality and span bound developed in (Wang & Si, 2025),
+and are deferred to Appendix E.
+6. Algorithmic Solutions
+In this section, we develop algorithmic solutions for irre-
+ducible average-reward DR-MGs under Assumption 4.1.
+Notably, finding a stationary NE is significantly challenging
+in general-sum games, even under non-robust settings (Hu
+& Wellman, 2003; Li et al., 2007; Li, 2003; Zinkevich et al.,
+2005; Deng et al., 2023; Daskalakis et al., 2023).
+6.1. Nash Iteration
+Value-iteration has been extensively studied in algorithmic
+Markov game studies (Hu & Wellman, 2003; Li et al., 2007;
+Li, 2003; Liu et al., 2021; Shi et al., 2024; Farhat et al.,
+2026). We hence first develop a robust Nash iteration al-
+gorithm (Algorithm 2) for average reward DR-MGs. Our
+algorithm generally extends the standard Nash iteration al-
+gorithm to the robust average reward setting: it maintains
+an estimation, Qi, for all agents, and in each step, the algo-
+rithm finds a Nash Equilibrium for the matrix-form game
+{Qi(s, a, h0
+i )}, i ∈N through an oracle NE. Notably, due
+to the non-uniqueness of Nash Equilibria and the compli-
+cated structure of general-sum MGs, the algorithm is not
+guaranteed to converge if an arbitrary oracle NE is used,
+even in non-robust MGs (Li, 2003; Hu & Wellman, 2003;
+Littman, 2001; Bowling & Veloso, 2001; Bowling, 2000).
+Notably, these assumptions hold for a variety of games, in-
+cluding potential Markov games (Leonardos et al., 2022) or
+cooperative DR-MGs (Wang et al., 2022b). We thus adopt
+additional assumptions and derive the guarantee.
+Theorem 6.1. Under Assumption 4.1 and Assumption G.1
+(in Appendix), Algorithm 2 converges to a robust NE.
+6.2. Robust TD Descent Algorithm
+Despite the convergence guarantee we obtained in The-
+orem 6.1, the algorithm suffers from two disadvantages.
+Firstly, the convergence is only guaranteed with additional
+assumptions, which are standard but may not hold generally
+(Filar & Vrieze, 1996); Moreover, in each step, Algorithm 2
+solves for a NE of a matrix game, which can be PPAD-
+complete in the worst case (Daskalakis et al., 2009; Chen
+et al., 2009). Although assuming such an oracle is also
+standard in Markov game studies (Liu et al., 2021; Hu &
+Wellman, 2003; Shi et al., 2024), we are motivated to find
+other algorithms with better computational complexity.
+In this section, we propose another algorithm to address
+these two disadvantages. Our algorithm is based on an
+equivalent characterization of the robust NE in terms of the
+temporal difference (TD) errors, inspired by non-robust stud-
+ies of MGs (Sahabandu et al., 2024; Sobel, 1971). Specif-
+ically, given a joint policy π and any (gk, Vk) ∈R × RS,
+define the k-th player’s TD error as
+ΩR
+k (s, ak; π−k | gk, Vk) ≜gk + Vk(s)
+(10)
+−
+X
+a−k
+π−k(a−k | s)
+
+rk(s, ak, a−k) + σP
+(ak,a−k)
+s
+(Vk)
+
+;
+And for (π, g = (g1, ..., gN), V = (V1, ..., VN)), define the
+7
+
+Distributionally Robust Markov Games with Average Reward
+global robust TD gap ∆R(π, g, V ) as
+∆R(π, g, V )
+≜
+X
+k∈N ,s∈S,ak
+πk(ak | s) ΩR
+k (s, ak; π−k | gk, Vk),
+(11)
+We then develop a TD-based characterization of robust NE
+as follows.
+Theorem 6.2. Denote L(π) ≜∆R
+ π, g⋆(π), V ⋆(π)
+
+,
+where g⋆(π)k and V ⋆(π)k is the solution to the optimal
+Bellman equation of the induced RMDP Mk(π−k). Then,
+for every π ∈Π, L(π) ≥0. Moreover, L(π) = 0 if and
+only if π is a stationary robust Nash equilibrium.
+This result shows that the global robust TD gap, L, plays the
+role of a potential function for robust Nash equilibria: its
+global minimizer is a NE. This viewpoint motivates using
+L as the objective of our TD-based algorithm: each iter-
+ation tries to reduce the global TD gap, and convergence
+to L = 0 corresponds exactly to convergence to a robust
+Nash equilibrium. However, due to the worst-case consider-
+ation in robustness, the function L is generally non-smooth,
+whose analysis can be extremely challenging. Toward this,
+we propose a smoothed proxy Lλ of it by considering its
+Moreau envelop (Moreau, 1965; Wang et al., 2023a; 2025)
+(discussions are deferred to Section H.3). We note that when
+λ →0, the NE of the smoothed proxy approximates the
+robust NE of the original DR-MG, hence minimizing Lλ
+with a small λ approximately finds a robust NE. Toward
+this, we develop a two-time-scale algorithm as follows.
+Algorithm 1 Robust TD Descent
+1: Input: step sizes {ηn}, {αn}, smoothing λ > 0
+2: Initialize π0 ∈Π, (g0, V 0) ∈G × V
+3: for n = 0, 1, 2, . . . do
+4:
+Fast scale:
+(gn+ 1
+2 , V n+ 1
+2 )
+←
+ΓG×V
+
+(gn, V n) −αn∇(g,V )Lλ(πn, gn, V n)
+
+5:
+Slow scale:
+πn+1
+←
+ΓΠ
+
+πn
+−
+ηn∇πLλ(πn, gn+ 1
+2 , V n+ 1
+2 )
+
+6:
+(gn+1, V n+1) ←(gn+ 1
+2 , V n+ 1
+2 )
+7: end for
+In the algorithm, Γ denotes the projection operator in Eu-
+clidean norm. A more detailed discussion of the algorithm
+is in Section H. Compared to Algorithm 2, which relies
+on a span-seminorm contraction analysis and requires a
+PPAD-complete NE computing subroutine, Algorithm 1 by-
+passes the NE oracle requirement entirely. While the joint
+action space computation grows exponentially in N, our
+framework can efficiently exploit factored action spaces or
+local interactions, since the effective space can be much
+smaller. Furthermore, the inner-loop minimization over
+the ambiguity set (σPa
+s (V )) is highly tractable for standard
+divergence-based uncertainty sets (e.g., O(|S| log |S|) for
+KL-divergence via water-filling algorithm, or a closed-form
+solution in O(|S|) for Total-variation (Nilim & El Ghaoui,
+2003)). Thus, the per-iteration complexity remains polyno-
+mial in the size of the DR-MG parameters (see Section H),
+making Algorithm 1 significantly more practical and feasi-
+ble.
+We then present our convergence results.
+Theorem 6.3. Assume the DR-MG satisfies Assumption 4.1
+and step sizes satisfy the Robbins-Monro condition. Then
+{πn} weakly converges to a stationary point of Lλ.
+Our results imply the convergence of Algorithm 1 to a sta-
+tionary point of Lλ (note that any NE is a stationary point).
+Such a result is weaker than the convergence guarantee of
+Algorithm 2, yet it does not require any additional assump-
+tions on the game structure or NE-computing oracle, hence
+standing as the first practical algorithm for average reward
+DR-MGs with provable convergence guarantees.
+Remark 6.4. We highlight that, finding the exact NE even
+in standard general-sum Markov games is significantly chal-
+lenging without additional structural assumptions (Zhang
+et al., 2024a; Deng et al., 2023; Jin et al., 2023). Unlike stan-
+dard non-robust Markov games, the set of stationary points
+for DR-MGs does not necessarily coincide with the set of ro-
+bust Nash Equilibria due to the inherent non-smoothness of
+the worst-case objective. Because the robust value function
+involves a min over the uncertainty set, gradient domination
+does not hold in general for DR-MGs.
+However, any global minimizer of Lλ (with value 0) is an
+exact NE of the λ-smoothed robust game. As λ →0 in
+the original game, the smoothed TD errors converge to the
+original errors. Thus, for a sufficiently small λ, an approxi-
+mate NE of the smoothed game translates to an O(λ + ϵ)-
+approximate NE of the original DR-MG. Our robust TD al-
+gorithm converges to a stationary point of Lλ, which serves
+as a necessary first step toward finding a robust NE in ro-
+bust average-reward environments. We leave explorations
+of local gradient domination for the smoothed game un-
+der strict equilibrium assumptions for stronger convergence
+guarantees as future work.
+7. Connections with Discounted DR-NE
+In this section, we study the connection between distribu-
+tionally robust games with discounted and average rewards.
+Our motivation is to utilize the extensively studied and math-
+ematical elegance of the discounted setting to solve the more
+challenging average-reward setting. Recall that a policy π⋆
+γ
+8
+
+Distributionally Robust Markov Games with Average Reward
+is a Nash Equilibrium of the γ-discounted DR-MG if
+V π⋆
+P,i(ρ) ≥V
+(π⋆
+−i,πi)
+P,i
+(ρ), ∀i ∈N, ∀πi,
+(12)
+where V π⋆
+P,i(ρ) is the γ-discounted robust value function. A
+policy π⋆is an ϵ-Nash Equilibrium, if
+gπ⋆
+P,i(ρ) + ϵ ≥g
+(π⋆
+−i,πi)
+P,i
+(ρ), ∀i ∈N, ∀πi,
+(13)
+We then derive the following results under Assumption 4.1.
+Theorem 7.1. (1). For any discount factor γ ∈[0, 1),
+denote a Nash Equilibrium of the γ-discounted DR-MG
+by πγ. Then any cluster point π of {πγ}γ∈[0,1) is a Nash
+Equilibrium of the average reward DR-MG.
+(2). For any ϵ, there exists some discount factor γ, such that
+any ϵ-Nash Equilibrium of the γ-discounted DR-MG is also
+an O(ϵ)-Nash Equilibrium under the average reward.
+This theorem establishes a crucial bridge between the dis-
+counted and average reward criteria in DR-MGs. Specifi-
+cally, we showed that the worst-case long-run average be-
+havior of a multi-agent system can be approximated by its
+discounted behavior when the future is valued almost as
+much as the present (i.e., as γ →1). Moreover, we provide
+a concrete choice of such a factor γ in Section 7 to validate
+the approximation approach. It also provides significant
+computational implications. The analysis of γ-discounted
+games is often more tractable (Kardes¸ et al., 2011), bene-
+fiting from properties like the Banach fixed-point theorem,
+which guarantees the existence and uniqueness of value
+functions. Many reinforcement learning and game theory
+algorithms, such as Q-learning and policy gradient, can be
+applied for the discounted setting (Zhang et al., 2020). This
+result therefore assures us that for any desired level of ac-
+curacy ϵ, we can simply select a single discount factor γ
+sufficiently close to 1 and solve for this γ-discounted game.
+8. Conclusion
+In this paper, we developed a comprehensive framework
+for distributionally robust Markov games under the average-
+reward criterion, a setting critical for multi-agent systems
+requiring long-term reliability in the face of severe model
+uncertainty. We proved the existence of a stationary Nash
+Equilibrium under both irreducible and weakly communi-
+cating settings, and proposed two practical algorithms as the
+first provably convergent methods for average reward DR-
+MGs. We also connected average-reward equilibria to their
+discounted counterparts, enabling their tractable approxima-
+tion via robust equilibria with large discount factors.
+Limitations and Future Works. Our complete theoretical
+framework and algorithmic blueprint opens several inter-
+esting directions for future study. First, exploring local
+gradient domination under a strict equilibrium assumption
+could yield local finite-time convergence guarantees for
+the smoothed objective. Second, extending this framework
+beyond (s, a)-rectangularity would allow us to handle state-
+coupled ambiguity. Finally, while our formulation models
+uncertainty as a player-specific environment, investigating
+fully shared worst-case kernels (e.g., robust cooperative
+games or robust Stackelberg games, where nature acts as ad-
+versarial leader) presents a fascinating challenge for future
+research on multi-agent robust optimization.
+Acknowledgments
+This work was supported by DARPA under Agreement No.
+HR0011-24-9-0427, and an Amazon Research Award, Fall
+2025. Any opinions, findings, and conclusions or recom-
+mendations expressed in this material are those of the au-
+thor(s) and do not reflect the views of DARPA or Amazon.
+Impact Statement
+This paper presents work whose goal is to advance the
+field of Machine Learning, specifically robust reinforcement
+learning. There are many potential societal consequences of
+our work; however, since we provide a general framework,
+we do not feel that there is a need to highlight these.
+References
+Atia, G. K., Beckus, A., Alkhouri, I., and Velasquez, A.
+Steady-state planning in expected reward multichain
+mdps. Journal of Artificial Intelligence Research, 72:
+1029–1082, 2021.
+Bagnell, J. A., Ng, A., and Schneider, J. G. Solving uncer-
+tain Markov decision processes. 2001.
+Berge, C.
+Topological spaces: Including a treatment
+of multi-valued functions, vector spaces and convexity.
+Oliver & Boyd, 1877.
+Bertsekas, D. P. Dynamic Programming and Optimal Con-
+trol 3rd edition, volume II. Belmont, MA: Athena Scien-
+tific, 2007.
+Blanchet, J., Lu, M., Zhang, T., and Zhong, H. Double
+pessimism is provably efficient for distributionally robust
+offline reinforcement learning: Generic algorithm and
+robust partial coverage. In Proc. Advances in Neural
+Information Processing Systems (NeurIPS), volume 36,
+2023.
+Bowling, M. Convergence problems of general-sum multia-
+gent reinforcement learning. In ICML, pp. 89–94, 2000.
+Bowling, M. H. and Veloso, M. M. Rational and convergent
+learning in stochastic games. In Nebel, B. (ed.), Proceed-
+9
+
+Distributionally Robust Markov Games with Average Reward
+ings of the Seventeenth International Joint Conference on
+Artificial Intelligence (IJCAI), pp. 1021–1026. Morgan
+Kaufmann, 2001.
+Bukharin, A., Li, Y., Yu, Y., Zhang, Q., Chen, Z., Zuo,
+S., Zhang, C., Zhang, S., and Zhao, T. Robust multi-
+agent reinforcement learning via adversarial regulariza-
+tion: Theoretical foundation and stable algorithms. In
+Proc. Advances in Neural Information Processing Sys-
+tems (NeurIPS), volume 36, 2023.
+Chatterjee, K., Goharshady, E. K., Karrabi, M., Novotn´y,
+P., and Zikelic, D.
+Solving long-run average reward
+robust mdps via stochastic games. In Proceedings of the
+Thirty-Third International Joint Conference on Artificial
+Intelligence (IJCAI), pp. 6707–6715. ijcai.org, 2024.
+Chen, X., Deng, X., and Teng, S.-H. Settling the complexity
+of computing two-player nash equilibria. Journal of the
+ACM (JACM), 56(3):1–57, 2009.
+Chen, Z., Wang, S., and Si, N. Sample complexity of distri-
+butionally robust average-reward reinforcement learning.
+In The Thirty-ninth Annual Conference on Neural Infor-
+mation Processing Systems, 2025.
+Daskalakis, C., Goldberg, P. W., and Papadimitriou, C. H.
+The complexity of computing a nash equilibrium. Com-
+munications of the ACM, 52(2):89–97, 2009.
+Daskalakis, C., Golowich, N., and Zhang, K. The com-
+plexity of markov equilibrium in stochastic games. In
+Proc. Annual Conference on Learning Theory (CoLT), pp.
+4180–4234. PMLR, 2023.
+Deng, X., Li, N., Mguni, D., Wang, J., and Yang, Y. On the
+complexity of computing markov perfect equilibrium in
+general-sum stochastic games. National Science Review,
+10(1), 2023.
+Farhat, Z. U., Ghosh, D., Atia, G. K., and Wang, Y. Sample-
+efficient distributionally robust multi-agent reinforcement
+learning via online interaction, 2026. URL https://
+arxiv.org/abs/2508.02948.
+Feinberg, E. A. and Shwartz, A. Handbook of Markov
+decision processes: methods and applications, volume 40.
+Springer Science & Business Media, 2012.
+Filar, J. and Vrieze, K. Competitive Markov decision pro-
+cesses. Springer-Verlag, Berlin, Heidelberg, 1996. ISBN
+0387948058.
+Fink, A. M. Equilibrium in a stochastic n-person game.
+Journal of science of the hiroshima university, series ai
+(mathematics), 28(1):89–93, 1964.
+Fudenberg, D. and Tirole, J. Game theory (3. pr.). MIT
+Press, 1991. ISBN 978-0-262-06141-4.
+Grand-Cl´ement, J. and Petrik, M. Reducing blackwell and
+average optimality to discounted MDPs via the black-
+well discount factor. In Advances in Neural Information
+Processing Systems (NeurIPS), 2023.
+Grand-Clement, J., Petrik, M., and Vieille, N. Beyond
+discounted returns: Robust markov decision processes
+with average and blackwell optimality. arXiv preprint
+arXiv:2312.03618, 2023.
+Guo, X. and Hern´andez-Lerma, O. Zero-sum games for
+continuous-time markov chains with unbounded transi-
+tion and average payoff rates. Journal of Applied Prob-
+ability, 40(2):327–345, 2003. ISSN 00219002. URL
+http://www.jstor.org/stable/3215794.
+Guo, X. and Yang, J. A new condition and approach for zero-
+sum stochastic games with average payoffs. Stochastic
+analysis and applications, 26(3):537–561, 2008.
+Hern´andez-Lerma, O. and Lasserre, J. B. Zero-sum stochas-
+tic games in borel spaces: average payoff criteria. SIAM
+Journal on Control and Optimization, 39(5):1520–1539,
+2000.
+Hu, J. and Wellman, M. P. Nash q-learning for general-sum
+stochastic games. Journal of machine learning research,
+4(Nov):1039–1069, 2003.
+IWASE, S., TANAKA, K., and WAKUTA, K. On Markov
+games with the expected average reward criterion. Sci-
+ence Reports of Niigata University. Series A, Mathemat-
+ics, 13(none):31 – 41, 1976.
+Iyengar, G. N. Robust dynamic programming. Mathematics
+of Operations Research, 30(2):257–280, 2005.
+Ja´skiewicz, A. and Nowak, A. S. On the optimality equation
+for zero-sum ergodic stochastic games. Mathematical
+methods of operations research, 54:291–301, 2001.
+Jiao, Y. and Li, G. Minimax-optimal multi-agent robust
+reinforcement learning. arXiv preprint arXiv:2412.19873,
+2024.
+Jin, Y., Muthukumar, V., and Sidford, A. The complexity
+of infinite-horizon general-sum stochastic games. In 14th
+Innovations in Theoretical Computer Science Conference
+(ITCS), volume 251 of LIPIcs, pp. 76:1–76:20. Schloss
+Dagstuhl - Leibniz-Zentrum f¨ur Informatik, 2023.
+Kakutani, S. A generalization of brouwer’s fixed point
+theorem. Duke Mathematical Journal, Duke Math. J.
+8(3), 1941.
+Kardes¸, E., Ord´o˜nez, F., and Hall, R. W. Discounted robust
+stochastic games and an application to queueing control.
+Operations research, 59(2):365–382, 2011.
+10
+
+Distributionally Robust Markov Games with Average Reward
+Krnjaic, A., Steleac, R. D., Thomas, J. D., Papoudakis, G.,
+Sch¨afer, L., To, A. W. K., Lao, K.-H., Cubuktepe, M.,
+Haley, M., B¨orsting, P., et al. Scalable multi-agent rein-
+forcement learning for warehouse logistics with robotic
+and human co-workers. In 2024 IEEE/RSJ International
+Conference on Intelligent Robots and Systems (IROS), pp.
+677–684. IEEE, 2024.
+K¨uenle, H.-U. and Schurath, R. The optimality equation
+and ε-optimal strategies in markov games with average
+reward criterion. Mathematical methods of operations
+research, 56:451–471, 2003.
+Leonardos, S., Overman, W., Panageas, I., and Piliouras,
+G. Global convergence of multi-agent policy gradient
+in markov potential games. In The Tenth International
+Conference on Learning Representations, (ICLR). Open-
+Review.net, 2022.
+Li, J. Learning average reward irreducible stochastic games:
+Analysis and applications. PhD thesis, University of
+South Florida, 2003.
+Li, J., Ramachandran, K., and Das, T. K. A reinforcement
+learning (nash-r) algorithm for average reward irreducible
+stochastic games. Journal of Machine Learning Research,
+2007.
+Li, N., Zheng, Z., Ni, W., Shan, H., Zhang, W., and Li,
+X. Sample-efficient tabular self-play for offline robust
+reinforcement learning. arXiv preprint arXiv:2512.00352,
+2025.
+Littman, M. L. Markov games as a framework for multi-
+agent reinforcement learning. In Machine learning pro-
+ceedings 1994, pp. 157–163. Elsevier, 1994.
+Littman, M. L. Friend-or-foe q-learning in general-sum
+games. In Proceedings of the Eighteenth International
+Conference on Machine Learning (ICML 2001), pp. 322–
+328, 2001.
+Liu, Q., Yu, T., Bai, Y., and Jin, C. A sharp analysis of
+model-based reinforcement learning with self-play. In
+Proc. International Conference on Machine Learning
+(ICML), pp. 7001–7010. PMLR, 2021.
+Lozovanu, D. Stationary nash equilibria for average stochas-
+tic games with finite state and action spaces. Buletinul
+Academiei de S¸tiint¸e a Republicii Moldova. Matematica,
+81(2):71–92, 2016.
+Ma, S., Chen, Z., Zou, S., and Zhou, Y. Decentralized
+robust v-learning for solving markov games with model
+uncertainty. Journal of Machine Learning Research, 24
+(371):1–40, 2023.
+Ma, S., Chen, Z., Zhou, Y., and Huang, H. Rectified robust
+policy optimization for model-uncertain constrained rein-
+forcement learning without strong duality. Trans. Mach.
+Learn. Res., 2025, 2025.
+McMahan, J., Artiglio, G., and Xie, Q. Roping in uncer-
+tainty: Robustness and regularization in markov games.
+In Forty-first International Conference on Machine Learn-
+ing (ICML). OpenReview.net, 2024.
+Meggendorfer, T., Weininger, M., and Wienh¨oft, P. Solv-
+ing robust markov decision processes: Generic, reliable,
+efficient. In Proc. Conference on Artificial Intelligence
+(AAAI), volume 39, pp. 26631–26641, 2025.
+Moreau, J.-J. Proximit´e et dualit´e dans un espace hilbertien.
+Bulletin de la Soci´et´e math´ematique de France, 93:273–
+299, 1965.
+Nilim, A. and El Ghaoui, L. Robustness in Markov decision
+problems with uncertain transition matrices. In Proc. Ad-
+vances in Neural Information Processing Systems (NIPS),
+pp. 839–846, 2003.
+Nowak, A. S. Optimal strategies in a class of zero-sum
+ergodic stochastic games. Mathematical methods of oper-
+ations research, 50:399–419, 1999.
+Osborne, M. J. An introduction to game theory. Oxford
+University Press, 2003. ISBN 9780197583067.
+Peake, A., McCalmon, J., Raiford, B., Liu, T., and Alqah-
+tani, S. Multi-agent reinforcement learning for cooper-
+ative adaptive cruise control. In 2020 IEEE 32nd Inter-
+national Conference on Tools with Artificial Intelligence
+(ICTAI), pp. 15–22. IEEE, 2020.
+Puterman, M. L.
+Markov decision processes: discrete
+stochastic dynamic programming. John Wiley & Sons,
+2014.
+Qiu, D., Wang, J., Wang, J., and Strbac, G. Multi-agent
+reinforcement learning for automated peer-to-peer energy
+trading in double-side auction market. In IJCAI, pp. 2913–
+2920, 2021.
+Qu, G., Lin, Y., Wierman, A., and Li, N. Scalable multi-
+agent reinforcement learning for networked systems with
+average reward. Advances in Neural Information Process-
+ing Systems, 33:2074–2086, 2020.
+Rieder, U. Average optimality in markov games with gen-
+eral state space. In Proc. 3rd International Conf. on
+Approximation and Optimization. Citeseer, 1995.
+Roch, Z., Atia, G., and Wang, Y. A reduction framework
+for distributionally robust reinforcement learning under
+average reward. In Proc. International Conference on
+Machine Learning (ICML). PMLR, 2025a.
+11
+
+Distributionally Robust Markov Games with Average Reward
+Roch, Z., Zhang, C., Atia, G., and Wang, Y. Provably
+sample-efficient robust reinforcement learning with av-
+erage reward, 2025b. URL https://arxiv.org/
+abs/2505.12462.
+Ross, K. A. Elementary analysis. Springer, 2013.
+Sahabandu, D., Moothedath, S., Allen, J., Bushnell, L., Lee,
+W., and Poovendran, R. Rl-arne: A reinforcement learn-
+ing algorithm for computing average reward nash equilib-
+rium of nonzero-sum stochastic games. IEEE Transac-
+tions on Automatic Control, 69(11):7824–7831, 2024.
+Sennott, L. I. Zero-sum stochastic games with unbounded
+costs: Discounted and average cost cases. Zeitschrift f¨ur
+Operations Research, 39:209–225, 1994.
+Shapley, L. S. Stochastic games. Proceedings of the national
+academy of sciences, 39(10):1095–1100, 1953.
+Shi, L., Mazumdar, E., Chi, Y., and Wierman, A. Sample-
+efficient robust multi-agent reinforcement learning in the
+face of environmental uncertainty. In Proc. International
+Conference on Machine Learning (ICML). PMLR, 2024.
+Shi, L., Gai, J., Mazumdar, E., Chi, Y., and Wierman,
+A. Breaking the curse of multiagency in robust multi-
+agent reinforcement learning. In Forty-second Interna-
+tional Conference on Machine Learning (ICML). Open-
+Review.net, 2025.
+Sobel, M. J. Noncooperative stochastic games. The Annals
+of Mathematical Statistics, 42(6):1930–1935, 1971.
+Tanaka, K. and Wakuta, K. On continuous time markov
+games with the expected average reward criterion. 1977.
+Thuijsman, F. A survey on optimality and equilibria in
+stochastic games. Maastricht University, 1997.
+Vadori, N., Ardon, L., Ganesh, S., Spooner, T., Amrouni,
+S., Vann, J., Xu, M., Zheng, Z., Balch, T., and Veloso, M.
+Towards multi-agent reinforcement learning-driven over-
+the-counter market simulations. Mathematical Finance,
+34(2):262–347, 2024.
+Wan, Y. and Sutton, R. S. On convergence of average-reward
+off-policy control algorithms in weakly communicating
+mdps. arXiv preprint arXiv:2209.15141, 2022.
+Wan, Y., Naik, A., and Sutton, R. S. Learning and planning
+in average-reward markov decision processes. In Proc.
+International Conference on Machine Learning (ICML),
+pp. 10653–10662. PMLR, 2021.
+Wan, Y., Yu, H., and Sutton, R. S.
+On conver-
+gence of average-reward q-learning in weakly commu-
+nicating markov decision processes.
+arXiv preprint
+arXiv:2408.16262, 2024.
+Wang, Q., Ho, C. P., and Petrik, M. Policy gradient in
+robust mdps with global convergence guarantee. In Proc.
+International Conference on Machine Learning (ICML),
+pp. 35763–35797. PMLR, 2023a.
+Wang, Q., Zha, Y., Ho, C. P., and Petrik, M. Provable
+policy gradient for robust average-reward MDPs beyond
+rectangularity. In Forty-second International Conference
+on Machine Learning (ICML), 2025. URL https://
+openreview.net/forum?id=f4CPc211U1.
+Wang, S. and Si, N. Bellman optimality of average-reward
+robust markov decision processes with a constant gain.
+arXiv preprint arXiv:2509.14203, 2025.
+Wang, Y., Miao, F., and Zou, S. Robust constrained rein-
+forcement learning. arXiv preprint arXiv:2209.06866,
+2022a.
+Wang, Y., Wang, Y., Zhou, Y., Velasquez, A., and Zou, S.
+Data-driven robust multi-agent reinforcement learning.
+In 2022 IEEE 32nd International Workshop on Machine
+Learning for Signal Processing (MLSP), pp. 1–6. IEEE,
+2022b.
+Wang, Y., Velasquez, A., Atia, G., Prater-Bennette, A., and
+Zou, S. Robust average-reward markov decision pro-
+cesses. In Proc. Conference on Artificial Intelligence
+(AAAI), volume 37, pp. 15215–15223, 2023b.
+Wang, Y., Velasquez, A., Atia, G. K., Prater-Bennette, A.,
+and Zou, S. Model-free robust average-reward reinforce-
+ment learning. In Proc. International Conference on
+Machine Learning (ICML), pp. 36431–36469. PMLR,
+2023c.
+Wang, Y., Velasquez, A., Atia, G., Prater-Bennette, A., and
+Zou, S. Robust average-reward reinforcement learning.
+Journal of Artificial Intelligence Research, 80:719–803,
+2024.
+Wikecek, P. and Altman, E. Stationary anonymous sequen-
+tial games with undiscounted rewards. Journal of opti-
+mization theory and applications, 166(2):686–710, 2015.
+Xu, Y., Ganesh, S., and Aggarwal, V. Efficient q-learning
+and actor-critic methods for robust average reward rein-
+forcement learning. arXiv preprint arXiv:2506.07040,
+2025a.
+Xu, Y., Mondal, W. U., and Aggarwal, V. Finite-sample
+analysis of policy evaluation for robust average reward
+reinforcement learning. arXiv preprint arXiv:2502.16816,
+2025b.
+Zhang, K., Sun, T., Tao, Y., Genc, S., Mallya, S., and Basar,
+T. Robust multi-agent reinforcement learning with model
+uncertainty. In Proc. Advances in Neural Information
+Processing Systems (NeurIPS), volume 33, 2020.
+12
+
+Distributionally Robust Markov Games with Average Reward
+Zhang, R., Ren, Z., and Li, N. Gradient play in stochastic
+games: stationary points, convergence, and sample com-
+plexity. IEEE Transactions on Automatic Control, 69(10):
+6499–6514, 2024a.
+Zhang, Z., Panaganti, K., Shi, L., Sui, Y., Wierman, A.,
+and Yue, Y.
+Distributionally robust constrained rein-
+forcement learning under strong duality. arXiv preprint
+arXiv:2406.15788, 2024b.
+Zheng, Z. and Guo, X. Zero-sum non-stationary stochas-
+tic games with the long-run average criterion. Applied
+Mathematics & Optimization, 90(2):43, 2024.
+Zinkevich, M., Greenwald, A., and Littman, M. Cyclic equi-
+libria in markov games. Advances in neural information
+processing systems, 18, 2005.
+13
+
+Distributionally Robust Markov Games with Average Reward
+A. Related Works
+We discuss related works in this section.
+Non-robust Markov Games. Markov Games (Littman, 1994) provide a foundational mathematical framework for multi-
+agent sequential decision-making. The majority of early work focused on two-player zero-sum MGs, especially under the
+discounted-reward setting. Under these settings, the existence of a stationary Nash Equilibrium was established in (Shapley,
+1953) by formulating the problem as a Max-Min problem. It is later extended to multi-player general-sum MGs in (Fink,
+1964). The average-reward criterion, while more suitable for systems with long operational horizons, presents greater
+analytical challenges. Unlike the discounted case, a stationary NE is not generally guaranteed to exist, even in two-player
+zero-sum games (Filar & Vrieze, 1996). Instead, NE existence has only been proven under some additional assumptions on
+the structure of the game, including irreducibility, zero-sum (Guo & Yang, 2008; Hern´andez-Lerma & Lasserre, 2000; Guo
+& Hern´andez-Lerma, 2003; Zheng & Guo, 2024; Nowak, 1999; IWASE et al., 1976; K¨uenle & Schurath, 2003; Tanaka &
+Wakuta, 1977; Ja´skiewicz & Nowak, 2001; Filar & Vrieze, 1996), or single recurrent class under any policy (Sobel, 1971;
+Sahabandu et al., 2024). However, these non-robust methods cannot be applied to our robust setting.
+Distributionally Robust MDPs. To address the performance degradation that occurs when a model is mis-specified,
+(single-agent) distributionally robust MDPs are first developed in (Iyengar, 2005; Nilim & El Ghaoui, 2003) for both
+finite horizon and infinite horizon discounted reward settings. Studies under the average reward setting are limited until
+recently. In (Wang et al., 2023b;c), fundamental understandings of robust average reward are developed under the unichain
+assumption, and is later extended to more general settings like weakly communicating ones (Grand-Clement et al., 2023;
+Wang & Si, 2025). A huge body of robust reinforcement learning for average reward is also developed, mainly focusing
+on the sample complexity (Xu et al., 2025b;a; Roch et al., 2025b;a; Chen et al., 2025; Grand-Cl´ement & Petrik, 2023;
+Chatterjee et al., 2024; Wang et al., 2024). However, single-agent robust MDPs with average reward are still not fully studied
+(e.g., uniqueness or solvability of robust Bellman equation are not clear). These works are all developed for single-agent
+settings, and do not address the challenges we faced in multi-agent DR-MGs.
+Distributionally Robust Markov Games. Extending distributional robustness to the multi-agent setting is a recent and
+active area of research. However, the literature has overwhelmingly concentrated on the finite-horizon (Ma et al., 2023;
+Shi et al., 2025; 2024; Jiao & Li, 2024; Li et al., 2025; Blanchet et al., 2023; Farhat et al., 2026) and discounted-reward
+criteria (Zhang et al., 2020; Kardes¸ et al., 2011). These settings are often more analytically tractable because the influence of
+future rewards diminishes, simplifying the analysis. However, none of these methods can be extended to the average-reward
+setting, as we discussed earlier.
+B. Preliminaries
+In this section, we briefly review previous studies of single-agent distributionally robust MDPs.
+B.1. Discounted Setting
+Under the robust setting, the worst-case performance over the uncertainty set of MDPs is defined through the discounted
+reward. More specifically, the robust discounted value function of a policy π for a discounted MDP is defined as
+V π
+P,γ(s) ≜
+min
+κ∈×t≥0P Eπ,κ
+" ∞
+X
+t=0
+γtrt|S0 = s
+#
+,
+(14)
+where κ = (P0, P1...) ∈×t≥0P.
+For robust discounted MDPs, it has been shown that the robust discounted value function is the unique fixed-point of the
+robust discounted Bellman operator (Nilim & El Ghaoui, 2003; Iyengar, 2005; Puterman, 2014):
+TπV (s) ≜
+X
+a∈A
+π(a|s)
+ r(s, a) + γσPa
+s (V )
+
+,
+(15)
+where σPa
+s (V ) ≜minp∈Pa
+s p⊤V is the support function of V on Pa
+s . Based on the contraction of Tπ, robust dynamic
+programming approaches, e.g., robust value iteration, can be designed (Nilim & El Ghaoui, 2003; Iyengar, 2005).
+14
+
+Distributionally Robust Markov Games with Average Reward
+The goal is to find the optimal robust policy:
+π⋆= arg max
+π
+V π
+P,γ(s),
+(16)
+and it is shown (Iyengar, 2005) that the optimal robust value function V π⋆
+P,γ(s) satisfies the robust Bellman optimality
+equation
+V (s) ≜max
+a
+
+π(a|s)
+ r(s, a) + γσPa
+s (V )
+	
+.
+(17)
+B.2. Average Reward Setting
+For a fixed kernel P0, the average reward (or gain) and the bias are defined as
+gπ
+P0(s) ≜lim inf
+n→∞Eπ,P0
+"
+1
+n
+n−1
+X
+t=0
+rt|S0 = s
+#
+(18)
+and
+hπ
+P0(s) ≜Eπ,P0
+" ∞
+X
+t=0
+(rt −gπ
+P0)|s0 = s
+#
+.
+(19)
+We can view equation (19) as the cumulative difference over time t as t →∞. Defining Hπ
+P0 ≜(I −Pπ
+0 + Pπ
+∗)−1(I −Pπ
+∗)
+as the deviation matrix of Pπ
+0, then hπ
+P0 = Hπ
+P0rπ by (Puterman, 2014). When the MDP is irreducible, (gπ
+P0, hπ
+P0) is a
+solution to the following non-robust Bellman equation (Feinberg & Shwartz, 2012):
+hπ
+P0(s) = Eπ
+"
+r(s, a) −gπ
+P0(s) +
+X
+s′∈S
+pa
+s,s′hπ
+P0(s′)
+#
+.
+(20)
+In the robust setting, we consider the robust average reward, defined as
+gπ
+P(s) ≜min
+P ∈P lim inf
+n→∞Eπ,P
+"
+1
+n
+n−1
+X
+t=0
+rt|S0 = s
+#
+.
+(21)
+It is shown that under the unichain assumption, the robust average reward is independent from the initial state: gπ
+P(s1) =
+gπ
+P(s2), for any s1, s2. The robust Bellman equation (for a policy π) and the robust optimal Bellman equation for the average
+reward setting are derived in (Wang et al., 2023b):
+V (s) + g =
+X
+a
+π(a|s)
+ r(s, a) + σPa
+s (V )
+
+,
+(22)
+V (s) = max
+a
+
+r(s, a) −g + σPa
+s (V )
+	
+,
+∀s ∈S.
+(23)
+It is shown (Wang et al., 2023c) that if the equation (22) ((23)) has a solution (g, V ), then the solution g is the robust average
+reward gπ
+P (the optimal robust average reward g∗
+P = maxπ gπ
+P). However, whether these two equations are solvable is not
+studied but directly assumed.
+C. Proof of Lemma 3.1
+We derive the result by constructing an example.
+Fix ε ∈(0, 1). Consider a two-player zero-sum distributionally robust Markov game
+(S, A1, A2, P, r1, r2),
+15
+
+Distributionally Robust Markov Games with Average Reward
+with state space S = {s, G, B}, action sets A1 = {1, 2} and A2 = {1, 2}, and rewards
+r1(G, a1, a2) = 1,
+r1(B, a1, a2) = 0,
+r1(s, a1, a2) = 0,
+r2 = −r1.
+The ambiguity set consists of two kernels p(1) and p(2):
+p(1)( · |s, (1, 1)) = δG,
+p(1)( · |s, (2, 2)) = ε δG + (1 −ε) δB,
+p(2)( · |s, (1, 1)) = ε δG + (1 −ε) δB,
+p(2)( · |s, (2, 2)) = δG,
+p(1)( · |s, (1, 2)) = δB,
+p(1)( · |s, (2, 1)) = δB,
+p(2)( · |s, (1, 2)) = δB,
+p(2)( · |s, (2, 1)) = δB,
+and, for x ∈{G, B}, p(1)( · |x, (a1, a2)) = p(2)( · |x, (a1, a2)) = δx (absorbing). Thus, under any p ∈{p(1), p(2)} the
+chain has two closed recurrent classes {G} and {B} (i.e., it is multi-chain).
+Let the initial state be S0 = s. For stationary policies π1 ∈∆(A1), π2 ∈∆(A2), we specify them as
+π1(1) = p ∈[0, 1],
+π2(1) = q ∈[0, 1].
+Because G, B are absorbing and r1 ∈{0, 1} on {G, B}, the average reward of player 1 equals the probability (under the
+chosen kernel) of transitioning from s to G in one step. Thus we have that
+U(p, q) ≜
+min
+k∈{1,2} Pp(k)
+ S1 = G
+ S0 = s, π1, π2
+
+= min
+
+p q + ε(1 −p)(1 −q), ε p q + (1 −p)(1 −q)
+	
+.
+Then the robust average reward for player 1 is U(p, q) and for player 2 is −U(p, q).
+Lemma C.1. For U defined above and any ε ∈(0, 1),
+sup
+p∈[0,1]
+inf
+q∈[0,1] U(p, q) = ε
+2,
+inf
+q∈[0,1]
+sup
+p∈[0,1]
+U(p, q) =
+ε
+1 + ε.
+Proof. Fix p ∈[0, 1]. For q ∈[0, 1], U(p, q) is the pointwise minimum of two affine functions of q, hence concave in q.
+Therefore the infimum over q is attained at an endpoint:
+inf
+q∈[0,1] U(p, q) = min{ U(p, 0), U(p, 1) } = min{ε(1 −p), εp} = ε min{p, 1 −p}.
+Maximizing over p gives
+sup
+p∈[0,1]
+inf
+q∈[0,1] U(p, q) = sup
+p∈[0,1]
+ε min{p, 1 −p} = ε · 1
+2 = ε
+2.
+Fix q ∈[0, 1]. As a function of p, U(p, q) is again the pointwise minimum of two affine functions, hence concave and
+piecewise linear with a single kink at the solution of equality:
+p q + ε(1 −p)(1 −q) = εp q + (1 −p)(1 −q) ⇐⇒p = 1 −q.
+Thus
+sup
+p∈[0,1]
+U(p, q) = max
+n
+U(0, q), U(1, q), U(1 −q, q)
+o
+= max
+n
+ε(1 −q), εq, (1 + ε)q(1 −q)
+o
+.
+Hence
+inf
+q∈[0,1]
+sup
+p∈[0,1]
+U(p, q) = min
+q∈[0,1] max
+n
+ε(1 −q), εq, (1 + ε)q(1 −q)
+o
+.
+Denote f(q) ≜max
+n
+ε(1−q), εq, (1+ε)q(1−q)
+o
+. Then since f(q) = f(1−q), it suffices to only consider q ∈[0, 0.5].
+Clearly, the minimum of f is achieved at q∗=
+ε
+1+ε, with f(q∗) =
+ε
+1+ε.
+Theorem C.2 (Nonexistence of a Nash equilibrium). For the robust Markov game above, no (stationary stochastic) Nash
+equilibrium exists.
+16
+
+Distributionally Robust Markov Games with Average Reward
+Proof. In a two-player zero-sum game, a stationary Nash equilibrium (p⋆, q⋆) is a saddle point:
+U(p⋆, q) ≥U(p⋆, q⋆) ≥U(p, q⋆)
+∀p, q ∈[0, 1],
+which implies
+inf
+q U(p⋆, q) = U(p⋆, q⋆) = sup
+p U(p, q⋆).
+Consequently,
+sup
+p inf
+q U(p, q) ≥inf
+q U(p⋆, q) = U(p⋆, q⋆) = sup
+p U(p, q⋆) ≥inf
+q sup
+p U(p, q),
+so a saddle requires supp infq U = infq supp U. By Lemma C.1, supp infq U = ε/2 while infq supp U =
+ε
+1+ε >
+ε
+2,
+leading to a contradiction. Hence no saddle point exists and no Nash equilibrium exists.
+D. Irreducible DR-MGs
+In this appendix we work in the single-agent setting and fix a stationary policy π. The state space S and action space A are
+finite. For each (s, a), the local ambiguity set Pa
+s ⊂∆(S) is nonempty, compact and convex, and the overall ambiguity set
+is the rectangular product
+P = ×(s,a)∈S×APa
+s .
+For each P ∈P, we denote by P π the induced Markov kernel on S:
+P π(s′ | s) =
+X
+a∈A
+π(a | s)P(s′ | s, a).
+Under Assumption 4.1, P π is irreducible for every stationary π and for every P ∈P.
+For fixed P and π, the average reward (gain) and bias are defined as
+gπ
+P (s) = lim inf
+n→∞Eπ,P
+"
+1
+n
+n−1
+X
+t=0
+rt
+ S0 = s
+#
+,
+hπ
+P (s) = Eπ,P
+" ∞
+X
+t=0
+ rt −gπ
+P
+
+ S0 = s
+#
+.
+By irreducibility, gπ
+P (s) does not depend on s, so we write simply gπ
+P ; moreover (gπ
+P , hπ
+P ) is a solution to the (non-robust)
+Poisson/Bellman equation (Puterman, 2014):
+gπ
+P + hπ
+P (s) = rπ(s) +
+X
+s′∈S
+P π(s′ | s) hπ
+P (s′),
+s ∈S,
+(24)
+unique up to an additive constant on the bias.
+We define the robust average reward of π as
+gπ
+P ≜min
+P ∈P gπ
+P .
+Compactness of P and continuity of P 7→gπ
+P (see, e.g., (Puterman, 2014), Prop. 8.4.6) imply that the minimum is attained:
+there exists at least one worst-case kernel
+P w ∈arg min
+P ∈P gπ
+P .
+For each state s and action a, define the local robust one-step operator
+σa
+s(v) ≜min
+p∈Pa
+s
+p⊤v,
+v ∈RS,
+and the π-averaged robust Bellman operator
+σπ
+s (v) ≜min
+P ∈P
+X
+s′∈S
+P π(s′ | s)v(s′) = min
+p∈Pπ
+s
+p⊤v,
+where Pπ
+s ≜
+P
+a π(a | s) pa : pa ∈Pa
+s
+	
+. We also use rπ, σπ(v) to denote S-dimensional vectors, with entry rπ(s) =
+P
+a π(a|s)r(s, a) and σπ(v)(s) = P
+a π(a|s)σPa
+s (v).
+17
+
+Distributionally Robust Markov Games with Average Reward
+Theorem D.1. Consider an uncertainty set P satisfying Assumption 4.1 and fix a stationary policy π. Let P w ∈
+arg minP ∈P gπ
+P be any worst-case kernel, and let (gπ
+P w, hπ
+P w) be the corresponding (non-robust) gain and bias, i.e.
+a solution to (24) with P = P w. Then the pair (gπ
+P, hπ
+P w) solves the robust Bellman equation
+gπ
+P + h(s) = rπ(s) + σπ
+s (h),
+s ∈S,
+(25)
+and is unique up to addition of a constant to h. Equivalently, writing V = h and rearranging, V satisfies
+V (s) =
+X
+a∈A
+π(a | s)
+ r(s, a) −gπ
+P + σa
+s(V )
+
+,
+s ∈S.
+Proof. Fix π and let P w be any worst-case kernel for the robust average reward, so gπ
+P = gπ
+P w. By the irreducible
+average-reward MDP theory (Puterman, 2014), there exists a bias hπ
+P w such that
+gπ
+P w + hπ
+P w(s) = rπ(s) +
+X
+s′
+P wπ(s′ | s)hπ
+P w(s′),
+s ∈S.
+(26)
+Now fix any vector v ∈RS and define a kernel P v ∈P by taking, independently for each state s,
+P v,π(· | s) ∈arg min
+p∈Pπ
+s
+p⊤v,
+which exists by compactness of Pπ
+s . In particular, for v = hπ
+P w we define P V ≜P hπ
+P w so that
+σπ
+s (hπ
+P w) =
+X
+s′
+P V π(s′ | s) hπ
+P w(s′),
+s ∈S.
+By Assumption 4.1, P V π is irreducible.
+For the kernel P V , denote by (gπ
+P V , hπ
+P V ) the corresponding non-robust gain/bias pair. It satisfies
+gπ
+P V + hπ
+P V (s) = rπ(s) +
+X
+s′
+P V π(s′ | s) hπ
+P V (s′),
+s ∈S.
+(27)
+Rewriting (26)-(27) in vector form yields
+(I −P wπ)hπ
+P w = rπ −gπ
+P we,
+(I −P V π)hπ
+P V = rπ −gπ
+P V e.
+Since P w is worst-case for π, we have gπ
+P w ≤gπ
+P V , and hence
+(I −P wπ)hπ
+P w = rπ −gπ
+P we ≥rπ −gπ
+P V e = (I −(P V )π)hπ
+P V .
+(28)
+Equivalently,
+(P wπ −I)hπ
+P w ≤(P V π −I)hπ
+P V .
+By the definition of P V as a minimizer for hπ
+P w we also have, componentwise,
+P V πhπ
+P w ≤P wπhπ
+P w.
+(29)
+Let x ≜hπ
+P w −hπ
+P V . Using (28) and adding/subtracting P V πhπ
+P w we obtain
+x = hπ
+P w −hπ
+P V ≥P wπhπ
+P w −P V πhπ
+P V
+= P V πhπ
+P w −P V πhπ
+P V +
+ P wπhπ
+P w −P V πhπ
+P w
+
+= P V πx +
+ P wπhπ
+P w −P V πhπ
+P w
+
+.
+By (29) the last term is componentwise nonnegative, so
+x ≥P V πx.
+18
+
+Distributionally Robust Markov Games with Average Reward
+Since P V π is irreducible and stochastic, the inequality x ≥P V πx forces x to be constant, as we prove as follows.
+let s⋆be a state with minimal coordinate x(s⋆) = mins x(s). Then for any k ≥1,
+x(s⋆) ≥
+X
+s
+(P V π)k(s⋆, s) x(s) ≥x(s⋆)
+X
+s
+(P V π)k(s⋆, s) = x(s⋆),
+so all inequalities must be equalities. Thus whenever (P V π)k(s⋆, s′) > 0 we must have x(s′) = x(s⋆). By irreducibility,
+every state is reachable from s⋆under some power of P V π, so x is constant: x = ce for some c ∈R, i.e.,
+hπ
+P w = hπ
+P V + c e.
+(30)
+Using (30) in the Poisson equation (27) for P V gives
+gπ
+P V + hπ
+P w(s) = gπ
+P V + hπ
+P V (s) + c = rπ(s) +
+X
+s′
+P V π(s′ | s) hπ
+P V (s′) + c
+= rπ(s) +
+X
+s′
+P V π(s′ | s) hπ
+P w(s′).
+Equivalently,
+gπ
+P V + hπ
+P w(s) = rπ(s) + (P V πhπ
+P w)(s).
+(31)
+By construction of P V we have
+(P V πhπ
+P w)(s) = σπ
+s (hπ
+P w).
+On the other hand, from the Poisson equation (26) for P w,
+gπ
+P w + hπ
+P w(s) = rπ(s) + (P wπhπ
+P w)(s) ≥rπ(s) + (P V πhπ
+P w)(s) = gπ
+P V + hπ
+P w(s),
+where the inequality uses the minimizing property of P V for hπ
+P w. Thus gπ
+P w ≥gπ
+P V . Since P w is worst-case, gπ
+P w ≤gπ
+P V ,
+and we conclude that gπ
+P w = gπ
+P V .
+Combining this equality with (31), and recalling that gπ
+P w = gπ
+P, we obtain
+gπ
+P + hπ
+P w(s) = rπ(s) + σπ
+s (hπ
+P w),
+which is exactly (25) with h = hπ
+P w. Thus, the equation is solvable.
+We then show the uniqueness part.
+Suppose (g, h) is any solution of (25). For any kernel P ∈P, we have that
+σπ
+s (h) =
+X
+a
+π(a|s)σa
+s(h) ≤P πh,
+(32)
+hence
+g + h(s) ≤rπ(s) + (P πh)(s),
+(33)
+or
+(I −P π)h ≤rπ(s) −ge.
+(34)
+For this kernel P, let (gπ
+P , hπ
+P ) be the (unique) solution to the non-robust Bellman equation
+(I −P π)hπ
+P = rπ −gπ
+P e.
+(35)
+We thus have that
+(I −P π)(h −hπ
+P ) ≤(gπ
+P −g)e.
+(36)
+19
+
+Distributionally Robust Markov Games with Average Reward
+Let µP be the unique stationary distribution of P π, and multiply (36) with µ⊤
+P , we have that
+0 = µ⊤
+P (I −P π)(h −hπ
+P ) ≤(gπ
+P −g).
+(37)
+Thus g ≤gπ
+P for any P ∈P, i.e.,
+g ≤gπ
+P.
+(38)
+We now construct a kernel ˜P ∈P as
+˜P(·|s, a) ∈arg min
+p∈Pa
+s
+ph,
+(39)
+so that σa
+s(h) = ˜Ph(s). Then (25) becomes
+g + h(s) = rπ(s) + ( ˜P πh)(s),
+(40)
+i.e.,
+(I −˜P π)h = rπ −ge.
+(41)
+This is in fact the Bellman equation for the Markov chain (π, ˜P). By standard average-reward MDP theory for irreducible
+chains, we must have
+g = gπ
+˜
+P , h = hπ
+˜
+P + ce,
+(42)
+for some constant c.
+Combining with (38) then implies that
+g = gπ
+˜
+P = gπ
+P,
+(43)
+i.e., ˜P is a worst-case kernel and
+h = hπ
+˜
+P + ce = hπ
+Pw + ce
+(44)
+for some worst-case kernel Pw.
+This hence proves uniqueness (up to constants).
+Corollary D.2. The robust Bellman optimality equation
+V (s) = max
+a {r(s, a) −g + σPa
+s (V )}
+(45)
+is uniquely solvable.
+Proof. Denote the optimal robust policy by π⋆, and the corresponding worst-case kernel by P⋆. By Theorem 4.6, (gπ⋆
+P , hπ⋆
+P⋆)
+is the solution to the robust Bellman equation of π⋆:
+hπ⋆
+P⋆(s) = rπ⋆(s) −gπ⋆
+P + σπ⋆
+s (hπ⋆
+P⋆) =
+X
+a
+π⋆(a|s)
+
+r(s, a) −gπ⋆
+P + σa
+s(hπ⋆
+P⋆)
+
+.
+(46)
+We now set π′(s) = arg maxa{r(s, a) −gπ⋆
+P + σa
+s(hπ⋆
+P⋆)}, ∀s, then we have that
+rπ′(s) −hπ′
+P′(s) + σπ′
+s (hπ′
+P′) = gπ′
+P ≤gπ⋆
+P =
+X
+a
+π⋆(a|s)
+
+r(s, a) −hπ⋆
+P⋆(s) + σa
+s(hπ⋆
+P⋆)
+
+≤rπ′(s) −hπ⋆
+P⋆(s) + σπ′
+s (hπ⋆
+P⋆),
+(47)
+20
+
+Distributionally Robust Markov Games with Average Reward
+which further implies that
+hπ⋆
+P⋆(s) −hπ′
+P′(s) ≤σπ′
+s (hπ⋆
+P⋆) −σπ′
+s (hπ′
+P′) ≤P′(hπ⋆
+P⋆−hπ′
+P′).
+(48)
+Now we denote x = hπ⋆
+P⋆−hπ′
+P′, and take Ces`aro summation, it then implies
+x ≤µx,
+(49)
+for the stationary distribution matrix µ > 0 (as it is irreducible, its stationary distribution has positive entries). Similarly, it
+implies x(s) = x(s′), and thus hπ⋆
+P⋆−hπ′
+P′ = ce. This further implies that all inequalities in (47) are equations, thus
+hπ⋆
+P⋆(s) = max
+a
+n
+r(s, a) −gπ⋆
+P + σa
+s(hπ⋆
+P⋆)
+o
+,
+(50)
+hence (hπ⋆
+P⋆, gπ⋆
+P⋆) is a solution to (7), completing the proof of the first part. The remaining proof follows similarly from
+(Wang et al., 2023c).
+The uniqueness part similarly follows from the proof of Theorem D.1, by noting that maxx f(x) −maxx g(x) ≤
+maxx |f(x) −g(x)|.
+Lemma D.3. If for any agent i and any joint policy π−i, BRi(π−i) is nonempty, convex, and BRi(·) is upper semi-continuous,
+then BR also satisfies the conditions in Lemma D.4.
+Proof. (1). If for any i and π−i, BRi(π−i) is nonempty, then BR(π) = (BR1(π−1), ..., BRN(π−N)) is clearly nonempty.
+(2). Consider two policies π1, π2 ∈BR(π). To show the convexity of BR(π), we need to show π′ = απ1 + (1 −α)π2 =
+(απ1
+1 + (1 −α)π2
+1, ..., απ1
+N + (1 −α)π2
+N) ∈BR(π). Note that for any i, π1
+i , π2
+i ∈BRi(π−i), and due to the convexity of
+BRi(π−i), απ1
+i + (1 −α)π2
+i ∈BRi(π−i), which completes the proof.
+(3). Consider two convergent policy sequences {πn} →π and {µn} →µ, with µn ∈BR(πn), we need to show that
+µ ∈BR(π). Note that πn →π implies that πn
+i →πi for any i, and similarly µn →µ. Since µn
+i ∈BRi(πn
+−i), by the
+semi-continuity of BRi, we have µi ∈BRi(π−i). Moreover note that
+µ ∈BR(π) ⇔µi ∈BRi(π−i), ∀i,
+(51)
+which hence completes the proof.
+D.1. Convexity
+Lemma D.4 (Kakutani’s Fixed Point Theorem (Kakutani, 1941)). Let X be a compact convex subset of Rn and let
+f : X →2X be a set-valued function for which, (1) f(x) is nonempty and convex, ∀x; (2) f is upper semi-continuous (i.e.,
+for any convergent sequences {xn} →x and {yn} →y such that yn ∈f(xn), it holds that y ∈f(x)). Then there exists
+some x⋆∈X such that x⋆∈f(x⋆).
+Lemma D.5. Consider the robust Bellman optimality equation
+g + h(s) = max
+a∈A
+
+r(s, a) + σa
+s(h)
+	
+,
+s ∈S,
+(52)
+and let (g, h) be any of its solutions. Let π⋆be an optimal robust policy, i.e. π⋆∈arg maxπ gπ
+P. Then (g, h) also solves the
+robust Bellman equation associated with π⋆:
+g + h(s) =
+X
+a∈A
+π⋆(a | s)
+ r(s, a) + σa
+s(h)
+
+,
+s ∈S.
+(53)
+Proof. By Theorem D.1, any optimal policy π⋆admits a worst-case kernel P ⋆∈P such that (gπ⋆
+P ⋆, hπ⋆
+P ⋆) solves the
+fixed-policy equation (25) with π = π⋆. Moreover gπ⋆
+P ⋆= g⋆
+P (the optimal robust average reward), and the robust Bellman
+optimality equation (52) also has a solution (g, h) with g = g⋆
+P. We must show that h and hπ⋆
+P ⋆differ only by a constant.
+Equation (52) can be written as
+g + h(s) = max
+a
+
+r(s, a) + σa
+s(h)
+	
+.
+(54)
+21
+
+Distributionally Robust Markov Games with Average Reward
+Optimality of π⋆implies that at each state s, the support of π⋆(· | s) lies in the set of maximizers of the right-hand side:
+π⋆(a | s) > 0 =⇒a ∈arg max
+a′ {r(s, a′) + σa′
+s (h)}.
+Therefore,
+g + h(s) =
+X
+a
+π⋆(a | s)
+
+r(s, a) + σa
+s(h)
+	
+,
+(55)
+i.e., (g, h) is a solution of the fixed-policy robust Bellman equation (53) with π = π⋆.
+By Theorem D.1, the solution of the fixed-policy robust Bellman equation for π⋆is unique up to constants and has gain
+g = g⋆
+P = gπ⋆
+P ⋆. Thus h and hπ⋆
+P ⋆differ only by an additive constant, and in particular (g, h) is of the form
+g = g⋆
+P,
+h = hπ⋆
+P ⋆+ ce.
+This hence completes the proof.
+Lemma D.6 (Convexity of optimal policies). Define the optimal policy set
+Π⋆≜
+
+π
+ gπ
+P = g⋆
+P
+	
+.
+Then Π⋆is convex.
+Proof. Let π1, π2 ∈Π⋆and let ˜π ≜απ1 + (1 −α)π2 for some α ∈[0, 1], i.e.
+˜π(a | s) = απ1(a | s) + (1 −α)π2(a | s),
+s ∈S, a ∈A.
+Let (g, h) be any solution of the robust Bellman optimality equation (52). By Lemma D.5, (g, h) also solves the fixed-policy
+robust Bellman equations for π1 and π2:
+g + h(s) = rπ1(s) + σπ1
+s (h),
+g + h(s) = rπ2(s) + σπ2
+s (h).
+Taking the convex combination with weights (α, 1 −α) yields
+g + h(s) = α
+ rπ1(s) + σπ1
+s (h)
+
++ (1 −α)
+ rπ2(s) + σπ2
+s (h)
+
+=
+X
+a
+˜π(a | s)r(s, a) +
+X
+a
+˜π(a | s)σa
+s(h) = r˜π(s) + σ˜π
+s (h).
+Thus (g, h) also solves the fixed-policy robust Bellman equation for ˜π. By Theorem D.1, the gain of any such solution must
+be the robust average reward of that policy; hence
+g˜π
+P = g.
+Since g = g⋆
+P is the maximal robust average reward (because π1, π2 are optimal), we conclude that ˜π is also optimal, i.e.
+˜π ∈Π⋆. Therefore Π⋆is convex.
+The convexity of the best-response sets in the multi-agent case then follows by applying Lemma D.6 to the induced
+single-agent DR-MDPs Mi(π−i), as discussed.
+D.2. Semi-Continuity
+Lemma D.7. Let {πn} be a sequence of stationary policies converging to π in the product topology. Let P πn and P π
+denote the induced kernels for a fixed P ∈P, and let (P πn)⋆and (P π)⋆be their stationary distributions. Then
+(P πn)⋆→(P π)⋆
+uniformly in P ∈P.
+Proof. This is a direct consequence of the continuity properties of irreducible Markov chains; see (Puterman, 2014)
+(Prop. 8.4.6). Uniformity in P follows from the compactness of P.
+22
+
+Distributionally Robust Markov Games with Average Reward
+Lemma D.8. Fix an agent i and let π : S →∆(A−i) be a joint policy of all other agents. Define the operator
+T π
+P : RS →RS×Ai by
+T π
+Ph(s, ai) ≜rπ(s, ai) + σπ
+s,ai(h),
+where
+rπ(s, ai) ≜
+X
+a−i
+π(a−i | s) ri
+ s, (ai, a−i)
+
+,
+and
+σπ
+s,ai(h) ≜
+min
+q∈Pπ
+s,ai
+q⊤h,
+Pπ
+s,ai ≜
+
+
+
+X
+a−i
+π(a−i | s)P(· | s, (ai, a−i)) : P(· | s, (ai, a−i)) ∈P(ai,a−i)
+s
+
+
+.
+Let {πn} be a sequence of opponent policies with πn →π, and {hn} a sequence of functions hn →h uniformly on S. Then
+T πn
+P (hn) →T π
+P(h)
+uniformly on S × Ai.
+Proof. Recalling the definition of TP we can obtain the difference,
+T πn
+P (hn) −T π
+P (h)
+
+∞= max
+s,a
+T πn
+P (hn)(s, a) −T π
+P (h)(s, a)
+
+= max
+s,a
+rπn(s, a) + σ(Pπn)as (hn) −σ(Pπ)as (h) −rπ(s, a)
+
+≤max
+s,a
+
+|rπn(s, a) −rπ(s, a)| + |σ(Pπn)as (hn) −σ(Pπn)as (h)| + |σ(Pπn)as (h) −σ(Pπ)as (h)|
+	
+≤||πn(s) −π(s)||1 + A + B,
+(56)
+where A = |σ(Pπn)as (hn) −σ(Pπn)as (h)| and B = |σ(Pπn)as (h) −σ(Pπ)as (h)|. See that by the Lipchitz of σP(·), A ≤
+||hn −h||∞. Using the fact that (Pπn)a
+s =
+ P
+b∈A−i πn(b|s)P(·|s, a, b)
+	
+, looking at B we derive,
+B = |σ(Pπn)as (h) −σ(Pπ)as (h)|
+= |
+min
+q∈(Pπn)as
+qh −
+min
+q∈(Pπ)as
+qh|
+= | min
+q∈Pa
+s
+qπnh −min
+q∈Pa
+s
+qπh|
+=
+ min
+q∈Pa
+s
+ X
+s′∈S
+X
+b∈A−i
+πn(b|s)q(s′|s, a, b)h(s′)
+
+−min
+q∈Pa
+s
+ X
+s′∈S
+X
+b∈A−i
+π(b|s)q(s′|s, a, b)h(s′)
+
+≤
+
+X
+s′∈S
+X
+b∈A−i
+
+πn(b|s) −π(b|s)
+
+q(s′|s, a, b)h(s′)
+,
+for some q ∈Pa
+s ,
+≤||πn(·|s) −π(·|s)||1 · H,
+where H = ||h||∞. We can now combine the terms in (56) to find,
+||πn(s) −π(s)||1 + A + B ≤max
+s∈S
+
+||πn(s) −π(s)||1 + ||hn −h||∞+ H · ||πn(s) −π(s)||1
+	
+.
+Note that πn(s) →π(s), ∀s ∈S, then ∀ϵ, ∃Ns s.t. ∀n > Ns, ||πn(s)−π(s)||1 ≤ϵ. Similarly with hn(s) →h(s), ∀s ∈S,
+then ∀ϵ, ∃Ns s.t. ∀n > Ns, |hn(s) −h(s)| ≤ϵ. Now by setting N = maxs∈S{Ns}, then ∀n > N,
+||πn(s) −π(s)||1 ≤ϵ,
+and
+|hn(s) −h(s)| ≤ϵ,
+∀s ∈S.
+Therefore, when n > N, ||πn(s) −π(s)||1 + A + B ≤ϵ + ϵ + Hϵ ≲ϵ. This implies that T n
+P →TP uniformly on S × A,
+which completes the proof.
+Theorem D.9 (Semi-continuity). Let πn →π and xn →x, where πn : S →∆(A−i) and xn : S →∆(Ai). If
+xn ∈BRi(πn), then x ∈BRi(π).
+23
+
+Distributionally Robust Markov Games with Average Reward
+Proof. To show that x ∈BRi(π), it suffices to show that x is an optimal policy of the induced AMDP (S, Ai, Pπ, rπ).
+Recalling the robust Bellman equation, it is also sufficient to show that g(x,π)
+P
+satisfies the following:
+g(s) = max
+a∈Ai{rπ(s, a) + σ(Pπ)as (h) −h(s)} = max
+a∈Ai{T π
+Pa
+s (h)}.
+(57)
+See that since xn ∈BRi(πn), then xn is the optimal policy of the induced AMDP (S, Ai, Pπn, rπn). Thus, there exists hn,
+s.t. (hn, gn = gxn
+Pπn) is a solution to,
+gxn
+Pπn = gn(s) = max
+a {rπn(s, a) + σ(Pπn)as (hn) −hn(s)}.
+See that gxn
+Pπn = minPπn∈Pπn gxn
+Pπn ,rπn = minP∈P g(xn,πn)
+P,n
+, and so gxn
+Pπn = gπn,xn
+P
+. Therefore, for any (xn, πn), there
+exists some hn ∈RS such that for all s ∈S,
+g(xn,πn)
+Ps
+(s) = max
+a {rπn(s, a) + σ(Pπn)as (hn) −hn(s)}
+= max
+a {T πn
+Pa
+s (hn)}.
+(58)
+Moreover, since hn is some relative function (Wang et al., 2023b), ||hn||∞≤H. Then, there exists some subsequence
+{nm}, s.t. hnm →h for some h, and g(xn,πn)
+P
+→g for some g. Then, we can take the limit as m →∞in (58) to find:
+lim
+m→∞g(xnm,πnm)
+P
+= lim
+m→∞max
+a
+
+T πnm
+P
+(hnm)
+	
+(i)
+= max
+a
+
+lim
+m→∞T πnm
+P
+(hnm)
+	
+= max
+a
+
+T π
+P (h)
+	
+,
+(59)
+where (i) holds by the uniform convergence in Lemma D.8, and the final equality by πnm →π, and hnm →h. Looking at
+the left-hand side of equation (59) we find
+lim
+m→∞g(xnm,πnm)
+P
+= lim
+m→∞min
+P∈P g(xnm,πnm)
+P
+= lim
+m→∞min
+P∈P P⋆
+(xnm,πnm) · r(xnm,πnm).
+By (Puterman, 2014) and (Wang et al., 2023b), we have P⋆
+(xnm,πnm) →P⋆
+(x,π) uniformly. Thus, lim min = min lim
+implies,
+lim
+m→∞g(xnm,πnm)
+P
+= min
+P∈P lim
+m→∞g(xnm,πnm)
+P
+= min
+P∈P g(x,π)
+P
+= g(x,π)
+P
+.
+Therefore, g(x,π)
+P
+= maxa
+
+T π
+P (h)
+	
+for some h ∈RS, which completes the proof.
+E. Weakly Communicating DR-MGs
+Throughout this section we fix a player i ∈N and a stationary joint policy π−i of the other players, and work with the
+induced single-agent distributionally robust MDP
+Mi(π−i) = (S, Ai, Pπ−i, rπ−i
+i
+).
+All quantities defined below (transition sets, Bellman solutions, etc.) depend on (i, π−i), but we often suppress this
+dependence in the notation to lighten the presentation.
+The stage reward rπ−i
+i
+(s, ai) is bounded in [0, 1] by assumption.
+The induced ambiguity set Pπ−i inherits
+(s, ai)–rectangularity from the original game.
+24
+
+Distributionally Robust Markov Games with Average Reward
+For a stationary policy πi : S →∆(Ai) of player i and a kernel P ∈Pπ−i, let gπi
+P denote the long-run average reward of πi
+in Mi(π−i) under P (which exists by standard finite-state average-reward theory). We define the robust worst-case average
+reward and the robust best-response set
+gπi
+Pπ−i ≜
+min
+P ∈Pπ−i gπi
+P ,
+(60)
+BRi(π−i) ≜
+n
+πi : gπi
+Pπ−i =
+sup
+µ:S→∆(Ai)
+min
+P ∈Pπ−i gµ
+P
+o
+.
+(61)
+Lemma E.1. Let (g∗, h1) and (g∗, h2) be two solutions to the Robust Bellman Optimality Equation in (7). Under the
+unichain assumption (Wang et al., 2023b), h1(s) −h2(s) = c for some constant c, for all s ∈S. Namely, the equation has
+a unique solution up to some constant.
+Proof. Define the difference function ∆(s) = h1(s) −h2(s).
+Let π1 be a greedy policy for h1, i.e., π1(s) ∈arg maxa{r(s, a) + σPa
+s (h1)}. Let ν1 be the worst-case nature kernel for h1
+under π1. It then holds that
+g∗+ h1(s) = r(s, π1(s)) +
+X
+s′
+p(s′|s, π1(s), ν1)h1(s′)
+(62)
+On the other hand, since h2 is also a solution to the optimal equation, it must satisfy the maximization condition. Specifically
+for policy π1:
+g∗+ h2(s) = max
+a {r(s, a) + σPa
+s (h2)} ≥r(s, π1(s)) +
+min
+p∈P(s,π1(s))
+X
+s′
+p(s′|s, π1(s))h2(s′)
+(63)
+Let ν1,2 be the nature kernel that achieves the minimization for h2 given π1. Then:
+g∗+ h2(s) ≥r(s, π1(s)) +
+X
+s′
+p(s′|s, π1(s), ν1,2)h2(s′)
+(64)
+Returning to (62), since ν1 minimizes h1, replacing it with ν1,2 yields a value ≥the minimum:
+g∗+ h1(s) ≤r(s, π1(s)) +
+X
+s′
+p(s′|s, π1(s), ν1,2)h1(s′)
+(65)
+Subtracting (64) from (65):
+h1(s) −h2(s) ≤
+X
+s′
+p(s′|s, π1(s), ν1,2)(h1(s′) −h2(s′))
+(66)
+Let PA be the transition matrix induced by (π1, ν1,2). We have:
+∆≤PA∆
+(67)
+Thus, ∆is sub-harmonic with respect to PA.
+By symmetry, let π2 be optimal for h2, and let ν2,1 minimize h1 under π2. We similarly derive:
+∆≥PB∆
+(68)
+where PB is induced by (π2, ν2,1). Thus, ∆is super-harmonic with respect to PB.
+By assumption, both PA and PB define unichain Markov chains. Since ∆≤PA∆, ∆cannot attain a local maximum on the
+recurrent class of PA strictly greater than its neighbors. By the Maximum Principle, ∆(s) must be constant on the recurrent
+class CA of PA. Let this value be M = maxs ∆(s).
+On the other hand, since ∆≥PB∆, ∆cannot attain a local minimum on the recurrent class of PB strictly lower than
+its neighbors. By the Minimum Principle, ∆(s) must be constant on the recurrent class CB of PB. Let this value be
+m = mins ∆(s).
+25
+
+Distributionally Robust Markov Games with Average Reward
+Assume M > m. From (67), ∆(s) is non-decreasing in expectation under PA. Trajectories under PA eventually enter CA
+(where ∆= M). Thus for any transient state s, ∆(s) ≤M. From (68), ∆(s) is non-increasing in expectation under PB.
+Trajectories under PB eventually enter CB (where ∆= m).
+The unichain assumption implies the graph is connected. However, if M > m, the gain g∗would necessarily differ or one
+policy would exploit the transition to the region of higher bias, contradicting the optimality of the policies for the fixed
+scalar g∗. Specifically, if ∆is not constant, the condition ∆≤PA∆and ∆≥PB∆combined with g∗being unique forces:
+PA∆= ∆
+and
+PB∆= ∆
+(69)
+For a harmonic function on a weakly communicating chain, the values on transient states are convex combinations of values
+on the recurrent set. Since the recurrent sets have constant values M (and m respectively), and the global gain constraint
+prevents flow from low to high regions without penalty, we must have M = m.
+Therefore, ∆(s) = c for all s ∈S, which completes the proof.
+E.1. Constant-Gain Robust Bellman Equations
+Under Assumption 5.1 (weakly communicating DR-MG), the induced DR-MDP Mi(π−i) is a finite weakly communicating
+robust MDP with (s, ai)–rectangular ambiguity. We then therefore invoke the constant-gain robust Bellman theory of (Wang
+& Si, 2025).
+Lemma E.2 ((Wang & Si, 2025)). There exists a pair (h⋆, α⋆) ∈RS × R with α⋆∈[0, 1] such that the following hold for
+every s ∈S:
+h⋆(s) =
+sup
+ϕ∈∆(Ai)
+inf
+ps∈
+ Pπ−i
+s
+X
+ai∈Ai
+ϕ(ai)
+ rπ−i
+i
+(s, ai) −α⋆+ p⊤
+s,aih⋆
+,
+(70)
+=
+inf
+ps∈
+ Pπ−i
+s
+sup
+ϕ∈∆(Ai)
+X
+ai∈Ai
+ϕ(ai)
+ rπ−i
+i
+(s, ai) −α⋆+ p⊤
+s,aih⋆
+.
+(71)
+Moreover, α⋆coincides with the optimal robust average reward:
+α⋆=
+sup
+πi:S→∆(Ai)
+min
+P ∈Pπ−i gπi
+P .
+The proof is an application of Wang and Si (2025) to the induced DR-MDP Mi(π−i) and is omitted here.
+For each s ∈S we introduce the local saddle Lagrangian
+Ls(ϕ, ps) ≜
+X
+ai∈Ai
+ϕ(ai)
+ rπ−i
+i
+(s, ai) −α⋆+ p⊤
+s,aih⋆
+,
+ϕ ∈∆(Ai), ps ∈
+ Pπ−i
+s.
+(72)
+We then define the local player and adversary value functions
+Fs(ϕ) ≜
+inf
+ps∈
+ Pπ−i
+s
+Ls(ϕ, ps),
+(73)
+Ψs(ps) ≜
+sup
+ϕ∈∆(Ai)
+Ls(ϕ, ps).
+(74)
+We then derive the following results.
+Lemma E.3. For each state s ∈S:
+1. Fs is concave and upper semicontinuous on the compact convex set ∆(Ai).
+2. Ψs is convex and lower semicontinuous on
+ Pπ−i
+s.
+3. With (h⋆, α⋆) from Lemma E.2,
+h⋆(s) =
+max
+ϕ∈∆(Ai) Fs(ϕ) =
+min
+ps∈
+ Pπ−i
+s
+Ψs(ps).
+(75)
+26
+
+Distributionally Robust Markov Games with Average Reward
+Proof. (1) For fixed ps, the map ϕ 7→Ls(ϕ, ps) is affine (hence continuous and both concave and convex) on the simplex
+∆(Ai). The function Fs is the pointwise infimum of this family of continuous affine functions; infima of affine functions are
+concave, and infima of continuous functions are upper semicontinuous.
+(2) For fixed ϕ, the map ps 7→Ls(ϕ, ps) is affine (and continuous) on the convex set
+ Pπ−i
+s. The function Ψs is the
+pointwise supremum of a family of continuous affine functions; such a supremum is convex and lower semicontinuous.
+(3) Comparing (72)–(74) with (70)–(71) we see that
+h⋆(s) =
+sup
+ϕ∈∆(Ai)
+inf
+ps∈
+ Pπ−i
+s
+Ls(ϕ, ps) =
+sup
+ϕ∈∆(Ai)
+Fs(ϕ),
+h⋆(s) =
+inf
+ps∈
+ Pπ−i
+s
+sup
+ϕ∈∆(Ai)
+Ls(ϕ, ps) =
+inf
+ps∈
+ Pπ−i
+s
+Ψs(ps).
+Since Fs is upper semicontinuous on the compact set ∆(Ai), its maximum is attained. Likewise Ψs attains its minimum on
+the compact set
+ Pπ−i
+s.
+We now define the set of statewise Bellman maximizers
+Ms ≜arg
+max
+ϕ∈∆(Ai) Fs(ϕ),
+s ∈S.
+(76)
+By Lemma E.3, each Ms is nonempty, convex, and compact.
+E.2. A Common Supporting Minimizer
+Lemma E.4. For each s ∈S there exists
+p⋆
+s ∈arg
+min
+ps∈
+ Pπ−i
+s
+Ψs(ps)
+such that
+h⋆(s) = Ψs(p⋆
+s) = Ls(ϕ, p⋆
+s) = Fs(ϕ),
+∀ϕ ∈Ms.
+(77)
+Proof. From Lemma E.3(2) and compactness of
+ Pπ−i
+s, Ψs attains its minimum; pick p⋆
+s ∈
+ Pπ−i
+s such that
+Ψs(p⋆
+s) = min
+ps Ψs(ps) = h⋆(s).
+Now let ϕ ∈Ms. Then Fs(ϕ) = h⋆(s) by definition of Ms and (75). We have the chain of inequalities
+h⋆(s) = Fs(ϕ) = inf
+ps Ls(ϕ, ps) ≤Ls(ϕ, p⋆
+s) ≤sup
+˜ϕ
+Ls(˜ϕ, p⋆
+s) = Ψs(p⋆
+s) = h⋆(s).
+Thus all inequalities are equalities, which yields
+Fs(ϕ) = Ls(ϕ, p⋆
+s) = Ψs(p⋆
+s) = h⋆(s)
+for every ϕ ∈Ms.
+Because the ambiguity set is (s, ai)–rectangular, the global collection p⋆≜{p⋆
+s}s∈S belongs to Pπ−i: we choose
+independently, for each state s, a row block p⋆
+s from
+ Pπ−i
+s, and rectangularity ensures that this rowwise product is
+feasible.
+Under Assumption 5.1, Mi(π−i) is weakly communicating for every kernel P ∈Pπ−i, in particular for P = p⋆. By
+the standard structure theorem for weakly communicating MDPs (see, e.g., (Puterman, 2014), Chap. 8), there exists a
+decomposition
+S = S0 ˙∪Cp⋆,
+where:
+27
+
+Distributionally Robust Markov Games with Average Reward
+• States in S0 are transient under any stationary policy of player i (combined with the fixed opponents π−i and kernel
+p⋆).
+• The set Cp⋆is the union of the recurrent communicating classes of the Markov chains induced by stationary policies
+under p⋆.
+We call Cp⋆the communicating region of p⋆.
+E.3. Slack Inequalities and Characterization of Gi
+For a stationary policy ν : S →∆(Ai) of player i we define the Bellman slack
+δν(s) ≜h⋆(s) −Fs
+ ν(· | s)
+
+,
+s ∈S.
+(78)
+By (75), h⋆(s) = maxϕ Fs(ϕ), so Fs(ν(· | s)) ≤h⋆(s) and hence δν(s) ≥0.
+We recall the definitions (72)–(74) and (75):
+Ls(ϕ, ps) =
+X
+ai∈Ai
+ϕ(ai)
+ rπ−i
+i
+(s, ai) −α⋆+ p⊤
+s,aih⋆
+,
+(79)
+Fs(ϕ) =
+inf
+ps∈(Pπ−i)s
+Ls(ϕ, ps),
+Ψs(ps) =
+sup
+ϕ∈∆(Ai)
+Ls(ϕ, ps),
+(80)
+h⋆(s) =
+max
+ϕ∈∆(Ai) Fs(ϕ) =
+min
+ps∈(Pπ−i)s
+Ψs(ps).
+(81)
+Fix player i and opponent policy π−i and consider the induced DR-MDP Mi(π−i) = (S, Ai, Pπ−i, rπ−i
+i
+). Let (h⋆, α⋆) be
+a constant-gain solution of the optimal robust Bellman equation for Mi(π−i) (as in Lemma E.2).
+For each state s ∈S, define the local Lagrangian and values
+Ls(ϕ, ps) ≜
+X
+ai∈Ai
+ϕ(ai)
+
+rπ−i
+i
+(s, ai) −α⋆+ p⊤
+s,aih⋆
+,
+ϕ ∈∆(Ai), ps ∈(Pπ−i)s,
+(82)
+Fs(ϕ) ≜
+inf
+ps∈(Pπ−i)s
+Ls(ϕ, ps),
+Ψs(ps) ≜
+sup
+ϕ∈∆(Ai)
+Ls(ϕ, ps),
+(83)
+and the statewise maximizer set
+Ms ≜arg
+max
+ϕ∈∆(Ai) Fs(ϕ).
+By strong duality (Lemma E.3), for every s,
+h⋆(s) = max
+ϕ
+Fs(ϕ) = min
+ps Ψs(ps).
+Let p⋆
+s ∈arg minps∈(Pπ−i)s Ψs(ps) be a common supporting minimizer as in Lemma E.4, and define the global kernel
+p⋆≜{p⋆
+s}s∈S ∈Pπ−i.
+Lemma E.5. For any stationary policy ν : S →∆(Ai) define the Bellman slack
+δν(s) ≜h⋆(s) −Fs(ν(·|s)) ≥0.
+(84)
+Let (St, At)t≥0 be the trajectory generated by the pair (ν, p⋆). Then for every integer n ≥1,
+E
+h n−1
+X
+t=0
+ rπ−i
+i
+(St, At) −α⋆i
+≤E[h⋆(S0)] −E[h⋆(Sn)],
+(85)
+E
+h n−1
+X
+t=0
+ rπ−i
+i
+(St, At) −α⋆i
+≥E[h⋆(S0)] −E[h⋆(Sn)] −E
+h n−1
+X
+t=0
+δν(St)
+i
+.
+(86)
+28
+
+Distributionally Robust Markov Games with Average Reward
+Consequently,
+lim sup
+n→∞E
+h 1
+n
+n−1
+X
+t=0
+ rπ−i
+i
+(St, At) −α⋆i
+≤0,
+(87)
+lim inf
+n→∞E
+h 1
+n
+n−1
+X
+t=0
+ rπ−i
+i
+(St, At) −α⋆i
+≥−lim sup
+n→∞E
+h 1
+n
+n−1
+X
+t=0
+δν(St)
+i
+.
+(88)
+Moreover, let S = S0 ∪Cp⋆be the weakly-communicating decomposition under p⋆(i.e., S0 is transient under every
+stationary policy under p⋆, and Cp⋆is the union of recurrent classes). If ν(·|s) ∈Ms for all s ∈Cp⋆, then the average
+reward of ν under p⋆equals α⋆:
+gν
+p⋆= α⋆.
+Proof. We prove the two inequalities (85)–(86) first, then the final claim.
+Step 1: Upper bound (85).
+Fix a time t ≥0 and condition on St = s. Under (ν, p⋆), we have At ∼ν(·|s) and
+St+1 ∼p⋆
+s,At, thus
+E
+
+rπ−i
+i
+(St, At) −α⋆+ h⋆(St+1) | St = s
+
+=
+X
+ai
+ν(ai|s)
+
+rπ−i
+i
+(s, ai) −α⋆+ (p⋆
+s,ai)⊤h⋆
+= Ls
+ ν(·|s), p⋆
+s
+
+.
+Since p⋆
+s minimizes Ψs and Ψs(p⋆
+s) = h⋆(s), we have for any ϕ ∈∆(Ai),
+Ls(ϕ, p⋆
+s) ≤sup
+˜ϕ
+Ls(˜ϕ, p⋆
+s) = Ψs(p⋆
+s) = h⋆(s).
+Taking ϕ = ν(·|s) yields
+E
+
+rπ−i
+i
+(St, At) −α⋆+ h⋆(St+1) | St = s
+
+≤h⋆(s) = h⋆(St).
+Equivalently,
+E
+
+rπ−i
+i
+(St, At) −α⋆| St
+
+≤h⋆(St) −E
+
+h⋆(St+1) | St
+
+.
+Taking total expectation and summing from t = 0 to n −1 gives
+E
+h n−1
+X
+t=0
+ rπ−i
+i
+(St, At) −α⋆i
+≤E
+h n−1
+X
+t=0
+ h⋆(St) −h⋆(St+1)
+i
+= E
+
+h⋆(S0) −h⋆(Sn)
+
+,
+where the last equality is the telescoping identity Pn−1
+t=0 (h⋆(St) −h⋆(St+1)) = h⋆(S0) −h⋆(Sn). This proves (85).
+Step 2: Lower bound (86).
+Fix a state s. By definition of Fs as an infimum over ps,
+Fs
+ ν(·|s)
+
+=
+inf
+ps∈(Pπ−i)s
+Ls
+ ν(·|s), ps
+
+≤Ls
+ ν(·|s), p⋆
+s
+
+.
+(89)
+Using the slack definition (84), Fs(ν(·|s)) = h⋆(s) −δν(s), so (89) becomes
+h⋆(s) −δν(s) ≤Ls
+ ν(·|s), p⋆
+s
+
+.
+(90)
+Now condition on St = s and use the same computation as in Step 1: Ls(ν(·|s), p⋆
+s) = E[rπ−i
+i
+(St, At) −α⋆+ h⋆(St+1) |
+St = s]. Thus (90) translates to
+h⋆(St) −δν(St) ≤E
+
+rπ−i
+i
+(St, At) −α⋆+ h⋆(St+1) | St
+
+.
+29
+
+Distributionally Robust Markov Games with Average Reward
+Rearranging gives
+E
+
+rπ−i
+i
+(St, At) −α⋆| St
+
+≥h⋆(St) −E
+
+h⋆(St+1) | St
+
+−δν(St).
+Taking total expectation and summing t = 0, . . . , n −1 yields
+E
+h n−1
+X
+t=0
+ rπ−i
+i
+(St, At) −α⋆i
+≥E
+h n−1
+X
+t=0
+ h⋆(St) −h⋆(St+1)
+i
+−E
+h n−1
+X
+t=0
+δν(St)
+i
+= E[h⋆(S0)] −E[h⋆(Sn)] −E
+h n−1
+X
+t=0
+δν(St)
+i
+,
+proving (86).
+Step 3: If ν is greedy on Cp⋆then gν
+p⋆= α⋆.
+Assume ν(·|s) ∈Ms for all s ∈Cp⋆. Then for s ∈Cp⋆we have
+Fs(ν(·|s)) = h⋆(s) by definition of Ms, hence δν(s) = 0 for all s ∈Cp⋆.
+By weakly communicating structure under p⋆, S0 is transient under every stationary policy, in particular under ν. Therefore,
+the total expected number of visits to S0 is finite:
+∞
+X
+t=0
+P(St ∈S0) < ∞,
+which implies the Ces`aro mean vanishes:
+lim
+n→∞
+1
+n
+n−1
+X
+t=0
+P(St ∈S0) = 0.
+Because rewards are bounded and ∥h⋆∥∞< ∞(Proposition E.7), the slack is uniformly bounded: there exists Bδ < ∞
+such that 0 ≤δν(s) ≤Bδ for all s. Hence
+0 ≤1
+nE
+h n−1
+X
+t=0
+δν(St)
+i
+≤Bδ
+n
+n−1
+X
+t=0
+P(St ∈S0) −−−−→
+n→∞0.
+Now divide (85)–(86) by n and let n →∞. Since |h⋆(Sn)| ≤∥h⋆∥∞, the boundary term (E[h⋆(S0)] −E[h⋆(Sn)])/n
+vanishes.
+The upper bound gives lim supn→∞E[ 1
+n
+Pn−1
+t=0 (r −α⋆)] ≤0, while the lower bound together with
+1
+nE[Pn−1
+t=0 δν(St)] →0 gives lim infn→∞E[ 1
+n
+Pn−1
+t=0 (r −α⋆)] ≥0. Therefore the limit exists and equals 0, i.e.,
+lim
+n→∞E
+h 1
+n
+n−1
+X
+t=0
+rπ−i
+i
+(St, At)
+i
+= α⋆,
+which is exactly gν
+p⋆= α⋆.
+Theorem E.6. Fix π−i and define
+Gi(π−i) ≜
+n
+ν : S →∆(Ai)
+ ν(·|s) ∈Ms ∀s ∈S
+o
+.
+(91)
+Then Gi(π−i) is nonempty, compact, and convex. Moreover,
+Gi(π−i) ⊆BRi(π−i).
+Proof. Step 1: Nonemptiness, compactness, convexity. For each s, the set Ms = arg maxϕ∈∆(Ai) Fs(ϕ) is nonempty,
+compact, and convex (Lemma E.3 and the fact that Fs is concave and upper semicontinuous on the compact simplex).
+Therefore the Cartesian product Q
+s∈S Ms is nonempty, compact, and convex in the product topology. By definition,
+Gi(π−i) equals this product set.
+30
+
+Distributionally Robust Markov Games with Average Reward
+Step 2: Robust optimality. Let ν ∈Gi(π−i). Then by definition of Gi(π−i), for every state s, ν(·|s) ∈Ms and hence
+Fs
+ ν(·|s)
+
+= max
+ϕ
+Fs(ϕ) = h⋆(s).
+(92)
+Now fix an arbitrary kernel P ∈Pπ−i and let (St, At) evolve under (ν, P). Conditioning on St = s and using the definition
+of Fs as an infimum,
+Fs(ν(·|s)) = inf
+ps Ls(ν(·|s), ps) ≤Ls(ν(·|s), Ps) = E
+
+rπ−i
+i
+(St, At) −α⋆+ h⋆(St+1) | St = s
+
+.
+Combining with (92) gives the one-step inequality
+h⋆(St) ≤E
+
+rπ−i
+i
+(St, At) −α⋆+ h⋆(St+1) | St
+
+.
+Rearrange:
+E
+
+rπ−i
+i
+(St, At) −α⋆| St
+
+≥h⋆(St) −E
+
+h⋆(St+1) | St
+
+.
+Taking total expectation and summing t = 0, . . . , n −1 yields
+E
+h n−1
+X
+t=0
+ rπ−i
+i
+(St, At) −α⋆i
+≥E[h⋆(S0)] −E[h⋆(Sn)].
+Divide by n and let n →∞; the boundary term vanishes because ∥h⋆∥∞< ∞. We conclude that
+gν
+P = lim
+n→∞E
+h 1
+n
+n−1
+X
+t=0
+rπ−i
+i
+(St, At)
+i
+≥α⋆,
+∀P ∈Pπ−i.
+Therefore minP ∈Pπ−i gν
+P ≥α⋆. But by definition, α⋆= sup˜ν minP g˜ν
+P is the optimal min–max value, so also minP gν
+P ≤
+α⋆. Hence minP gν
+P = α⋆, i.e. ν ∈BRi(π−i).
+E.4. Semi-Continuity of Gi
+We now restore the dependence of all objects on π−i explicitly. For each s ∈S and (u, α) ∈RS × R, define
+Lπ−i
+s
+(ϕ, ps; u, α) ≜
+X
+ai∈Ai
+ϕ(ai)
+ rπ−i
+i
+(s, ai) −α + p⊤
+s,aiu
+
+,
+(93)
+F π−i
+s
+(ϕ; u, α) ≜
+inf
+ps∈(Pπ−i)s
+Lπ−i
+s
+(ϕ, ps; u, α).
+(94)
+For each π−i let (h⋆
+π−i, α⋆
+π−i) be a constant-gain solution provided by Lemma E.2 for the DR-MDP Mi(π−i), with a fixed
+anchoring convention (e.g. h⋆
+π−i(s◦) = 0 for some reference state s◦).
+We define the statewise greedy sets
+Ms(π−i) ≜arg
+max
+ϕ∈∆(Ai) F π−i
+s
+ ϕ; h⋆
+π−i, α⋆
+π−i
+
+,
+(95)
+Gi(π−i) ≜
+n
+∆: S →∆(Ai) : ∆(· | s) ∈Ms(π−i) ∀s
+o
+.
+(96)
+This reuses the notation Gi(π−i) from (91); the previous section corresponds to a fixed π−i, and here we track how Gi
+varies with π−i.
+Proposition E.7. There exists a universal constant Cspan < ∞such that for every opponent policy π−i and every
+constant-gain solution (h⋆
+π−i, α⋆
+π−i) of Mi(π−i), sp
+
+h⋆
+π−i
+
+≤Cspan.
+Proof. First, we consider a fixed policy π−i. By Theorem 4 in (Wang & Si, 2025), it holds that any cluster point of
+{V ⋆
+π−i,γ(s) −V ⋆
+π−i,γ(s0), γ ∈(0, 1)} is a solution to the optimality equation. From Assumption 5.1, the equation only has
+one solution, thus this solution must be the unique cluster point of {V ⋆
+π−i,γ(s) −V ⋆
+π−i,γ(s0), γ ∈(0, 1)}.
+31
+
+Distributionally Robust Markov Games with Average Reward
+Moreover, under Assumption 5.1, Theorem 6 of (Wang & Si, 2025) shows that there exists some uniform upper bound C:
+sup
+γ∈(0,1)
+sp
+
+V ⋆
+π−i,γ
+
+≤C.
+(97)
+Now note that V ⋆
+π−i,γ is continuous in π−i for any γ, thus its maximum CSpan = supγ∈(0,1),π sp
+
+V ⋆
+π−i,γ
+
+is achievable
+over the compact set Q
+j̸=i ∆(Aj), it further holds that
+sup
+γ∈(0,1),π−i∈Π−i
+sp
+
+V ⋆
+π−i,γ
+
+≤CSpan.
+(98)
+Consider
+a
+fixed
+policy
+π−i.
+Note
+that
+for
+any
+ϵ,
+there
+exists
+some
+sequence
+{γn},
+such
+that
+sp
+
+|V ⋆
+π−i,γi(s) −V ⋆
+π−i,γi(s0) −h∗(s)
+
+≤ϵ. Thus sp(h∗) ≤ϵ + sp
+
+V ⋆
+π−i,γi(s) −V ⋆
+π−i,γi
+
+≤ϵ + CSpan.
+Thus it holds that for any π−i,
+sp
+
+h⋆
+π−i
+
+≤CSpan.
+(99)
+This hence completes the proof.
+Lemma E.8. Fix a state s ∈S and an action ai ∈Ai. Let
+ πn
+−i
+
+n be a sequence of opponent policies converging to π−i
+in the product topology, i.e. πn
+−i(· | s′) →π−i(· | s′) in ℓ1 for all s′. Then, for each (s, ai), the induced ambiguity slices
+converge in Hausdorff distance:
+ Pπn
+−i
+s,ai
+H
+−−−−→
+n→∞
+ Pπ−i
+s,ai.
+Consequently, for each s,
+ Pπn
+−i
+s
+H
+−−−−→
+n→∞
+ Pπ−i
+s.
+Proof. Each induced slice (Pπ−i)s,ai is a Minkowski sum
+ Pπ−i
+s,ai =
+nX
+a−i
+π−i(a−i | s) q(a−i) : q(a−i) ∈P(ai,a−i)
+s
+o
+,
+where the local sets P(ai,a−i)
+s
+are fixed nonempty compact subsets of ∆(S). The map
+(w, q) 7→
+X
+a−i
+w(a−i)q(a−i)
+is continuous and bilinear, and the product of the P(ai,a−i)
+s
+is compact. Standard results on continuous images of compact
+sets imply that the set-valued map w 7→M(w) given by this Minkowski sum is continuous in Hausdorff distance. Since
+πn
+−i(· | s) →π−i(· | s) in ℓ1, we obtain
+ Pπn
+−i
+s,ai = M
+ πn
+−i(· | s)
+
+H
+−→M
+ π−i(· | s)
+
+=
+ Pπ−i
+s,ai.
+The convergence of the statewise products
+ Pπn
+−i
+s follows because finite products of Hausdorff-convergent compact sets
+converge in Hausdorff distance.
+Lemma E.9. Fix a state s ∈S. Let (un, αn, πn
+−i)n be a sequence with (un, αn) ∈RS × R and πn
+−i →π−i, and suppose
+(un, αn) →(u, α). Then
+sup
+ϕ∈∆(Ai)
+F
+πn
+−i
+s
+(ϕ; un, αn) −F π−i
+s
+(ϕ; u, α)
+ −−−−→
+n→∞
+0.
+32
+
+Distributionally Robust Markov Games with Average Reward
+Proof. Consider the joint map
+(ϕ, ps, u, α, π−i) 7→Lπ−i
+s
+(ϕ, ps; u, α)
+from
+∆(Ai) ×
+[
+π−i
+(Pπ−i)s × RS × R × Π−i
+to R. On any bounded subset of RS × R, this map is continuous. By Theorem E.7 and normalizing u with u(s◦) = 0,
+(hence ∥u∥∞≤CSpan, otherwise sp(u) ≥max |ui| −0 ≥CSpan), it suffices to restrict attention to the compact set
+Θ ≜
+n
+(u, α, π−i) : ∥u∥∞≤Cspan, α ∈[0, 1], π−i ∈Π−i
+o
+.
+Lemma E.8 ensures that the feasible sets (Pπ−i)s vary continuously with π−i in Hausdorff distance.
+The function F π−i
+s
+(ϕ; u, α) is the optimal value of the parametric minimization problem
+min
+ps∈(Pπ−i)s
+Lπ−i
+s
+(ϕ, ps; u, α),
+with continuous objective and compact feasible set that depends continuously on the parameter (ϕ, u, α, π−i). Berge’s
+Maximum Theorem (Berge, 1877) implies that the value map
+(ϕ, u, α, π−i) 7→F π−i
+s
+(ϕ; u, α)
+is continuous on the compact domain ∆(Ai) × Θ, and hence uniformly continuous. Therefore, whenever (un, αn, πn
+−i) →
+(u, α, π−i),
+sup
+ϕ∈∆(Ai)
+F
+πn
+−i
+s
+(ϕ; un, αn) −F π−i
+s
+(ϕ; u, α)
+ −→0.
+Lemma E.10 ((Ross, 2013)). Let (fn)n be a sequence of continuous real-valued functions on the simplex ∆(Ai) converging
+uniformly to f. For each n, let
+Mn = arg
+max
+ϕ∈∆(Ai) fn(ϕ),
+M = arg
+max
+ϕ∈∆(Ai) f(ϕ),
+which are nonempty, compact, convex sets. If ϕn ∈Mn and ϕn →ϕ, then ϕ ∈M.
+Proof. This is standard. Because fn →f uniformly and each fn attains its maximum on the compact set ∆(Ai), the limit
+point ϕ must satisfy f(ϕ) ≥f(ψ) for all ψ, hence ϕ ∈M.
+Lemma E.11. Let πn
+−i →π−i be a sequence of opponent policies. For each n, let (un, αn) be a constant-gain solution for
+the DR-MDP Mi(πn
+−i), normalized by un(s◦) = 0. Then there exists a subsequence (still denoted (un, αn)) and a limit pair
+(u, α) such that
+(un, αn) →(u, α),
+and (u, α) is a constant-gain solution for Mi(π−i).
+Proof. By Theorem E.7, ∥un∥∞≤Cspan for all n, and 0 ≤αn ≤1 by bounded rewards. Thus (un, αn) lies in a compact
+subset of RS × [0, 1]. By Bolzano–Weierstrass theorem (Ross, 2013), there exists a subsequence such that
+(un, αn) →(u, α)
+for some (u, α).
+For each n and each s, the constant-gain equation can be written as
+un(s) =
+sup
+ϕ∈∆(Ai)
+F
+πn
+−i
+s
+(ϕ; un, αn).
+By Lemma E.9, for fixed s the functions ϕ 7→F
+πn
+−i
+s
+(ϕ; un, αn) converge uniformly to ϕ 7→F π−i
+s
+(ϕ; u, α). Since
+un(s) →u(s) and supϕ Fn(ϕ) converges to supϕ F(ϕ) under uniform convergence, we obtain
+u(s) =
+sup
+ϕ∈∆(Ai)
+F π−i
+s
+(ϕ; u, α),
+∀s ∈S.
+That is, (u, α) is a constant-gain solution for Mi(π−i).
+33
+
+Distributionally Robust Markov Games with Average Reward
+Lemma E.12 (Convergence of maximizers under uniform convergence). Let K be a compact metric space and let
+fn, f : K →R be real-valued functions. Assume fn →f uniformly on K. Let xn ∈arg maxx∈K fn(x) and suppose
+(along a subsequence) xn →x ∈K. Then x ∈arg maxx∈K f(x).
+Proof. Fix any y ∈K. Since xn maximizes fn on K, we have
+fn(xn) ≥fn(y)
+∀n.
+Add and subtract f(xn) and f(y):
+f(xn) = fn(xn) +
+ f(xn) −fn(xn)
+
+≥fn(y) +
+ f(xn) −fn(xn)
+
+.
+Similarly, fn(y) = f(y) +
+ fn(y) −f(y)
+
+, hence
+f(xn) ≥f(y) +
+ fn(y) −f(y)
+
++
+ f(xn) −fn(xn)
+
+.
+Now take lim infn→∞on both sides. Uniform convergence implies
+sup
+x∈K
+|fn(x) −f(x)| →0
+=⇒
+fn(y) −f(y) →0,
+f(xn) −fn(xn) →0.
+Also xn →x and continuity of f (or simply: in compact finite-dimensional sets, the Fs in the paper are upper semicontinuous
+and this argument can be stated with upper limits; for the present application f is continuous) gives f(xn) →f(x). Therefore
+f(x) ≥f(y).
+Since y ∈K was arbitrary, x is a maximizer of f on K, i.e. x ∈arg maxK f.
+We can now establish upper semi-continuity of the greedy response map.
+Theorem E.13 (Upper hemicontinuity of Gi). Fix player i and consider the correspondence π−i 7→Gi(π−i) defined in
+(88). Then for every π−i, Gi is upper hemicontinuous.
+Proof. Let πn
+−i →π−i and let ∆n ∈Gi(πn
+−i) such that ∆n →∆(componentwise, equivalently in the product topology on
+stationary policies). We show ∆∈Gi(π−i).
+For each n, by definition of Gi(πn
+−i) there exists a (normalized) constant-gain solution (un, αn) of the induced robust MDP
+Mi(πn
+−i) used to form F
+πn
+−i
+s
+(·; un, αn), and such that for every state s,
+∆n(· | s) ∈arg
+max
+ϕ∈∆(Ai) F
+πn
+−i
+s
+(ϕ; un, αn).
+(100)
+By Lemma E.11 (compactness and subsequence convergence of normalized constant-gain solutions), there is a subsequence
+(still indexed by n for simplicity) such that
+(un, αn) →(u, α),
+where (u, α) is a constant-gain solution of Mi(π−i).
+Fix an arbitrary state s ∈S and define functions on the compact simplex ∆(Ai):
+fn(ϕ) := F
+πn
+−i
+s
+(ϕ; un, αn),
+f(ϕ) := F π−i
+s
+(ϕ; u, α).
+By Lemma E.9, fn →f uniformly on ∆(Ai).
+From (100), we have ϕn := ∆n(· | s) ∈arg maxϕ fn(ϕ). Moreover ϕn →ϕ := ∆(· | s) by assumption. Applying
+Lemma E.12 yields
+∆(· | s) ∈arg
+max
+ϕ∈∆(Ai) f(ϕ) = arg
+max
+ϕ∈∆(Ai) F π−i
+s
+(ϕ; u, α).
+Since s was arbitrary, this holds for all s ∈S, hence ∆∈Gi(π−i). Therefore the graph of Gi is closed, and (together with
+compact values shown above) Gi is upper hemicontinuous.
+34
+
+Distributionally Robust Markov Games with Average Reward
+E.5. Existence of a Robust Nash Equilibrium
+We finally combine the previous results across all players. Let
+Π ≜
+Y
+k∈N
+Y
+s∈S
+∆(Ak)
+be the compact convex set of stationary joint policies. For each player i, we have a set-valued map
+Gi :
+Y
+j̸=i
+Y
+s∈S
+∆(Aj) ⇒
+Y
+s∈S
+∆(Ai)
+with nonempty compact convex values and upper semi-continuous graph.
+Define the product map
+G : Π ⇒Π,
+G(π) ≜
+Y
+i∈N
+Gi(π−i),
+where π−i denotes the opponent profile for player i. Standard results (e.g., Kakutani’s fixed-point theorem) imply that G has
+a fixed point: there exists π⋆∈Π such that π⋆∈G(π⋆).
+By construction, for every i we have
+π⋆
+i ∈Gi(π⋆
+−i) ⊆BRi(π⋆
+−i),
+where the inclusion is Theorem E.6. Thus π⋆is a stationary robust Nash equilibrium of the DR-MG.
+F. Lipschitz Smoothness
+In this section, we study the Lipschitz smoothness of the solutions to robust Bellman equations.
+We first recall the seminorm and contraction property from (Xu et al., 2025b).
+Lemma F.1 (Lemma 3.2 in (Xu et al., 2025b)). Under Assumption 4.1, there exists a seminorm ∥·∥P on R|S| and a constant
+γ ∈(0, 1) such that:
+1. ∥x + c1∥P = ∥x∥P for all x ∈R|S| and c ∈R (constants are annihilated).
+2. For every stationary policy profile π and every scalar g, the operator T π,g
+k
+is a γ-contraction on the quotient space
+R|S|/span{1} equipped with ∥· ∥P, i.e.
+T π,g
+k
+v −T π,g
+k
+w
+
+P ≤γ∥v −w∥P
+for all v, w with v(s◦) = w(s◦).
+Since all norms on a finite-dimensional space are equivalent, there exist finite constants C∞←P, CP←∞, Csp←P > 0 such
+that for all zero-mean x,
+∥x∥∞≤C∞←P∥x∥P,
+∥x∥P ≤CP←∞∥x∥∞,
+sp(x) ≤Csp←P∥x∥P.
+(101)
+Lemma F.2. Let Rmax
+≜
+maxk,s,a |rk(s, a)|.
+There exists a finite constant BV
+>
+0, depending only on
+(Rmax, γ, C∞←P, CP←∞) and the construction of ∥· ∥P, such that for every player k and every joint policy π,
+∥V π
+k ∥∞≤BV ,
+where V π
+k is the uniquely anchored bias function satisfying V π
+k (s◦) = 0 and the fixed-policy robust Bellman equation with
+gain gπ
+k .
+Proof. Fix a player k and policy profile π, and let (gπ
+k , V π
+k ) be a gain/bias solution of the robust Bellman equation, anchored
+by V π
+k (s◦) = 0. We may write
+V π
+k = T π,gπ
+k
+k
+(V π
+k ).
+35
+
+Distributionally Robust Markov Games with Average Reward
+Subtracting T π,gπ
+k
+k
+(0) and using Lemma F.1 gives
+V π
+k −T π,gπ
+k
+k
+(0)
+
+P =
+T π,gπ
+k
+k
+(V π
+k ) −T π,gπ
+k
+k
+(0)
+
+P ≤γ∥V π
+k ∥P.
+Hence
+(1 −γ)∥V π
+k ∥P ≤
+T π,gπ
+k
+k
+(0)
+
+P.
+By definition,
+T π,gπ
+k
+k
+(0)(s) =
+X
+a
+π(a | s)
+ rk(s, a) −gπ
+k + σa
+s(0)
+
+= rπ
+k(s) −gπ
+k ,
+because σa
+s(0) = 0. Thus
+T π,gπ
+k
+k
+(0)
+
+∞= ∥rπ
+k −gπ
+k 1∥∞≤|gπ
+k | + max
+s
+|rπ
+k(s)| ≤2Rmax,
+using |gπ
+k | ≤Rmax (see Lemma F.3 below) and |rπ
+k(s)| ≤Rmax. By norm equivalence (101),
+T π,gπ
+k
+k
+(0)
+
+P ≤CP←∞
+T π,gπ
+k
+k
+(0)
+
+∞≤2CP←∞Rmax.
+Combining,
+∥V π
+k ∥P ≤2CP←∞
+1 −γ Rmax,
+and then
+∥V π
+k ∥∞≤C∞←P∥V π
+k ∥P ≤2C∞←PCP←∞
+1 −γ
+Rmax ≜BV .
+Lemma F.3. For every player k and joint policy π, the robust average reward gπ
+k satisfies
+|gπ
+k | ≤Rmax.
+Proof. By definition of the average reward under any kernel P,
+gπ,P
+k
+= lim
+T →∞
+1
+T
+T −1
+X
+t=0
+E[rk(St, At)],
+and |rk(s, a)| ≤Rmax for all (s, a). Thus for any P, |gπ,P
+k
+| ≤Rmax, and taking the worst-case kernel can only decrease
+the value in absolute value, so |gπ
+k | = | minP gπ,P
+k
+| ≤Rmax.
+We next control the sensitivity of the Bellman operator with respect to the policy.
+Lemma F.4. Fix a state s and let π, ˜π be two joint policies. Then their joint action distributions at s satisfy
+X
+a∈A(s)
+
+K
+Y
+j=1
+˜πj(aj | s) −
+K
+Y
+j=1
+πj(aj | s)
+ ≤
+K
+X
+j=1
+˜πj(· | s) −πj(· | s)
+
+1.
+Proof. Use the telescoping identity for products:
+K
+Y
+j=1
+xj −
+K
+Y
+j=1
+yj =
+K
+X
+m=1
+(xm −ym)
+ Y
+j<m
+yj
+ Y
+j>m
+xj
+
+,
+and apply the triangle inequality. Summing over a and using that for any fixed m the remaining factors are nonnegative and
+sum to at most 1 when marginalizing over a yields the claim.
+36
+
+Distributionally Robust Markov Games with Average Reward
+Lemma F.5. Fix a player k and let BV be as in Lemma F.2. For any v ∈R|S| with ∥v∥∞≤BV and any scalar g
+with |g| ≤Rmax, define the robust one-step return Fk(s, a; v) = rk(s, a) + σa
+s(v) and the operator T π,g
+k
+as above. Then
+there exists a constant CΠ > 0, depending only on (K, |S|, Amax, Rmax, BV ) with Amax ≜maxk,s |Ak|, such that for all
+policies π, ˜π,
+T ˜π,g
+k
+(v) −T π,g
+k
+(v)
+
+∞≤CΠ∥˜π −π∥2.
+Proof. For each state s,
+T ˜π,g
+k
+(v)(s) −T π,g
+k
+(v)(s)
+
+=
+
+X
+a
+ ˜π(a | s) −π(a | s)
+ rk(s, a) −g + σa
+s(v)
+.
+Because |rk(s, a)| ≤Rmax, |g| ≤Rmax and |σa
+s(v)| ≤∥v∥∞≤BV , we have |rk(s, a) −g + σa
+s(v)| ≤2Rmax + BV .
+Thus
+T ˜π,g
+k
+(v)(s) −T π,g
+k
+(v)(s)
+ ≤(2Rmax + BV )
+X
+a
+˜π(a | s) −π(a | s)
+.
+By Lemma F.4 the last sum is bounded by PK
+j=1 ∥˜πj(· | s) −πj(· | s)∥1. Summing over s and applying Cauchy–Schwarz,
+we get
+∥T ˜π,g
+k
+(v) −T π,g
+k
+(v)∥∞≤CΠ∥˜π −π∥2
+with CΠ absorbing the dimension-dependent constants.
+We can now state and prove the Lipschitz continuity of the evaluation map.
+Theorem F.6. Under Assumption 4.1 and Lemmas F.1–F.5, for each player k there exist finite constants LV , Lg > 0
+(independent of π) such that for any two joint policies π, ˜π,
+∥V ˜π
+k −V π
+k ∥∞≤LV ∥˜π −π∥2,
+|g˜π
+k −gπ
+k | ≤Lg∥˜π −π∥2.
+Proof. Fix k and policies π, ˜π. Let (gπ
+k , V π
+k ) and (g˜π
+k , V ˜π
+k ) be the gain/bias pairs solving the respective robust Bellman
+equations, anchored by V π
+k (s◦) = V ˜π
+k (s◦) = 0. Write ∆v ≜V ˜π
+k −V π
+k and ∆g ≜g˜π
+k −gπ
+k .
+Step 1: Lipschitz continuity of the bias. Using the fixed-point relations V π
+k = T π,gπ
+k
+k
+(V π
+k ) and V ˜π
+k = T ˜π,g˜π
+k
+k
+(V ˜π
+k ), we have
+∆v = T ˜π,g˜π
+k
+k
+(V ˜π
+k ) −T π,gπ
+k
+k
+(V π
+k )
+=
+
+T ˜π,g˜π
+k
+k
+(V ˜π
+k ) −T π,g˜π
+k
+k
+(V ˜π
+k )
+
++
+
+T π,g˜π
+k
+k
+(V ˜π
+k ) −T π,g˜π
+k
+k
+(V π
+k )
+
++
+
+T π,g˜π
+k
+k
+(V π
+k ) −T π,gπ
+k
+k
+(V π
+k )
+
+.
+We bound each term in ∥· ∥P.
+The second term is controlled by Lemma F.1:
+T π,g˜π
+k
+k
+(V ˜π
+k ) −T π,g˜π
+k
+k
+(V π
+k )
+
+P ≤γ∥∆v∥P.
+For the first term we apply Lemma F.5 with v = V ˜π
+k and g = g˜π
+k . By Lemmas F.2 and F.3, ∥V ˜π
+k ∥∞≤BV and |g˜π
+k | ≤Rmax,
+so the conditions of Lemma F.5 hold and
+T ˜π,g˜π
+k
+k
+(V ˜π
+k ) −T π,g˜π
+k
+k
+(V ˜π
+k )
+
+∞≤CΠ∥˜π −π∥2.
+Using (101),
+T ˜π,g˜π
+k
+k
+(V ˜π
+k ) −T π,g˜π
+k
+k
+(V ˜π
+k )
+
+P ≤CP←∞CΠ∥˜π −π∥2.
+The third term is the effect of changing g at fixed π and v:
+T π,g˜π
+k
+k
+(V π
+k )(s) −T π,gπ
+k
+k
+(V π
+k )(s) =
+X
+a
+π(a | s)
+
+−g˜π
+k + gπ
+k
+
+= (gπ
+k −g˜π
+k ),
+37
+
+Distributionally Robust Markov Games with Average Reward
+so
+T π,g˜π
+k
+k
+(V π
+k ) −T π,gπ
+k
+k
+(V π
+k ) = −∆g 1.
+By construction ∥1∥P = 0 (Lemma F.1), so this term vanishes in ∥· ∥P.
+Combining these three bounds we get
+∥∆v∥P ≤CP←∞CΠ∥˜π −π∥2 + γ∥∆v∥P,
+hence
+(1 −γ)∥∆v∥P ≤CP←∞CΠ∥˜π −π∥2.
+Therefore
+∥∆v∥P ≤CP←∞CΠ
+1 −γ
+∥˜π −π∥2.
+Using ∥· ∥∞≤C∞←P∥· ∥P we obtain
+∥V ˜π
+k −V π
+k ∥∞≤LV ∥˜π −π∥2,
+with
+LV ≜C∞←PCP←∞CΠ
+1 −γ
+.
+Step 2: Lipschitz continuity of the gain. Using the Bellman equation at the anchor state s◦, we can write
+gπ
+k =
+X
+a
+π(a | s◦)
+
+rk(s◦, a) + σa
+s◦(V π
+k )
+
+−V π
+k (s◦)
+=
+X
+a
+π(a | s◦)Fk(s◦, a; V π
+k ),
+because V π
+k (s◦) = 0 by anchoring. Similarly,
+g˜π
+k =
+X
+a
+˜π(a | s◦)Fk(s◦, a; V ˜π
+k ).
+Hence
+|g˜π
+k −gπ
+k | ≤
+
+X
+a
+ ˜π(a | s◦) −π(a | s◦)
+
+Fk(s◦, a; V ˜π
+k )
+
++
+
+X
+a
+π(a | s◦)
+ Fk(s◦, a; V ˜π
+k ) −Fk(s◦, a; V π
+k )
+
+≜T1 + T2.
+For T1, using |Fk(s◦, a; v)| ≤Rmax + ∥v∥∞≤Rmax + BV and Lemma F.4 at s◦,
+T1 ≤(Rmax + BV )
+X
+a
+˜π(a | s◦) −π(a | s◦)
+ ≤C1∥˜π −π∥2,
+for some constant C1 depending only on the game dimensions.
+For T2, note that for any v, w,
+Fk(s◦, a; v) −Fk(s◦, a; w)
+ =
+σa
+s◦(v) −σa
+s◦(w)
+ ≤∥v −w∥∞,
+because each q ∈U(s◦, a) is a probability vector and | minq q⊤v −minq q⊤w| ≤maxq |q⊤(v −w)| ≤∥v −w∥∞. Thus
+T2 ≤∥V ˜π
+k −V π
+k ∥∞≤LV ∥˜π −π∥2.
+Altogether,
+|g˜π
+k −gπ
+k | ≤(C1 + LV )∥˜π −π∥2 ≜Lg∥˜π −π∥2.
+This completes the proof.
+38
+
+Distributionally Robust Markov Games with Average Reward
+Algorithm 2 Robust Nash-Iteration
+Initialization: hi = 0, ∀i ∈N
+while TRUE do
+for all i ∈N do
+h0
+i ←hi
+for all s, a ∈S × A do
+Qi(s, a, h0
+i ) ←ri(s, a) + σPa
+s (h0
+i )
+π(s) ←NE(Qi(s, a, h0
+i ))
+hi(s) ←Eπ(s)[Qi(s, a, h0
+i )]
+end for
+end for
+if maxi{sp(hi −h0
+i )} = 0 then
+BREAK
+end if
+end while
+Output: π
+G. Nash Iteration
+Throughout this section, we adopt the following notational conventions for the robust Bellman operators.
+For each state-joint–action pair (s, a) the transition row is uncertain in a nonempty, convex, compact set U(s, a) ⊂∆(S).
+For any v ∈R|S| define the local support function
+σa
+s(v) ≜
+min
+q∈U(s,a) q⊤v,
+and for a joint policy π define
+σπ
+s (v) ≜min
+p∈Pπ
+s
+p⊤v,
+Pπ
+s
+≜
+nX
+a
+π(a | s)q(· | s, a) : q(· | s, a) ∈U(s, a)
+o
+.
+Thus σπ
+s (v) = P
+a π(a | s)σa
+s(v), and by compactness the minima defining σa
+s and σπ
+s are always attained.
+For each player k, the robust one-step return is
+Fk(s, a; v) ≜rk(s, a) + σa
+s(v),
+and for a fixed policy profile π and scalar g the (player–k) robust evaluation operator is
+(T π,g
+k
+v)(s) ≜
+X
+a
+π(a | s)
+
+rk(s, a) −g + σa
+s(v)
+
+.
+With this notation, the fixed-policy robust average-reward Bellman equation for player k under π reads
+V π
+k (s) = (T π,gπ
+k
+k
+V π
+k )(s),
+s ∈S,
+where (gπ
+k , V π
+k ) is a gain/bias pair as in Theorem Theorem 4.6 (uniqueness up to constants).
+We always anchor biases by choosing a reference state s◦∈S and imposing V π
+k (s◦) = 0.
+Assumption G.1. For each state s and each vector of bias estimates h = (h1, . . . , hN), consider the one-stage game with
+payoff functions
+Qk(s, a; hk) ≜rk(s, a) + σa
+s(hk),
+a ∈A(s), k ∈N.
+At every state s, the algorithm selects either
+1. a Nash equilibrium of this stage game that is globally optimal for all players in the sense that every player attains his
+maximal robust one-step return at the selected equilibrium, or
+39
+
+Distributionally Robust Markov Games with Average Reward
+2. a saddle point of the stage game, i.e. a pure/mixed action profile (π1(· | s), . . . , πN(· | s)) such that no player can
+unilaterally deviate to improve her robust one-step return.
+The first part of our assumption is necessary for convergence under average reward Markov games (Li, 2003; Hu & Wellman,
+2003; Littman, 2001; Bowling & Veloso, 2001; Bowling, 2000). The second assumption is a technical assumption to ensure
+convergence, and can be removed by modifying the update rule by a multi-step operator, see (Wang et al., 2023c; Xu et al.,
+2025b).
+Theorem G.2 (Convergence of robust Nash iteration). Suppose Assumption 4.1 and Assumption G.1 hold. Then the robust
+Nash-iteration algorithm (Algorithm 2) converges, from any initialization h0, to an average-reward robust Nash equilibrium
+of the DR-MG.
+Proof. We split the proof into two parts.
+(i) Any limit point (if convergent) of Nash iteration is a robust NE.
+Consider one iteration of Algorithm 2. For each
+player i, let h0
+i be the current bias estimate, define
+Qi(s, a; h0
+i ) ≜ri(s, a) + σa
+s(h0
+i ),
+and let π(· | s) be a Nash equilibrium of the one-stage game with payoffs {Qi(s, ·; h0
+i )}i∈N , chosen according to
+Assumption G.1. The algorithm then sets
+hi(s) ≜Ea∼π(·|s)[Qi(s, a; h0
+i )],
+s ∈S.
+The stopping condition is
+max
+i∈N sp(hi −h0
+i ) = 0,
+where sp(x) = maxs x(s) −mins x(s) is the span seminorm. The condition sp(hi −h0
+i ) = 0 is equivalent to
+hi −h0
+i = ci1
+for some scalar ci ∈R, where 1 is the all-ones vector.
+Assume the algorithm terminates at a pair (π, h) satisfying the stopping condition. Then for each player i and state s,
+hi(s) = Eπ(·|s)[ri(s, a) + σa
+s(h0
+i )]
+= Eπ(·|s)[ri(s, a) + σa
+s(hi −ci1)].
+Using the translation-invariance of the support function, for any v and scalar c,
+σa
+s(v −c1) =
+min
+q∈U(s,a) q⊤(v −c1) = min
+q
+ q⊤v −c
+
+= σa
+s(v) −c,
+we conclude that
+hi(s) = Eπ(·|s)[ri(s, a) + σa
+s(hi) −ci] = Eπ(·|s)[ri(s, a) + σa
+s(hi)] −ci.
+Rearranging,
+hi(s) + ci =
+X
+a
+π(a | s)
+ ri(s, a) + σa
+s(hi)
+
+,
+s ∈S.
+(102)
+Define gi ≜ci and set Vi ≜hi. Then (102) can be written as
+Vi(s) =
+X
+a
+π(a | s)
+ ri(s, a) −gi + σa
+s(Vi)
+
+,
+s ∈S.
+(103)
+Thus (gi, Vi) solves the fixed-policy robust Bellman equation (6) for player i under the joint policy π. By Theorem 4.6,
+for each i there exists a worst-case kernel P ∈P such that gi = gπ
+P,i and Vi coincides with the robust bias hπ
+P,i up to an
+additive constant; in particular, we may choose the anchor so that Vi = hπ
+P,i and
+hπ
+P,i(s) + gπ
+P,i =
+X
+a
+π(a | s)
+ ri(s, a) + σa
+s(hπ
+P,i)
+
+,
+s ∈S.
+(104)
+40
+
+Distributionally Robust Markov Games with Average Reward
+Now suppose, for contradiction, that π is not a robust average-reward Nash equilibrium. Then there exist a player i and an
+alternative stationary policy µi such that
+g(π−i,µi)
+P,i
+> g(π−i,πi)
+P,i
+= gπ
+P,i.
+(105)
+By Theorem 4.6 applied to the induced DR-MDP Mi(π−i) with policy µi, there exists a robust bias hµ
+i such that
+hµ
+i (s) + g(π−i,µi)
+P,i
+=
+X
+a
+(π−i, µi)(a | s)
+ ri(s, a) + σa
+s(hµ
+i )
+
+,
+s ∈S.
+(106)
+Combining (104) and (106), we have
+r(π−i,µi)
+i
++ σ(π−i,µi)(hµ
+i ) −hµ
+i
+= g(π−i,µi)
+P,i
+> gπ
+P,i = rπ
+i + σπ(hπ
+P,i) −hπ
+P,i,
+(107)
+where the inequality uses (105), and the equalities are vector versions of (104)–(106).
+On the other hand, at each state s, the algorithm selects a Nash equilibrium π(· | s) of the one-stage game with payoffs
+Qi(s, a; hπ
+P,i) = ri(s, a) + σa
+s(hπ
+P,i). The NE property implies that for any alternative mixed action µi(· | s),
+Ea∼(π−i,µi)Qi(s, a; hπ
+P,i) ≤Ea∼π(·|s)Qi(s, a; hπ
+P,i).
+Equivalently,
+r(π−i,µi)
+i
++ σ(π−i,µi)(hπ
+P,i) ≤rπ
+i + σπ(hπ
+P,i).
+(108)
+Subtracting hπ
+P,i from both sides of (108) and combining with (107), we obtain
+rπ
+i + σπ(hπ
+P,i) −hπ
+P,i
+< r(π−i,µi)
+i
++ σ(π−i,µi)(hµ
+i ) −hµ
+i
+≤σ(π−i,µi)(hµ
+i ) −hµ
+i + rπ
+i + σπ(hπ
+P,i) −σ(π−i,µi)(hπ
+P,i).
+(109)
+Rearranging (109) yields
+hµ
+i −hπ
+P,i < σ(π−i,µi)(hµ
+i ) −σ(π−i,µi)(hπ
+P,i).
+(110)
+Now apply Lemma G.4 to the convex function v 7→σ(π−i,µi)(v) with V1 = hµ
+i and V2 = hπ
+P,i. Lemma G.4 ensures the
+existence of a kernel P ∈P(π−i,µi) such that
+σ(π−i,µi)(hµ
+i ) −σ(π−i,µi)(hπ
+P,i) = P(hµ
+i −hπ
+P,i).
+Substituting this into (110) gives
+hµ
+i −hπ
+P,i < P(hµ
+i −hπ
+P,i)
+componentwise.
+(111)
+Let x ≜hµ
+i −hπ
+P,i. Then (111) reads x < Px componentwise.
+By Assumption 4.1, every kernel in P (and thus P) is irreducible. For an irreducible stochastic matrix P, any vector
+x, with x ≤Px componentwise, must be constant, i.e. x = c1 for some scalar c. A standard proof goes as follows:
+let m = mins x(s) and choose s0 with x(s0) = m. From x(s0) ≤P
+s′ P(s′|s0)x(s′) and x(s′) ≥m, we deduce that
+x(s′) = m whenever P(s′|s0) > 0. By irreducibility, every state is reachable from s0 under some power P n, and the same
+argument applied iteratively shows x(s) = m for all s. Applying the same reasoning to −x if needed yields the claim for
+x ≥Px. Thus
+hµ
+i −hπ
+P,i = ci1
+(112)
+for some scalar ci.
+Plugging (112) into the Bellman equations (104)–(106) and using the translation-invariance of the support function again,
+we see that the corresponding gains must coincide:
+g(π−i,µi)
+P,i
+= gπ
+P,i,
+which contradicts (105). Therefore no such profitable deviation µi exists, and π is a robust average-reward Nash equilibrium.
+41
+
+Distributionally Robust Markov Games with Average Reward
+(ii) Contraction of the Nash operator and convergence.
+Let h = (h1, . . . , hN) ∈RN|S| and define
+Ti(h)(s) ≜Eπ(·|s)
+
+ri(s, a) + σa
+s(hi)
+
+,
+T(h) ≜(T1(h), . . . , TN(h)),
+where at each state s the policy π(· | s) is a Nash equilibrium of the one-stage game with payoffs Qi(s, a; hi), selected
+according to Assumption G.1.
+We show that T is a contraction in the product span seminorm ∥h∥sp ≜maxi sp(hi), where sp(x) = maxs x(s)−mins x(s).
+Fix h, h′ and a player i and state s.
+Case 1 (global optimality). If the NE selection at s is globally optimal in the sense of Assumption G.1, then
+Ti(h)(s) −Ti(h′)(s) = max
+π(·|s) Eπ(·|s)
+
+ri(s, a) + σa
+s(hi)
+
+−max
+π′(·|s) Eπ′(·|s)
+
+ri(s, a) + σa
+s(h′
+i)
+
+≤Eπ(·|s)
+
+σa
+s(hi) −σa
+s(h′
+i)
+
+≤max
+a
+ σa
+s(hi) −σa
+s(h′
+i)
+
+.
+(113)
+Case 2 (saddle point). If the NE is a saddle point, Assumption G.1 ensures that for any joint policy π′ differing only in
+player i’s component,
+Ti(h)(s) −Ti(h′)(s) = Eπ(·|s)
+
+ri(s, a) + σa
+s(hi)
+
+−Eπ′(·|s)
+
+ri(s, a) + σa
+s(h′
+i)
+
+≤E(π′
+−i,πi)(·|s)
+
+ri(s, a) + σa
+s(hi)
+
+−E(π′
+−i,πi)(·|s)
+
+ri(s, a) + σa
+s(h′
+i)
+
+≤max
+a
+ σa
+s(hi) −σa
+s(h′
+i)
+
+.
+(114)
+By symmetry (swapping h and h′), we also obtain the lower bound
+Ti(h)(s) −Ti(h′)(s) ≥min
+a
+ σa
+s(hi) −σa
+s(h′
+i)
+
+.
+(115)
+Combining (113)–(115) we have, for each (i, s),
+min
+a
+ σa
+s(hi) −σa
+s(h′
+i)
+
+≤Ti(h)(s) −Ti(h′)(s) ≤max
+a
+ σa
+s(hi) −σa
+s(h′
+i)
+
+.
+Taking maxima and minima over s and using Lemma G.4 below (which shows that the map v 7→σa
+s(v) has the same
+Dobrushin coefficient as a stochastic matrix in the span seminorm), we obtain
+sp
+ Ti(h) −Ti(h′)
+
+≤τ sp(hi −h′
+i),
+for some τ < 1 depending only on the uncertainty set and the irreducibility constant (Lemma G.3). Taking the maximum
+over i yields
+∥T(h) −T(h′)∥sp ≤τ∥h −h′∥sp.
+Thus T is a contraction in the product span seminorm.
+By the Banach fixed-point theorem, T has a unique fixed point h∗(modulo constants); iterating Algorithm 2 (without
+stopping) converges to h∗from any initialization h0. The associated per-state Nash selection π∗(· | s) at h∗is exactly the
+policy considered in part (i), hence is a robust average-reward Nash equilibrium, and the claimed convergence follows.
+G.1. Technical Lemmas
+Lemma G.3. For a stochastic matrix P define the ergodicity coefficient
+τ(P) ≜1
+2 max
+s,s′∈S
+X
+s′′∈S
+P(s′′ | s) −P(s′′ | s′)
+.
+42
+
+Distributionally Robust Markov Games with Average Reward
+Then for all x, y ∈R|S|,
+sp(Px −Py) ≤τ(P) sp(x −y).
+If P is irreducible, there exists ¯τ < 1 (depending only on P) such that τ(P) ≤¯τ.
+Proof. This is the standard Dobrushin contraction in the span seminorm; see e.g. Sec. 16.3 of (Puterman, 2014) or (Filar &
+Vrieze, 1996). For completeness, one can write Px −Py = P(x −y) and note that taking x −y supported on two states
+attaining the maximum and minimum values attains the worst-case contraction factor, which is precisely τ(P) as defined
+above. Irreducibility implies τ(P) < 1.
+Lemma G.4 (Support-function difference as a kernel action). Assume each uncertainty set Pa
+s is nonempty, compact, and
+convex.
+(a) State-action level. For any v1, v2 ∈R|S| and any fixed pair (s, a), there exists a vector p⋆
+s,a ∈Pa
+s such that
+σa
+s(v1) −σa
+s(v2) = (p⋆
+s,a)⊤(v1 −v2).
+(b) Statewise operator and global kernel. Fix a policy π, and define σπ as above. Then for any v1, v2 ∈R|S| there exists a
+stochastic kernel P ⋆∈P (constructed row by row) such that
+σπ(v1) −σπ(v2) = P ⋆(v1 −v2).
+In particular, when we view σa(·) or σπ(·) as statewise support operators, their difference can always be written as the
+action of a suitable transition kernel on v1 −v2.
+Proof. We begin with part (a) for a fixed (s, a).
+Since Pa
+s is compact and p 7→p⊤v is continuous, the minima defining σa
+s(v1) and σa
+s(v2) are attained. Choose
+p1
+s,a ∈arg min
+p∈Pa
+s
+p⊤v1,
+p2
+s,a ∈arg min
+p∈Pa
+s
+p⊤v2.
+Denote
+σ1 ≜σa
+s(v1) = (p1
+s,a)⊤v1,
+σ2 ≜σa
+s(v2) = (p2
+s,a)⊤v2,
+δ ≜v1 −v2.
+From the optimality of p1
+s,a and p2
+s,a we have
+(p1
+s,a)⊤v1 ≤(p2
+s,a)⊤v1,
+(p2
+s,a)⊤v2 ≤(p1
+s,a)⊤v2.
+Rewriting,
+(p1
+s,a)⊤δ = (p1
+s,a)⊤v1 −(p1
+s,a)⊤v2 ≤σ1 −σ2,
+(p2
+s,a)⊤δ = (p2
+s,a)⊤v1 −(p2
+s,a)⊤v2 ≥σ1 −σ2.
+Thus
+(p1
+s,a)⊤δ ≤σa
+s(v1) −σa
+s(v2) ≤(p2
+s,a)⊤δ.
+Because Pa
+s is convex, the entire line segment
+pλ
+s,a ≜λp1
+s,a + (1 −λ)p2
+s,a,
+λ ∈[0, 1],
+lies in Pa
+s . Define
+h(λ) ≜(pλ
+s,a)⊤δ = λ(p1
+s,a)⊤δ + (1 −λ)(p2
+s,a)⊤δ.
+The map λ 7→h(λ) is continuous and linear in λ, and its image on [0, 1] is exactly the interval
+
+(p1
+s,a)⊤δ, (p2
+s,a)⊤δ
+
+.
+43
+
+Distributionally Robust Markov Games with Average Reward
+Since σa
+s(v1) −σa
+s(v2) lies between these two endpoints, there exists λ⋆∈[0, 1] such that
+h(λ⋆) = σa
+s(v1) −σa
+s(v2).
+Setting p⋆
+s,a ≜pλ⋆
+s,a ∈Pa
+s yields
+σa
+s(v1) −σa
+s(v2) = (p⋆
+s,a)⊤δ,
+which proves part (a).
+Fix a policy π and a state s. The aggregated set Pπ
+s is, by definition, the image of the product Q
+a Pa
+s under the continuous
+affine map
+(pa
+s)a 7−→
+X
+a
+π(a | s) pa
+s,
+so Pπ
+s is also nonempty, compact, and convex. Repeating the argument of Steps 1–3 with Pπ
+s in place of Pa
+s , we obtain for
+each s a vector p⋆
+s ∈Pπ
+s such that
+σπ
+s (v1) −σπ
+s (v2) = (p⋆
+s)⊤(v1 −v2).
+Now define a (row-stochastic) kernel P ⋆on S by setting its s-th row to be P ⋆(· | s) ≜p⋆
+s. By construction P ⋆(· | s) ∈Pπ
+s
+for every s, so P ⋆is an admissible kernel under π. Stacking the statewise equalities yields
+σπ(v1) −σπ(v2) = P ⋆(v1 −v2),
+as claimed.
+H. Robust TD-Descent Analysis
+In this section, we develop our studies on our robust TD based algorithm. Throughout, we assume the DR-MG satisfies
+Assumption 4.1 (irreducibility), so that all induced DR-MDPs are irreducible and admit unique average rewards, and the
+corresponding robust Bellman equation is solvable.
+H.1. Computational Complexity
+We first discuss the computational complexity of Algorithm 1. Recall in the algorithm, the following steps are executed:
+• For each agent k, solve the robust Bellman equation in (6) for the induced DR-MDP to get (gn
+k , V n
+k )
+• For all (k, s, ak), compute robust TD errors ΩR,n
+k
+(s, ak) and gradient components Φn
+k(s, ak)
+• Form the TD direction Dn and project to get πn+1
+Robust Bellman step. Solving a single-agent robust Bellman equation can be done in TRB(S, Ak) time which is polynomial
+in S, Ak (Xu et al., 2025b). Hence the total complexity is O(NTRB(S, Amax)).
+TD error step. For each (k, s, ak), the computation cost is O
+
+A
+Ak Cσ
+
+, where Cσ is the computational cost for solving
+the support function. Notably, for commonly uncertainty sets defined through divergence functions, Cσ is also polynomial
+(Iyengar, 2005). Thus the total complexity is O (SNACσ).
+Gradient computation step. Notably, ∆R is a finite sum of terms of the form α Q
+i πi(ai|s), thus computing its Moreau
+envelop and gradient is itself a polynomial in the πi. Computing them at most involves sums over joint actions similar to the
+TD-error computation, so an upper bound is O (SNA).
+Update step. From the definition of Dn, its computation cost O(S´sMiAi); And the following projection step to the product
+of simplexes has a complexity of O (Ak log Ak) for each (k, s). Thus the total complexity is O (S P
+k Ak log Ak).
+Hence, the total computational complexity for each step is
+O
+
+NTRB(S, Amax, δ) + SNACσ
+
+,
+(116)
+which is polynomial in the size of the DR-MG parameters.
+44
+
+Distributionally Robust Markov Games with Average Reward
+H.2. Robust TD Errors, Global TD Gap, and Feasible Set
+For a joint policy π ∈Π and player k ∈N, the induced DR-MDP Mk(π−k) is
+Mk(π−k) =
+ S, Ak, Pπ−k, rπ−k
+k
+
+,
+where
+rπ−k
+k
+(s, ak) ≜
+X
+a−k∈A−k
+π−k(a−k | s) rk(s, ak, a−k),
+(117)
+Pπ−k
+s,ak ≜
+n
+X
+a−k∈A−k
+π−k(a−k | s) p(· | s, ak, a−k) : p(· | s, ak, a−k) ∈P(ak,a−k)
+s
+o
+.
+(118)
+For Vk ∈RS and a convex ambiguity slice U ⊆∆(S) we denote the robust support function σU(Vk) ≜minp∈U p⊤Vk.
+We then define our robust TD notions.
+Definition H.1 (Robust TD error). Fix a joint policy π and a player k ∈N. For s ∈S and ak ∈Ak, and given
+(gk, Vk) ∈R × RS, define:
+QR
+k (s, ak; π−k | Vk) ≜
+X
+a−k∈A−k
+π−k(a−k | s)
+
+rk(s, ak, a−k) + σP
+(ak,a−k)
+s
+(Vk)
+
+,
+(119)
+ΩR
+k (s, ak; π−k | gk, Vk) ≜gk + Vk(s) −QR
+k (s, ak; π−k | Vk).
+(120)
+Definition H.2. For (π, g, V ) ∈Π × RN × (RS)N define the global robust TD gap
+∆R(π, g, V ) ≜
+X
+k∈N
+X
+s∈S
+X
+ak∈Ak
+πk(ak | s) ΩR
+k (s, ak; π−k | gk, Vk),
+(121)
+and the feasible set
+F ≜
+n
+(π, g, V ) : π ∈Π, ΩR
+k (s, ak; π−k | gk, Vk) ≥0, ∀k, s, ak
+o
+.
+(122)
+We first show that robust Nash equilibria can be characterized by a complementarity condition on the robust TD errors.
+Proposition H.3 (Robust TD complementarity). Suppose Assumption 4.1 holds. A stationary joint policy π = (πk)k∈N is a
+stationary robust Nash equilibrium if and only if there exist scalars gk ∈R and vectors Vk ∈R|S|, k ∈N, such that for
+every k ∈N, s ∈S and ak ∈Ak,
+ΩR
+k (s, ak; π−k | gk, Vk) ≥0,
+(123a)
+X
+ak∈Ak
+πk(ak | s) ΩR
+k (s, ak; π−k | gk, Vk) = 0,
+(123b)
+X
+ak∈Ak
+πk(ak | s) = 1,
+πk(ak | s) ≥0.
+(123c)
+Proof. (⇒) Assume π is a stationary robust Nash equilibrium. Fix a player k and the opponents’ policy π−k, and consider
+the induced DR-MDP Mk(π−k). By Assumption 4.1 this induced DR-MDP also satisfies irreducibility.
+Let (gk, Vk) be a gain/bias pair for an optimal robust policy in Mk(π−k).3 By optimality, (gk, Vk) satisfies the optimal
+robust Bellman equation
+Vk(s) = max
+ak∈Ak
+n
+rπ−k
+k
+(s, ak) −gk + σP
+π−k
+s,ak (Vk)
+o
+,
+s ∈S,
+(124)
+where rπ−k
+k
+and Pπ−k
+s,ak as above. By the definition of QR
+k , (124) is equivalent to
+gk + Vk(s) = max
+ak∈Ak QR
+k (s, ak; π−k | Vk),
+s ∈S.
+(125)
+3Such a pair exists by the robust average-reward Bellman results in Theorem 4.6 of the main text.
+45
+
+Distributionally Robust Markov Games with Average Reward
+Using the TD error definition (H.1), we can rewrite (125) as
+ΩR
+k (s, ak; π−k | gk, Vk) = gk + Vk(s) −QR
+k (s, ak; π−k | Vk) ≥0
+for all ak ∈Ak,
+with equality for those ak that achieve the maximum in (125). Thus (123a) holds, and moreover,
+gk + Vk(s) = max
+ak QR
+k (s, ak; π−k | Vk) = QR
+k (s, ak; π−k | Vk)
+whenever πk(ak | s) > 0.
+Equivalently, ΩR
+k (s, ak; π−k | gk, Vk) = 0 whenever πk(ak | s) > 0, so
+X
+ak
+πk(ak | s)ΩR
+k (s, ak; π−k | gk, Vk) = 0.
+This is exactly (123b). The simplex constraints (123c) hold by definition of a stationary policy.
+(⇐) Now suppose π and (gk, Vk) satisfy (123). Fix k and π−k, and consider again the induced DR-MDP Mk(π−k).
+For any s ∈S and ak ∈Ak, the inequality (123a) can be rewritten as
+gk + Vk(s) ≥QR
+k (s, ak; π−k | Vk),
+so gk + Vk(s) is an upper bound on the robust one-step return over all actions ak at state s. Combining this with (123b), we
+obtain
+0 =
+X
+ak
+πk(ak | s) ΩR
+k (s, ak; π−k | gk, Vk)
+=
+X
+ak
+πk(ak | s)
+ gk + Vk(s) −QR
+k (s, ak; π−k | Vk)
+
+= gk + Vk(s) −
+X
+ak
+πk(ak | s) QR
+k (s, ak; π−k | Vk).
+Hence
+gk + Vk(s) =
+X
+ak
+πk(ak | s) QR
+k (s, ak; π−k | Vk).
+Since each term QR
+k (s, ak; ·) is upper bounded by gk + Vk(s), their convex combination equals gk + Vk(s) only if
+QR
+k (s, ak; π−k | Vk) = gk + Vk(s)
+whenever πk(ak | s) > 0.
+That is, πk(· | s) puts positive mass only on actions that maximize QR
+k (s, ·; π−k | Vk), and thus gk + Vk satisfies the optimal
+robust Bellman equation (125).
+By the average-reward theory for DR-MDPs (Theorem 4.6 in the main text), this implies that πk is an optimal robust policy
+in Mk(π−k), i.e. a robust best response to π−k. Since the argument holds for every k ∈N, the joint policy π is a stationary
+robust Nash equilibrium.
+The complementarity conditions (123) naturally lead to a global TD gap functional.
+Lemma H.4. For any (π, g, V ) ∈F we have ∆R(π, g, V ) ≥0. Moreover, ∆R(π, g, V ) = 0 if and only if the complemen-
+tarity conditions (123) hold.
+Proof. If (π, g, V ) ∈F then ΩR
+k (s, ak; π−k | gk, Vk) ≥0 and πk(ak | s) ≥0 for all k, s, ak. Hence every summand in
+(11) is nonnegative and ∆R(π, g, V ) ≥0.
+Conversely, if ∆R(π, g, V ) = 0, then every term in the finite sum (11) must be zero:
+πk(ak | s)ΩR
+k (s, ak; π−k | gk, Vk) = 0,
+∀k, s, ak.
+Summing over ak yields
+X
+ak
+πk(ak | s) ΩR
+k (s, ak; π−k | gk, Vk) = 0,
+∀k, s,
+which is exactly (123b). The inequalities (123a) and simplex constraints (123c) already hold by the definition of F. The
+converse direction is immediate from Definition H.2.
+46
+
+Distributionally Robust Markov Games with Average Reward
+Combining Lemma H.4 with Proposition H.3 yields:
+Corollary H.5. Under Assumption 4.1:
+1. For any (π, g, V ) ∈F, ∆R(π, g, V ) ≥0.
+2. A policy profile π is a stationary robust Nash equilibrium if and only if there exist (g, V ) such that (π, g, V ) ∈F and
+∆R(π, g, V ) = 0.
+Thus, on the feasible set F, robust NE are precisely the (global) minimizers of ∆R, and finding a robust NE is equivalent to
+find the feasible solution of ∆R = 0
+H.3. Smoothed DR-MGs and NE
+In this section, we introduce the smoothed DR-MG as a proxy of the vanilla DR-MG.
+For v ∈RS and some uncertainty set P, denote the robust support (worst-case expectation) functional
+σP(v) := min
+p∈P⟨p, v⟩.
+This map is concave and Lipschitz but may be nonsmooth.
+We introduce a standard Moreau-type smoothing through the convex support function. Define the (convex) support function
+hP(u) := max
+p∈P ⟨p, u⟩.
+Then σP(v) = −hP(−v). For λ > 0, define the Moreau envelope of hP:
+(hP)λ(u) := min
+w∈RS
+
+hP(w) + 1
+2λ∥w −u∥2
+2
+
+.
+We define the smoothed robust expectation:
+σλ
+P(v) := −(hP)λ(−v).
+Lemma H.6. Let Z ⊂Rd be convex.
+(i) (Product rule) Let f, g : Z →R be differentiable and assume:
+∥∇f(x) −∇f(y)∥≤Lf∥x −y∥,
+∥∇g(x) −∇g(y)∥≤Lg∥x −y∥,
+∀x, y ∈Z.
+Assume also supZ |f| ≤Bf, supZ |g| ≤Bg, supZ ∥∇f∥≤B∇f, supZ ∥∇g∥≤B∇g. Then h := fg satisfies
+∥∇h(x) −∇h(y)∥≤
+
+BfLg + BgLf + B∇fB∇g
+
+∥x −y∥,
+∀x, y ∈Z.
+(ii) (Scalar composition) Let φ : R →R be C1 with Lipschitz derivative:
+|φ′(u) −φ′(v)| ≤Lφ|u −v|,
+∀u, v ∈R.
+Let g : Z →R be differentiable with ∥∇g(x) −∇g(y)∥≤Lg∥x −y∥and supZ ∥∇g∥≤B∇g.
+Let Bφ′ :=
+supt∈g(Z) |φ′(t)| < ∞. Then h := φ ◦g satisfies
+∥∇h(x) −∇h(y)∥≤
+
+Bφ′Lg + LφB2
+∇g
+
+∥x −y∥,
+∀x, y ∈Z.
+Proof. (i) ∇(fg) = f∇g + g∇f, so for any x, y ∈Z,
+∥∇(fg)(x) −∇(fg)(y)∥= ∥f(x)∇g(x) −f(y)∇g(y) + g(x)∇f(x) −g(y)∇f(y)∥
+≤∥f(x)(∇g(x) −∇g(y))∥+ ∥(f(x) −f(y))∇g(y)∥
++ ∥g(x)(∇f(x) −∇f(y))∥+ ∥(g(x) −g(y))∇f(y)∥.
+47
+
+Distributionally Robust Markov Games with Average Reward
+Bound the first and third terms by BfLg∥x −y∥and BgLf∥x −y∥. For the second term, use the mean-value bound
+|f(x) −f(y)| ≤B∇f∥x −y∥(since f is differentiable and supZ ∥∇f∥< ∞on the compact sets used in the paper), giving
+≤B∇fB∇g∥x −y∥. Similarly the fourth term is ≤B∇gB∇f∥x −y∥(same bound). Combining yields the stated constant.
+(ii) ∇(φ ◦g)(x) = φ′(g(x)) ∇g(x), hence
+∥∇(φ ◦g)(x) −∇(φ ◦g)(y)∥= ∥φ′(g(x))∇g(x) −φ′(g(y))∇g(y)∥
+≤|φ′(g(x))| · ∥∇g(x) −∇g(y)∥+ |φ′(g(x)) −φ′(g(y))| · ∥∇g(y)∥.
+Bound the first term by Bφ′Lg∥x−y∥. For the second term, use Lipschitzness of φ′ and the fact |g(x)−g(y)| ≤B∇g∥x−y∥
+to obtain
+|φ′(g(x)) −φ′(g(y))| ≤Lφ|g(x) −g(y)| ≤LφB∇g∥x −y∥,
+so the second term is ≤LφB2
+∇g∥x −y∥.
+Lemma H.7 (Smoothness and Lipschitz gradient of Mλ). Fix λ > 0 and ρ > 0. On the compact set Z = Π × G × V, the
+merit function Mλ defined in (117) is continuously differentiable and has Lipschitz gradient: there exists Lλ < ∞such that
+for all z, z′ ∈Z,
+∥∇Mλ(z) −∇Mλ(z′)∥≤Lλ∥z −z′∥.
+Proof. Write z = (π, g, V ) ∈Z.
+Step 0: Uniform bounds on Z. Because Z is compact, define finite constants
+Bg := max
+g∈G ∥g∥∞,
+BV := max
+V ∈V ∥V ∥∞,
+Rmax := max
+k,s,a |rk(s, a)|.
+Also π ∈Π implies each coordinate πk(ak | s) ∈[0, 1].
+For any ambiguity slice P ⊂∆(S) and any v ∈R|S|,
+|σP,λ(v)| ≤max
+p∈∆(S) |p⊤v| ≤∥v∥∞.
+Thus on Z, |σP,λ(Vk)| ≤BV .
+Step 1: ΩRS
+k,λ is C1,1 on Z. Fix (k, s, ak). Recall (116):
+ΩRS
+k,λ(s, ak; π−k | gk, Vk) = gk + Vk(s) −QRS
+k,λ(s, ak; π−k | Vk),
+where
+QRS
+k,λ(s, ak; π−k | Vk) =
+X
+a−k
+π−k(a−k | s)
+
+rk(s, ak, a−k) + σP
+(ak,a−k)
+s
+,λ(Vk)
+
+.
+By Lemma H.6, for each fixed (s, ak, a−k) the map Vk 7→σP
+(ak,a−k)
+s
+,λ(Vk) is C1 and has Lipschitz gradient with constant
+at most 1/λ. The dependence of QRS
+k,λ on π−k is multilinear (polynomial) in the coordinates of π and hence has globally
+bounded second derivatives on the compact product simplex Π; therefore π 7→QRS
+k,λ has a Lipschitz gradient on Π (with
+some finite constant depending only on (N, |S|, |A|) and bounds above). Combining:
+• (gk, Vk(s)) 7→gk + Vk(s) is affine (hence C1,1 with zero Lipschitz-gradient constant);
+• π 7→π−k(a−k | s) is smooth with Lipschitz gradient on Π;
+• Vk 7→σP,λ(Vk) is C1,1 with constant ≤1/λ by Lemma H.6;
+and using Lemma H.6(i) (product rule) and finite summation over a−k, we conclude: there exists a finite constant LΩ,λ such
+that for all z, z′ ∈Z,
+∥∇ΩRS
+k,λ(z) −∇ΩRS
+k,λ(z′)∥≤LΩ,λ ∥z −z′∥.
+(126)
+In particular, ΩRS
+k,λ is C1 and ∇ΩRS
+k,λ is bounded on Z; denote B∇Ω:= supz∈Z ∥∇ΩRS
+k,λ(z)∥< ∞.
+48
+
+Distributionally Robust Markov Games with Average Reward
+Also, by the bounds in Step 0,
+|ΩRS
+k,λ(z)| ≤|gk| + |Vk(s)| +
+X
+a−k
+π−k(a−k | s)
+ |rk| + |σλ|
+
+≤Bg + BV + (Rmax + BV ),
+so |ΩRS
+k,λ(z)| ≤BΩfor some finite BΩindependent of z ∈Z.
+Step 2: Squared complementarity terms have Lipschitz gradients. Define the scalar map
+hk,s,ak(z) := πk(ak | s) ΩRS
+k,λ(s, ak; π−k | gk, Vk).
+The coordinate map z 7→πk(ak | s) is linear in z (hence C1,1 with zero Lipschitz-gradient constant), and z 7→ΩRS
+k,λ is C1,1
+by (126). By Lemma H.6(i), there exists Lh < ∞such that ∇hk,s,ak is Lipschitz on Z:
+∥∇hk,s,ak(z) −∇hk,s,ak(z′)∥≤Lh∥z −z′∥,
+∀z, z′ ∈Z.
+Moreover supZ |hk,s,ak| ≤BΩ(since πk(· | s) ∈[0, 1]) and supZ ∥∇hk,s,ak∥< ∞by continuity on compactness.
+Now consider φ1(x) := 1
+2x2. Then φ1 is C1 and φ′
+1(x) = x is 1-Lipschitz. Applying Lemma H.6(ii) with g = hk,s,ak
+yields that
+mk,s,ak(z) := 1
+2hk,s,ak(z)2
+has Lipschitz gradient on Z with some finite constant Lm < ∞.
+Step 3: Negative-part penalty terms have Lipschitz gradients. Define φ2(x) := ρ
+2[x]2
+−. This scalar function is C1
+everywhere with derivative
+φ′
+2(x) = ρ x 1{x < 0},
+and φ′
+2 is globally ρ-Lipschitz on R (piecewise linear with slope ρ on (−∞, 0) and 0 on (0, ∞)). Apply Lemma H.6(ii)
+with g(z) = ΩRS
+k,λ(z). Using (126) and boundedness of ∇ΩRS
+k,λ on Z, we obtain that
+pk,s,ak(z) := ρ
+2
+
+ΩRS
+k,λ(z)
+2
+−
+has Lipschitz gradient on Z with some finite constant Lp < ∞.
+Step 4: Sum over finitely many indices. Finally, Mλ in (117) is a finite sum of the mk,s,ak and pk,s,ak terms. A finite sum
+of functions with Lipschitz gradients has Lipschitz gradient, with constant given by the sum of constants. Thus there exists
+Lλ < ∞such that
+∥∇Mλ(z) −∇Mλ(z′)∥≤Lλ∥z −z′∥,
+∀z, z′ ∈Z.
+This also implies Mλ is continuously differentiable on Z.
+We further use the smoothed operator to define smoothed robust TD errors.
+Fix a player k and an opponents policy π−k. For v ∈RS define the smoothed robust Q-value as
+QRS
+k,λ(s, ak; π−k | v) :=
+X
+a−k∈A−k
+π−k(a−k | s)
+
+rk(s, ak, a−k) + σλ
+P
+(ak,a−k)
+s
+(v)
+
+.
+Given (gk, Vk) ∈R × RS define the (smoothed) robust TD error as
+ΩRS
+k,λ(s, ak; π−k | gk, Vk) := gk + Vk(s) −QRS
+k,λ(s, ak; π−k | Vk).
+(127)
+H.4. Complementarity Merit
+We then extend the TD-error characterization to the smoothed ones.
+For scalar x, define the negative part [x]−= max{0, −x}. Define the merit function
+Lλ(π, g, V ) := 1
+2
+X
+k∈N
+X
+s∈S
+X
+ak∈Ak
+
+πk(ak|s) ΩRS
+k,λ(s, ak; π−k | gk, Vk)
+2
++ ρ
+2
+X
+k,s,ak
+  
+ΩRS
+k,λ(s, ak; π−k | gk, Vk)
+
+−
+2,
+(128)
+where ρ > 0 is a fixed penalty parameter.
+We then have the following result.
+49
+
+Distributionally Robust Markov Games with Average Reward
+Lemma H.8 (Merit zeros imply feasibility and complementarity). If Lλ(π, g, V ) = 0, then for every (k, s, ak):
+ΩRS
+k,λ(s, ak; π−k | gk, Vk) ≥0,
+πk(ak|s) ΩRS
+k,λ(s, ak; π−k | gk, Vk) = 0.
+Consequently, for each player k and each state s, if
+ΩRS
+k,λ(s, ak; π−k | gk, Vk) ≥0,
+πk(ak|s) ΩRS
+k,λ(s, ak; π−k | gk, Vk) = 0,
+then
+gk + Vk(s) = max
+ak∈Ak QRS
+k,λ(s, ak; π−k | Vk).
+Proof. If Lλ = 0, both nonnegative summands in (128) must be zero. The second term being zero implies
+h
+ΩRS
+k,λ(·)
+i
+−= 0
+for all (k, s, ak), hence ΩRS
+k,λ ≥0 for all (k, s, ak).
+The first term being zero implies πk(ak|s)ΩRS
+k,λ(s, ak; π−k | gk, Vk) = 0 for every (k, s, ak). This hence proves the first
+part.
+For the second part, fix k and s. Since πk(·|s) is a probability distribution, there exists at least one action ¯ak ∈Ak with
+πk(¯ak|s) > 0. For that ¯ak, complementarity forces ΩRS
+k,λ(s, ¯ak; π−k | gk, Vk) = 0. Thus,
+gk + Vk(s) = QRS
+k,λ(s, ¯ak; π−k | Vk).
+But for any ak we have ΩRS
+k,λ(s, ak; ·) ≥0, i.e., gk + Vk(s) ≥QRS
+k,λ(s, ak; π−k | Vk). Therefore gk + Vk(s) equals the
+maximum over ak.
+Corollary H.9 (Connection to (smoothed) robust NE). Any (π, g, V ) with Lλ(π, g, V ) = 0 defines a joint policy π such
+that each πk(·|s) is supported on maximizers of QRS
+k,λ(s, ·; π−k | Vk). In particular, π is a stationary Nash equilibrium of
+the λ-smoothed robust game.
+Proof. From Lemma H.8, for fixed (k, s), ΩRS
+k,λ(s, ak) ≥0 for all ak and equals 0 on the support of πk(·|s). But
+ΩRS
+k,λ(s, ak) = gk + Vk(s) −QRS
+k,λ(s, ak; π−k | Vk), so ΩRS
+k,λ(s, ak) = 0 iff ak attains the maximum of QRS
+k,λ(s, ·; π−k | Vk).
+Thus, πk(·|s) assigns positive probability only to best-response actions at each state s, which is precisely the stationary NE
+condition for the smoothed robust game.
+Remark H.10. Note that when λ →0, σλ
+P(v) →σP(v), thus ΩRS
+k,λ →ΩR
+k . Hence, when Lλ = 0 for λ small enough,
+the smoothed robust NE will result in a small value ∆R, thus is close to a robust NE. Namely, the smoothed NE is an
+approximation of robust NE.
+H.5. Robust TD Algorithm
+We now give an actor-critic recursion that performs projected gradient steps on Lλ(π, g, V ), with a fast critic step size αn
+and a slow actor step size ηn.
+Let G ⊂RN be a nonempty compact convex set for gains g (e.g., a box [−Gmax, Gmax]N). Let V ⊂RNS be a nonempty
+compact convex set for V , with the anchoring constraints built in (e.g., Vk(s◦) = 0 for all k for a fixed reference state s◦).
+Define the joint constraint set
+Z := Π × G × V.
+Let ΓΠ and ΓG×V denote Euclidean projections. We then design our algorithm as follows.
+H.6. Convergence Analysis
+We now give a complete convergence analysis for Algorithm 1. The structure is standard for projected gradient methods on
+smooth objectives, with care taken for two step sizes.
+50
+
+Distributionally Robust Markov Games with Average Reward
+Algorithm 3 Two-time-scale Robust Actor–Critic on the Merit Lλ
+1: Input: step sizes {ηn}, {αn}, smoothing λ > 0, penalty ρ > 0
+2: Initialize π0 ∈Π, (g0, V 0) ∈G × V
+3: for n = 0, 1, 2, . . . do
+4:
+Critic step (fast):
+(gn+ 1
+2 , V n+ 1
+2 ) = ΓG×V
+
+(gn, V n) −αn∇(g,V )Lλ(πn, gn, V n)
+
+.
+5:
+Actor step (slow):
+πn+1 = ΓΠ
+
+πn −ηn∇πLλ(πn, gn+ 1
+2 , V n+ 1
+2 )
+
+.
+6:
+Set (gn+1, V n+1) = (gn+ 1
+2 , V n+ 1
+2 ).
+7: end for
+Assumption H.11 (Two-time-scale Robbins–Monro). The step sizes satisfy:
+ηn > 0,
+αn > 0,
+∞
+X
+n=0
+ηn = ∞,
+∞
+X
+n=0
+η2
+n < ∞,
+∞
+X
+n=0
+αn = ∞,
+∞
+X
+n=0
+α2
+n < ∞,
+ηn
+αn
+→0.
+Lemma H.12 (Smoothness and Lipschitz gradient). Fix λ > 0 and ρ > 0. On the compact set Z, the merit Lλ is
+continuously differentiable, and its gradient is Lipschitz: there exists Lλ < ∞such that for all z, z′ ∈Z,
+∥∇Lλ(z) −∇Lλ(z′)∥≤Lλ∥z −z′∥.
+Proof. We argue term by term.
+(i) Smoothness of ΩRS
+k,λ. For fixed (k, s, ak), ΩRS
+k,λ is given by (127). It is affine in (gk, Vk(s)) and depends on Vk through
+σλ
+P
+(ak,a−k)
+s
+(Vk), which is C1 by Lemma H.7. It depends on π−k linearly. Hence ΩRS
+k,λ is C1 in (π, g, V ).
+(ii) Smoothness of the squared complementarity term. The map (π, g, V ) 7→πk(ak|s) ΩRS
+k,λ(·) is C1 as a product of C1
+maps.
+(iii) Smoothness of the negative-part penalty. The scalar function x 7→[x]2
+−is C1 everywhere: it equals 0 for x ≥0,
+equals x2 for x < 0, and has derivative 0 at x = 0. Composing a C1 map ΩRS
+k,λ with a C1 scalar function preserves C1.
+Thus Lλ is C1.
+(iv) Lipschitz gradient on a compact set. A C1 function has locally Lipschitz gradient if its Hessian is bounded locally.
+Here we only need global Lipschitz on the compact Z. Since all constituent maps are C1 and Z is compact, ∇Lλ is
+continuous on Z and hence uniformly Lipschitz on Z. Formally, one can bound second derivatives using Lemma H.7 (which
+gives Lip(∇σλ) ≤1/λ), boundedness of π (simplex), and boundedness of (g, V ) (projection set).
+We recall the standard projected gradient mapping.
+Definition H.13 (Projected gradient mapping). Let f be differentiable and C a nonempty closed convex set. For γ > 0
+define
+GC,γ(x) := 1
+γ
+
+x −ΓC(x −γ∇f(x))
+
+.
+Lemma H.14 (One-step descent for projected gradient). Let f be differentiable on C with L-Lipschitz gradient. Fix
+γ ∈(0, 2/L) and let y = ΓC(x −γ∇f(x)). Then
+f(y) ≤f(x) −γ
+
+1 −Lγ
+2
+
+∥GC,γ(x)∥2.
+Proof. Let y = ΓC(x −γ∇f(x)) and define d := x −y so that d = γGC,γ(x).
+Step 1: Projection inequality. The projection optimality condition gives, for all z ∈C,
+⟨x −γ∇f(x) −y, z −y⟩≤0.
+51
+
+Distributionally Robust Markov Games with Average Reward
+Take z = x ∈C, yielding
+⟨x −γ∇f(x) −y, x −y⟩≤0
+⇒
+⟨d −γ∇f(x), d⟩≤0.
+Hence
+∥d∥2 ≤γ⟨∇f(x), d⟩.
+Equivalently,
+⟨∇f(x), y −x⟩= −⟨∇f(x), d⟩≤−1
+γ ∥d∥2.
+Step 2: Smoothness upper bound. Because ∇f is L-Lipschitz, the standard descent lemma gives
+f(y) ≤f(x) + ⟨∇f(x), y −x⟩+ L
+2 ∥y −x∥2 = f(x) + ⟨∇f(x), y −x⟩+ L
+2 ∥d∥2.
+Using the bound from Step 1:
+f(y) ≤f(x) −1
+γ ∥d∥2 + L
+2 ∥d∥2 = f(x) −
+ 1
+γ −L
+2
+
+∥d∥2.
+Since d = γGC,γ(x),
+ 1
+γ −L
+2
+
+∥d∥2 =
+ 1
+γ −L
+2
+
+γ2∥GC,γ(x)∥2 = γ
+
+1 −Lγ
+2
+
+∥GC,γ(x)∥2.
+This proves the claim.
+Theorem H.15 (Convergence to first-order stationary points). Assume Assumption H.11. Let {(πn, gn, V n)} be generated
+by Algorithm 1. Then:
+1. The merit values Lλ(πn, gn, V n) converge to a finite limit.
+2. The projected gradient mappings vanish asymptotically:
+lim
+n→∞∥GΠ,ηn(πn)∥= 0,
+lim
+n→∞∥GG×V,αn(gn, V n)∥= 0,
+where each G is defined w.r.t. the corresponding block objective (Lλ with the other block held fixed at the point used in
+Algorithm 1).
+3. Every accumulation point (π⋆, g⋆, V ⋆) of the iterates is a (block) stationary point of Lλ on Z, i.e. it satisfies the
+first-order KKT condition
+0 ∈∇Lλ(π⋆, g⋆, V ⋆) + NZ(π⋆, g⋆, V ⋆),
+where NZ is the normal cone of Z.
+Proof. Let zn := (πn, gn, V n) ∈Z.
+Step 0: Global smoothness constant and small-step regime. By Lemma H.12, there exists Lλ such that ∇Lλ is
+Lλ-Lipschitz on Z. Because ηn →0 and αn →0 (from square summability), there exists n0 such that for all n ≥n0,
+ηn < 2
+Lλ
+,
+αn < 2
+Lλ
+.
+Step 1: Critic-step descent. Define the critic update map (with π frozen at πn):
+yn+ 1
+2 := (gn+ 1
+2 , V n+ 1
+2 ) = ΓG×V
+
+yn −αn∇yLλ(πn, yn)
+
+,
+where yn = (gn, V n).
+52
+
+Distributionally Robust Markov Games with Average Reward
+Apply Lemma H.14 with f(y) = Lλ(πn, y), C = G × V, and γ = αn. For all n ≥n0 we get
+Lλ(πn, yn+ 1
+2 ) ≤Lλ(πn, yn) −αn
+
+1 −Lλαn
+2
+ GG×V,αn(yn)
+2.
+(129)
+Step 2: Actor-step descent. Now define the actor update with critic frozen at yn+ 1
+2 :
+πn+1 = ΓΠ
+
+πn −ηn∇πLλ(πn, yn+ 1
+2 )
+
+.
+Apply Lemma H.14 with f(π) = Lλ(π, yn+ 1
+2 ), C = Π, γ = ηn. For all n ≥n0:
+Lλ(πn+1, yn+ 1
+2 ) ≤Lλ(πn, yn+ 1
+2 ) −ηn
+
+1 −Lληn
+2
+ GΠ,ηn(πn)
+2.
+(130)
+Finally set yn+1 = yn+ 1
+2 .
+Step 3: Combine and telescope. Combine (129) and (130): for all n ≥n0,
+Lλ(zn+1) = Lλ(πn+1, yn+ 1
+2 )
+≤Lλ(πn, yn) −αn
+
+1 −Lλαn
+2
+ GG×V,αn(yn)
+2
+−ηn
+
+1 −Lληn
+2
+ GΠ,ηn(πn)
+2.
+(131)
+Since Lλ ≥0 by definition (128), the sequence {Lλ(zn)} is nonincreasing for n ≥n0 and bounded below by 0. Hence it
+converges, proving (1).
+Summing (131) from n = n0 to T yields
+T
+X
+n=n0
+αn
+
+1 −Lλαn
+2
+ GG×V,αn(yn)
+2 +
+T
+X
+n=n0
+ηn
+
+1 −Lληn
+2
+ GΠ,ηn(πn)
+2 ≤Lλ(zn0) −Lλ(zT +1) ≤Lλ(zn0).
+Letting T →∞implies both sums are finite. Since P
+n ηn = ∞and P
+n αn = ∞, the only way for the weighted sums to
+be finite is that the corresponding norm terms must converge to 0 along the full sequence. This proves (2).
+Step 4: Stationarity of accumulation points. Because Z is compact, {zn} has accumulation points. Let znj →z⋆be any
+convergent subsequence. From (2) and continuity of the gradient mapping under smoothness, the limiting point satisfies
+GΠ,0(π⋆) = 0 and GG×V,0(y⋆) = 0, which is equivalent to the first-order normal cone inclusion 0 ∈∇Lλ(z⋆) + NZ(z⋆)
+for a projected-gradient method on a smooth function. This is the standard KKT characterization for constrained first-order
+stationarity, proving (3).
+I. Proof of Section 7
+Theorem I.1. (1). For a sequence of discount factors {γt} →1, denote a Nash Equilibrium of the γt-discounted DR-MG
+by πt. If πt →π, then π is a Nash Equilibrium of the average-reward DR-MG.
+(2). For any ϵ, there exists some discount factor γ, such that any ϵ-Nash Equilibrium of the γ-discounted DR-MG is also an
+O(ϵ)-Nash Equilibrium under the average reward.
+(3). The discount factor γ = 1 −ϵ
+D satisfies Part (2)
+Proof. (1). By the uniform convergence of the robust discounted value function derived in (Wang et al., 2023b), we have
+that
+lim
+γ→1(1 −γ)V π
+γ,P,i = gπ
+P,i, uniformly on Π.
+(132)
+Thus for any ϵ, there exists some γe, such that
+∥(1 −γ)V π
+γ,P,i −gπ
+P,i∥≤ϵ,
+(133)
+53
+
+Distributionally Robust Markov Games with Average Reward
+for any π ∈Π and γ > γe. Moreover, there exists some constant T such that for any t > T,
+γt > γe, ∥πt −π∥≤ϵ.
+(134)
+Since πt is the Nash Equilibrium of the discounted robust MG, it holds that
+V πt
+γt,P,i ≥V (π−i
+t
+,µi)
+γt,P,i
+, ∀i ∈N, ∀µi.
+(135)
+Thus we have that
+g(π−i,µi)
+P,i
+−gπ
+P,i
+= −gπ
+P,i + (1 −γt)V π
+γt,P,i −(1 −γt)V π
+γt,P,i + (1 −γt)V πt
+γt,P,i
+−(1 −γt)V πt
+γt,P,i + (1 −γt)V (π−i
+t
+,µi)
+γt,P,i
+−(1 −γt)V (π−i
+t
+,µi)
+γt,P,i
++ (1 −γt)V (π−i,µi)
+γt,P,i
+−(1 −γt)V (π−i,µi)
+γt,P,i
++ g(π−i,µi)
+P,i
+.
+(136)
+Consider any t > T, it first holds that due to (133):
+(1 −γt)V π
+γt,P,i −gπ
+P,i ≤ϵ,
+(137)
+g(π−i,µi)
+P,i
+−(1 −γt)V (π−i,µi)
+γt,P,i
+≤ϵ.
+(138)
+Moreover,
+(1 −γt)V πt
+γt,P,i −(1 −γt)V π
+γt,P,i ≤(1 −γt)(V πt
+γt,P,i −V π
+γt,P,i) ≤ϵ,
+(139)
+(1 −γt)V (π−i,µi)
+γt,P,i
+−(1 −γt)V (π−i
+t
+,µi)
+γt,P,i
+≤ϵ,
+(140)
+which is due to the
+1
+1−γ -Lipschitz of the robust discounted value function in π, and the closeness of πt and π in (134).
+Finally,
+−(1 −γt)V πt
+γt,P,i + (1 −γt)V (π−i
+t
+,µi)
+γt,P,i
+≤0
+(141)
+due to (135). Combining all results hence implies that
+g(π−i,µi)
+P,i
+−gπ
+P,i ≤ϵ,
+(142)
+for any i and µi uniformly. Thus let ϵ →0 we complete the proof.
+(2). Set γ to be any factor that is larger than γe. Then
+g(π−i,µi)
+P,i
+−gπ
+P,i = g(π−i,µi)
+P,i
+−(1 −γ)V (π−i,µi)
+γ,P,i
++ (1 −γ)V (π−i,µi)
+γ,P,i
+−(1 −γ)V π
+γ,P,i + (1 −γ)V π
+γ,P,i −gπ
+P,i.
+(143)
+Note that for γ > γe, it holds that
+g(π−i,µi)
+P,i
+−gπ
+P,i ≤2ϵ + (1 −γ)V (π−i,µi)
+γ,P,i
+−(1 −γ)V π
+γ,P,i ≤3ϵ,
+(144)
+due to π is an ϵ-NE for the discounted robust MG, which hence completes the proof.
+(3). The proof is a direct corollary of Theorem 7.1 and results from (Roch et al., 2025a). Specifically, it is shown in Theorem
+3.4 in (Roch et al., 2025a) that, for any γ > 1 −ϵ
+D
+4, it holds that
+∥(1 −γ)V π
+γ,P,i −gπ
+P,i∥≤ϵ, ∀π, ∀i.
+(145)
+Combining with Theorem 7.1 further completes the proof.
+4The results in (Roch et al., 2025a) is derived for H which is the robust optimal span. However, their results also hold for any constant
+that is larger than H. Our claim thus holds by noting that D ≥H (Roch et al., 2025a).
+54
+
+Distributionally Robust Markov Games with Average Reward
+J. Experiments
+J.1. Experiments for Robust TD Algorithm
+In this section, we provide numerical evidence that the proposed robust TD-descent algorithm (Algorithm 1) behaves in
+accordance with the theoretical analysis.
+For a joint policy π and gains/biases (g, V ) as in Definition H.2, we track the following quantities: (1). the global robust TD
+gap ∆R(π, g, V ) as in Definition H.2. In the experiments, (g, V ) are always taken as the robust average-reward optimal
+gain-bias pairs for the current induced DR-MDPs, as we specified in Algorithm 1; (2). the robust Nash gap for the policy
+π: NashGap(π) := maxk∈N gapk(π) where gapk(π) := maxνk gνk,π−k
+P,k
+−gπ
+P,k. We aim to show that, our Algorithm 1
+ensures both ∆R(π, g, V ) and robust Nash gap converge to 0 (note that NashGap(π) = 0 implies π is a NE), validating our
+theoretical results.
+We consider a two-player, two-state, two-action DR-MG. The state space is S = {0, 1} and each player has two actions
+Ak = {0, 1} at each state. The uncertain set over transitions is two-state rectangular: for each (s, a1, a2) the probability
+p(s′ = 1 | s, a1, a2) lies in a fixed interval [pmin(s, a1, a2), pmax(s, a1, a2)], with the adversary choosing p to minimize
+the player’s expected next-state bias. The intervals are chosen so that the Markov chain under any stationary joint policy
+is irreducible, satisfying Assumption 4.1. The reward tensors rk(s, a1, a2) are randomly generated between [0, 1]. All
+experiments are conducted in the planning setting: the reward functions and rectangular uncertainty sets are known, and
+robust Bellman equations are solved through Relative Value Iteration (RVI) in (Wang et al., 2023c).
+We then implement our Algorithm 1. In the experiments, we use 600 outer iterations. Figure 1 aggregates the results over
+Ngames = 30 independent random games. The left panel shows the global robust TD gap ∆R(πn, gn, V n) as a function of
+iteration, and the right panel shows the robust Nash gap NashGap(πn). The envelopes represent the standard deviations of
+these 30 runs.
+Figure 1. Robust TD
+Across all random instances, we note that both ∆R and NashGap decrease steadily with the number of iterations, with
+the mean curves decreasing and approaching to zero. These results are then consistent with our theoretical results in
+Theorem 6.3, validating our TD-based algorithm and verifying our results.
+J.2. Additional Experiments on Average Reward DR-MGs
+In this section, we develop numerical experiments to validate the advantages of our formulation and methods. We mainly
+consider two aspects: the long-term performance and the robustness to environment uncertainty.
+J.2.1. LONG-TERM PERFORMANCE
+To empirically validate our approach, we perform a series of experiments designed to compare the performance of our robust
+Nash-Iteration algorithm with average reward against the standard discounted-reward robust Nash-Iteration (Zhang et al.,
+55
+
+Distributionally Robust Markov Games with Average Reward
+2020; Shi et al., 2024) under DR-MGs. We aim to show that our algorithm will yield a joint policy that has better long-term
+performance than those derived from the discounted criterion.
+We design a ‘Structured Random Environment’ to create a complex strategic challenge with meaningful trade-offs between
+short-term gains and long-term consequences. The environment is a DR-MG with 20 states and 5 actions. The state space S
+is partitioned into two clusters:
+• Prosperous States (|Sp| = 5): A small set of states characterized by a higher mean reward (drawn from N(2, 1)).
+• Deprived States (|Sd| = 15): A larger set of states with a lower mean reward (drawn from N(−2, 1)),
+where N(·, ·) is the Gaussian distribution. The nominal transition kernel P0 is also structured to create persistence within
+these clusters. Transitions originating from a state in a given cluster are five times more likely to terminate in a state within
+the same cluster. This design creates a strategic trap: an agent in a prosperous state might be tempted by an action with a
+high immediate reward that carries a significant risk of transitioning it to the deprived cluster, from which escape is difficult.
+We further set the uncertainty set using a Kullback-Leibler (KL) divergence ball around the nominal kernel P0:
+Pa
+s = {q ∈∆(S) | DKL(q||(P0)a
+s) ≤θ}.
+Based on the scale of our environment, the uncertainty budget θ is set to a modest value of 0.01.
+We compare our average-reward Robust Nash-Iteration algorithm (Algorithm 2) and the Discounted-Reward Robust Nash-
+Iteration. We implement the two algorithms and evaluate their output policies under the robust average-reward criterion.
+The experimental procedure is as follows:
+(1). The optimal average-reward policy, πavg, is computed using the average-reward Robust Nash-Iteration algorithm. We
+evaluate the worst-case average reward of Player 1 under the policy, using the robust average reward single-agent RL method
+in (Wang et al., 2023b).
+(2). For a range of discount factors γ from 0.5 to 0.99, the corresponding optimal discounted policy, πdisc(γ), is computed
+using the Discounted-Reward Robust Nash-Iteration algorithm. And for each πdisc(γ), we similarly evaluate its worst-case
+long-term performance.
+For both algorithms, we plot the performance of Player 1 as a performance metric. Results are presented in Figure 2 (under
+different random environments). Policies learned under the discounted criterion consistently underperform the dedicated
+average-reward policy. This gap is most pronounced for smaller values of γ, where the myopic nature of the discounted
+algorithm leads it to fall into the strategic trap of the environment by choosing actions that yield high immediate rewards but
+lead to the persistent, low-reward ”deprived” cluster of states. As γ approaches 1, the discounted policy becomes more
+far-sighted, and its performance converges toward the optimal baseline.
+Our results hence provide strong evidence that, for DRMGs under the average reward criterion with long-term performance
+optimization goals, our robust Nash-Iteration algorithm achieves a better performance, compared to the common practice of
+approximating this objective with a discounted formulation using γ ≈1.
+J.2.2. ROBUSTNESS
+We then test the robustness of our method by comparing it with the non-robust average-reward Nash-Iteration algorithm
+(Li, 2003), to test their ability to handle model uncertainty. Using the same environment, we evaluate both learners against
+a worst-case adversary throughout training to measure their inherent robustness. The results are presented in Figure 3.
+The policy learned by the robust algorithm consistently and monotonically improves its worst-case performance, rapidly
+converging to a high, stable value. This is because the algorithm directly optimizes for resilience against the adversary at
+each step. In contrast, the policy learned by the non-robust algorithm exhibits lower performance when evaluated against
+a worst-case adversary. Ultimately, it does not have the ability to reliably account for perturbations in the underlying
+environment, as opposed to its robust counterpart, which aligns with our theoretical results.
+These numerical results therefore verify that our method achieves superior long-term performance with increased stability
+in the presence of model uncertainty in multi-agent systems, validating our theoretical results.
+56
+
+Distributionally Robust Markov Games with Average Reward
+Figure 2. Performance Comparisons of Average and Discounted Robust Nash-Iteration
+Figure 3. Performance Comparisons of Robust/Non-Robust Nash-Iteration
+57

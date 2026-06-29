@@ -1,0 +1,947 @@
+Resilient Multi-Agent Reinforcement Learning with
+Adversarial Value Decomposition
+Thomy Phan,1 Lenz Belzner,2 Thomas Gabor,1
+Andreas Sedlmeier,1 Fabian Ritz,1 Claudia Linnhoff-Popien1
+1LMU Munich,
+2MaibornWolff
+thomy.phan@iﬁ.lmu.de
+Abstract
+We focus on resilience in cooperative multi-agent systems,
+where agents can change their behavior due to udpates or
+failures of hardware and software components. Current state-
+of-the-art approaches to cooperative multi-agent reinforce-
+ment learning (MARL) have either focused on idealized set-
+tings without any changes or on very specialized scenar-
+ios, where the number of changing agents is ﬁxed, e.g., in
+extreme cases with only one productive agent. Therefore,
+we propose Resilient Adversarial value Decomposition with
+Antagonist-Ratios (RADAR). RADAR offers a value decom-
+position scheme to train competing teams of varying size for
+improved resilience against arbitrary agent changes. We eval-
+uate RADAR in two cooperative multi-agent domains and
+show that RADAR achieves better worst case performance
+w.r.t. arbitrary agent changes than state-of-the-art MARL.
+Introduction
+Distributed systems consist of multiple separated compo-
+nents that collaborate to accomplish a common task (Tanen-
+baum and Van Steen 2007). Distributed autonomous systems
+can be formulated as cooperative multi-agent system (MAS),
+which can be realized with methods of reinforcement learn-
+ing (RL) (Foerster et al. 2018; Rashid et al. 2018).
+Multi-agent RL (MARL) potentially offers better scala-
+bility and resilience against changing agents compared to
+single-agent RL. We deﬁne an agent change either as up-
+date or failure. E.g., some agents may be updated with new
+software or temporarily be replaced by other versions due to
+maintainance. In both cases, we would expect the remain-
+ing MAS to collaborate with these novel agents. On the
+other hand, agents might behave erroneously due to hard-
+ware or software failures. In this case, we would expect the
+remaining MAS to degrade gracefully without failing en-
+tirely (Stone and Veloso 2000). Intuitively, resilience should
+improve with more agents due to more available resources
+for compensation (Tanenbaum and Van Steen 2007).
+Although resilience has been long recognized as a
+main motivation for realizing cooperative MAS (Stone and
+Veloso 2000; Panait and Luke 2005; Bus¸oniu, Babuˇska, and
+De Schutter 2010), most state-of-the-art approaches to co-
+operative MARL have focused on optimizing idealized sce-
+Copyright c⃝2021, Association for the Advancement of Artiﬁcial
+Intelligence (www.aaai.org). All rights reserved.
+narios, where an agent only faces the same or similar agents
+as during training (Foerster et al. 2018; Gupta, Egorov, and
+Kochenderfer 2017; Rashid et al. 2018). This bears the risk
+of overﬁtting, where a MAS can entirely fail when some
+agents signiﬁcantly change their behavior, which could be
+fatal in safety critical environments, where such failures may
+have catastrophic consquences (Uesato et al. 2019).
+Some work on resilient MARL based on adversarial learn-
+ing (Littman 1994; Li et al. 2019; Phan et al. 2020) has fo-
+cused on specialized settings with a ﬁxed number of adver-
+sary agents, e.g., where a single productive agent remains.
+These approaches lack ﬂexibility, which is required, when
+arbitrary portions of the MAS can change. Furthermore, they
+introduce new tunable hyperparameters like the fraction of
+adversaries or the degree of adversarial behavior, which fur-
+ther increase sensitivity w.r.t. unexpected scenarios.
+In this paper, we propose Resilient Adversarial value De-
+composition with Antagonist-Ratios (RADAR). RADAR of-
+fers a value decomposition scheme to train competing teams
+of varying size for improved resilience against arbitrary
+agent changes. Our main contributions are:
+• A simple mechanism to train adversarial agents with vari-
+able team sizes during training, which is necessary to cre-
+ate MAS that can potentially cope with arbitrary agent
+changes. Unlike prior work on resilient MARL, RADAR
+does not introduce any new hyperparameters, thus can be
+easily integrated into existing RL frameworks.
+• An agent test scheme to consistently evaluate perfor-
+mance and resilience against changing agents in cooper-
+ative MAS in a fair way, which is inspired by prior work
+on single-agent RL (Badia et al. 2020; Jordan et al. 2020).
+• An empirical evaluation of RADAR in two cooperative
+multi-agent domains and a comparison with state-of-the-
+art MARL w.r.t. the proposed test scheme. While being
+competitive against state-of-the-art MARL in cooperative
+settings, RADAR achieves better worst case performance
+when facing a variable number of previously unknown ad-
+versary agents at test time.
+Background
+Problem Formulation
+MAS can be formulated as partially observable Markov
+game M = ⟨D, S, A, P, R, Z, Ω⟩, where D = {1, ..., N} is
+The Thirty-Fifth AAAI Conference on Artificial Intelligence (AAAI-21)
+11308
+
+a set of agents, S is a set of states st, A = A1 × ... × AN is
+the set of joint actions at = ⟨at,1, ..., at,N⟩, P(st+1|st, at)
+is the transition probability, R(st, at) = ⟨rt,1, ..., rt,N⟩∈
+RN is the joint reward with rt,i being the reward of agent
+i ∈D, Z is a set of local observations zt,i for each agent
+i, and Ω(st, at) = zt+1 = ⟨zt+1,1, ..., zt+1,N⟩∈ZN is
+the subsequent joint observation. Each agent i maintains an
+action-observation history τt,i ∈(Z × Ai)t. π(at|τt) =
+⟨π1(at,1|τt,1), ..., πN(at,N|τt,N)⟩is the joint policy, where
+πi(at,i|τt,i) is the local policy of agent i. πi can be evalu-
+ated with a value function Qπ
+i (st, at) = Eπ[Gt,i|st, at] for
+all st ∈S and at ∈A, where Gt,i = P∞
+k=0 γkrt+k,i is the
+return of agent i, and γ ∈[0, 1) is the discount factor. We
+denote the joint action and policies without agent i by at,−i
+and π−i respectively. The goal of each agent i is to ﬁnd a
+best response π∗
+i which maximizes Qπ
+i given π−i.
+Policy Gradient Reinforcement Learning
+Policy gradient RL is a popular approach to approximate
+best responses π∗
+i for each agent i. A function approxima-
+tor ˆπi,θ with parameters θ is trained with gradient ascent on
+an estimate of J = Eπ[G1,i]. Most policy gradient methods
+use gradients g of the following form (Sutton et al. 2000):
+g = Aπ
+i (st, at)∇θlogˆπi,θ(at,i|τt,i)
+(1)
+where Aπ
+i (st, at) = Qπ
+i (st, at) −V π
+i (st) is the advantage
+function and V π
+i (st) = Eπ[Gt,i|st] is the state value func-
+tion of agent i. Actor-critic approaches often approximate
+ˆAi ≈Aπ
+i by replacing Qπ
+i (st, at) with Gt,i and V π
+i
+with
+Eπi[Qπ
+i ]. Qπ
+i can be approximated with a critic ˆQi,ω and pa-
+rameters ω using value-based RL (Watkins and Dayan 1992;
+Mnih et al. 2015). For simplicity, we omit the parameter in-
+dices θ, ω and write ˆπi, ˆQi instead.
+Independent Learning
+ˆQi can be learned independently using single-agent RL on
+at,i and τt,i (Tan 1993; Leibo et al. 2017). These local ap-
+proximations can be used for each agent’s policy ˆπi to per-
+form gradient ascent according to Eq. 1 leading to the inde-
+pendent actor-critic (IAC) approach (Foerster et al. 2018).
+IAC offers optimal scalability w.r.t. N but violates the
+Markov assumption due to non-stationarity caused by simul-
+taneously learning agents (Laurent et al. 2011).
+Centralized Training Decentralized Execution
+For many problems, training usually takes place in a lab-
+oratory or in a simulated environment, where global infor-
+mation is available. State-of-the-art MARL exploits this fact
+to approximate centralized value functions ˆQi, which condi-
+tion on global states st and joint actions at, and use them as
+critic in Eq. 1 (Lowe et al. 2017). While ˆQi is only required
+during training in order to learn local policies, ˆπi itself only
+conditions on the local history τt,i, thus it can be executed in
+a decentralized way. This paradigm is known as centralized
+training and decentralized execution (CTDE).
+ˆQi can be approximated separately for each agent i while
+integrating global information, in contrast to IAC, to learn
+best responses (Lowe et al. 2017). This approach lacks a
+multi-agent credit assignment mechanism for training agent
+teams, where all agents observe the same reward signal.
+COMA approximates a single value function
+ˆQ per
+team
+to
+compute
+agent-wise
+counterfactual
+baselines
+V π
+i (st) = P
+at,i∈Ai ˆπi(at,i|τt,i) ˆQ(st, ⟨at,i, at,−i⟩) for in-
+dividual credit assignment (Foerster et al. 2018).
+The centralized ˆQ can be factorized to approximate in-
+dividual ˆQi for each agent i in order to update ˆπi accord-
+ing to Eq. 1 in a coordinated way. Value decomposition net-
+work (VDN) is the simplest factorization method, where ˆQ
+is deﬁned by P
+i∈D ˆQi(τt,i, at,i) (Sunehag et al. 2018). Al-
+ternatively, there exist non-linear factorization methods like
+QMIX or QTRAN (Rashid et al. 2018; Son et al. 2019).
+While CTDE mitigates the non-stationarity issue of in-
+dependent learning due to exploiting the Markov property
+of states, most approaches based on deep learning require a
+ﬁxed number of agents N due to the predeﬁned input dimen-
+sion of st and at required by ˆQ(st, at) (Lowe et al. 2017;
+Foerster et al. 2018; Rashid et al. 2018; Son et al. 2019).
+Adversarial Reinforcement Learning
+In zero-sum games, there are N = 2 agents with oppos-
+ing goals. The value functions of agent i and j (and anal-
+ogously the rewards) are deﬁned by Qπ
+i = −Qπ
+j . A min-
+imax equilibrium policy of agent i is deﬁned by π∗
+i
+=
+argmaxπiminπjQ∗
+i , which corresponds to a best response to
+the worst case, represented by π∗
+j (Littman 1994).
+Adversarial RL approaches attempt to approximate π∗
+i
+with alternating optimization or reformulation of the min-
+imax objective by applying standard RL techniques to each
+agent (Littman 1994; Pinto et al. 2017; Li et al. 2019).
+Related Work
+Adversarial Reinforcement Learning
+Adversarial learning is a popular paradigm to train two op-
+ponents alternately to improve each other’s performance and
+robustness (Goodfellow et al. 2014; Pinto et al. 2017). Self-
+play RL is the simplest form of adversarial RL, where a
+single agent is trained to play against itself to ensure an
+adequate difﬁculty level and steady convergence to robust
+policies (Samuel 1959; Tesauro 1995; Silver et al. 2016). In
+(single-agent) RL, the environment can be modeled as ad-
+versary by adding disturbances to confront the original agent
+with worst case scenarios (Morimoto and Doya 2001; Ra-
+jeswaran et al. 2017; Pinto et al. 2017). These adversarial
+disturbances can be realized, e.g., with RL or coevolution-
+ary approaches (Gabor et al. 2019; Wang et al. 2019).
+Our work is mainly based on adversarial learning. In con-
+trast to single-agent RL, where external changes can only
+occur within the environment, we focus on agent changes
+in cooperative MAS. For that, we integrate adversary agents
+into the training process in order to improve resilience.
+Multi-Agent Reinforcement Learning
+MARL is a long-standing AI research area with various
+approaches (Tan 1993; Panait and Luke 2005; Foerster
+11309
+
+Figure 1: RAT and RADAR scheme for N = 4. Left: each agent has a protagonist (blue) and an antagonist (red) representation.
+Middle: mixed games My,mix are generated by randomly sampling Rant for each phase. Right: ˆfi are updated in epochs using
+VDN either for protagonists or antagonists. Note that the number of protagonists and antagonists can vary depending on Rant.
+et al. 2018; Son et al. 2019). While cooperative MARL has
+achieved impressive results in challenging domains, most
+approaches have been only evaluated with the same or sim-
+ilar agents as encountered during training. Thus, it remains
+unclear if these approaches offer resilience against arbitrary
+agent changes, which are expectable in the real world.
+There is some prior work towards resilient MARL:
+Minimax-Q was proposed in (Littman 1994) as an adapta-
+tion of Q-Learning for zero-sum games. While guarantee-
+ing convergence to safe policies w.r.t. worst case opponents,
+Minimax-Q becomes intractable if the (joint) action space of
+the opponent j is large. (Li et al. 2019) proposes M3DDPG,
+which considers extreme cases, where each agent i consid-
+ers itself the sole productive agent, while all other agents
+are modeled as adversaries who attempt to minimize Qπ
+i .
+M3DDPG can lead to poor policies, if the problem is too dif-
+ﬁcult or even unsolvable for single productive agents, lead-
+ing to insufﬁcient training signal. (Phan et al. 2020) proposes
+ARTS, where productive and adversary agents are trained
+simultaneously according to a ﬁxed adversary ratio, since
+most CDTE approaches need a predeﬁned input dimension
+to approximate ˆQ ≈Qπ. ARTS can improve resilience
+against agent failures with adequately chosen adversary ra-
+tios. However, an ideal ratio needs to be known a priori,
+which is an unrealistic assumption. Furthermore, a ﬁxed ra-
+tio can lead to sensitive policies when N is sufﬁciently large.
+We propose an adversarial value decomposition scheme,
+where the number of productive and adversary agents can
+change dynamically during training. Furthermore, we pro-
+pose an agent test scheme to evaluate performance and re-
+silience of MARL approaches in a fair way.
+Methods
+Terminology
+We focus on mixed (cooperative-competitve) games Mmix,
+where D = Dpro ∪Dant with Dpro ∩Dant = ∅(Lowe et al.
+2017; Phan et al. 2020). Dpro is a team of productive or pro-
+tagonist agents, which need to accomplish a certain (cooper-
+ative) task. Dant is a team of antagonist agents representing
+(adversarial) agent changes in the MAS. For all protagonists
+i ∈Dpro and for all antagonists j ∈Dant the corresponding
+rewards are deﬁned by rt,i = rt,pro = −rt,j. The protago-
+nist return Gt,pro is computed analogously to the individual
+return Gt,i using rt,pro as rewards and γ as discount factor.
+Furthermore, we deﬁne an antagonist-ratio Rant = |Dant|
+|D| .
+If Rant = 0, then Mmix is fully cooperative with D = Dpro
+and a single global reward rt,i = rt,pro for all agents i ∈D.
+We use ˆfi = ⟨ˆπi, ˆQi⟩as general notation for the learnable
+function representation of agent i wherever possible.
+Randomized Adversarial Training
+Most approaches towards resilient MARL focus on particu-
+lar failure scenarios with a ﬁxed Rant (Littman 1994; Li et al.
+2019; Phan et al. 2020), which has several drawbacks: First,
+Rant must be known a priori or extensively tuned, which is
+generally not feasible. Second, a ﬁxed Rant during training
+can lead to inﬂexible behavior when facing a variable num-
+ber of changing agents, which can be expected in real-world
+scenarios. Third, Rant can have a huge impact on the train-
+ing quality itself, e.g., if Rant is too large, the MAS problem
+becomes too difﬁcult to learn any meaningful policy.
+Thus, we regard a randomized adversarial training (RAT)
+scheme. Since arbitrary agent changes can occur in a MAS,
+we provide a protagonist and antagonist representation for
+each agent. We maintain a pool ˆfpro = ⟨ˆf1,pro, ..., ˆfN,pro⟩of
+protagonist and a pool ˆfant = ⟨ˆf1,ant, ..., ˆfN,ant⟩of antag-
+onist representations, which are trained in T phases sim-
+ilarly to (Pinto et al. 2017). At each phase x, we ran-
+domly sample Rant ∈[0, 1) from a uniform distribution
+U to run Ne episodes of different mixed games My,mix,
+where ⌊(1 −Rant)N⌋protagonist policies ˆπi,pro represent-
+ing Dy,pro and ⌈RantN⌉antagonist policies ˆπj,ant represent-
+11310
+
+Algorithm 1 Randomized Adversarial Training (RAT)
+1: procedure RAT(D, N, ˆfpro, ˆfant, Ψ)
+2:
+Initialize parameters of ˆfpro and ˆfant
+3:
+for phase x = 1, T do
+4:
+Sample Rant ∼U
+▷uniform sampling
+5:
+for episode y = 1, Ne do
+6:
+Dy,ant ←sample ⌈RantN⌉agents from D
+7:
+Dy,pro ←{i ∈D|i ̸∈Dy,ant}
+8:
+for i = 1, N do
+▷Create My,mix
+9:
+if i ∈Dy,ant then
+10:
+πi ←ˆπi,ant
+▷from ˆfi,ant
+11:
+if i ∈Dy,pro then
+12:
+πi ←ˆπi,pro
+▷from ˆfi,pro
+13:
+π ←⟨π1, ..., πN⟩
+14:
+Run one My,mix episode with joint policy π
+15:
+Store ey,t = {⟨st, zt, at, rt,pro⟩} and Dy,pro
+16:
+if x mod 2 = 1 then
+17:
+Update ˆfi,pro with Ψ ∀i ∈Dy,pro w.r.t. ey,t
+18:
+else
+19:
+Update ˆfi,ant with Ψ ∀i ∈Dy,ant w.r.t. ey,t
+ing Dy,ant with i ̸= j are randomly selected. Each episode
+y can be considered a zero-sum game between Dy,pro and
+Dy,ant. After each phase, either ˆfpro or ˆfant is updated in
+alternating epochs w.r.t. the generated experience ey,t =
+{⟨st, zt, at, rt,pro⟩} while the other pool is kept ﬁxed.
+The complete formulation of RAT is given in Algorithm
+1, where D is the set of agents of the original MAS (given
+Rant = 0), N = |D| is the number of agents, ˆfpro and ˆfant
+are the learnable protagonist and antagonist representations
+respectively, and Ψ is an optimization or MARL algorithm.
+Due to its simplicity, we do not consider RAT a major contri-
+bution but a necessary preliminary and baseline for RADAR,
+which is introduced in the next section.
+Resilient Adversarial Value Decomposition
+Ψ in Algorithm 1 can be easily set to IAC or other indepen-
+dent learning algorithms, since RAT requires Ψ to be ﬂexi-
+ble w.r.t. the number of protagonists and antagonists, which
+can vary between each phase depending on Rant. Using in-
+dependent learning for RAT comes with the non-stationarity
+issue and the lacking credit assignment w.r.t. to (protago-
+nist and antagonist) agent teams. Most CTDE approaches
+require a ﬁxed team size due to the predeﬁned input dimen-
+sion of ˆQ ≈Qπ depending on st and the joint action at
+(Lowe et al. 2017; Foerster et al. 2018; Rashid et al. 2018).
+Therefore, we propose RADAR, a CTDE scheme to ap-
+proximate protagonist and antagonist policies with variable
+Rant based on VDN (Sunehag et al. 2018). VDN approxi-
+mates Qπ(st, at) with ˆQ(τt, at) = P
+i∈D ˆQi(τt,i, at,i) for
+cooperative MAS, where τt = ⟨τt,1, ..., τt,N⟩is the joint
+history. Although we focus on mixed games My,mix, Qπ can
+be obviously only approximated with cooperating agents1.
+1Naively integrating adversary value functions into ˆQ could
+Thus, we approximate ˆQpro and ˆQant for protagonists and
+antagonists respectively using separate VDN instances.
+Given RAT in Algorithm 1, we can approximate ˆQpro in
+protagonist epochs (line 17) with the following term:
+X
+i∈Dy,pro
+ˆQi,pro(τt,i, at,i) = Ey,π[|Dy,pro|
+N
+Gt,pro|st, at]
+(2)
+where Gt,pro is the protagonist return and |Dy,pro|
+N
+is used to
+normalize Gt,pro w.r.t. the number of participating protag-
+onists in episode y, because the scale of Gt,pro could give
+more weight to settings where Rant is small.
+Analogously, we can approximate ˆQant in antagonist
+epochs (line 19 of Algorithm 1) with the following term:
+X
+i∈Dy,ant
+ˆQi,ant(τt,i, at,i) = Ey,π[−|Dy,pro|
+N
+Gt,pro|st, at] (3)
+which approximates ˆQant = −ˆQpro.
+The terms of Eq. 2 and 3 can be approximated via end-
+to-end training of ˆQi,pro and ˆQi,ant using backpropagation
+(Sunehag et al. 2018). ˆQi,pro and ˆQi,ant can be used to de-
+rive the corresponding local policies, either via multi-armed
+bandits applied to the values or via policy gradient methods
+according to Eq. 1. The main components of RADAR and
+their integration into RAT are visualized in Fig. 1.
+Although non-linear factorization methods have been pro-
+posed in (Rashid et al. 2018; Son et al. 2019), VDN of-
+fers some advantages in our context: Regarding Eq. 2 and
+3, VDN just approximates a sum which is not bounded by
+a speciﬁc number of agents, thus being able to deal with
+variable team sizes of Dy,pro and Dy,ant. Normalizing re-
+turns w.r.t. Rant is straightforward in VDN due to the linear
+decomposition unlike in the non-linear case. Furthermore,
+VDN does neither introduce additional learnable parame-
+ters (e.g., additional neural networks) nor hyperparameters,
+which improves efﬁciency w.r.t. computation and tuning. We
+are still aware that adapting non-linear factorization meth-
+ods for RAT could lead to even more powerful approaches
+towards resilient MARL, which we defer to future work.
+Discussion of RAT and RADAR
+RAT and RADAR offer simple mechanisms to train resilient
+MAS and can be easily combined with existing RL algo-
+rithms (value- or policy-based) to train ˆπi. Neither RAT nor
+RADAR introduce new hyperparameters (RAT uses uniform
+sampling for Rant and RADAR uses VDN without addi-
+tional approximators or objectives), thus the tuning com-
+plexity completely depends on the underlying RL algorithm.
+Given the uniform sampling of Rant and 2N agent rep-
+resentations (N for the protagonists and N for the antago-
+nists), the expected computational complexity of RADAR is
+O(N) because ERant∼U[Rant] = 0.5. The worst case com-
+plexity is O(2N) (when Rant = 0 in each protagonist epoch
+and close to 1 in each antagonist epoch). Thus, RADAR
+scales similarly to other CTDE approaches in expectation
+with some overhead due to training additional antagonists.
+lead to trivial solutions, since ˆQ = 0 according to zero-sum games.
+11311
+
+Testing Performance and Resilience in MAS
+Most tests are conducted after training, where antagonists
+are trained on the ﬁnal version of ˆfpro to determine ﬂaws
+(Littman 1994; Li et al. 2019; Gleave et al. 2019). We pro-
+pose an online test method, where we enable consistent tests
+during training. For that, we use predeﬁned test cases that
+integrate novel agents which ideally have not been encoun-
+tered during training before2. Such novel agents could be
+new cooperative agents (e.g., when the MAS is tested for
+compatibility with unknown agents) or antagonists which
+represent failures (e.g., due to ﬂaws or malicious attacks).
+A MAS should behave resiliently in both cases.
+We regard a test suite T consisting of test cases c =
+⟨ˆf ′, R′
+ant⟩∈T . For a given ˆfpro, we run a single test case
+by generating random mixed games similar to RAT (Algo-
+rithm 1) with antagonist-ratio R′
+ant and ˆfant = ˆf ′ to evaluate
+the average performance with gc (e.g., the protagonist return
+Gt,pro or some domain-speciﬁc value). T can contain the fol-
+lowing disjoint subsets as schematically shown in Fig. 2:
+• ⟨ˆfpro, 0⟩∈Tideal only involves protagonists ˆfi,pro encoun-
+tered during training. The majority of work on coopera-
+tive MAS only reports such idealized test cases to eval-
+uate sample efﬁciency and raw performance (Lowe et al.
+2017; Foerster et al. 2018; Gupta, Egorov, and Kochen-
+derfer 2017; Rashid et al. 2018; Son et al. 2019).
+• ⟨ˆf ′
+pro, R′
+ant⟩
+∈
+Tcooperation integrates new protagonists
+ˆf ′
+i,pro ̸= ˆfi,pro that were obtained from a different training
+process. Tcooperation evaluates the ability of ˆfpro to collabo-
+rate with unknown agents. In this paper, we set R′
+ant = 1
+2.
+• ⟨ˆf ′
+ant, χ⟩∈Tfailure,χ integrates new antagonists ˆf ′
+i,ant ̸=
+ˆfi,ant that were obtained from a different training process.
+Tfailure,χ evaluates the resilience of ˆfpro against unknown
+failure scenarios according to different R′
+ant = χ.
+Tcooperation and Tfailure,χ enable us to compare different
+MARL approaches with each other in a fair way because
+they face the same test agents in T . Furthermore, using a
+single test suite T is practically more efﬁcient than sepa-
+rately performing an adversarial test on each MARL result
+as previously proposed in (Littman 1994; Li et al. 2019).
+Naively aggregating the performance values gc of each
+c ∈T could lead to the domination of test cases with
+small R′
+ant, since more protagonists contribute to the suc-
+cess of the MAS. Thus, a normalized value gc ∈R is re-
+quired to scale gc according to the number of protagonists
+|Dpro| = ⌊(1 −R′
+ant)N⌋to ensure a meaningful evaluation
+w.r.t. different R′
+ant (Jordan et al. 2020). In this paper, we
+focus on the following measures3 as depicted in Fig. 2:
+• Cooperation
+performance
+estimates
+Ec∈Tcooperation[gc]
+w.r.t. to the number of protagonists (the integrated test
+2These agents can be trained with any (adversarial) MARL al-
+gorithm (e.g., RADAR, M3DDPG, ARTS) independently of ˆfpro.
+3Although none of these measures is actually new (Crandall and
+Goodrich 2005; Powers, Shoham, and Vu 2007), they are widely
+neglected in current deep MARL in favor of the idealized case.
+Figure 2: The introduced test sets: Tideal involves the same
+protagonists encountered during training. Tcooperation and
+Tfailure,χ integrate protagonists or antagonists of different
+training processes than the MAS to be tested. While prior
+work mainly focused on ideal performance (green), we re-
+gard cooperation (blue) and worst case (red) performance.
+agents do not contribute to gc) to evaluate the compati-
+bility with N
+2 new cooperatively trained test agents.
+• Worst case performance estimates the (degraded) pro-
+tagonist performance minc∈Tcooperation∪(S
+χ Tfailure,χ){gc} in
+the worst case w.r.t. arbitrary agent changes.
+The average performance of all c
+∈
+Tcooperation ∪
+(S
+χ Tfailure,χ) as shown in Fig. 2 could put more emphasis
+on test cases, where ˆfpro performs especially well, reducing
+the signiﬁcance of our evaluation (Jordan et al. 2020). Thus,
+we focus on the performance, which we can at least expect
+from ˆfpro given arbitrary agent changes (Badia et al. 2020).
+Experiments4
+Evaluation Domains
+We implemented a predator-prey (PP) and a cyber-physical
+production system (CPPS) domain with N agents. An
+episode is reset after 50 time steps for each domain. We de-
+ﬁne a normalized performance value gc for each domain as
+quality measure for ˆfpro.
+PP[K,N] consists of a K ×K grid with N learning preda-
+tor agents and N
+2 randomly moving prey agents. Each agent
+starts at a random position, is able to move north, south,
+west, east, or do nothing, and has a 5 × 5 ﬁeld of view. A
+prey is captured with a global reward of +1, when at least
+one predator i occupies the same position as main capturer
+with another predator j ̸= i being within sight of i, which is
+recorded as κ = ⟨i, j⟩. Captured preys respawn at random
+positions. We deﬁne gc =
+1
+|Dpro|
+P
+κ=⟨i,j⟩1[i ∈Dpro] as the
+normalized number of protagonist main captures.
+CPPS[N] consists of a machine grid as shown in Fig. 3.
+Each agent has a list of four random tasks tasksi organized
+in two buckets. All agents start at a blue entry and are able to
+enqueue at their current machine, move north, south, west,
+east, or do nothing. At every time step, each machine pro-
+cesses one agent in its queue. If a task in its current bucket
+4Code available at https://github.com/thomyphan/resilient-marl
+11312
+
+Figure 3: Two CPPS instances with Rant = 1
+4. The white and
+red cylinders represent protagonists and antagonists respec-
+tively. (a, b) CPPS[4] as 4-agent setting with 1 antagonist.
+(c) CPPS[16] as 16-agent setting with 4 antagonists.
+matches with the machine type, the task is removed from
+the agent’s task list with a reward of +1. An agent i is com-
+plete, if tasksi = ∅and it reaches an orange exit, yield-
+ing another reward of +1. For each incomplete agent, a re-
+ward of -0.01 is given at every time step. Each agent has
+a 5 × 5 ﬁeld of view without knowing the tasks of other
+agents. All agents are only allowed to move along the black
+paths, which represent bidirectional conveyor belts and may
+only share the same position at the transparent boxes, which
+represent hubs. Thus, all agents have to coordinate to avoid
+conﬂicts or collisions to ensure fast completion. We deﬁne
+gc = |{i∈Dpro|tasksi=∅}|
+|Dpro|
+as the protagonist completion rate.
+Learning Algorithms and Test Cases
+We implemented an actor-critic algorithm with Aπ
+i (st, at) =
+Gt,i −V π
+i (st) and M3DDPG. The critic V π
+i
+= Eπi[Qπ
+i ] is
+approximated via IAC, COMA, QMIX, or RADAR.
+To study the effect of variable antagonist-ratios and adver-
+sarial value decomposition, we implemented ablations with
+ﬁxed Rant = χ ∈{0, 1
+2, N−1
+N } denoted by RADAR (χ) and
+a RAT instantiation with Ψ = IAC. Rant = N−1
+N
+represents
+the extreme case with a single protagonist agent.
+Prior to training, we generated Tcooperation with RADAR
+(0) and Tfailure,χ with RADAR (χ ∈{ 1
+4, 1
+2, 3
+4}). For each test
+set, we trained 10 test cases which are used to consistently
+evaluate resilience of all implemented MARL approaches.
+Neural Network Architectures
+We used deep neural networks to implement ˆfi = ⟨ˆπi, ˆQi⟩
+for each agent i. The neural networks are updated every 1000
+Figure 4: Protagonist completion rates for RADAR and its
+ablations on CPPS[4] and CPPS[16] for test cases with
+R′
+ant ∈{0, 1
+2}. Shaded areas show the 95 % conﬁdence in-
+terval. The legend at the top applies across all plots.
+time steps using ADAM with a learning rate of 0.001. We set
+γ = 0.95, T = 4000, and Ne = 10 (Algorithm 1).
+Since PP and CPPS are gridworlds, states and observa-
+tions are encoded as multi-channel image as proposed in
+(Gupta, Egorov, and Kochenderfer 2017; Phan et al. 2018).
+We implemented all neural networks as multilayer percep-
+tron (MLP) and ﬂattened the multi-channel images before
+feeding them into the networks. ˆπi and ˆQi have two hid-
+den layers of 64 units with ELU activation. The output of ˆπi
+has |Ai| units with softmax activation (gumbel softmax for
+M3DDPG (Lowe et al. 2017)). The output of ˆQi has |Ai|
+linear units. The centralized ˆQ-networks of COMA, QMIX,
+and M3DDPG are MLPs having two hidden layers of 128
+units with ELU activation and one linear output unit (|Ai|
+output units for COMA (Foerster et al. 2018)).
+Results
+For each MARL approach, we performed 20 training runs
+of 40,000 episodes (2 million time steps in total). After each
+epoch of Ne = 10 episodes, a full test was performed on
+ˆfpro by running each c ∈T for 50 times. For CPPS[4], we
+provide the expected optimal value based on antagonists that
+prevent other agents from entering the CPPS by blocking the
+entry path as shown in Fig. 3a and 3b.
+The test performance for R′
+ant ∈{0, 1
+2} of RADAR and its
+ablations is shown in Fig. 4. In CPPS[4], all RADAR vari-
+ants except RADAR ( N−1
+N ) outperform RAT. In CPPS[16],
+RAT outperforms RADAR (0), when R′
+ant > 0. RADAR
+is competitive or superior to RADAR ( 1
+2) and outperforms
+RADAR (0), when R′
+ant > 0 or when N = 16. RADAR
+( N−1
+N ) improves fastest in all settings but its performance
+gradually decreases after reaching a peak.
+The cooperation performance of RADAR, IAC, COMA,
+AC-QMIX, and M3DDPG is shown in Fig. 5. COMA, AC-
+11313
+
+Figure 5: Cooperation performance for RADAR and state-
+of-the-art MARL. Shaded areas show the 95 % conﬁdence
+interval. The legend at the top applies across all plots.
+QMIX, and IAC achieve the best cooperation performance
+except in CPPS[16], where RADAR performs best. How-
+ever, RADAR is only slightly outperformed by the coopera-
+tive MARL approaches in PP[7,4], PP[10,8], and CPPS[4].
+M3DDPG performs worst in all settings.
+The worst case performance of RADAR, IAC, COMA,
+AC-QMIX, and M3DDPG is shown in Fig. 6. RADAR
+clearly achieves the best worst case performance in all set-
+tings except in PP[7,4], where COMA, AC-QMIX, and IAC
+are competitive. M3DDPG performs worst in all settings.
+Discussion
+We presented RADAR, an adversarial value decomposition
+scheme for resilient MAS. RADAR trains competing teams
+of protagonist and antagonist agents of varying size to im-
+prove resilience against arbitrary agent changes.
+According to our ablation study, the value decomposi-
+tion scheme offers a signiﬁcant advantage over independent
+learning: RADAR and most ﬁxed antagonist-ratio variants
+clearly outperform RAT (Ψ = IAC), because RAT (Ψ =
+IAC) lacks a credit assignment mechanism, which is impor-
+tant to learn coordinated protagonist and antagonist policies.
+Fig. 4 indicates that training with ﬁxed antagonist-ratios
+strongly depends on the concrete setting and must be tuned,
+e.g., in CPPS[4], RADAR (0) outperforms RADAR ( 1
+2) on
+average but in CPPS[16], RADAR ( 1
+2) is clearly superior
+(although the nature of tasks is the same in both CPPS in-
+stances). RADAR does not require such tuning and performs
+at least second best in all CPPS instances.
+RADAR is able to achieve competitive cooperation per-
+formance compared to state-of-the-art MARL like COMA,
+AC-QMIX, and IAC. We assume that the additional train-
+ing of randomly integrated antagonists causes some over-
+head, which sacriﬁces a little performance regarding the
+special case of cooperative test agents. However, RADAR
+is able to achieve superior worst case performance w.r.t.
+arbitrary agent changes including failure scenarios. Fig. 6
+Figure 6: Worst case performance for RADAR and state-
+of-the-art MARL. Shaded areas show the 95 % conﬁdence
+interval. The legend at the top applies across all plots.
+indicates that RADAR is more resilient than cooperative
+state-of-the-art MARL w.r.t. the size of the MAS, since
+RADAR achieves signiﬁcantly better worst case perfor-
+mance in PP[10,8] and CPPS[16] compared to PP[7,4] and
+CPPS[4] respectively. In contrast to RADAR, cooperative
+state-of-the-art MARL approaches achieve especially poor
+worst case performance in CPPS[16] compared to CPPS[4],
+which contradicts our intuition that a MAS should be actu-
+ally more resilient when more agents are available (Tanen-
+baum and Van Steen 2007).
+Although RADAR ( N−1
+N ) and M3DDPG focus on ex-
+treme cases, they perform poorly in all settings, indicating
+that if a domain is too difﬁcult (or not solvable at all) for
+a single protagonist, such specializations are not sufﬁcient
+for learning resilient behavior. Despite of RADAR ( N−1
+N )
+improving fastest in the beginning (Fig. 4), the antagonists
+eventually learn to stall the single protagonist in the CPPS,
+thus leading to the performance decrease. M3DDPG models
+adversarial behavior within its ˆQ objective, leading to very
+sparse training signal right at the beginning of training.
+Signiﬁcant advantages of RADAR are its algorithmic sim-
+plicity and its ﬂexibility w.r.t. to team sizes. Since it uses
+uniform sampling and linear value decomposition, it does
+not introduce any new hyperparameters to be tuned (the in-
+tegrated antagonists have exactly the same hyperparameters
+as the protagonists), thus being less sensitive than state-of-
+the-art MARL, when facing a variety of adversarial settings.
+Like other CTDE approaches, RADAR scales linearly in ex-
+pectation and worst case, thus offering a feasible and easy
+extension to existing RL approaches w.r.t. resilience.
+For future work, we want to extend RADAR to non-linear
+value decomposition like QMIX and use adaptive sampling
+mechanisms for Rant to further improve performance and
+resilience. We also aim to provide adequate agent test sets
+for other established domains similarly to our experiments,
+which we regard as an important step towards consistent and
+fair evaluation of future cooperative MARL approaches.
+11314
+
+Acknowledgments
+We would like to thank Cornel Klein, Horst Sauer, Reiner
+Schmid, and Jan Wieghardt from Siemens AG for helpful
+discussions on this project.
+References
+Badia, A. P.; Piot, B.; Kapturowski, S.; Sprechmann, P.;
+Vitvitskyi, A.; Guo, Z. D.; and Blundell, C. 2020. Agent57:
+Outperforming the Atari Human Benchmark. In III, H. D.;
+and Singh, A., eds., Proceedings of the 37th International
+Conference on Machine Learning, volume 119 of Proceed-
+ings of Machine Learning Research, 507–517. PMLR.
+Bus¸oniu, L.; Babuˇska, R.; and De Schutter, B. 2010. Multi-
+Agent Reinforcement Learning: An Overview. In Innova-
+tions in Multi-Agent Systems and Applications-1, 183–221.
+Springer.
+Crandall, J. W.; and Goodrich, M. A. 2005.
+Learn-
+ing to Compete, Compromise, and Cooperate in Repeated
+General-Sum Games. In Proceedings of the 22nd Interna-
+tional Conference on Machine Learning, 161–168.
+Foerster, J.; Farquhar, G.; Afouras, T.; Nardelli, N.; and
+Whiteson, S. 2018. Counterfactual Multi-Agent Policy Gra-
+dients. Proceedings of the AAAI Conference on Artiﬁcial
+Intelligence 32(1).
+Gabor, T.; Sedlmeier, A.; Kiermeier, M.; Phan, T.; Hen-
+rich, M.; Pichlmair, M.; Kempter, B.; Klein, C.; Sauer, H.;
+Schmid, R.; and Wieghardt, J. 2019. Scenario Co-evolution
+for Reinforcement Learning on a Grid World Smart Factory
+Domain. In Proceedings of the Genetic and Evolutionary
+Computation Conference, GECCO ’19, 898–906. Associa-
+tion for Computing Machinery.
+Gleave, A.; Dennis, M.; Kant, N.; Wild, C.; Levine, S.;
+and Russell, S. 2019. Adversarial Policies: Attacking Deep
+Reinforcement Learning.
+In International Conference on
+Learning Representations.
+Goodfellow, I.; Pouget-Abadie, J.; Mirza, M.; Xu, B.;
+Warde-Farley, D.; Ozair, S.; Courville, A.; and Bengio, Y.
+2014.
+Generative Adversarial Nets.
+In Ghahramani, Z.;
+Welling, M.; Cortes, C.; Lawrence, N.; and Weinberger,
+K. Q., eds., Advances in Neural Information Processing Sys-
+tems, volume 27, 2672–2680. Curran Associates, Inc.
+Gupta, J. K.; Egorov, M.; and Kochenderfer, M. 2017. Co-
+operative Multi-Agent Control using Deep Reinforcement
+Learning. In Autonomous Agents and Multiagent Systems,
+66–83. Springer.
+Jordan, S.; Chandak, Y.; Cohen, D.; Zhang, M.; and Thomas,
+P. 2020.
+Evaluating the Performance of Reinforcement
+Learning Algorithms. In III, H. D.; and Singh, A., eds., Pro-
+ceedings of the 37th International Conference on Machine
+Learning, volume 119 of Proceedings of Machine Learning
+Research, 4962–4973. PMLR.
+Laurent, G. J.; Matignon, L.; Fort-Piat, L.; et al. 2011. The
+world of independent learners is not Markovian. Interna-
+tional Journal of Knowledge-based and Intelligent Engi-
+neering Systems 15(1): 55–64.
+Leibo, J. Z.; Zambaldi, V.; Lanctot, M.; Marecki, J.; and
+Graepel, T. 2017. Multi-Agent Reinforcement Learning in
+Sequential Social Dilemmas.
+In Proceedings of the 16th
+Conference on Autonomous Agents and Multiagent Systems,
+AAMAS ’17, 464–473. International Foundation for Au-
+tonomous Agents and Multiagent Systems.
+Li, S.; Wu, Y.; Cui, X.; Dong, H.; Fang, F.; and Russell,
+S. 2019. Robust Multi-Agent Reinforcement Learning via
+Minimax Deep Deterministic Policy Gradient. In Proceed-
+ings of the AAAI Conference on Artiﬁcial Intelligence, vol-
+ume 33, 4213–4220.
+Littman, M. L. 1994. Markov Games as a Framework for
+Multi-Agent Reinforcement Learning. In Machine Learning
+Proceedings 1994, 157–163. Elsevier.
+Lowe, R.; Wu, Y.; Tamar, A.; Harb, J.; Abbeel, P.; and
+Mordatch, I. 2017.
+Multi-Agent Actor-Critic for Mixed
+Cooperative-Competitive Environments.
+In Advances in
+Neural Information Processing Systems, 6379–6390.
+Mnih, V.; Kavukcuoglu, K.; Silver, D.; Rusu, A. A.; Veness,
+J.; Bellemare, M. G.; Graves, A.; Riedmiller, M.; Fidjeland,
+A. K.; Ostrovski, G.; et al. 2015.
+Human-Level Control
+through Deep Reinforcement Learning. Nature 518(7540):
+529–533.
+Morimoto, J.; and Doya, K. 2001. Robust Reinforcement
+Learning. In Advances in Neural Information Processing
+Systems, 1061–1067.
+Panait, L.; and Luke, S. 2005.
+Cooperative Multi-Agent
+Learning: The State of the Art.
+Autonomous Agents and
+Multiagent Systems 11(3): 387–434.
+Phan, T.; Belzner, L.; Gabor, T.; and Schmid, K. 2018.
+Leveraging Statistical Multi-Agent Online Planning with
+Emergent Value Function Approximation. In Proceedings
+of the 17th International Conference on Autonomous Agents
+and Multiagent Systems, AAMAS ’18, 730–738. Interna-
+tional Foundation for Autonomous Agents and Multiagent
+Systems.
+Phan, T.; Gabor, T.; Sedlmeier, A.; Ritz, F.; Kempter, B.;
+Klein, C.; Sauer, H.; Schmid, R.; Wieghardt, J.; Zeller, M.;
+et al. 2020. Learning and Testing Resilience in Coopera-
+tive Multi-Agent Systems. In Proceedings of the 19th In-
+ternational Conference on Autonomous Agents and Multia-
+gent Systems, AAMAS ’20, 1055–1063. International Foun-
+dation for Autonomous Agents and Multiagent Systems.
+Pinto, L.; Davidson, J.; Sukthankar, R.; and Gupta, A. 2017.
+Robust Adversarial Reinforcement Learning. In Precup, D.;
+and Teh, Y. W., eds., Proceedings of the 34th International
+Conference on Machine Learning, volume 70 of Proceed-
+ings of Machine Learning Research, 2817–2826. PMLR.
+Powers, R.; Shoham, Y.; and Vu, T. 2007. A General Crite-
+rion and an Algorithmic Framework for Learning in Multi-
+Agent Systems. Machine Learning 67(1-2): 45–76.
+Rajeswaran, A.; Ghotra, S.; Ravindran, B.; and Levine, S.
+2017.
+EPOpt: Learning Robust Neural Network Policies
+using Model Ensembles.
+In International Conference on
+Learning Representations.
+11315
+
+Rashid, T.; Samvelyan, M.; de Witt, C. S.; Farquhar, G.; Fo-
+erster, J.; and Whiteson, S. 2018. QMIX: Monotonic Value
+Function Factorisation for Deep Multi-Agent Reinforcement
+Learning. In Dy, J.; and Krause, A., eds., Proceedings of
+the 35th International Conference on Machine Learning,
+volume 80 of Proceedings of Machine Learning Research,
+4295–4304. PMLR.
+Samuel, A. L. 1959. Some Studies in Machine Learning
+using the Game of Checkers. IBM Journal of research and
+development 3(3): 210–229.
+Silver, D.; Huang, A.; Maddison, C. J.; Guez, A.; Sifre, L.;
+Van Den Driessche, G.; Schrittwieser, J.; Antonoglou, I.;
+Panneershelvam, V.; Lanctot, M.; et al. 2016. Mastering the
+Game of Go with Deep Neural Networks and Tree Search.
+Nature 529(7587): 484–489.
+Son, K.; Kim, D.; Kang, W. J.; Hostallero, D. E.; and Yi,
+Y. 2019. QTRAN: Learning to Factorize with Transforma-
+tion for Cooperative Multi-Agent Reinforcement Learning.
+In Chaudhuri, K.; and Salakhutdinov, R., eds., Proceedings
+of the 36th International Conference on Machine Learning,
+volume 97 of Proceedings of Machine Learning Research,
+5887–5896. PMLR.
+Stone, P.; and Veloso, M. 2000.
+Multiagent Systems: A
+Survey from a Machine Learning Perspective. Autonomous
+Robots 8(3): 345–383.
+Sunehag, P.; Lever, G.; Gruslys, A.; Czarnecki, W. M.; Zam-
+baldi, V.; Jaderberg, M.; Lanctot, M.; Sonnerat, N.; Leibo,
+J. Z.; Tuyls, K.; et al. 2018. Value-Decomposition Networks
+for Cooperative Multi-Agent Learning based on Team Re-
+ward. In Proceedings of the 17th International Conference
+on Autonomous Agents and Multiagent Systems (Extended
+Abstract), AAMAS ’18, 2085–2087. International Founda-
+tion for Autonomous Agents and Multiagent Systems.
+Sutton, R. S.; McAllester, D. A.; Singh, S. P.; and Mansour,
+Y. 2000. Policy Gradient Methods for Reinforcement Learn-
+ing with Function Approximation. In Solla, S.; Leen, T.; and
+M¨uller, K., eds., Advances in Neural Information Processing
+Systems, volume 12, 1057–1063. MIT Press.
+Tan, M. 1993.
+Multi-Agent Reinforcement Learning: In-
+dependent versus Cooperative Agents.
+In Proceedings of
+the Tenth International Conference on International Con-
+ference on Machine Learning, 330–337. Morgan Kaufmann
+Publishers Inc.
+Tanenbaum, A. S.; and Van Steen, M. 2007.
+Distributed
+Systems: Principles and Paradigms. Prentice-Hall.
+Tesauro, G. 1995. Temporal Difference Learning and TD-
+Gammon. Communications of the ACM 38(3): 58–69.
+Uesato, J.; Kumar, A.; Szepesvari, C.; Erez, T.; Ruderman,
+A.; Anderson, K.; Heess, N.; Kohli, P.; et al. 2019. Rigor-
+ous Agent Evaluation: An Adversarial Approach to Uncover
+Catastrophic Failures. International Conference on Learn-
+ing Representations .
+Wang, R.; Lehman, J.; Clune, J.; and Stanley, K. O.
+2019.
+POET: Open-Ended Coevolution of Environments
+and their Optimized Solutions. In Proceedings of the Ge-
+netic and Evolutionary Computation Conference, GECCO
+’19, 142–151. Association for Computing Machinery.
+Watkins, C. J.; and Dayan, P. 1992. Q-Learning. Machine
+Learning 8(3-4): 279–292.
+11316

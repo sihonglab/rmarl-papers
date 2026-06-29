@@ -1,0 +1,3749 @@
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+Sunwoo Lee 1 Jaebak Hwang 1 Yonghyeon Jo 1 Seungyul Han 1∗
+Abstract
+Traditional robust methods in multi-agent re-
+inforcement learning (MARL) often struggle
+against coordinated adversarial attacks in co-
+operative scenarios. To address this limitation,
+we propose the Wolfpack Adversarial Attack
+framework, inspired by wolf hunting strategies,
+which targets an initial agent and its assisting
+agents to disrupt cooperation. Additionally, we
+introduce the Wolfpack-Adversarial Learning for
+MARL (WALL) framework, which trains ro-
+bust MARL policies to defend against the pro-
+posed Wolfpack attack by fostering systemwide
+collaboration. Experimental results underscore
+the devastating impact of the Wolfpack attack
+and the significant robustness improvements
+achieved by WALL. Our code is available at
+https://github.com/sunwoolee0504/WALL.
+1. Introduction
+Multi-agent Reinforcement Learning (MARL) has gained
+attention for solving complex problems requiring agent co-
+operation (Oroojlooy & Hajinezhad, 2023) and competition,
+such as drone control (Yun et al., 2022), autonomous nav-
+igation (Chen et al., 2023), robotics (Orr & Dutta, 2023),
+and energy management (Jendoubi & Bouffard, 2023). To
+handle partially observable environments, the Centralized
+Training and Decentralized Execution (CTDE) framework
+(Oliehoek et al., 2008) trains a global value function cen-
+trally while agents execute policies based on local obser-
+vations. Notable credit-assignment methods in CTDE in-
+clude Value Decomposition Networks (VDN) (Sunehag
+et al., 2017), QMIX (Rashid et al., 2020), which satisfies
+the Individual-Global-Max (IGM) condition ensuring that
+optimal joint actions align with positive gradients in global
+and individual value functions, and QPLEX (Wang et al.,
+2020b), which encodes IGM into its architecture. However,
+1Graduate School of Artificial Intelligence, UNIST, Ul-
+san, South Korea. Correspondence to: Seungyul Han <sy-
+han@unist.ac.kr>.
+Proceedings of the 42 nd International Conference on Machine
+Learning, Vancouver, Canada. PMLR 267, 2025. Copyright 2025
+by the author(s).
+CTDE methods face challenges from exploration inefficien-
+cies (Mahajan et al., 2019; Jo et al., 2024) and mismatches
+between training and deployment environments, leading
+to unexpected agent behaviors and degraded performance
+(Moos et al., 2022; Guo et al., 2022). Thus, enhancing the
+robustness of CTDE remains a critical research focus.
+To improve learning robustness, single-agent RL methods
+have explored strategies based on game theory (Yu et al.,
+2021), such as max-min approaches and adversarial learning
+(Goodfellow et al., 2014; Huang et al., 2017; Pattanaik et al.,
+2017; Pinto et al., 2017). In multi-agent systems, simulta-
+neous agent interactions introduce additional uncertainties
+(Zhang et al., 2021b). To address this, methods like per-
+turbing local observations (Lin et al., 2020), training with
+adversarial policies for Nash equilibrium (Li et al., 2023a),
+adversarial value decomposition (Phan et al., 2021), and
+attacking inter-agent communication (Xue et al., 2021) have
+been proposed. However, these approaches often target a
+single agent per attack, overlooking interdependencies in
+cooperative MARL, making them vulnerable to scenarios
+where multiple agents are attacked simultaneously.
+To overcome the vulnerabilities posed by coordinated ad-
+versarial attacks in MARL, we propose the Wolfpack adver-
+sarial attack framework, inspired by wolf hunting strategies.
+This approach disrupts inter-agent cooperation by target-
+ing a single agent and subsequently attacking the group
+of agents assisting the initially targeted agent, resulting in
+more devastating impacts. Experimental results reveal that
+traditional robust MARL methods are highly susceptible
+to such coordinated attacks, underscoring the need for new
+defense mechanisms. In response, we also introduce the
+Wolfpack-Adversarial Learning for MARL (WALL) frame-
+work, a robust policy training approach specifically designed
+to counter the Wolfpack Adversarial Attack. By fostering
+system-wide collaboration and avoiding reliance on spe-
+cific agent subsets, WALL enables agents to defend effec-
+tively against coordinated attacks. Experimental evaluations
+demonstrate that WALL significantly improves robustness
+compared to existing methods while maintaining high per-
+formance under a wide range of adversarial attack scenarios.
+The key contributions of this paper in constructing the Wolf-
+pack Adversarial Attack are summarized as follows:
+• A novel MARL attack strategy, Wolfpack Adversarial
+Attack, is introduced, targeting multiple agents simul-
+1
+arXiv:2502.02844v3  [cs.LG]  18 Jun 2025
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+taneously to foster stronger and more resilient agent
+cooperation during policy training.
+• The follow-up agent group selection method is pro-
+posed to target agents with significant behavioral ad-
+justments to an initial attack, enabling subsequent se-
+quential attacks and amplifying their overall impact.
+• A planner-based attacking step selector predicts fu-
+ture Q-value reductions caused by the attack, enabling
+the selection of critical time steps to maximize impact
+and improve learning robustness.
+2. Related Works
+Robust MARL Strategies: Recent research has focused on
+robust MARL to address unexpected changes in multi-agent
+environments. Max-min optimization (Chinchuluun et al.,
+2008; Han & Sung, 2021) has been applied to traditional
+MARL algorithms for robust learning (Li et al., 2019; Wang
+et al., 2022). Robust Nash equilibrium has been redefined to
+better suit multi-agent systems (Zhang et al., 2020b; Li et al.,
+2023a). Regularization-based approaches have also been
+explored to improve MARL robustness (Lin et al., 2020;
+Li et al., 2023b; Wang et al., 2023; Bukharin et al., 2024),
+alongside distributional reinforcement learning methods to
+manage uncertainties (Li et al., 2020; Xu et al., 2021; Du
+et al., 2024; Geng et al., 2024).
+Adversarial Attacks for Resilient RL: To strengthen RL,
+numerous studies have explored adversarial learning to train
+policies under worst-case scenarios (Pattanaik et al., 2017;
+Tessler et al., 2019; Pinto et al., 2017; Chae et al., 2022).
+These attacks introduce perturbations to various MDP com-
+ponents, including state (Zhang et al., 2020a; 2021a; Everett
+et al., 2021; Li et al., 2023c; Qiaoben et al., 2024), action
+(Tan et al., 2020; Lee et al., 2021; Liu et al., 2024), and
+reward (Wang et al., 2020a; Zhang et al., 2020c; Rakhsha
+et al., 2021; Xu et al., 2022; Cai et al., 2023; Bouhaddi &
+Adi, 2023; Xu et al., 2024; Bouhaddi & Adi, 2024). Adver-
+sarial attacks have recently been extended to multi-agent
+setups, introducing uncertainties to state or observation (Han
+et al., 2022; He et al., 2023; Zhang et al., 2023; Zhou et al.,
+2023), actions (Yuan et al., 2023), and rewards (Kardes¸ et al.,
+2011). Further research has applied adversarial attacks to
+value decomposition frameworks (Phan et al., 2021), se-
+lected critical agents for targeted attacks (Yuan et al., 2023;
+Zhou et al., 2024), and analyzed their effects on inter-agent
+communication (Xue et al., 2021; Tu et al., 2021; Sun et al.,
+2023; Yuan et al., 2024).
+Model-based Frameworks for Robust RL: Model-based
+methods have been extensively studied to enhance RL ro-
+bustness (Berkenkamp et al., 2017; Panaganti & Kalathil,
+2021; Curi et al., 2021; Clavier et al., 2023; Shi & Chi,
+2024; Ramesh et al., 2024), including adversarial extensions
+(Wang et al., 2020c; Kobayashi, 2024). Transition models
+have been leveraged to improve robustness (Mankowitz
+et al., 2019; Ye et al., 2024; Herremans et al., 2024), and
+offline setups have been explored for robust training (Rigter
+et al., 2022; Bhardwaj et al., 2024). In multi-agent systems,
+model-based approaches address challenges like construct-
+ing worst-case sets (Shi et al., 2024) and managing transition
+kernel uncertainty (He et al., 2022).
+3. Background
+3.1. Dec-POMDP and Value-based CTDE Setup
+A fully cooperative multi-agent environment is modeled as
+a decentralized partially observable Markov decision pro-
+cess (Dec-POMDP) (Oliehoek et al., 2016), defined by the
+tuple M = ⟨N, S, A, P, Ω, O, R, γ⟩. N = 1, . . . , n is the
+set of agents, S the global state space, A = A1 × · · · × An
+the joint action space, P the state transition probabil-
+ity, Ωthe observation space, R the reward function, and
+γ ∈[0, 1) the discount factor. At time t, each agent i ob-
+serves oi
+t = O(st, i) ∈Ωand takes action ai
+t ∈Ai based
+on its individual policy πi(·|τ i
+t), where τ i
+t is the agent’s
+trajectory up to t. The joint action at = ⟨a1
+t, . . . , an
+t ⟩sam-
+pled from the joint policy π := ⟨π1, · · · , πn⟩leads to the
+next state st+1 ∼P(·|st, at) and reward rt := R(st, at).
+MARL aims to find the optimal joint policy that maxi-
+mizes P∞
+t=0 γtrt. As noted, this paper adopts the central-
+ized training with decentralized execution (CTDE) setup,
+where the joint value Qtot(st, at) is learned using temporal-
+difference (TD) learning. Through credit assignment, indi-
+vidual value functions Qi(τ i
+t, ai
+t) are learned, guiding indi-
+vidual policies πi to select actions that maximize Qi, i.e.,
+πi := arg maxai
+t∈Ai Qi(τ i
+t, ·).
+3.2. Robust MARL with Adversarial Attack Policy
+Among various methods for robust learning in MARL, Yuan
+et al. (2023) defined an adversarial attack policy πadv and
+implemented robust MARL by training multi-agent policies
+to defend against attacks executed by πadv : S × A × N →
+A. A cooperative MARL environment with an adversarial
+policy πadv can be described as a Limited Policy Adversary
+Dec-POMDP (LPA-Dec-POMDP) ˜
+M, defined as follows:
+Definition 3.1 (Limited Policy Adversary Dec-POMDP).
+Given a Dec-POMDP M and a fixed adversarial policy
+πadv, we define a Limited Policy Adversary Dec-POMDP
+(LPA-Dec-POMDP)
+˜
+M = ⟨N, S, A, P, K, Ω, O, R, γ⟩,
+where
+K
+is
+the
+maximum
+number
+of
+attacks,
+πadv(·|st, at, kt) executes joint action ˜at to disrupt
+the original action at chosen by π, and kt ≤K indicates
+the number of remaining attacks.
+Here, if πadv selects an attack action ˜at different from the
+original action at, the remaining number of attacks kt de-
+2
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+𝒕+ 𝟏
+Help(Guard)
+Help(Heal)
+𝒕
+Initial 
+Attack
+𝒕
+(b)
+(a)
+Wolfpack 
+Attack
+𝒕→𝒕+ 𝟏
+(c)
+Wolfpack 
+Attack
+Responding (follow-up) Agents
+Initial Agent
+Original Action
+Figure 1. Visualization of Wolfpack attack strategy during combat in the StarCraft II environment: (a) The initial agent is attacked,
+disrupting its original action (b) Responding (follow-up) agents to help the initially attacked agent and (c) Wolfpack adversarial attack that
+disrupts help actions of follow-up agents.
+creases by 1. Once kt reaches 0, no further attacks can be
+performed. In this framework, Yuan et al. (2023) also demon-
+strated that the LPA-Dec-POMDP can be represented as an-
+other Dec-POMDP induced by πadv, with the convergence
+of the optimal policy π∗under ˜
+M guaranteed. In particular,
+it considers an adversarial attack targeting a chosen agent i
+by minimizing its individual value function Qi, as proposed
+by (Pattanaik et al., 2017), i.e., ˜ai
+t = arg mina∈Ai Qi(τ i
+t, a).
+Additionally, to enhance the attack’s effectiveness, an evolu-
+tionary generation of attacker (EGA) approach is proposed,
+which combines multiple adversarial policies.
+4. Methodology
+4.1. Motivation of Wolfpack Attack Strategy
+Existing adversarial attackers typically target only a single
+agent per attack, without coordination or relationships be-
+tween successive attacks. In a cooperative MARL setup,
+such simplistic attacks enable non-targeted agents to learn
+effective policies to counteract the attack. However, we
+observe that policies trained under these conditions are vul-
+nerable to coordinated attacks. As illustrated in Fig. 1(a), a
+single agent is attacked at time t. In Fig. 1(b), at the next
+step t + 1, responding agents adjust their actions, such as
+healing or moving to guard, to protect the initially attacked
+agent. In contrast, Fig. 1(c) demonstrates a coordinated at-
+tack strategy that targets the agents responding to the initial
+attack. Such coordinated attacks render the learned policy
+ineffective, preventing it from countering the attacks en-
+tirely. This highlights that coordinated attacks are far more
+detrimental than existing attack methods, and current robust
+policies fail to defend effectively against them.
+As depicted in Fig. 1(c), targeting agents that respond to
+an initial attack aligns with the Wolfpack attack strategy, a
+tactic widely employed in traditional military operations, as
+discussed in Section 1. To adapt this concept to a cooper-
+ative multi-agent setup, we define a Wolfpack adversarial
+attack as a coordinated strategy where one agent is attacked
+initially, followed by targeting the group of follow-up agents
+that respond to defend against the initial attack, as shown
+in Fig. 1(c). Leveraging this approach, we aim to develop
+robust policies capable of effectively countering Wolfpack
+adversarial attack, thereby significantly enhancing the over-
+all resilience of the learning process.
+4.2. Wolfpack Adversarial Attack
+In this section, we formally propose the Wolfpack adver-
+sarial attack, as introduced in the previous sections. The
+Wolfpack attack consists of two components: initial attacks,
+where a single agent is targeted at a specific time step tinit,
+and follow-up group attacks, where the group of agents re-
+sponding to the initial attack is selected and targeted over
+the subsequent steps tinit + 1, · · · , tinit + tWP. Over the
+course of an episode, a maximum of KWP Wolfpack attacks
+can be executed. Consequently, the total number of attack
+steps is given by K = KWP × (tWP + 1). The Wolfpack
+adversarial attacker πWP
+adv can then be defined as follows:
+Definition 4.1 (Wolfpack Adversarial Attacker). A Wolf-
+pack adversarial attacker πWP
+adv
+:
+S × A × N
+→
+A is defined as ˜at
+=
+πWP
+adv (st, at, kt), where ˜ai
+t
+=
+arg minai
+t∈Ai Qtot(st, ai
+t, a−i
+t ) for all i ∈Nt,attack, and
+˜ai
+t = ai
+t otherwise. Here, a−i
+t
+represents the joint actions
+of all agents excluding the i-th agent, and Nt,attack denotes
+the set of agents targeted for adversarial attack, defined as
+Nt,attack =
+
+
+
+
+
+
+
+
+
+∅
+if kt = 0,
+{i}
+else if t = tinit, i ∼Unif(N),
+Nfollow−up
+else if t = tinit + 1, · · · , tinit + tWP,
+∅
+otherwise,
+where Unif(·) is the Uniform distribution, Nfollow−up :=
+{i1, · · · , im} ⊂N is the group of agents selected for
+follow-up attack, and m is the number of follow-up agents.
+Here, note that kt decreases by 1 for every attack step such
+that ˜at ̸= at, as in the ordinary adversarial attack policy, and
+the total value function Qtot is used for the attack instead
+3
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+𝑺𝒐𝒇𝒕(𝑸𝒊)
+𝑺𝒐𝒇𝒕(෩𝑸𝒊)
+𝓐𝟐
+𝓐𝟑
+𝓐𝟏
+Heal
+Guard
+𝑫𝑲𝑳(𝑺𝒐𝒇𝒕(𝑸𝒊)||𝑺𝒐𝒇𝒕(෩𝑸𝒊))
+𝒕
+𝓝𝒇𝒐𝒍𝒍𝒐𝒘−𝒖𝒑
+= {𝟏, 𝟑}
+Guard
+𝟏
+𝟐
+𝟑
+Heal
+𝒊= {𝟏, 𝟐, 𝟑, 𝟒}
+𝟏
+𝟐
+𝟑
+𝟒
+Figure 2. Visualization of follow-up agent group selection method:
+Agent 4 is initially attacked, and the m agents exhibiting the largest
+changes in Qi are selected from {1, 2, 3} (m = 2).
+of Qi. The proposed Wolfpack adversarial attacker πWP
+adv is
+a special case of the adversarial policy defined in Definition
+3.1. Consequently, the proposed attacker forms an LPA-Dec-
+POMDP ˜
+M induced by πWP
+adv , and as demonstrated in Yuan
+et al. (2023), the convergence of MARL within the LPA-
+Dec-POMDP can be guaranteed. The proposed Wolfpack
+attack involves two key issues: how to design the group of
+follow-up agents Nfollow−up and when to select tinit. The
+following sections address these aspects in detail.
+4.3. Follow-up Agent Group Selection Method
+In the Wolfpack adversarial attacker, we aim to identify the
+follow-up agent group Nfollow−up that actively responds to
+the initial attack πWP
+adv (stinit, atinit, ktinit) and target them
+in subsequent steps. To do this, we define the difference
+between the Q-functions from the original action and the
+initial attack at time t as:
+∆Qtot
+t
+= Qtot(st, at) −Qtot(st, ˜at),
+where ∆Qtot
+t
+≥0 for all t such that Nt,attack ̸= ∅, because
+˜at minimizes Qtot for the agent indices selected by πWP
+adv .
+Assuming the i-th agent is the target of the initial attack,
+updating Qtot based on ∆Qtot
+tinit adjusts each agent’s indi-
+vidual value function Qj to increase Qtot for all j ̸= i ∈N,
+in accordance with the credit assignment principle in CTDE
+algorithms (Sunehag et al., 2017; Rashid et al., 2020), as
+shown below:
+˜Qi(τ i
+tinit, ·) = Qi(τ i
+tinit, ·) −αlr
+∂∆Qtot
+tinit
+∂Qi(τ i
+tinit, a)
+
+a=˜atinit
+,
+(1)
+where αlr is the learning rate. As agents select actions based
+on Qj, changes in Qj indicate adjustments in their policies
+in response to the initial attack. Agents with the largest
+changes in Qj are identified as follow-up agents, while the
+i-th agent is excluded as it is already under attack and cannot
+respond immediately.
+To identify the follow-up agent group, the updated ˜Qj and
+original Qj are transformed into distributions using the Soft-
+max function Soft(). This transformation softens the de-
+terministic policy πj, which directly selects an action to
+⋯
+෡𝚫𝑸𝒕+𝑳−𝟏
+𝑾𝑷
+෡𝚫𝑸𝒕+𝟏
+𝑾𝑷
+෡𝚫𝑸𝒕
+𝑾𝑷
+ො𝒔𝒕+𝒕𝑾𝑷−𝟏 
+෥𝒂𝒕+𝒕𝑾𝑷−𝟏
+ෝ𝒐𝒕+𝒕𝑾𝑷−𝟏 
+ො𝒔𝒕+𝟏 ෝ𝒐𝒕+𝟏 ෥𝒂𝒕+𝟏
+Transformer
+⋯
+𝒔𝒕𝒐𝒕෥𝒂𝒕
+ො𝒔𝒕+𝟏 ෝ𝒐𝒕+𝟏 
+ො𝒔𝒕+𝟐 ෝ𝒐𝒕+𝟐 
+⋯
+ො𝒔𝒕+𝒕𝑾𝑷 
+ෝ𝒐𝒕+𝒕𝑾𝑷 
+෡𝚫𝑸𝒕
+𝑾𝑷
+Figure 3. Planning with Transformer
+maximize Qj, making distributional differences easier to
+compute. The follow-up agent group is determined by se-
+lecting the m agents that maximize the Kullback-Leibler
+(KL) divergence DKL between these distributions:
+Nfollow−up =
+arg max
+N ′⊂N ,|N ′|=m,j∈N ′,j̸=i
+X
+j
+DKL
+ Soft(Qj(τ j
+tinit, ·))||Soft( ˜Qj(τ j
+tinit, ·))
+
+.
+(2)
+Using the proposed method, the follow-up agent group is
+identified as the agents whose policy distributions expe-
+rience the most significant changes following the initial
+attack. Fig. 2 illustrates this process. After the initial at-
+tack, Q-differences are computed for the remaining agents
+1, 2, 3, and those with the largest changes in individual value
+functions are selected as the follow-up agent group. These
+agents are targeted over the next tWP time steps to prevent
+them from effectively responding. In Section 5, we analyze
+how the proposed method enhances attack criticalness by
+comparing it to naive selection methods based solely on
+observation distances.
+4.4. Planner-based Critical Attacking Step Selection
+In the proposed Wolfpack adversarial attacker πWP
+adv , the
+follow-up agent group is defined, leaving the task of de-
+termining the timing of initial attacks tinit, executed KWP
+times within an episode. While Random Step Selection in-
+volves choosing time steps randomly, existing methods show
+that selecting steps to minimize the rewards of the execu-
+tion policy π leads to more effective attacks and facilitates
+robust learning (Yuan et al., 2023). However, in coordinated
+attacks like Wolfpack, targeting steps that cause the greatest
+reduction in the Q-function value ∆QWP
+t
+ensures a more
+devastating and lasting impact on the agents’ ability to re-
+cover and respond. Thus, we propose selecting initial attack
+times based on the total reduction in ∆QWP
+t
+, defined as:
+∆QWP
+t
+=
+t+tWP
+X
+l=t
+∆Qtot
+l ,
+where the Wolfpack attack is performed from t (initial at-
+tack) to t + 1, · · · , t + tWP (follow-up attacks). Initial at-
+tack time steps tinit are chosen to maximize ∆QWP
+t
+, which
+4
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+Figure 4. Attacking step probabilites
+captures the total Q-value reduction caused by the attack
+over tWP + 1 steps, enhancing the criticalness of the attack.
+However, computing ∆QWP
+t
+for every time step is computa-
+tionally expensive as it requires generating attacked samples
+through interactions with the environment. To mitigate this,
+a stored buffer is utilized to plan trajectories of future states
+and observations for the attack.
+For planning, we employ a Transformer (Vaswani, 2017),
+commonly used in sequential learning, which leverages an
+attention mechanism for efficient learning. As shown in
+Fig. 3, the Transformer learns environment dynamics P
+using replay buffer trajectories to predict future states and
+observations (ˆst+1, ˆot+1, · · · , ˆst+tWP, ˆot+tWP), where ot
+represents the joint observation used to compute Qtot. Ac-
+tions ˜al = πWP
+adv (ˆsl, al, kl) for al ∼π are generated by
+πWP
+adv for l = t, · · · , t + tWP, with ˆst = st. Using the plan-
+ner, we estimate the Q-value reduction ˆ∆QWP
+t
+caused by
+the Wolfpack attack. For L time steps l = t, · · · , t + L −1,
+we compute future Q-differences ˆ∆QWP
+l
+and select tinit
+based on the initial attack probability Pt,attack:
+Pt,attack =
+n
+Soft
+
+ˆ∆QWP
+t
+/T, · · · , ˆ∆QWP
+t+L−1/T
+o
+1 ,
+(3)
+where xl indicates the l-th element of x, and T > 0 is the
+temperature. In this paper, we set L = 20 as it provides
+an appropriate attack period. After selecting KWP initial
+attacks, no further attacks are performed. Fig. 4 shows how
+step probabilities are distributed for different T values (T =
+0.1, 1, 10). At each time t, the planner predicts ˆ∆QWP
+t
+for t
+to t+L−1, forming soft initial attack probabilities. A larger
+T results in more uniform probabilities, while a smaller T
+increases the likelihood of targeting critical steps where
+ˆ∆QWP
+t
+is highest. These critical steps are selected with
+the highest probabilities for initial attacks. In Section 5,
+we analyze the effectiveness of this method in delivering
+more critical attacks compared to Random Step Selection
+and examine the impact of T on performance in practical
+ENV
+𝒔𝒕, 𝝉𝒕
+Attacking
+Step Selector
+෡𝚫𝑸𝒕
+𝑾𝑷
+෡𝚫𝑸𝒕+𝑳−𝟏
+𝑾𝑷
+⋯
+Policy
+𝒂𝒕
+෥𝒂𝒕:𝒕+𝑾𝑷
+Wolfpack Adversarial Attack
+𝓝𝒇𝒐𝒍𝒍𝒐𝒘−𝒖𝒑
+Follow-up Group Selection
+෥𝒂𝒕+𝟏:𝒕+𝑾𝑷
+𝒊
+Initial Attack
+෥𝒂𝒕
+𝒕𝒊𝒏𝒊𝒕~𝑷𝒕,𝒂𝒕𝒕𝒂𝒄𝒌
+𝒕= 𝒕𝒊𝒏𝒊𝒕
+Figure 5. Illustration of the proposed WALL framework
+environments. Since the proposed method involves planning
+at every evaluation, we also train a separate model to predict
+ˆ∆QWP
+t
+, significantly reducing computational complexity.
+Details of this approach and the Transformer training loss
+functions are provided in Appendix B.1.
+4.5. WALL: A Robust MARL Algorithm
+Similar to other robust MARL methods, we propose the
+Wolfpack-Adversarial Learning for MARL (WALL) frame-
+work, a robust policy designed to counter the Wolfpack
+attack by performing MARL on the LPA-Dec-POMDP ˜
+M
+with the Wolfpack attacker πWP
+adv . While the proposed Wolf-
+pack framework is broadly applicable to most CTDE algo-
+rithms, we primarily applied it to well-known value-based
+CTDE methods, including QMIX (Rashid et al., 2020),
+VDN (Sunehag et al., 2017), and QPLEX (Wang et al.,
+2020b). Detailed implementations, including loss functions
+for the planner Transformer and the value functions, are
+provided in Appendix B.2. The proposed WALL framework
+is illustrated in Fig. 5 and summarized in Algorithm 1.
+Algorithm 1 WALL framework
+1: Initialize: Value function Qtot, Planning Transformer
+2: for each training iteration do
+3:
+for each environment step t do
+4:
+Sample the action at: ai
+t ∼ϵ-greedy(Qi)
+5:
+Compute Pt,attack using Planner and sample tinit
+6:
+if t = tinit then
+7:
+Perform the initial attack: ˜at ∼πWP
+adv
+8:
+else if tinit + 1 ≤t ≤tinit + tWP then
+9:
+Select the follow-up agent group Nfollow−up
+10:
+Perform the follow-up attack: ˜at ∼πWP
+adv
+11:
+else
+12:
+Execute the original action at
+13:
+end if
+14:
+end for
+15:
+Update the Qtot using a CTDE algorithm
+16:
+Update the Planning Transformer
+17: end for
+5
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+predator
+prey
+obstacle
+(a)
+(b)
+(c)
+(d)
+Figure 6. MARL benchmarks used in our experiments: (a) PP 3/1 and (b) PP 6/2 in MPE, and (c) 8m and (d) MMM scenarios in SMAC.
+5. Experiments
+In this section, we evaluate the proposed methods on two
+standard benchmarks in MARL research: the Multi-Agent
+Particle Environment (MPE) (Lowe et al., 2017) and the
+StarCraft II Multi-Agent Challenge (SMAC) (Samvelyan
+et al., 2019), as illustrated in Fig. 6. Specifically, we com-
+pare: (1) the impact of the proposed Wolfpack adversarial at-
+tack against other adversarial attacks, and (2) the robustness
+of the WALL framework in defending against such attacks
+compared to other robust MARL methods. Also, an ablation
+study analyzes the effect of the proposed components and
+hyperparameters on robustness. All results are reported as
+the mean and standard deviation (shaded areas for graphs
+and ± values for tables) across 5 random seeds. Our code is
+available at https://github.com/sunwoolee0504/WALL.
+5.1. Environmental Setup
+The MPE environment provides a multi-agent setting where
+agents interact through simple physical dynamics. We con-
+duct experiments on three predator-prey (PP) scenarios
+with varying agent-to-target ratios: PP 3/1, PP 6/2, and
+PP 9/3. In these tasks, multiple predator agents must co-
+ordinate to capture one or more prey agents moving adver-
+sarially. The SMAC environment serves as a challenging
+benchmark requiring effective agent cooperation to defeat
+opponents. We evaluate the proposed method across six sce-
+narios: 2s3z, 3m, 3s vs 3z, 8m, MMM, and 1c3s5z. We
+perform parameter searches for the number of follow-up
+agents m, total Wolfpack attacks KWP, and attack duration
+tWP, using optimal settings for comparisons. To ensure re-
+alistic constraints, we set m to m <
+ n−1
+2
+
+, where n is
+the maximum number of allied units. We provide details on
+environment setups and experimental configurations, includ-
+ing hyperparameter settings, in Appendices A and C. All
+MARL methods are evaluated on the QMIX baseline, with
+comparison for other CTDE baselines in Appendix E.1.
+Adversarial Attacker Baselines: To compare the severity
+of different attacks, we consider the following 4 scenarios:
+Natural, representing the case where no attacks are per-
+Method
+Scenario
+PP 3/1
+PP 6/2
+PP 9/3
+Mean
+Natural
+Vanilla QMIX
+165.4 ± 1.3
+538.8 ± 5.5
+661.9 ± 5.4
+455.4 ± 2.1
+RANDOM
+178.3 ± 1.0
+663.8 ± 4.0
+666.9 ± 3.5
+503.0 ± 1.3
+ROMANCE
+175.0 ± 0.7
+648.6 ± 3.9
+721.4 ± 7.5
+515.0 ± 1.4
+WALL (ours)
+202.9 ± 1.7
+675.0 ± 3.8
+802.5 ± 5.7
+560.1 ± 1.7
+Radom
+Attack
+Vanilla QMIX
+158.9 ± 2.1
+522.6 ± 2.4
+656.4 ± 3.0
+445.9 ± 2.0
+RANDOM
+170.1 ± 1.3
+638.7 ± 2.0
+657.9 ± 2.2
+488.9 ± 1.9
+ROMANCE
+173.4 ± 1.4
+624.2 ± 3.5
+701.7 ± 4.0
+499.7 ± 2.4
+WALL (ours)
+202.9 ± 1.7
+654.0 ± 2.1
+802.5 ± 2.1
+553.1 ± 1.7
+EGA
+Vanilla QMIX
+153.7 ± 2.0
+499.8 ± 0.6
+585.1 ± 1.7
+412.8 ± 1.4
+RANDOM
+157.6 ± 1.9
+604.6 ± 3.2
+589.7 ± 1.7
+450.6 ± 1.4
+ROMANCE
+167.1 ± 2.4
+605.1 ± 2.7
+594.4 ± 1.3
+455.5 ± 1.5
+WALL (ours)
+166.5 ± 1.7
+685.5 ± 5.0
+682.7 ± 0.8
+511.5 ± 1.4
+Wolfpack
+Adversarial
+Attack (ours)
+Vanilla QMIX
+135.7 ± 1.5
+415.6 ± 8.4
+551.7 ± 7.0
+367.6 ± 5.0
+RANDOM
+157.5 ± 1.4
+571.0 ± 9.0
+624.3 ± 7.7
+450.9 ± 8.4
+ROMANCE
+159.3 ± 1.5
+554.6 ± 9.9
+570.3 ± 7.5
+428.0 ± 9.4
+WALL (ours)
+171.5 ± 1.5
+599.0 ± 9.4
+698.1 ± 9.1
+489.5 ± 0.6
+Table 1. Average cumulative rewards of robust MARL policies
+under various attack settings in the MPE environments.
+formed; Random Attack, where time steps, agents, and
+actions are randomly selected to execute attacks; Evolution-
+ary Generation of Attackers (EGA) (Yuan et al., 2023),
+which combines multiple single-agent-targeted attackers
+generated from various seeds as described in Section 3;
+and the proposed Wolfpack Adversarial Attack. For a fair
+comparison, adversarial attackers are trained on independent
+seeds to execute unseen attacks.
+Robust MARL Baselines: To compare the severity of at-
+tack baselines and the robustness of policies trained under
+adversarial attack scenarios, we evaluate QMIX-trained poli-
+cies under the following attack conditions: Vanilla QMIX,
+assuming no adversarial attacks; RANDOM, using Ran-
+dom Attack; RARL (Pinto et al., 2017), where adversarial
+attackers tailor attacks to the learned policy; RAP (Vinit-
+sky et al., 2020), an extension of RARL that uniformly
+samples attackers to prevent overfitting and introduce diver-
+sity; ROMANCE (Yuan et al., 2023), an RAP extension
+countering diverse EGA attacks; ERNIE (Bukharin et al.,
+2024), enhancing robustness via adversarial regularization
+in observations and actions; and the proposed WALL. All
+robust MARL methods follow author-provided methodolo-
+gies and parameters. Further details on the MARL baselines
+are available in Appendix D. All policies are trained for 3M
+timesteps, starting from a pretrained Vanilla QMIX model
+trained for 1M timesteps.
+6
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+Method
+Scenario
+2s3z
+3m
+3s vs 3z
+8m
+MMM
+1c3s5z
+Mean
+Natural
+Vanilla QMIX
+98.0 ± 1.5
+99.2 ± 1.0
+99.2 ± 1.6
+97.6 ± 2.1
+99.2 ± 0.5
+99.1 ± 1.1
+98.7 ± 0.5
+RANDOM
+99.7 ± 0.5
+99.1 ± 1.2
+99.0 ± 0.8
+99.2 ± 1.0
+99.6 ± 0.6
+99.3 ± 1.0
+99.3 ± 0.2
+RARL
+97.8 ± 2.0
+93.8 ± 3.2
+93.1 ± 17.4
+95.5 ± 3.7
+90.6 ± 20.8
+84.0 ± 33.7
+92.5 ± 5.3
+RAP
+98.8 ± 1.3
+95.8 ± 4.4
+99.5 ± 1.0
+94.7 ± 6.7
+95.5 ± 12.1
+84.2 ± 16.9
+94.7 ± 2.6
+ERNIE
+98.2 ± 1.3
+99.2 ± 1.2
+99.8 ± 0.4
+99.8 ± 0.5
+98.5 ± 1.7
+99.2 ± 1.0
+99.1 ± 0.5
+ROMANCE
+96.4 ± 2.9
+93.6 ± 13.7
+99.7 ± 0.5
+99.6 ± 0.6
+96.4 ± 6.6
+96.5 ± 4.3
+97.0 ± 2.1
+WALL (ours)
+99.4 ± 0.6
+99.7 ± 0.8
+99.8 ± 0.7
+99.3 ± 0.6
+99.0 ± 2.1
+99.5 ± 0.6
+99.4 ± 0.5
+Random Attack
+Vanilla QMIX
+80.4 ± 3.2
+69.6 ± 10.4
+91.4 ± 4.6
+69.0 ± 7.1
+66.4 ± 20.5
+94.8 ± 3.4
+78.6 ± 2.2
+RANDOM
+90.8 ± 3.8
+76.4 ± 17.3
+97.4 ± 0.6
+80.2 ± 4.9
+95.4 ± 5.3
+96.0 ± 2.9
+89.4 ± 2.5
+RARL
+86.8 ± 4.0
+58.7 ± 15.4
+89.2 ± 20.4
+70.2 ± 5.8
+84.2 ± 5.4
+79.1 ± 22.2
+78.0 ± 7.2
+RAP
+91.0 ± 4.7
+69.2 ± 11.1
+97.8 ± 1.6
+85.0 ± 11.4
+86.7 ± 30.3
+86.6 ± 12.5
+83.0 ± 3.7
+ERNIE
+83.2 ± 6.9
+65.2 ± 4.9
+90.2 ± 9.2
+76.2 ± 11.8
+86.0 ± 18.2
+95.6 ± 3.2
+82.7 ± 5.2
+ROMANCE
+90.2 ± 2.3
+71.6 ± 10.8
+99.6 ± 0.6
+84.8 ± 5.0
+86.8 ± 16.3
+94.0 ± 1.9
+87.8 ± 2.4
+WALL (ours)
+94.6 ± 4.5
+87.4 ± 1.8
+99.8 ± 0.5
+95.8 ± 3.4
+99.4 ± 1.1
+98.6 ± 1.6
+95.9 ± 0.5
+EGA
+Vanilla QMIX
+54.0 ± 7.6
+66.5 ± 15.5
+72.4 ± 15.1
+71.2 ± 20.0
+70.6 ± 14
+83.0 ± 2.6
+69.6 ± 3.8
+RANDOM
+65.3 ± 3.3
+70.6 ± 38.6
+68.8 ± 23.5
+87.5 ± 5.5
+84.4 ± 3.1
+84.5 ± 2.9
+76.9 ± 5.4
+RARL
+62.6 ± 9.4
+74.4 ± 12.4
+88.4 ± 17.7
+78.4 ± 9.1
+83.4 ± 11.9
+80.1 ± 11.4
+77.9 ± 10.0
+RAP
+70.4 ± 13.0
+84.4 ± 7.3
+83.8 ± 15.8
+86.2 ± 3.8
+83.9 ± 16.4
+80.2 ± 5.4
+81.5 ± 4.3
+ERNIE
+52.4 ± 9.6
+60.4 ± 20.1
+83.2 ± 9.7
+81.6 ± 8.5
+85.0 ± 4.6
+93.6 ± 2.2
+76.0 ± 3.0
+ROMANCE
+79.8 ± 2.8
+85.8 ± 4.6
+91.0 ± 5.1
+90.9 ± 4.0
+87.8 ± 11.7
+89.6 ± 2.9
+87.5 ± 1.6
+WALL (ours)
+88.6 ± 5.4
+87.0 ± 5.4
+98.7 ± 0.8
+95.8 ± 2.9
+94.2 ± 3.8
+97.0 ± 1.3
+93.6 ± 1.5
+Wolfpack
+Adversarial
+Attack (ours)
+Vanilla QMIX
+39.8 ± 7.5
+31.0 ± 11.8
+84.4 ± 4.7
+11.4 ± 13.3
+10.4 ± 14.3
+59.2 ± 4.2
+39.4 ± 4.5
+RANDOM
+60.4 ± 27.4
+57.4 ± 30.5
+91.0 ± 3.1
+40.4 ± 14.8
+63.6 ± 28.7
+68.4 ± 19.6
+63.5 ± 3.1
+RARL
+52.4 ± 15.8
+31.1 ± 20.3
+90.0 ± 17.4
+14.2 ± 9.7
+51.1 ± 36.8
+75.9 ± 13.6
+52.5 ± 8.0
+RAP
+60.0 ± 10.3
+37.5 ± 10.4
+95.4 ± 3.9
+35.6 ± 14.4
+47.0 ± 36.9
+75.7 ± 26.1
+58.5 ± 5.7
+ERNIE
+43.2 ± 13.0
+35.4 ± 6.2
+94.8 ± 4.4
+26.4 ± 10.4
+26.2 ± 17.3
+77.0 ± 9.3
+50.5 ± 6.6
+ROMANCE
+62.4 ± 5.1
+34.8 ± 14.3
+98.6 ± 0.6
+28.6 ± 14.2
+48.8 ± 17.9
+81.2 ± 4.5
+59.1 ± 2.0
+WALL (ours)
+92.2 ± 3.7
+90.8 ± 4.9
+99.8 ± 0.5
+83.6 ± 5.0
+95.0 ± 4.5
+98.8 ± 1.6
+93.4 ± 1.1
+Table 2. Average test win rates of robust MARL policies under various attack settings in the SMAC environments.
+Figure 7. Learning curves of MARL methods for Wolfpack attack
+5.2. Performance Comparison in MPE and SMAC
+Table 1 presents the average cumulative rewards over the
+last 100 episodes under various attack settings in the MPE
+environments. The results show that the proposed Wolf-
+pack adversarial attack is significantly more disruptive than
+existing methods such as EGA and Random Attack. For
+example, for Vanilla QMIX, the average cumulative re-
+ward across the three predator-prey scenarios drops by
+455.4 −367.6 = 87.8 under the proposed Wolfpack at-
+tack, compared to 455.4 −412.8 = 42.6 under EGA and
+455.4 −445.9 = 9.5 under Random Attack. These results
+demonstrate that the Wolfpack attack imposes a much more
+severe degradation in policy performance. In contrast, the
+proposed WALL framework consistently achieves the best
+performance across all attack types. Notably, in the MPE
+scenarios, WALL outperforms all baselines not only under
+adversarial attacks but also in the natural setting, demonstrat-
+ing superior policy quality even without external threats.
+For SMAC, Table 2 presents the average win rates over
+the last 100 episodes of MARL policies under differ-
+ent attack baselines. The results show that the proposed
+Wolfpack adversarial attack is significantly more pow-
+erful than existing methods such as EGA and Random
+Attack. For example, EGA reduces the performance of
+Vanilla QMIX by 98.7 −69.6 = 29.1% and RANDOM
+by 99.3 −76.9 = 22.4% compared to the natural scenario.
+In contrast, the Wolfpack attack reduces Vanilla QMIX
+performance by 98.7 −39.4 = 59.3% and RANDOM by
+99.3 −63.5 = 35.8%, demonstrating its greater impact. In
+addition, the proposed WALL framework, which is trained
+to defend against the Wolfpack attack, outperforms other
+robust MARL methods under all attack types, showcasing
+its superior robustness. Notably, although RANDOM is
+trained specifically against Random Attack and ROMANCE
+against EGA, WALL achieves better performance against
+both attack types. These results highlight the effectiveness
+of WALL in enabling robust learning under diverse adversar-
+ial scenarios. Fig. 7 further illustrates this in the 8m and MMM
+environments, where performance differences with existing
+methods are most pronounced, showing the average win rate
+of each policy over training steps under unseen Wolfpack
+adversarial attacks. The results reveal that WALL not only
+achieves higher robustness but also adapts more quickly to
+attacks. Similar trends are observed for other CTDE algo-
+7
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+Follow-up Agents
+Initial Agent
+Original Action
+Other Ally Agents
+Figure 8. Attack comparison on 2s3z task in the SMAC: (a) QMIX/Natural, (b) QMIX/Wolfpack attack, and (c) WALL/Wolfpack attack
+rithms, such as VDN and QPLEX, as detailed in Appendix
+E.1, confirming the robustness of the proposed method.
+To support a more practical evaluation, we assess compu-
+tational complexity and general robustness under common
+perturbations in Appendix E.4 and Appendix E.5, respec-
+tively. WALL incurs about 30% higher training cost than
+ROMANCE but achieves substantially better performance
+due to its critical step selection. For robustness, we consider
+perturbations including Gaussian noise in observations and
+test-time parameter shifts such as reduced allied HP, under
+which WALL still outperforms existing baselines. These re-
+sults demonstrate the practical effectiveness of WALL under
+both computational and environmental challenges.
+5.3. Visualization of Wolfpack Adversarial Attack
+To analyze the superior performance of the Wolfpack attack,
+we provide a visualization of its execution in the SMAC en-
+vironment. Fig. 8 illustrates a scenario where the proposed
+step selector identifies t = 6 as a critical initial step to ini-
+tiate the attack. Prior to t = 6, all setups are assumed to
+follow the same trajectory. Fig. 8(a) shows Vanilla QMIX
+in a Natural scenario without attack, where our agents suc-
+cessfully defeat all enemy agents, achieving victory. Fig.
+8(b) demonstrates Vanilla QMIX under the Wolfpack adver-
+sarial attack, with follow-up agents targeted during t = 7
+to t = 9. This leaves other agents unable to effectively
+defend against the adversarial attack, resulting in defeat
+as all agents are killed by the enemy. Fig. 8(c) highlights
+a policy trained with the WALL framework. Despite the
+same follow-up agents are targeted during t = 7 to t = 9,
+WALL trains non-attacked agents to back up and protect
+the attacked agents, enabling ally agents to eliminate enemy
+agents and secure victory. This visualization demonstrates
+how the Wolfpack attack disrupts agent coordination and
+how the WALL framework robustly defends against such
+attacks. Visualizations of other SMAC tasks and detailed
+follow-up agent selection are provided in Appendix G.
+5.4. Ablation Study
+To evaluate the impact of each component and hyperpa-
+rameter in the proposed Wolfpack adversarial attack, we
+conduct an ablation study focusing on the following aspects:
+component evaluation, step selection temperature T, and
+the number of follow-up agents m. The ablation study is
+conducted in the 8m and MMM environments, where the per-
+formance differences are most pronounced. Additionally,
+more ablation studies on other hyperparameters, such as
+the total number of Wolfpack attacks KWP and the attack
+duration tWP, are provided in Appendix F.
+Component Evaluation: To evaluate the impact of each
+proposed component on attack severity and policy robust-
+ness, we consider five setups: ‘Default’, which uses all pro-
+posed components as designed; ‘Init. agent (min)’, where
+the initial target agent i is selected to minimize Qtot, i.e.,
+i = arg minj minaj Qtot(stinit, aj
+tinit, a−j
+tinit), instead of
+random selection; ‘Follow-up (L2)’, which selects m agents
+closest to the initial agent based on L2 distance instead of
+the proposed follow-up selection method; ‘Step (Random)’,
+which uses random step selection instead of the proposed
+step selection method, while keeping the same total number
+of attacks; and ‘Agents & Step (Random)’, which randomly
+selects both m follow-up agents and attack steps.
+For each setup, we train the Wolfpack adversarial attack
+and the corresponding robust policy of WALL. Fig. 9(a)
+shows the robustness of WALL trained under each setup
+when exposed to the default Wolfpack attack, while Fig. 9(b)
+illustrates how each attack setup degrades the performance
+of ‘Vanilla QMIX’ compared to its ‘Natural’ performance.
+Randomly selecting the initial agent yields more robust poli-
+cies than selecting the agent minimizing Qtot (‘Init. agent
+(min)’), as random selection introduces diversity in attack
+scenarios. While selecting the Qtot-minimizing agent may
+slightly enhance attack severity in cases like MMM, the added
+diversity from random selection generally improves robust-
+8
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+8m
+MMM
+50
+60
+70
+80
+90
+100
+Test Win Rate (%)
+(a) Robustness of WALL variations
+8m
+MMM
+50
+60
+70
+80
+90
+100
+Test Win Rate (%)
+Default
+Init. agent (min)
+Follow-up (L2)
+Step (Random)
+Agents & Step (Random)
+(b) Degradation of Vanilla QMIX under each attack setup
+Figure 9. Component evaluation of our WALL/Wolfpack attack
+ness. Comparing ‘Default’ and ‘Follow-up (L2)’ shows that
+the proposed follow-up selection method enables more se-
+vere attacks and trains more robust policies than simply
+targeting agents closest to the initial agent. Similarly, ‘De-
+fault’ outperforms ‘Step (Random)’ in both attack severity
+and robustness, demonstrating that the proposed planner
+effectively identifies critical steps to minimize Qtot, pro-
+ducing stronger policies. Finally, ‘Default’ achieves signifi-
+cantly better robustness and more critical attacks compared
+to ‘Agents & Step (Random)’, highlighting the combined
+effectiveness of the proposed components.
+Number of Follow-up Agents m: To analyze the impact
+of the hyperparameter m, which determines the number of
+follow-up agents, on robustness, Fig. 10 shows how WALL
+trained with different values of m defend against the default
+Wolfpack attack. To prevent excessive attack that could
+cause learning to fail, we assume m <
+ n−1
+2
+
+. The results
+indicate that in the 8m environment, when m is small, only
+a few agents defending against the initial attack are targeted,
+leading to reduced robustness. Conversely, when m = 4, too
+many agents are attacked, causing learning to deteriorate.
+Therefore, m = 3 yields the most robust performance and is
+considered the default hyperparameter. Similarly, in the MMM
+environment, m = 4 results in the most robust performance
+and is set as the default. Notably, when m = 1, the attack
+becomes a single-agent attack. As discussed in Section 4.1,
+performing coordinated multi-agent attack (m > 1) enables
+much more robust learning, demonstrating the effectiveness
+and superiority of the proposed Wolfpack attack framework.
+Step Selection Temperature T: T is a hyperparameter
+in Eq. (3) that controls the temperature of the initial at-
+tack probability. A larger T results in more random attacks
+across steps, while a smaller T focuses attacks on critical
+steps with higher probability. Fig. 11 illustrates the perfor-
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+WALL (m = 1)
+WALL (m = 2)
+WALL (m = 3)
+WALL (m = 4)
+(a) 8m
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(b) MMM
+Figure 10. Number of follow-up agents m
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+WALL (T = 0.1)
+WALL (T = 0.2)
+WALL (T = 0.5)
+WALL (T = 1)
+(a) 8m
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(b) MMM
+Figure 11. Step selection temperature T
+mance of WALL policies trained with varying values of T
+against the default Wolfpack attack. In both the 8m and MMM
+environments, a very small T causes the attack to target only
+specific steps, leading to policies that are less robust against
+diverse attacks. Conversely, a very large T leads to overly
+uniform attacks, failing to target critical steps effectively,
+which also results in less robust policies. Based on these
+findings, we determined that T = 0.5 strikes a balance be-
+tween targeting critical steps and maintaining robustness,
+and we set this as the default parameter.
+6. Limitations
+While the proposed WALL significantly improves robust-
+ness in MARL, it has a few limitations. The first is the
+additional computational overhead introduced by training
+the Transformer for identifying critical steps. However, as
+shown in our analysis, this overhead is justified given that
+other baselines fail to achieve comparable performance even
+with extended training. Another limitation is the need for
+hyperparameter tuning to construct the Wolfpack attack.
+Nevertheless, the method is not highly sensitive to these
+hyperparameters, and the provided ablation study offers
+practical guidelines for selecting appropriate configurations.
+7. Conclusions
+In this paper, we propose the Wolfpack adversarial attack, a
+coordinated strategy inspired by the Wolfpack tactic used
+in military operations, which significantly outperforms ex-
+isting adversarial attacks. Additionally, we develop WALL,
+a robust MARL method designed to counter the proposed
+attack, demonstrating superior performance across various
+SMAC environments. Overall, our WALL framework en-
+hances the robustness of MARL algorithms.
+9
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+Acknowledgment
+This work was supported by Institute of Information & Com-
+munications Technology Planning & Evaluation (IITP) grant
+funded by the Korea government (MSIT) (No.RS-2022-
+II220469, Development of Core Technologies for Task-
+oriented Reinforcement Learning for Commercialization
+of Autonomous Drones), Innovative Human Resource De-
+velopment for Local Intellectualization program through
+the Institute of Information & Communications Technology
+Planning & Evaluation (IITP) grant funded by the Korea
+government (MSIT) (IITP-2025-RS-2022-00156361), and
+Institute of Information & Communications Technology
+Planning & Evaluation (IITP) grant funded by the Korea
+government (MSIT) (No.RS-2020-II201336, Artificial In-
+telligence graduate school support (UNIST)).
+Impact Statement
+This paper presents work whose goal is to advance the field
+of Machine Learning. There are many potential societal
+consequences of our work, none which we feel must be
+specifically highlighted here.
+References
+Berkenkamp, F., Turchetta, M., Schoellig, A., and Krause, A.
+Safe model-based reinforcement learning with stability
+guarantees. Advances in neural information processing
+systems, 30, 2017.
+Bhardwaj, M., Xie, T., Boots, B., Jiang, N., and Cheng, C.-
+A. Adversarial model for offline reinforcement learning.
+Advances in Neural Information Processing Systems, 36,
+2024.
+Bouhaddi, M. and Adi, K.
+Multi-environment training
+against reward poisoning attacks on deep reinforcement
+learning. In SECRYPT, pp. 870–875, 2023.
+Bouhaddi, M. and Adi, K. When rewards deceive: Coun-
+teracting reward poisoning on online deep reinforcement
+learning. In 2024 IEEE International Conference on
+Cyber Security and Resilience (CSR), pp. 38–44. IEEE,
+2024.
+Bukharin, A., Li, Y., Yu, Y., Zhang, Q., Chen, Z., Zuo, S.,
+Zhang, C., Zhang, S., and Zhao, T. Robust multi-agent re-
+inforcement learning via adversarial regularization: The-
+oretical foundation and stable algorithms. Advances in
+Neural Information Processing Systems, 36, 2024.
+Cai, K., Zhu, X., and Hu, Z. Reward poisoning attacks in
+deep reinforcement learning based on exploration strate-
+gies. Neurocomputing, 553:126578, 2023.
+Chae, J., Han, S., Jung, W., Cho, M., Choi, S., and Sung, Y.
+Robust imitation learning against variations in environ-
+ment dynamics. In International Conference on Machine
+Learning, pp. 2828–2852. PMLR, 2022.
+Chen, J., Ma, R., and Oyekan, J. A deep multi-agent re-
+inforcement learning framework for autonomous aerial
+navigation to grasping points on loads. Robotics and
+Autonomous Systems, 167:104489, 2023.
+Chen, L., Lu, K., Rajeswaran, A., Lee, K., Grover, A.,
+Laskin, M., Abbeel, P., Srinivas, A., and Mordatch, I. De-
+cision transformer: Reinforcement learning via sequence
+modeling. Advances in neural information processing
+systems, 34:15084–15097, 2021.
+Chinchuluun, A., Migdalas, A., Pardalos, P. M., and Pit-
+soulis, L. Pareto optimality, game theory and equilibria,
+volume 17. Springer New York, 2008.
+Clavier, P., Pennec, E. L., and Geist, M. Towards minimax
+optimality of model-based robust reinforcement learning.
+arXiv preprint arXiv:2302.05372, 2023.
+Curi, S., Bogunovic, I., and Krause, A. Combining pes-
+simism with optimism for robust and efficient model-
+based deep reinforcement learning. In International Con-
+ference on Machine Learning, pp. 2254–2264. PMLR,
+2021.
+Du, X., Chen, H., Wang, C., Xing, Y., Yang, J., Philip, S. Y.,
+Chang, Y., and He, L. Robust multi-agent reinforcement
+learning via bayesian distributional value estimation. Pat-
+tern Recognition, 145:109917, 2024.
+Everett, M., L¨utjens, B., and How, J. P. Certifiable robust-
+ness to adversarial state uncertainty in deep reinforcement
+learning. IEEE Transactions on Neural Networks and
+Learning Systems, 33(9):4184–4198, 2021.
+Geng, W., Xiao, B., Li, R., Wei, N., Wang, D., and Zhao,
+Z. Noise distribution decomposition based multi-agent
+distributional reinforcement learning. IEEE Transactions
+on Mobile Computing, 2024.
+Goodfellow, I. J., Shlens, J., and Szegedy, C.
+Explain-
+ing and harnessing adversarial examples. arXiv preprint
+arXiv:1412.6572, 2014.
+Guo, J., Chen, Y., Hao, Y., Yin, Z., Yu, Y., and Li, S. Towards
+comprehensive testing on the robustness of cooperative
+multi-agent reinforcement learning. In Proceedings of the
+IEEE/CVF conference on computer vision and pattern
+recognition, pp. 115–122, 2022.
+Han, S. and Sung, Y. A max-min entropy framework for
+reinforcement learning. Advances in Neural Information
+Processing Systems, 34:25732–25745, 2021.
+10
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+Han, S., Su, S., He, S., Han, S., Yang, H., Zou, S., and Miao,
+F. What is the solution for state-adversarial multi-agent re-
+inforcement learning? arXiv preprint arXiv:2212.02705,
+2022.
+He, S., Wang, Y., Han, S., Zou, S., and Miao, F. A ro-
+bust and constrained multi-agent reinforcement learning
+framework for electric vehicle amod systems. Dynamics,
+8(10), 2022.
+He, S., Han, S., Su, S., Han, S., Zou, S., and Miao, F. Robust
+multi-agent reinforcement learning with state uncertainty.
+arXiv preprint arXiv:2307.16212, 2023.
+Herremans, S., Anwar, A., and Mercelis, S. Robust model-
+based reinforcement learning with an adversarial auxiliary
+model. arXiv preprint arXiv:2406.09976, 2024.
+Huang, S., Papernot, N., Goodfellow, I., Duan, Y., and
+Abbeel, P. Adversarial attacks on neural network policies.
+arXiv preprint arXiv:1702.02284, 2017.
+Jendoubi, I. and Bouffard, F. Multi-agent hierarchical re-
+inforcement learning for energy management. Applied
+Energy, 332:120500, 2023.
+Jo, Y., Lee, S., Yeom, J., and Han, S. Fox: Formation-aware
+exploration in multi-agent reinforcement learning. In
+Proceedings of the AAAI Conference on Artificial Intelli-
+gence, volume 38, pp. 12985–12994, 2024.
+Kardes¸, E., Ord´o˜nez, F., and Hall, R. W. Discounted robust
+stochastic games and an application to queueing control.
+Operations research, 59(2):365–382, 2011.
+Kobayashi, T. Lira: Light-robust adversary for model-based
+reinforcement learning in real world.
+arXiv preprint
+arXiv:2409.19617, 2024.
+Lee, X. Y., Esfandiari, Y., Tan, K. L., and Sarkar, S.
+Query-based targeted action-space adversarial policies on
+deep reinforcement learning agents. In Proceedings of
+the ACM/IEEE 12th international conference on cyber-
+physical systems, pp. 87–97, 2021.
+Li, R., Wang, R., Tian, T., Jia, F., and Zheng, Z. Multi-agent
+reinforcement learning based on value distribution. In
+Journal of Physics: Conference Series, volume 1651, pp.
+012017. IOP Publishing, 2020.
+Li, S., Wu, Y., Cui, X., Dong, H., Fang, F., and Russell, S.
+Robust multi-agent reinforcement learning via minimax
+deep deterministic policy gradient. In Proceedings of the
+AAAI conference on artificial intelligence, volume 33, pp.
+4213–4220, 2019.
+Li, S., Guo, J., Xiu, J., Xu, R., Yu, X., Wang, J., Liu, A.,
+Yang, Y., and Liu, X. Byzantine robust cooperative multi-
+agent reinforcement learning as a bayesian game. arXiv
+preprint arXiv:2305.12872, 2023a.
+Li, S., Xu, R., Guo, J., Feng, P., Wang, J., Liu, A., Yang,
+Y., Liu, X., and Lv, W. Mir2: Towards provably robust
+multi-agent reinforcement learning by mutual informa-
+tion regularization. arXiv preprint arXiv:2310.09833,
+2023b.
+Li, X., Li, Y., Feng, Z., Wang, Z., and Pan, Q. Ats-o2a:
+A state-based adversarial attack strategy on deep rein-
+forcement learning. Computers & Security, 129:103259,
+2023c.
+Lin, J., Dzeparoska, K., Zhang, S. Q., Leon-Garcia, A., and
+Papernot, N. On the robustness of cooperative multi-
+agent reinforcement learning. In 2020 IEEE Security and
+Privacy Workshops (SPW), pp. 62–68. IEEE, 2020.
+Liu, Q., Kuang, Y., and Wang, J. Robust deep reinforcement
+learning with adaptive adversarial perturbations in action
+space. arXiv preprint arXiv:2405.11982, 2024.
+Lowe, R., Wu, Y. I., Tamar, A., Harb, J., Pieter Abbeel,
+O., and Mordatch, I. Multi-agent actor-critic for mixed
+cooperative-competitive environments. Advances in neu-
+ral information processing systems, 30, 2017.
+Mahajan, A., Rashid, T., Samvelyan, M., and Whiteson, S.
+Maven: Multi-agent variational exploration. Advances in
+neural information processing systems, 32, 2019.
+Mankowitz, D. J., Levine, N., Jeong, R., Shi, Y., Kay, J.,
+Abdolmaleki, A., Springenberg, J. T., Mann, T., Hester,
+T., and Riedmiller, M. Robust reinforcement learning for
+continuous control with model misspecification. arXiv
+preprint arXiv:1906.07516, 2019.
+Moos, J., Hansel, K., Abdulsamad, H., Stark, S., Clever, D.,
+and Peters, J. Robust reinforcement learning: A review
+of foundations and recent advances. Machine Learning
+and Knowledge Extraction, 4(1):276–315, 2022.
+Oliehoek, F. A., Spaan, M. T., and Vlassis, N. Optimal and
+approximate q-value functions for decentralized pomdps.
+Journal of Artificial Intelligence Research, 32:289–353,
+2008.
+Oliehoek, F. A., Amato, C., et al. A concise introduction to
+decentralized POMDPs, volume 1. Springer, 2016.
+Oroojlooy, A. and Hajinezhad, D. A review of coopera-
+tive multi-agent deep reinforcement learning. Applied
+Intelligence, 53(11):13677–13722, 2023.
+Orr, J. and Dutta, A. Multi-agent deep reinforcement learn-
+ing for multi-robot applications: A survey. Sensors, 23
+(7):3625, 2023.
+Panaganti, K. and Kalathil, D. Sample complexity of model-
+based robust reinforcement learning. In 2021 60th IEEE
+11
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+Conference on Decision and Control (CDC), pp. 2240–
+2245. IEEE, 2021.
+Pattanaik, A., Tang, Z., Liu, S., Bommannan, G., and
+Chowdhary, G. Robust deep reinforcement learning with
+adversarial attacks. arXiv preprint arXiv:1712.03632,
+2017.
+Phan, T., Belzner, L., Gabor, T., Sedlmeier, A., Ritz, F.,
+and Linnhoff-Popien, C. Resilient multi-agent reinforce-
+ment learning with adversarial value decomposition. In
+Proceedings of the AAAI Conference on Artificial Intelli-
+gence, volume 35, pp. 11308–11316, 2021.
+Pinto, L., Davidson, J., Sukthankar, R., and Gupta, A. Ro-
+bust adversarial reinforcement learning. In International
+conference on machine learning, pp. 2817–2826. PMLR,
+2017.
+Qiaoben, Y., Ying, C., Zhou, X., Su, H., Zhu, J., and Zhang,
+B. Understanding adversarial attacks on observations in
+deep reinforcement learning. Science China Information
+Sciences, 67(5):1–15, 2024.
+Rakhsha, A., Zhang, X., Zhu, X., and Singla, A. Reward
+poisoning in reinforcement learning: Attacks against un-
+known learners in unknown environments. arXiv preprint
+arXiv:2102.08492, 2021.
+Ramesh, S. S., Sessa, P. G., Hu, Y., Krause, A., and Bo-
+gunovic, I. Distributionally robust model-based reinforce-
+ment learning with large state spaces. In International
+Conference on Artificial Intelligence and Statistics, pp.
+100–108. PMLR, 2024.
+Rashid, T., Samvelyan, M., De Witt, C. S., Farquhar, G.,
+Foerster, J., and Whiteson, S. Monotonic value function
+factorisation for deep multi-agent reinforcement learning.
+Journal of Machine Learning Research, 21(178):1–51,
+2020.
+Rigter, M., Lacerda, B., and Hawes, N. Rambo-rl: Robust
+adversarial model-based offline reinforcement learning.
+Advances in neural information processing systems, 35:
+16082–16097, 2022.
+Samvelyan, M., Rashid, T., De Witt, C. S., Farquhar, G.,
+Nardelli, N., Rudner, T. G., Hung, C.-M., Torr, P. H.,
+Foerster, J., and Whiteson, S. The starcraft multi-agent
+challenge. arXiv preprint arXiv:1902.04043, 2019.
+Shi, L. and Chi, Y. Distributionally robust model-based
+offline reinforcement learning with near-optimal sample
+complexity. Journal of Machine Learning Research, 25
+(200):1–91, 2024.
+Shi, L., Mazumdar, E., Chi, Y., and Wierman, A. Sample-
+efficient robust multi-agent reinforcement learning in
+the face of environmental uncertainty. arXiv preprint
+arXiv:2404.18909, 2024.
+Sun, Y., Zheng, R., Hassanzadeh, P., Liang, Y., Feizi, S.,
+Ganesh, S., and Huang, F. Certifiably robust policy learn-
+ing against adversarial multi-agent communication. In
+The Eleventh International Conference on Learning Rep-
+resentations, 2023.
+Sunehag, P., Lever, G., Gruslys, A., Czarnecki, W. M., Zam-
+baldi, V., Jaderberg, M., Lanctot, M., Sonnerat, N., Leibo,
+J. Z., Tuyls, K., et al. Value-decomposition networks
+for cooperative multi-agent learning.
+arXiv preprint
+arXiv:1706.05296, 2017.
+Tan, K. L., Esfandiari, Y., Lee, X. Y., Sarkar, S., et al. Ro-
+bustifying reinforcement learning agents via action space
+adversarial training. In 2020 American control conference
+(ACC), pp. 3959–3964. IEEE, 2020.
+Terry, J., Black, B., Grammel, N., Jayakumar, M., Hari, A.,
+Sullivan, R., Santos, L. S., Dieffendahl, C., Horsch, C.,
+Perez-Vicente, R., et al. Pettingzoo: Gym for multi-agent
+reinforcement learning. Advances in Neural Information
+Processing Systems, 34:15032–15043, 2021.
+Tessler, C., Efroni, Y., and Mannor, S. Action robust rein-
+forcement learning and applications in continuous control.
+In International Conference on Machine Learning, pp.
+6215–6224. PMLR, 2019.
+Tu, J., Wang, T., Wang, J., Manivasagam, S., Ren, M., and
+Urtasun, R. Adversarial attacks on multi-agent commu-
+nication. In Proceedings of the IEEE/CVF International
+Conference on Computer Vision, pp. 7768–7777, 2021.
+Vaswani, A. Attention is all you need. Advances in Neural
+Information Processing Systems, 2017.
+Vinitsky, E., Du, Y., Parvate, K., Jang, K., Abbeel, P., and
+Bayen, A. Robust reinforcement learning using adversar-
+ial populations. arXiv preprint arXiv:2008.01825, 2020.
+Wang, J., Liu, Y., and Li, B. Reinforcement learning with
+perturbed rewards. In Proceedings of the AAAI confer-
+ence on artificial intelligence, volume 34, pp. 6202–6209,
+2020a.
+Wang, J., Ren, Z., Liu, T., Yu, Y., and Zhang, C. Qplex:
+Duplex dueling multi-agent q-learning. arXiv preprint
+arXiv:2008.01062, 2020b.
+Wang, S., Chen, W., Huang, L., Zhang, F., Zhao, Z., and
+Qu, H. Regularization-adapted anderson acceleration for
+multi-agent reinforcement learning. Knowledge-Based
+Systems, 275:110709, 2023.
+12
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+Wang, X., Nair, S., and Althoff, M. Falsification-based
+robust adversarial reinforcement learning. In 2020 19th
+IEEE International Conference on Machine Learning and
+Applications (ICMLA), pp. 205–212. IEEE, 2020c.
+Wang, Y., Wang, Y., Zhou, Y., Velasquez, A., and Zou, S.
+Data-driven robust multi-agent reinforcement learning.
+In 2022 IEEE 32nd International Workshop on Machine
+Learning for Signal Processing (MLSP), pp. 1–6. IEEE,
+2022.
+Xu, Y., Zeng, Q., and Singh, G. Efficient reward poisoning
+attacks on online deep reinforcement learning. arXiv
+preprint arXiv:2205.14842, 2022.
+Xu, Y., Gumaste, R., and Singh, G. Reward poisoning attack
+against offline reinforcement learning. arXiv preprint
+arXiv:2402.09695, 2024.
+Xu, Z., Li, D., Bai, Y., and Fan, G. Mmd-mix: Value function
+factorisation with maximum mean discrepancy for coop-
+erative multi-agent reinforcement learning. In 2021 Inter-
+national Joint Conference on Neural Networks (IJCNN),
+pp. 1–7. IEEE, 2021.
+Xue, W., Qiu, W., An, B., Rabinovich, Z., Obraztsova, S.,
+and Yeo, C. K. Mis-spoke or mis-lead: Achieving ro-
+bustness in multi-agent communicative reinforcement
+learning. arXiv preprint arXiv:2108.03803, 2021.
+Ye, C., He, J., Gu, Q., and Zhang, T. Towards robust model-
+based reinforcement learning against adversarial corrup-
+tion. arXiv preprint arXiv:2402.08991, 2024.
+Yu, J., Gehring, C., Sch¨afer, F., and Anandkumar, A. Robust
+reinforcement learning: A constrained game-theoretic
+approach. In Learning for Dynamics and Control, pp.
+1242–1254. PMLR, 2021.
+Yuan, L., Zhang, Z., Xue, K., Yin, H., Chen, F., Guan, C., Li,
+L., Qian, C., and Yu, Y. Robust multi-agent coordination
+via evolutionary generation of auxiliary adversarial attack-
+ers. In Proceedings of the AAAI Conference on Artificial
+Intelligence, volume 37, pp. 11753–11762, 2023.
+Yuan, L., Jiang, T., Li, L., Chen, F., Zhang, Z., and Yu,
+Y. Robust cooperative multi-agent reinforcement learn-
+ing via multi-view message certification. Science China
+Information Sciences, 67(4):142102, 2024.
+Yun, W. J., Park, S., Kim, J., Shin, M., Jung, S., Mohaisen,
+D. A., and Kim, J.-H.
+Cooperative multiagent deep
+reinforcement learning for reliable surveillance via au-
+tonomous multi-uav control. IEEE Transactions on In-
+dustrial Informatics, 18(10):7086–7096, 2022.
+Zhang, H., Chen, H., Xiao, C., Li, B., Liu, M., Boning, D.,
+and Hsieh, C.-J. Robust deep reinforcement learning
+against adversarial perturbations on state observations.
+Advances in Neural Information Processing Systems, 33:
+21024–21037, 2020a.
+Zhang, H., Chen, H., Boning, D., and Hsieh, C.-J. Robust
+reinforcement learning on state observations with learned
+optimal adversary.
+arXiv preprint arXiv:2101.08452,
+2021a.
+Zhang, K., Sun, T., Tao, Y., Genc, S., Mallya, S., and Basar,
+T. Robust multi-agent reinforcement learning with model
+uncertainty. Advances in neural information processing
+systems, 33:10571–10583, 2020b.
+Zhang, K., Yang, Z., and Bas¸ar, T. Multi-agent reinforce-
+ment learning: A selective overview of theories and algo-
+rithms. Handbook of reinforcement learning and control,
+pp. 321–384, 2021b.
+Zhang, X., Ma, Y., Singla, A., and Zhu, X. Adaptive reward-
+poisoning attacks against reinforcement learning. In In-
+ternational Conference on Machine Learning, pp. 11225–
+11234. PMLR, 2020c.
+Zhang, Z., Sun, Y., Huang, F., and Miao, F. Safe and ro-
+bust multi-agent reinforcement learning for connected
+autonomous vehicles under state perturbations. arXiv
+preprint arXiv:2309.11057, 2023.
+Zhou, Z., Liu, G., and Zhou, M. A robust mean-field actor-
+critic reinforcement learning against adversarial pertur-
+bations on agent states. IEEE Transactions on Neural
+Networks and Learning Systems, 2023.
+Zhou, Z., Liu, G., Guo, W., and Zhou, M. Adversarial
+attacks on multiagent deep reinforcement learning mod-
+els in continuous action space. IEEE Transactions on
+Systems, Man, and Cybernetics: Systems, 2024.
+13
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+A. Environmental Setup
+We conduct experiments in the MPE (Lowe et al., 2017) and SMAC (Samvelyan et al., 2019) environments. This section
+provides detailed descriptions of their setup and features.
+A.1. Multi-Agent Particle Environments (MPE)
+(a) PP 3/1
+(b) PP 6/2
+(c) PP 9/3
+Figure A.1. Visualization of PP scenarios in the MPE environment
+The Multi-Agent Particle Environment (MPE) (Lowe et al., 2017) is a widely used benchmark suite consisting of multi-agent
+scenarios. Agents are modeled as particles capable of movement and interaction, governed by simple physical dynamics.
+MPE includes both cooperative and competitive tasks, with each scenario sharing a continuous state space and typically
+partial observability. A standardized implementation of MPE is available through the PettingZoo library (Terry et al., 2021).
+Scenarios
+The MPE benchmark includes a variety of multi-agent scenarios. Among them, we focus on the predator-prey environment,
+which is well-suited for analyzing the impact of attacks on the cooperative structures among agents. We consider multiple
+variants denoted as PP X/Y , where X represents the number of predator agents and Y the number of prey agents. In all
+scenarios, prey agents follow a random policy. Detailed configurations for the three selected variants are summarized in
+Table A.1 and Fig. A.1.
+State and observation spaces
+Each agent in the MPE environment receives a partial observation, which includes its own position and velocity, the relative
+positions and velocities of other predators, and the relative positions of landmarks. The global state is constructed by
+concatenating the local observations of all agents.
+Action space
+The action space is discrete. Each agent can choose one of the four cardinal directions or do nothing.
+Reward function
+The reward function R assigns a positive value to predator agents upon a successful collision with a prey:
+R =
+X
+g∈prey
+I(collision(g, predator))
+where I(·) is the indicator function, returning 1 if the condition inside is true and 0 otherwise. Here, collision(i, j) denotes
+whether agent i and agent j are in physical contact.
+Map
+Predators
+Prey
+State Dimension
+Obs Dimension
+Num. of Actions
+PP 3/1
+3 Agents
+1 Agent
+48
+16
+5
+PP 6/2
+6 Agents
+2 Agents
+156
+26
+5
+PP 9/3
+9 Agents
+3 Agents
+324
+36
+5
+Table A.1. The number of agents, the dimensions of state and observation spaces, and the number of actions in MPE scenarios
+14
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+A.2. The StarCraft Multi-Agent Challenge (SMAC)
+(a) 3m
+(b) 3s vs 3z
+(c) 2s3z
+(d) 8m
+(e) 1c3s5z
+(f) MMM
+Figure A.2. Visualization of SMAC scenarios
+The StarCraft Multi-Agent Challenge (SMAC) serves as a benchmark for cooperative Multi-Agent Reinforcement Learning
+(MARL), focusing on decentralized micromanagement tasks. Based on the real-time strategy game StarCraft II, SMAC
+requires each unit to be controlled by independent agents acting solely on local observations. It offers a variety of combat
+scenarios to evaluate MARL methods effectively.
+Scenarios
+SMAC scenarios involve combat situations between an allied team controlled by learning agents and an enemy team
+managed by a scripted AI. These scenarios vary in complexity, unit composition, and terrain, challenging agents to use
+advanced micromanagement techniques such as focus fire, kiting, and terrain exploitation. Scenarios end when all units on
+one side are eliminated or when the time limit is reached. The objective is to maximize the win rate of the allied agents.
+Detailed descriptions of the scenarios and unit compositions are provided in Table A.2 and Fig. A.2.
+State and observation spaces
+In the SMAC environment, each agent receives partial observations that contain information about visible allies and enemies
+within a fixed sight range of 9. These observations do not include any global state and are specifically designed to support
+decentralized decision-making based only on each agent’s local view of the environment.
+The global state, which is used during centralized training, is constructed by aggregating the features of all agents and
+enemies. It consists of three primary components. The ally state includes each agent’s relative x and y positions, health,
+energy, shield (if applicable), and unit type. The enemy state is similar but excludes energy, containing relative positions,
+health, shield, and unit type of enemies. The last action component records the most recent action taken by each agent,
+represented as a one-hot encoded vector. The full global state is formed by concatenating these components, and its
+dimensionality depends on the number of agents, enemies, and available actions.
+Each agent’s observation vector is separately constructed from the following elements. The movement features indicate the
+four cardinal directions the agent can move in, resulting in a fixed size of 4. The enemy features describe each observed
+enemy, including available action flag, distance to the agent, relative x and y positions, health, shield (if applicable), and
+unit type. The ally features encode the same types of information for all visible allies, excluding the observing agent. Finally,
+the own features contain the observing agent’s own health, shield, and unit type.
+The precise dimensions of the observation and state vectors vary depending on the specific map scenario and unit composition,
+and are summarized in Table A.2.
+Action space
+Agents can perform discrete actions, including movement in four cardinal directions (North, South, East, West), attacking
+specific enemy units within a shooting range of 6 units, and specialized actions such as healing for units like Medivacs.
+Additionally, agents can perform a stop or a no-op action, the latter being restricted to dead units.
+The size of the action space varies depending on the scenario and is defined as nactions = 6 + nenemies, where 6 represents
+movement, stop, or a no-op action. The inclusion of nenemies accounts for the need to specify which enemy unit is targeted
+15
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+when performing an attack action. The exact size of the action space varies across different maps, as summarized in Table
+A.2.
+Reward function
+SMAC uses a shaped reward function R to guide learning, including components for damage dealt (Rdamage), enemy units
+killed (Renemy killed), and scenario victory (Rwin). The total reward is defined as:
+R =
+X
+e∈enemies
+∆Health(e) +
+X
+e∈enemies
+I({Health(e) = 0}) · Rewarddeath + I({win = True}) · Rewardwin
+Here, Health(e) represents the health of an enemy unit e, and ∆Health(e) is the reduction in its health during a timestep. The
+indicator function I(·) returns 1 if the condition inside is true and 0 otherwise. The parameters Rewarddeath and Rewardwin
+are scaling factors for rewards when an enemy unit is killed and when the agents win the scenario, set to 10 and 200,
+respectively.
+Map
+Ally Units
+Enemy Units
+State Dimension
+Obs Dimension
+Num. of Actions
+3m
+3 Marines
+3 Marines
+48
+30
+9
+3s vs 3z
+3 Stalkers
+3 Zealots
+54
+36
+9
+2s3z
+2 Stalkers,
+2 Stalkers,
+120
+80
+11
+3 Zealots
+3 Zealots
+8m
+8 Marines
+8 Marines
+168
+80
+14
+1c3s5z
+1 Colossus,
+1 Colossus,
+270
+162
+15
+3 Stalkers,
+3 Stalkers,
+5 Zealots
+5 Zealots
+MMM
+1 Medivac,
+1 Medivac,
+290
+160
+16
+2 Marauders,
+2 Marauders,
+7 Marines
+7 Marines
+Table A.2. The number of agents, the dimensions of state and observation spaces, and the number of actions in SMAC scenarios
+16
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+B. Implementation Details
+In this section, we provide a detailed implementation of the proposed WALL framework. Section B.1 outlines the imple-
+mentation of the Transformer used to efficiently identify critical initial steps. Section B.2 elaborates on the components
+constituting the Wolfpack attack and provides an in-depth explanation of the reinforcement learning implementation.
+B.1. Practical Implementation of Planner Transformer
+ො𝒔𝒕+𝒕𝑾𝑷−𝟏 
+෥𝒂𝒕+𝒕𝑾𝑷−𝟏
+ෝ𝒐𝒕+𝒕𝑾𝑷−𝟏 
+ො𝒔𝒕+𝟏 ෝ𝒐𝒕+𝟏 ෥𝒂𝒕+𝟏
+Planning Transformer
+⋯
+𝒔𝒕𝒐𝒕෥𝒂𝒕
+ො𝒔𝒕+𝟏 ෝ𝒐𝒕+𝟏 
+ො𝒔𝒕+𝟐 ෝ𝒐𝒕+𝟐 
+⋯
+ො𝒔𝒕+𝒕𝑾𝑷 
+ෝ𝒐𝒕+𝒕𝑾𝑷 
+(a) Planning Transformer
+𝑸-difference Transformer
+𝒔𝒕
+⋯෡𝚫𝑸𝒕+𝑳−𝟏
+𝑾𝑷
+෡𝚫𝑸𝒕+𝟏
+𝑾𝑷
+෡𝚫𝑸𝒕
+𝑾𝑷
+𝒔𝒕+𝟏
+⋯෡𝚫𝑸𝒕+𝑳
+𝑾𝑷
+෡𝚫𝑸𝒕+𝟐
+𝑾𝑷
+෡𝚫𝑸𝒕+𝟏
+𝑾𝑷
+(b) Q-difference Transformer
+Figure B.1. Structure of Transformers
+Critical attacking step selection introduced in Section 4.4 requires planning to compute the reduction in Q-function values,
+∆QWP
+l
+(l = t, · · · , t + L −1), over multiple time steps. To facilitate this process, a Transformer model is employed. During
+training, the Transformer predicts (ˆst+1, ˆot+1, · · · , ˆst+tWP, ˆot+tWP) at the current step t to compute the target ˆ∆QWP
+t
+.
+However, performing this planning process at each evaluation step to calculate the probability of an initial attack, Pt,attack,
+is computationally expensive.
+To address this, the single Transformer is split into two components: a planning Transformer and a Q-difference Transformer.
+The planning Transformer predicts (ˆst+1, ˆot+1) and is used only during training, while the Q-difference Transformer predicts
+∆QWP
+l
+(l = t, · · · , t + L −1) and is employed exclusively during evaluation. This separation enables efficient computation
+of Pt,attack during evaluation, significantly reducing computational costs. Both Transformers adopt the Decision Transformer
+structure (Chen et al., 2021), consisting of Transformer decoder layers. The planning Transformer is parameterized by
+ϕplanning, and the Q-difference Transformer by ϕqdiff. Their respective loss functions are defined as:
+Lplanning(ϕplanning) = E
+
+∥st+1 −ˆst+1(ϕplanning)∥2 + ∥ot+1 −ˆot+1(ϕplanning)∥2
+,
+(B.1)
+Lqdiff(ϕqdiff) = E
+h
+∥∆QWP
+t
+−ˆ∆QWP
+t
+(ϕqdiff)∥2i
+, ∀t.
+(B.2)
+As shown in Fig. B.1, the estimated state ˆst+1 and observations ˆot+1 are generated by the planning Transformer, which takes
+previous trajectories as input. Similarly, the estimated Q-difference ˆ∆QWP
+t
+is produced by the Q-diff Transformer, using
+previous states as input. The loss function Lplanning minimizes the prediction error for the next state st+1 and observation
+ot+1, while Lqdiff minimizes the prediction error for ∆QWP
+l
+resulting from the Wolfpack attack. Fig. B.1 illustrates the
+architectures of the Transformers, where (a) represents the planning Transformer and (b) represents the Q-diff Transformer.
+B.2. Detailed Implementation of WALL
+The WALL framework trains robust MARL policies to counter the Wolfpack adversarial attack by employing a Q-learning
+approach within the CTDE paradigm. Each agent computes its individual Q-values, Qi(τ i
+t, ai
+t), i = 1, · · · , n, using separate
+Q-networks. These individual values, along with the global state, are combined through a mixing network to produce
+the total Q-value, Qtot
+θ , parameterized by θ. This joint value function ensures effective coordination among agents under
+adversarial scenarios.
+17
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+To achieve robustness, the training process minimizes the temporal difference (TD) loss, which incorporates the observed
+rewards, state transitions, and target Q-values parameterized by a separate target network, θ−. By leveraging this target
+network, the CTDE frameworks stabilize learning and mitigate the impact of the Wolfpack attack. The TD loss is defined as:
+LTD(θ) = Es,a,r,s′
+
+rt + γ max
+a′ Qtot
+θ−(st+1, a′) −Qtot
+θ (st, at)
+2
+,
+(B.3)
+where the target network parameter θ−is updated by applying the exponential moving average (EMA) to θ. This training
+mechanism allows agents to adapt and develop robust policies capable of resisting the coordinated disruptions caused by
+the Wolfpack adversarial attack, ensuring enhanced performance and resilience in MARL scenarios. In addition, we use 3
+value-based CTDE algorithms as baselines for the WALL framework: QMIX, VDN, and QPLEX. Below, we provide an
+outline of the key details of these baseline algorithms:
+Value-Decomposition Networks (VDN)
+VDN (Sunehag et al., 2017) is a Q-learning algorithm designed for cooperative MARL. It introduces an additive decomposi-
+tion of the joint Q-value into individual agent Q-values, enabling centralized training and decentralized execution. The joint
+action-value function, Qtot, is expressed as:
+Qtot(st, at) =
+n
+X
+i=1
+Qi(τ i
+t, ai
+t),
+(B.4)
+allowing agents to act independently during execution by relying only on their local Qi values.
+QMIX
+QMIX (Rashid et al., 2020) extends VDN by introducing a more expressive, non-linear representation of the joint Q-
+value, while maintaining a monotonic relationship between Qtot and individual agent Q-values, Qi(τ i, ai). This ensures
+individual-global-max (IGM) condition:
+∂Qtot
+∂Qi
+≥0, ∀i,
+(B.5)
+guaranteeing consistency between centralized and decentralized policies. Specifically:
+arg max
+a
+Qtot(st, at) =
+
+
+
+arg maxa1 Q1(τ 1
+t , a1
+t),
+...
+arg maxan Qn(τ n
+t , an
+t )
+
+
+.
+(B.6)
+QMIX combines agent networks, a mixing network, and hypernetworks, where hypernetworks dynamically parameterize the
+mixing network based on the global state st. The weights generated by the hypernetworks are constrained to be non-negative
+to enforce the monotonicity constraint.
+QPLEX
+QPLEX (Wang et al., 2020b) introduces a duplex dueling architecture to enhance the representation of joint action-value
+functions while adhering to the IGM principle. QPLEX reformulates the IGM principle in an advantage-based form:
+arg max
+a
+Atot(τ, a) =
+
+
+
+arg maxa1 A1(τ 1, a1),
+...
+arg maxan An(τ n, an)
+
+
+,
+(B.7)
+where Atot and Ai are the advantage functions for joint and individual action-value functions, respectively. The joint
+action-value function is expressed as:
+Qtot(τ, a) =
+n
+X
+i=1
+Qi(τ, ai) +
+n
+X
+i=1
+(λi(τ, a) −1)Ai(τ, ai).
+(B.8)
+where λi(τ, a) > 0 are importance weights generated using a multi-head attention mechanism to enhance expressiveness.
+Here, VDN and QMIX are implemented using the PyMARL codebase https://github.com/oxwhirl/pymarl, while QPLEX is
+implemented using its official codebase https://github.com/wjh720/QPLEX.
+18
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+C. Experimental Details
+All experiments in this paper are conducted on a GPU server equipped with an NVIDIA GeForce RTX 3090 GPU and
+AMD EPYC 7513 32-Core processors running Ubuntu 20.04 and PyTorch. We follow the implementations and loss scales
+provided by the CTDE algorithms and focus on parameter searches for hyperparameters related to the proposed Wolfpack
+adversarial attack. Comparisons are performed using the optimal hyperparameter setup, with an ablation study available in
+Appendix F.
+C.1. Hyperparameter Setup
+We conduct parameter search for the number of Wolfpack attacks KWP ∈[1, 2, 3, 4], the attack duration tWP ∈[1, 2, 3, 4],
+the number of follow-up agents m, and the temperature T ∈[0.1, 0.2, 0.5, 1.0]. The total number of attacks K is then
+determined based on K = KWP × (tWP + 1), separated into training and testing setups. During training, K is selected
+through hyperparameter sweeping to ensure optimal performance. For testing, K is unified across all adversarial attack
+setups, including Random Attack, EGA, and the Wolfpack Adversarial Attack, to ensure fair comparisons. Additionally, the
+attack period L is chosen based on the average episode length of SMAC scenarios and the total number of attacks, with
+L = 20 is fixed as appropriate. Transformer hyperparameters, shared between the Planning Transformer and Q-difference
+Transformer, such as the number of heads, decoder layers, embedding dimensions, and input sequence length, are selected
+to balance accuracy and computational efficiency.
+The Q-learning hyperparameters (shared across all CTDE methods) and those specific to the CTDE algorithms are detailed
+in Table C.1 and Table C.2, respectively. The Wolfpack adversarial attack-related hyperparameters for the WALL framework,
+shared across all SMAC scenarios and scenario-specific setups, are presented in Table C.3.
+Hyperparameter
+Value
+Epsilon
+1.0 →0.05
+Epsilon Anneal Time
+50000 timesteps
+Train Interval
+1 episode
+Gamma
+0.99
+Critic Loss
+MSE Loss
+Buffer Size
+5000 episodes
+Batch Size
+32 episodes
+Agent Learning Rate
+0.0005
+Critic Learning Rate
+0.0005
+Optimizer
+RMSProp
+Optimizer Alpha
+0.99
+Optimizer Eps
+1e-5
+Gradient Clip Norm
+10.0
+Num GRU Layers
+1
+RNN Hidden State Dim
+64
+Double Q
+True
+Table C.1. Common Q-learning hyperparameters
+19
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+Hyperparameter
+VDN
+QMIX
+QPLEX
+Mixer
+VDN
+QMIX
+QPLEX
+Mixing Embed Dim.
+-
+32
+32
+Hypernet Layers
+-
+2
+2
+Hypernet Embed Dim.
+-
+64
+64
+Adv Hypernet Layers
+-
+-
+1
+Adv Hypernet Embed Dim.
+-
+-
+64
+Num. Kernel
+-
+-
+2
+Table C.2. VDN, QMIX, QPLEX hyperparameters
+Common Hyperparameters
+Value
+Attack duration (tWP)
+3
+Temperature (T)
+0.5
+Attack Period (L)
+20
+Num. Transformer Head
+1
+Num. Transformer Decoder Layer
+1
+Transformer Embed Dim.
+64
+Input Sequence Length
+20
+Scenario
+PP 3/1
+PP 6/2
+PP 9/3
+Num. Total Attacks (Train) (K)
+4
+4
+4
+Num. Total Attacks (Test) (K)
+4
+4
+4
+Num. Wolfpack Attacks (KWP)
+1
+1
+1
+Num. Follow-up Agents (m)
+1
+3
+5
+Scenario
+3m
+3s vs 3z
+2s3z
+8m
+1c3s5z
+MMM
+Num. Total Attacks (Train) (K)
+8
+16
+12
+8
+16
+16
+Num. Total Attacks (Test) (K)
+8
+4
+8
+4
+8
+8
+Num. Wolfpack Attacks (KWP)
+2
+4
+3
+2
+4
+4
+Num. Follow-up Agents (m)
+1
+1
+2
+3
+4
+4
+Table C.3. Wolfpack hyperparameters shared across scenarios and scenario-specific values
+20
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+D. Details of Other Robust MARL Methods
+In this section, we detail various robust MARL methods compared against the proposed WALL framework, as below:
+Robust Adversarial Reinforcement Learning (RARL)
+RARL (Pinto et al., 2017) enhances policy robustness by training a protagonist agent and an adversary in a two-player
+zero-sum Markov game. At each timestep t, the agents observe state st and take actions a1
+t ∼µ(st) and a2
+t ∼ν(st), where
+µ is the protagonist’s policy, and ν is the adversary’s policy. The state transitions follow:
+st+1 = P(st, a1
+t, a2
+t).
+(D.9)
+The protagonist maximizes its cumulative reward R1, while the adversary minimizes it:
+R1
+∗= min
+ν
+max
+µ
+R1(µ, ν) = max
+µ
+min
+ν
+R1(µ, ν).
+(D.10)
+Robustness via Adversary Populations (RAP)
+RAP (Vinitsky et al., 2020) improves robustness by training agents against a population of adversaries, reducing overfitting
+to specific attack patterns. During training, an adversary is sampled uniformly from the population πϕ1, πϕ2, . . . , πϕn. The
+objective is:
+max
+θ
+min
+ϕ1,...,ϕn Ei∼U(1,n)
+" T
+X
+t=0
+γtr(st, at, αai
+t)
+πθ, πϕi
+#
+,
+(D.11)
+where πθ is the agent’s policy, πϕi is the i-th adversary, and α controls adversary strength.
+Robust Multi-Agent Coordination via Evolutionary Generation of Auxiliary Adversarial Attackers (ROMANCE)
+ROMANCE (Yuan et al., 2023) generates diverse auxiliary adversarial attackers to improve robustness in CMARL. Its
+objective combines attack quality and diversity:
+Ladv(ϕ) = 1
+np
+np
+X
+j=1
+Lopt(ϕj) −αLdiv(ϕ),
+(D.12)
+where Lopt minimizes the ego-system’s return, Ldiv promotes diversity using Jensen-Shannon Divergence, and np is the
+number of adversarial policies. ROMANCE uses an evolutionary mechanism to explore diverse attacks.
+We implement RARL and RAP for multi-agent systems, as well as ROMANCE with EGA, using the ROMANCE codebase
+available at https://github.com/zzq-bot/ROMANCE.
+ERNIE
+ERNIE (Bukharin et al., 2024) improves robustness by promoting Lipschitz continuity through adversarial regularization. It
+minimizes discrepancies between policy outputs under perturbed and non-perturbed observations:
+Rπ(ok; θk) = max
+∥δ∥≤ϵ D(πθk(ok + δ), πθk(ok)),
+(D.13)
+where ok is the agent’s observation, δ is a bounded perturbation, and D measures divergence (e.g., KL-divergence). ERNIE
+reformulates adversarial training as a Stackelberg game and extends its framework to mean-field MARL for scalability in
+large-agent settings. We evaluate ERNIE using its official codebase at https://github.com/abukharin3/ERNIE.
+21
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+E. Additional Experiments Results
+This section presents additional experimental results. E.1 reports comparison results for other CTDE algorithms, E.2
+provides learning curves across additional SMAC scenarios, E.3 presents a performance comparison for EGA, E.4 discusses
+computational cost, and E.5 includes general robustness experiments.
+E.1. Comparison Results for Other CTDE Algorithms
+Our proposed Wolfpack attack is compatible with various value-based MARL algorithms. Experimental results in this
+section demonstrate its significant impact on robustness, not only in QMIX, as discussed in the main text, but also in
+VDN and QPLEX. The hyperparameters used in these experiments follow those outlined in Appendix C.1, with WALL
+hyperparameters remaining consistent across all algorithms, including QMIX.
+VDN Results: Table E.1 shows the average win rates for various robust MARL methods with VDN against attacker baselines.
+Both models and attackers are trained using the VDN-based algorithm. Results indicate that the proposed Wolfpack attack is
+more detrimental than Random Attack or EGA for VDN. For example, while EGA reduces Vanilla VDN’s performance by
+95.6% −73.8% = 21.8%, the Wolfpack attack causes a larger reduction of 95.6% −44.1% = 51.5%, demonstrating its
+severity. Additionally, the WALL framework outperforms other baselines under both Natural conditions and adversarial
+attacks, showcasing its robustness.
+Method
+Scenario
+2s3z
+3m
+3s vs 3z
+8m
+MMM
+1c3s5z
+Mean
+Natural
+Vanilla VDN
+98.5 ± 1.4
+96.0 ± 3.0
+99.3 ± 0.5
+97.8 ± 2.0
+98.3 ± 0.5
+83.5 ± 9.5
+95.6 ± 1.7
+RANDOM
+99.0 ± 0.1
+99.8 ± 0.1
+99.4 ± 0.5
+98.9 ± 0.1
+98.8 ± 1.0
+97.6 ± 0.5
+98.9 ± 0.4
+RARL
+95.3 ± 0.5
+92.5 ± 3.4
+99.3 ± 0.5
+96.3 ± 1.5
+93.2 ± 1.5
+91.8 ± 0.3
+94.7 ± 0.6
+RAP
+93.4 ± 1.3
+96.8 ± 1.8
+99.3 ± 0.5
+98.7 ± 1.0
+97.3 ± 0.5
+97.3 ± 0.5
+97.1 ± 0.4
+ERNIE
+94.6 ± 3.9
+99.4 ± 0.5
+97.1 ± 0.5
+98.4 ± 1.4
+98.8 ± 0.8
+96.5 ± 1.7
+97.5 ± 0.9
+ROMANCE
+98.2 ± 0.1
+97.9 ± 1.1
+99.4 ± 0.5
+93.5 ± 5.4
+97.9 ± 1.0
+93.0 ± 3.1
+96.6 ± 0.8
+WALL (ours)
+99.8 ± 0.1
+99.4 ± 0.5
+99.9 ± 0.1
+96.9 ± 2.0
+99.4 ± 0.5
+100.0 ± 0.1
+99.2 ± 0.2
+Random Attack
+Vanilla VDN
+80.5 ± 1.5
+65.5 ± 6.5
+96.5 ± 0.5
+52.5 ± 10.5
+95.0 ± 1.0
+76.5 ± 7.5
+77.8 ± 1.9
+RANDOM
+83.0 ± 1.0
+94.5 ± 1.5
+96.0 ± 0.7
+88.5 ± 0.5
+95.5 ± 2.5
+93.5 ± 1.5
+91.8 ± 0.5
+RARL
+81.0 ± 4.2
+64.5 ± 8.4
+97.3 ± 0.5
+72.9 ± 0.1
+76.3 ± 7.5
+92.0 ± 0.2
+80.7 ± 2.1
+RAP
+89.8 ± 3.1
+75.8 ± 37.9
+97.7 ± 1.9
+81.2 ± 0.5
+95.2 ± 2.6
+92.3 ± 0.5
+88.7 ± 1.6
+ERNIE
+80.2 ± 2.0
+66.9 ± 2.8
+93.1 ± 1.7
+67.1 ± 4.9
+89.1 ± 2.1
+90.4 ± 4.5
+81.1 ± 1.2
+ROMANCE
+91.0 ± 5.0
+79.0 ± 6.0
+98.4 ± 0.4
+54.0 ± 5.0
+97.5 ± 0.5
+92.0 ± 3.0
+85.3 ± 0.6
+WALL (ours)
+95.5 ± 1.5
+86.0 ± 6.0
+99.4 ± 0.4
+90.0 ± 3.0
+98.5 ± 0.5
+98.1 ± 0.1
+94.6 ± 1.4
+EGA
+Vanilla VDN
+69.5 ± 7.5
+54.5 ± 12.5
+94.5 ± 1.5
+59.5 ± 12.5
+90.5 ± 2.5
+74.5 ± 9.5
+73.8 ± 1.0
+RANDOM
+56.0 ± 6.0
+73.0 ± 6.0
+84.0 ± 13.0
+84.5 ± 6.5
+85.5 ± 1.5
+86.5 ± 3.5
+78.3 ± 2.4
+RARL
+58.0 ± 1.2
+79.0 ± 2.9
+96.5 ± 0.7
+76.7 ± 4.0
+75.9 ± 8.2
+81.3 ± 4.5
+77.9 ± 1.9
+RAP
+79.9 ± 3.1
+93.0 ± 4.6
+97.3 ± 0.5
+85.7 ± 1.3
+91.8 ± 3.8
+87.2 ± 1.5
+89.3 ± 0.2
+ERNIE
+62.0 ± 14.9
+62.5 ± 8.2
+89.1 ± 6.6
+74.7 ± 1.6
+89.3 ± 2.5
+82.2 ± 1.9
+76.6 ± 3.6
+ROMANCE
+86.5 ± 2.5
+93.8 ± 3.0
+98.0 ± 0.2
+76.5 ± 0.5
+95.5 ± 2.5
+92.0 ± 0.1
+90.3 ± 0.6
+WALL (ours)
+91.5 ± 0.5
+91.0 ± 2.0
+99.0 ± 1.0
+90.0 ± 4.0
+97.5 ± 0.5
+95.5 ± 0.5
+94.1 ± 0.1
+Wolfpack
+Adversarial
+Attack (ours)
+Vanilla VDN
+54.0 ± 4.0
+20.5 ± 5.5
+91.5 ± 0.5
+24.5 ± 12.5
+18.5 ± 9.5
+55.5 ± 2.5
+44.1 ± 1.1
+RANDOM
+47.0 ± 4.0
+89.0 ± 1.0
+90.0 ± 5.0
+41.0 ± 14.0
+18.5 ± 5.5
+83.5 ± 0.5
+61.5 ± 2.7
+RARL
+59.5 ± 8.7
+41.3 ± 16.4
+96.8 ± 0.9
+13.1 ± 2.0
+24.3 ± 6.5
+61.6 ± 11.7
+49.4 ± 1.8
+RAP
+64.3 ± 3.5
+67.7 ± 33.8
+98.9 ± 0.1
+23.9 ± 6.1
+53.3 ± 2.5
+82.1 ± 5.4
+65.0 ± 1.7
+ERNIE
+33.1 ± 3.6
+25.8 ± 6.5
+93.0 ± 4.5
+17.2 ± 9.5
+23.5 ± 9.3
+66.4 ± 13.5
+43.2 ± 1.7
+ROMANCE
+63.0 ± 10.0
+46.5 ± 20.5
+97.5 ± 0.5
+19.5 ± 7.5
+38.0 ± 5.0
+83.0 ± 4.0
+57.9 ± 3.1
+WALL (ours)
+91.5 ± 2.5
+91.5 ± 2.5
+100.0 ± 0.0
+71.5 ± 1.5
+98.0 ± 1.0
+93.5 ± 4.5
+91.0 ± 0.8
+Table E.1. Average test win rates of robust MARL policies under various attack settings (VDN)
+22
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+QPLEX Results: Similarly, Table E.2 reports the average win rates various robust MARL methods with QPLEX against
+attacker baselines. Both models and attackers are trained using the QPLEX-based algorithm. Results reveal that the
+Wolfpack attack is also more detrimental for QPLEX compared to Random Attack and EGA. For instance, EGA reduces
+Vanilla QPLEX’s performance by 98.4% −57.2% = 41.2%, whereas the Wolfpack attack results in a larger reduction
+of 98.4% −33.1% = 65.3%. The WALL framework again demonstrates superior robustness, performing well against all
+attacks, including the Wolfpack attack.
+Method
+Scenario
+2s3z
+3m
+3s vs 3z
+8m
+MMM
+1c3s5z
+Mean
+Natural
+Vanilla QPLEX
+97.1 ± 1.3
+99.2 ± 0.5
+99.4 ± 0.5
+97.4 ± 0.3
+99.5 ± 0.5
+97.1 ± 0.9
+98.4 ± 0.1
+RANDOM
+97.7 ± 2.1
+98.7 ± 0.8
+99.6 ± 0.1
+99.1 ± 0.9
+98.2 ± 1.2
+98.5 ± 1.3
+98.7 ± 0.5
+RARL
+94.4 ± 4.5
+89.7 ± 2.0
+88.4 ± 6.8
+97.8 ± 1.6
+98.8 ± 0.8
+94.6 ± 1.6
+94.0 ± 1.4
+RAP
+96.5 ± 1.7
+96.6 ± 2.5
+93.2 ± 0.9
+99.1 ± 0.5
+98.8 ± 0.8
+97.8 ± 0.8
+97.7 ± 0.4
+ERNIE
+96.7 ± 2.5
+98.8 ± 0.8
+99.7 ± 0.1
+98.8 ± 1.4
+99.1 ± 0.5
+98.4 ± 1.0
+98.6 ± 0.6
+ROMANCE
+97.1 ± 2.9
+93.2 ± 5.9
+98.8 ± 0.8
+94.7 ± 3.2
+99.7 ± 0.1
+99.0 ± 1.1
+96.8 ± 1.2
+WALL (ours)
+99.5 ± 0.5
+97.7 ± 2.1
+99.9 ± 0.1
+99.8 ± 0.1
+99.0 ± 0.7
+99.5 ± 0.6
+99.2 ± 0.3
+Random Attack
+Vanilla QPLEX
+75.2 ± 2.5
+36.2 ± 6.6
+81.9 ± 16.0
+40.0 ± 9.8
+65.3 ± 6.2
+75.0 ± 2.8
+62.3 ± 5.6
+RANDOM
+85.9 ± 0.9
+69.0 ± 5.8
+96.2 ± 1.6
+89.0 ± 7.7
+91.2 ± 2.4
+95.5 ± 1.2
+87.8 ± 0.7
+RARL
+81.2 ± 13.6
+61.3 ± 13.9
+74.7 ± 12.6
+73.7 ± 21.6
+92.0 ± 0.8
+92.0 ± 2.9
+79.1 ± 4.3
+RAP
+90.8 ± 2.8
+78.0 ± 7.0
+92.1 ± 10.3
+65.3 ± 4.5
+95.0 ± 1.4
+95.7 ± 1.9
+85.0 ± 1.9
+ERNIE
+82.0 ± 2.0
+59.0 ± 9.0
+93.0 ± 1.6
+80.0 ± 1.4
+91.3 ± 0.9
+93.0 ± 0.8
+83.1 ± 1.9
+ROMANCE
+89.2 ± 2.1
+64.9 ± 13.4
+93.7 ± 2.1
+51.6 ± 5.3
+92.2 ± 4.1
+95.2 ± 1.0
+76.0 ± 2.8
+WALL (ours)
+97.4 ± 0.9
+85.4 ± 2.5
+99.4 ± 0.5
+92.9 ± 3.5
+98.3 ± 1.2
+98.6 ± 1.2
+95.3 ± 0.7
+EGA
+Vanilla QPLEX
+48.1 ± 3.4
+16.0 ± 5.1
+72.5 ± 15.1
+58.5 ± 16.8
+71.0 ± 4.2
+76.9 ± 1.5
+57.2 ± 6.2
+RANDOM
+60.5 ± 6.8
+61.4 ± 14.9
+82.0 ± 6.6
+86.2 ± 3.4
+85.3 ± 2.5
+88.8 ± 2.5
+77.4 ± 3.1
+RARL
+63.4 ± 0.5
+65.7 ± 6.2
+71.0 ± 8.2
+86.0 ± 6.5
+89.7 ± 1.9
+84.7 ± 2.1
+76.7 ± 1.0
+RAP
+78.5 ± 4.0
+83.3 ± 0.9
+85.4 ± 5.3
+89.0 ± 2.2
+92.7 ± 1.7
+96.7 ± 0.5
+88.0 ± 0.7
+ERNIE
+64.4 ± 7.0
+67.3 ± 10.3
+51.7 ± 9.5
+86.7 ± 4.7
+86.0 ± 5.0
+89.3 ± 4.5
+74.2 ± 3.0
+ROMANCE
+79.5 ± 6.0
+80.3 ± 1.7
+90.3 ± 1.3
+80.7 ± 8.3
+95.2 ± 2.0
+92.5 ± 1.3
+85.6 ± 1.0
+WALL (ours)
+89.0 ± 3.8
+83.9 ± 2.9
+99.6 ± 0.6
+94.4 ± 1.2
+96.4 ± 1.2
+96.1 ± 0.7
+93.2 ± 0.7
+Wolfpack
+Adversarial
+Attack (ours)
+Vanilla QPLEX
+30.8 ± 4.3
+11.8 ± 7.5
+63.7 ± 24.3
+30.7 ± 11.1
+20.0 ± 12.5
+41.9 ± 6.1
+33.1 ± 7.1
+RANDOM
+50.5 ± 2.9
+16.8 ± 6.8
+89.5 ± 5.7
+45.6 ± 18.0
+34.0 ± 14.1
+82.5 ± 11.3
+53.2 ± 4.9
+RARL
+55.5 ± 2.1
+27.3 ± 9.2
+78.0 ± 4.3
+46.0 ± 14.9
+21.3 ± 14.4
+79.7 ± 6.9
+51.3 ± 2.8
+RAP
+59.0 ± 4.7
+50.3 ± 14.7
+86.7 ± 8.2
+33.7 ± 3.1
+45.0 ± 7.0
+93.7 ± 2.4
+56.3 ± 3.2
+ERNIE
+52.9 ± 6.3
+49.0 ± 9.9
+76.0 ± 9.9
+42.7 ± 10.6
+20.7 ± 10.4
+78.7 ± 6.7
+53.3 ± 3.6
+ROMANCE
+57.3 ± 8.4
+38.5 ± 13.9
+89.7 ± 1.3
+28.6 ± 1.1
+46.2 ± 10.6
+83.5 ± 5.5
+50.8 ± 0.9
+WALL (ours)
+88.3 ± 1.2
+87.6 ± 4.7
+99.7 ± 0.5
+84.5 ± 1.7
+96.3 ± 3.9
+99.3 ± 0.9
+92.6 ± 1.3
+Table E.2. Average test win rates of robust MARL policies under various attack settings (QPLEX)
+23
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+Learning Curves for VDN and QPLEX: We also analyze training curves and average test win rates across different CTDE
+algorithms. Graphs for the 8m and MMM environments illustrate the average win rates of each policy over training steps under
+unseen Wolfpack adversarial attacks. Fig. E.1 presents training curves for VDN, while Fig. E.2 shows results for QPLEX.
+These curves highlight that WALL not only achieves greater robustness but also adapts more quickly to attacks across VDN
+and QPLEX, further confirming its effectiveness beyond QMIX.
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+WALL
+VDN
+RANDOM
+RARL
+RAP
+ERNIE
+ROMANCE
+(a) 8m
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(b) MMM
+Figure E.1. Learning curves of MARL methods for Wolfpack attack (VDN)
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+WALL
+QPLEX
+RANDOM
+RARL
+RAP
+ERNIE
+ROMANCE
+(a) 8m
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(b) MMM
+Figure E.2. Learning curves of MARL methods for Wolfpack attack (QPLEX)
+24
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+E.2. Learning Curves Across Additional SMAC Scenarios
+In this section, we provide the training performance of WALL under Wolfpack adversarial attack across additional SMAC
+scenarios beyond the 8m and MMM environments, which are emphasized in the main text for their significant performance
+differences. Fig. E.3 illustrates the training curves for 6 scenarios: 3m, 3s vs 3z, 2s3z, 8m, MMM, and 1c3s5z. The
+results demonstrate that WALL consistently outperforms baseline methods, achieving superior win rates across all scenarios.
+Additionally, policies trained with WALL adapt more quickly to the challenges posed by Wolfpack attack, showing robust
+and efficient performance across environments of varying complexity. These findings highlight the effectiveness of WALL
+in enhancing the robustness of MARL policies against coordinated adversarial attacks.
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+WALL
+QMIX
+Random
+RARL
+RAP
+ERNIE
+ROMANCE
+(a) 3m
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(b) 3s vs 3z
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(c) 2s3z
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(d) 8m
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(e) MMM
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(f) 1c3s5z
+Figure E.3. Learning curves of MARL methods for Wolfpack attack across 6 SMAC scenarios (QMIX)
+25
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+E.3. Performance Comparison for EGA
+This section presents the training performance of WALL under the existing Evolutionary Generation-based Attackers (EGA)
+(Yuan et al., 2023) method across six SMAC scenarios, as shown in Fig. E.4. The results demonstrate that WALL consistently
+achieves superior robustness across all scenarios, even against unseen EGA adversaries that are not included in its training
+process.
+The EGA framework generates a diverse and high-quality population of adversarial attackers. Unlike single-adversary
+methods, EGA maintains an evolving archive of attackers optimized for both quality and diversity, ensuring robust evaluations
+against various attack strategies. During training, attackers are randomly selected from the archive to simulate diverse attack
+scenarios. The archive is iteratively updated by replacing low-quality or redundant attackers with newly generated ones. For
+evaluation, an attacker policy is randomly selected from the archive. The chosen attacker identifies critical attack steps and
+targets specific victim agents, introducing action perturbations to reduce their individual Q-values. WALL demonstrates
+strong resilience in these challenging environments, effectively mitigating the impact of EGA adversaries and maintaining
+high performance across all evaluated scenarios.
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+WALL
+QMIX
+Random
+RARL
+RAP
+ERNIE
+ROMANCE
+(a) 3m
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(b) 3s vs 3z
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(c) 2s3z
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(d) 8m
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(e) MMM
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+100
+Test Win Rate (%)
+(f) 1c3s5z
+Figure E.4. Learning curves of MARL methods for EGA across 6 SMAC scenarios (QMIX)
+26
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+E.4. Computational Cost
+We measured the total training time (for 3M steps) required for each algorithm in the SMAC environments. The results are
+summarized in Table E.3. WALL requires approximately 30% more time than ROMANCE, primarily due to the use of the
+Transformer. However, despite this additional cost, the Transformer-based critical step selection plays an essential role in the
+effectiveness of our method, as it enables precise identification of attack timing where coordinated perturbations are most
+disruptive. This capability allows the robust policy to anticipate and defend against strategically timed adversarial threats,
+ultimately resulting in stronger robustness. In general, training on the MMM map takes longer than on the 8m map due to the
+increased number of agents, which leads to higher computational costs as a result of scalability.
+Method
+Scenario
+8m
+MMM
+Training Time
+Vanilla QMIX
+6h 30m
+7h 30m
+RANDOM
+6h 30m
+7h 35m
+RARL
+11h 10m
+15h 50m
+RAP
+14h 35m
+17h 25m
+ERNIE
+16h 30m
+20h 55m
+ROMANCE
+16h 35m
+18h 45m
+WALL (ours)
+21h 05m
+23h 30m
+Table E.3. Training time comparison on 8m and MMM
+E.5. General Robustness Experiments
+We conducted additional experiments to evaluate robustness under other commonly used criteria in the 8m and MMM
+environments. Specifically, we considered: (1) Gaussian observation noise: Standard Gaussian noise (mean 0, standard
+deviation 1) is injected into agents’ local observations, where attack steps (total attack steps : 8 for 8m, 16 for MMM) and
+the attack group are selected randomly; and (2) Different parameterization in the SMAC test environment: Robustness is
+evaluated under perturbed unit attributes by reducing the initial health of allied units by 10%, 15%, and 20% in the test
+setup, compared to the training configuration. These types of noise and perturbations are standard in robustness evaluations
+and enable us to assess how well the proposed method generalizes beyond action-level perturbations. The Table E.4 below
+summarizes the results. In both settings, WALL demonstrates consistently stronger performance than existing baselines,
+suggesting that it generalizes well to broader forms of distributional shift.
+Method
+Scenario
+8m
+MMM
+Mean
+Gaussian Obs. Noise
+Vanilla QMIX
+62.6 ± 2.3
+75.3 ± 3.1
+69.0 ± 2.1
+RANDOM
+72.3 ± 4.2
+79.3 ± 3.9
+75.8 ± 7.2
+ROMANCE
+69.6 ± 11.2
+76.6 ± 7.5
+73.1 ± 6.6
+WALL (ours)
+91.3 ± 3.3
+97.3 ± 1.7
+94.3 ± 3.3
+Ally HP ↓10%
+Vanilla QMIX
+52.8 ± 4.8
+88.4 ± 2.7
+70.6 ± 1.8
+RANDOM
+50.8 ± 8.2
+95.4 ± 2.5
+73.1 ± 5.2
+ROMANCE
+56.8 ± 16.0
+92.4 ± 4.5
+74.6 ± 8.5
+WALL (ours)
+73.2 ± 7.5
+98.6 ± 1.1
+85.9 ± 3.7
+Ally HP ↓15%
+Vanilla QMIX
+47.4 ± 6.9
+69.0 ± 5.4
+58.2 ± 5.8
+RANDOM
+49.2 ± 4.5
+81.4 ± 5.5
+65.3 ± 4.6
+ROMANCE
+57.6 ± 15.7
+81.2 ± 3.5
+69.4 ± 7.8
+WALL (ours)
+69.2 ± 10.5
+94.0 ± 3.2
+81.6 ± 5.7
+Ally HP ↓20%
+Vanilla QMIX
+0.3 ± 0.4
+41.2 ± 4.5
+20.8 ± 2.1
+RANDOM
+0.0 ± 0.0
+65.0 ± 2.7
+32.5 ± 1.3
+ROMANCE
+2.3 ± 0.4
+57.0 ± 8.9
+29.7 ± 4.3
+WALL (ours)
+4.3 ± 1.9
+89.6 ± 5.6
+47.0 ± 3.3
+Table E.4. Average test win rates of robust MARL policies under various perturbation settings
+27
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+F. Additional Ablation studies
+In this section, we provide additional ablation studies on the number of Wolfpack adversarial attacks KWP and the attack
+duration tWP in the 8m and MMM environments, where the performance differences between WALL and other robust MARL
+methods are most pronounced.
+Number of Wolfpack Attacks KWP: The hyperparameter KWP determines the number of Wolfpack attacks, with each
+attack consisting of an initial attack and follow-up attacks over tWP = 3 timesteps. The total number of attack steps K for
+Wolfpack attack is then calculated as K = 4 × KWP. In this section, we conduct a parameter search for KWP ∈[1, 2, 3, 4].
+Fig. F.1 illustrates the robustness of WALL policies trained with different KWP values under the default Wolfpack attack in
+8m and MMM. In both environments, having too small KWP results in insufficiently severe attacks, which leads to reduced
+robustness of the WALL framework. Conversely, in the 8m environment, excessively large KWP values create overly
+devastating attacks, making it difficult for CTDE methods to learn strategies to counter the Wolfpack attack, which degrades
+learning performance. Therefore, an optimal KWP exists in both environments: KWP = 2 for 8m and KWP = 4 for MMM,
+which we choose as the default hyperparameters.
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+Test Win Rate (%)
+WALL (KWP = 1)
+WALL (KWP = 2)
+WALL (KWP = 3)
+WALL (KWP = 4)
+(a) 8m
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+Test Win Rate (%)
+(b) MMM
+Figure F.1. Number of Wolfpack attacks (KWP)
+Attack duration tWP: The hyperparameter tWP determines the duration of follow-up attacks after the initial attack. To
+analyze its impact on robustness, Fig. F.2 compares performance for tWP ∈[1, 2, 3, 4] in the 8m and MMM environments. As
+shown in the figure, similar to the case of KWP, setting tWP too low results in insufficient follow-up attacks on assisting
+agents, reducing the severity of the attack and lowering the robustness of WALL. On the other hand, excessively high tWP
+values lead to overly severe attacks, making it challenging for WALL to learn effective defenses against the Wolfpack attack.
+Both environments demonstrate that tWP = 3 yields optimal performance and is selected as the best hyperparameter.
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+Test Win Rate (%)
+WALL (tWP = 1)
+WALL (tWP = 2)
+WALL (tWP = 3)
+WALL (tWP = 4)
+(a) 8m
+0.0
+0.5
+1.0
+1.5
+2.0
+2.5
+3.0
+Timesteps (106)
+0
+20
+40
+60
+80
+Test Win Rate (%)
+(b) MMM
+Figure F.2. Attack duration (tWP)
+28
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+G. Additional Visualizations of Wolfpack Adversarial Attack
+G.1. Visualization of Wolfpack Adversarial Attack Across Additional SMAC Scenarios
+DEFEAT
+Killed by Enemy
+Killed by 
+Enemy
+Killed by 
+Enemy
+Wolfpack Attack
+Hit Enemy
+VICTORY
+Kill Enemy
+Kill Enemy
+(a)
+𝒕= 𝟓 (𝒕𝒊𝒏𝒊𝒕)
+𝒕= Terminal
+𝒕= 𝟐𝟎~𝟐𝟗
+𝒕= 𝟔~𝟖
+(𝒕𝒊𝒏𝒊𝒕+ 𝟏, ⋯, 𝒕𝒊𝒏𝒊𝒕+ 𝒕𝑾𝑷)
+𝒕= 𝟏𝟎~𝟏𝟗
+Enemy
+Ally
+Kill Enemy
+VICTORY
+Guard
+Wolfpack Attack
+Guard
+Hit Enemy
+Kill Enemy
+Kill Enemy
+(b)
+Initial Attack
+Move to Hit
+(c)
+Initial Attack
+Move to Hit
+Kill Enemy
+Figure G.1. Attack comparison on 8m task in the SMAC: (a) QMIX/Natural, (b) QMIX/Wolfpack attack, and (c) WALL/Wolfpack attack
+To analyze the superior performance of the Wolfpack attack, we provide a visualization of its execution in various SMAC
+environments. Fig. 8 illustrates the 2s3z task, while Fig. G.1 visualizes the 8m task, and Fig. G.2 presents the MMM task.
+Fig. G.1(a) illustrates Vanilla QMIX operating in a natural scenario without any attack, where the agents successfully
+defeat all enemy units and achieve victory. In this scenario, agents with low health continuously move to the backline to
+avoid enemy attacks, while agents with higher health position themselves at the frontline to absorb damage. This dynamic
+coordination enables the team to manage their resources effectively, withstand enemy attacks, and secure a successful
+outcome.
+Fig. G.1(b) depicts Vanilla QMIX under the Wolfpack adversarial attack, where an initial attack is launched at t = 5, and
+follow-up agents are targeted between t = 6 and t = 8. Agents with higher remaining health are selected as follow-up
+agents, preventing them from guarding the targeted ally or engaging the enemy effectively. Between t = 10 and t = 19,
+the initial agent continues to take focused enemy fire, eventually succumbing to the attacks and being eliminated. This
+disruption renders the remaining agents ineffective in defending against the adversarial attack, leading to a loss as all agents
+are defeated.
+Fig. G.1(c) shows the policy trained with the WALL framework. During t = 6 to t = 8, the same agents as in (b) are
+selected as follow-up agents and subjected to the Wolfpack attack, limiting their ability to guard or engage the enemy.
+Nevertheless, the non-attacked agents adjust by forming a wider formation vertically, effectively dispersing enemy firepower
+while delivering coordinated attacks. Additionally, agents with higher health move forward to guard the initial agents,
+ensuring that the initial agents do not die. This tactical adaptation enables the team to eliminate enemy units and secure
+victory.
+29
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+DEFEAT
+VICTORY
+VICTORY
+𝒕= 𝟔 (𝐭𝒊𝒏𝒊𝒕)
+𝒕= 𝟐𝟎~𝟐𝟗
+𝒕= 𝟕~𝟗
+(𝒕𝒊𝒏𝒊𝒕+ 𝟏, ⋯, 𝒕𝒊𝒏𝒊𝒕+ 𝒕𝑾𝑷)
+𝒕= 𝟏𝟎~𝟏𝟗
+𝒕= Terminal
+Enemy
+Ally
+(a)
+Hit 
+Enemy
+Kill 
+Enemy
+Initial Attack
+Hit 
+Enemy
+Guard
+Wolfpack Attack
+Heal 
+Ally
+Heal 
+Ally
+Wolfpack Attack
+Hit 
+Enemy
+Killed by Enemy
+Killed by 
+Enemy
+Killed by 
+Enemy
+Kill 
+Enemy
+Kill Enemy
+Hit 
+Enemy
+Hit Enemy
+(b)
+Move to Hit
+(c)
+Move to Hit
+Guard
+Figure G.2. Attack comparison on MMM task in the SMAC: (a) QMIX/Natural, (b) QMIX/Wolfpack attack, and (c) WALL/Wolfpack attack
+Fig. G.2(a) showcases Vanilla QMIX operating in a natural scenario without any adversarial interference, where all enemy
+units are successfully eliminated, leading to a decisive victory. During this process, agents with lower health retreat to the
+back while the Medivac agent provides healing, and agents with higher health move forward to absorb enemy attacks. This
+coordinated strategy enables the team to secure victory efficiently.
+Fig. G.2(b) illustrates Vanilla QMIX under the Wolfpack adversarial attack. An initial attack is launched at t = 6, followed
+by the targeting of four follow-up agents between t = 7 and t = 9. The follow-up agents selected include one healing
+agent attempting to heal the initial agent, one guarding agent positioned to protect the initial agent, and two agents actively
+engaging the enemy targeting the initial agent. Due to the Wolfpack attack, the initial agent failed to receive critical healing
+or guarding support at t = 10 and t = 19, leading to its elimination. This disruption severely hinders the remaining agents’
+ability to defend against the adversarial attack, ultimately resulting in a loss as all agents are defeated.
+Fig. G.2(c) illustrates the policy trained with the WALL framework. During t = 7 to t = 9, the same agents as in (b) are
+selected as follow-up agents and subjected to the Wolfpack attack, restricting their actions such as healing, guarding, or
+targeting the enemy effectively. However, the non-attacked agents adapt by positioning themselves ahead of the initial agent
+to provide protection and focus their fire on the enemies targeting the initial agent. This strategic adaptation enables the team
+to successfully repel the adversarial attack, eliminate enemy units, and secure victory. Notably, in the terminal timesteps,
+more agents survive under the WALL framework compared to the natural scenario depicted in (a), highlighting the enhanced
+robustness and stability of the policy learned with WALL.
+30
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+G.2. Additional Analysis of Follow-up Agent Group Selection
+Initial Attack
+Hit Enemy
+𝟖
+(a) Initial attack
+Hit Enemy
+Wolfpack Attack
+Heal 
+Ally
+Guard
+𝟖
+𝟑
+𝟒
+𝟕
+𝟗
+𝟐
+𝟏𝟎
+(b) Follow-up (L2)
+Killed 
+by Enemy
+Heal 
+Ally
+Guard
+Wolfpack Attack
+𝟖
+𝟏𝟎
+𝟐
+𝟗
+𝟔
+(c) Follow-up agent group selection
+Figure G.3. Visualization of follow-up agent group selection comparison for the MMM task in SMAC
+In this section, we demonstrate that the proposed Follow-up Agent Group Selection method effectively identifies responding
+agents that protect the initially attacked agent. Fig. G.3 visualizes the process of selecting the follow-up agent group after an
+initial attack. By comparing the proposed method with a baseline method, Follow-up (L2), which selects m agents closest to
+the initial agent based on observation L2 distance, we show that our method better identifies responding agents, enabling a
+more impactful Wolfpack attack.
+Fig. G.3(a) illustrates an initial attack on agent 8, preventing it from performing its original action of hitting the enemy and
+forcing it to move forward, exposing it to enemy attacks. Fig. G.3(b) shows the Follow-up (L2) method selecting agents
+3, 4, 7, 9 as the follow-up agents based on their proximity to the initial agent. Despite the follow-up attack, non-attacked
+agents, which is far from the initial agent in terms of observation L2 distance, such as agent 10, heal the initial agent, while
+agent 2 guards it, effectively protecting the initial agent from the attack.
+Fig. G.3(c) illustrates the follow-up agents selected using our proposed Follow-up Agent Group Selection method. The
+selected group includes agents 2 and 10, which are responsible for healing and guarding the initial agent, and agents 6 and 9,
+which are hitting enemies targeting the initial agent. These agents are subjected to the follow-up attack, preventing them
+from performing their protective actions. As a result, the initial agent is left vulnerable, succumbs to enemy attacks, and is
+ultimately eliminated.
+31
+
+Wolfpack Adversarial Attack for Robust Multi-Agent Reinforcement Learning
+2
+4
+6
+8
+10
+12
+14
+16
+Actions
+0
+5
+10
+15
+20
+25
+Probability (%)
+Soft(Qi)
+Soft(Qi)
+Difference
+(a) Agent=1
+2
+4
+6
+8
+10
+12
+14
+16
+Actions
+0
+5
+10
+15
+20
+25
+Probability (%)
+(b) Agent=2 (selected)
+2
+4
+6
+8
+10
+12
+14
+16
+Actions
+0
+5
+10
+15
+20
+25
+Probability (%)
+(c) Agent=3
+2
+4
+6
+8
+10
+12
+14
+16
+Actions
+0
+5
+10
+15
+20
+25
+Probability (%)
+(d) Agent=4
+2
+4
+6
+8
+10
+12
+14
+16
+Actions
+0
+5
+10
+15
+20
+25
+Probability (%)
+(e) Agent=5
+2
+4
+6
+8
+10
+12
+14
+16
+Actions
+0
+5
+10
+15
+20
+25
+Probability (%)
+(f) Agent=6 (selected)
+2
+4
+6
+8
+10
+12
+14
+16
+Actions
+0
+5
+10
+15
+20
+25
+Probability (%)
+(g) Agent=7
+2
+4
+6
+8
+10
+12
+14
+16
+Actions
+0
+5
+10
+15
+20
+25
+Probability (%)
+(h) Agent=8
+2
+4
+6
+8
+10
+12
+14
+16
+Actions
+0
+5
+10
+15
+20
+25
+Probability (%)
+(i) Agent=9 (selected)
+2
+4
+6
+8
+10
+12
+14
+16
+Actions
+0
+5
+10
+15
+20
+25
+Probability (%)
+(j) Agent=10 (selected)
+Figure G.4. Soft(Qi) and Soft( ˜Qi) for each agent, along with the difference between the two distributions.
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+Agents
+0.00
+0.01
+0.02
+0.03
+0.04
+0.05
+0.06
+DKL
+Figure G.5. KL divergence values for each agent, representing the difference between Soft(Qi) and Soft( ˜Qi) distributions.
+Fig. G.4 illustrates the Soft(Qi) distribution and the updated Soft( ˜Qi) distribution based on Equation 1, highlighting
+the differences between the two distributions. It is evident that agents 2, 6, 9, 10 exhibit the largest differences in their
+distributions. This suggests that, following the initial attack, these agents show noticeable policy changes to adapt and defend
+against it. Additionally, Fig. G.5 presents the KL divergence values between these two distributions, further confirming that
+agents 2, 6, 9, 10 have the highest KL divergence values.
+Consequently, based on Equation 2, agents 2, 6, 9, 10 are selected as the follow-up agent group. This aligns with the
+visualization results shown in Fig. G.3, demonstrating consistency in the SMAC environment.
+32

@@ -1,0 +1,2623 @@
+Constrained Black-Box Attacks Against Cooperative Multi-Agent Reinforcement
+Learning
+Amine Andam1 , Jamal Bentahar2,3 , Mustapha Hedabou1
+1Mohammed VI Polytechnic University
+2Khalifa University
+3Concordia University
+amine.andam@um6p.ma, jamal.bentahar@ku.ac.ae, mustapha.hedabou@um6p.ma
+Abstract
+Collaborative multi-agent reinforcement learning
+has rapidly evolved, offering state-of-the-art algo-
+rithms for real-world applications, including sen-
+sitive domains.
+However, a key challenge to its
+widespread adoption is the lack of a thorough in-
+vestigation into its vulnerabilities to adversarial at-
+tacks.
+Existing work predominantly focuses on
+training-time attacks or unrealistic scenarios, such
+as access to policy weights or the ability to train
+surrogate policies.
+In this paper, we investigate
+new vulnerabilities under more challenging and
+constrained conditions, assuming an adversary can
+only collect and perturb the observations of de-
+ployed agents. We also consider scenarios where
+the adversary has no access at all (no observations,
+actions, or weights). Our main approach is to gen-
+erate perturbations that intentionally misalign how
+victim agents see their environment. Our approach
+is empirically validated on three benchmarks and
+22 environments, demonstrating its effectiveness
+across diverse algorithms and environments. Fur-
+thermore, we show that our algorithm is sample-
+efficient, requiring only 1,000 samples compared
+to the millions needed by previous methods.
+1
+Introduction
+Collaborative multi-agent reinforcement learning (c-MARL)
+algorithms have demonstrated state-of-the-art performances
+in complex cooperative tasks [Rashid et al., 2018; Yu et al.,
+2022], making them well-suited for solving real-world prob-
+lems across various domains [Lv et al., 2025; Park et al.,
+2024; Zhang et al., 2024]. However, a critical prerequisite
+for the widespread adoption of c-MARL is a full understand-
+ing of its vulnerabilities to adversarial attacks [Huang et al.,
+2017; Kos and Song, 2017], particularly when deployed.
+While much of the literature on adversarial c-MARL fo-
+cuses on training-time attacks [Zheng et al., 2023; Liu and
+Lai, 2023; Chen et al., 2024; Hu and Zhang, 2022], we focus
+instead on test-time attacks, where the adversary is present
+during deployment. Prior work on test-time attacks [Pham et
+al., 2023; Lin et al., 2020; Nisioti et al., 2021] has primarily
+considered white-box threat models, in which the adversary
+Original policy
+Environment
+Our contributions
+Underexplored
+Observations
+No access
+(observations,actions)
+Assumption Strength
+Plausibility
+white-box
+trained
+imitation
+Figure 1: Assumption Strength vs Plausibility.
+has access to the policy architecture and weights. This sce-
+nario is not always feasible. Moreover, such access can itself
+be considered a successful attack, as it typically involves pro-
+prietary knowledge with significant financial implications if
+leaked. In contrast, black-box threat models [Huang et al.,
+2017] do not assume access to the policy’s weights or archi-
+tecture; instead, they often involve learning a surrogate policy
+network either by training from scratch in the same environ-
+ment [Huang et al., 2017] or through imitation learning [Wu
+et al., 2021; Inkawhich et al., 2020]. The former requires ac-
+cess to the training environment, while the latter relies on col-
+lecting both observations and actions or the ability to query
+the model (see Figure 1). But what if the adversary cannot
+access such information to train a surrogate policy?
+In our work, we examine test-time attacks against c-MARL
+in black-box settings, but we push the standard assumptions
+a step further: we consider an adversary whose access is re-
+stricted to the observations (no access to the actions) of de-
+ployed agents, referred to as infected agents. The adversary
+does not have full control over these infected agents; instead,
+they can only add small perturbations to their observations.
+Our first main contribution is to show that such an adver-
+sary can effectively sabotage a c-MARL system, causing sig-
+nificant damage with as few as 1,000 collected samples, com-
+pared to the millions required by previous methods [Pham et
+al., 2023]. Our idea is to generate small perturbations that
+cause agents to have inconsistent views of the same environ-
+ment; we refer to this as misalignment. For instance, in a
+Pursuit game [Gupta et al., 2017], where two agents must co-
+arXiv:2508.09275v2  [cs.LG]  21 Jan 2026
+
+Table 1: Comparison with prior work.
+Paper
+Test-time
+Black-box
+Accessible Elements
+Target
+Policy
+Obs
+Actions
+Reward
+Env
+Actions
+Obs
+Reward
+Env
+Pham et al. (2023) [Pham et al., 2023]
+✓
+✗
+✓
+✓
+✓
+✓
+✓
+✗
+✓
+✗
+✗
+Lin et al. (2020) [Lin et al., 2020]
+✓
+✗
+✓
+✓
+✓
+✓
+✓
+✗
+✓
+✗
+✗
+Nisioti et al. (2021) [Nisioti et al., 2021]
+✓
+✗
+✓
+✓
+✓
+✓
+✗
+✓
+✗
+✗
+✗
+Chen et al. [Chen et al., 2025]
+✓
+✓
+✗
+✓
+✓
+✓
+✓
+✗
+✓
+✗
+✗
+Hu and Zhang (2022) [Hu and Zhang, 2022]
+✗
+✗
+✓
+✓
+✓
+✓
+✓
+✓
+✗
+✗
+✗
+Chen et al. (2024) [Chen et al., 2024]
+✗
+✗
+✓
+✓
+✓
+✓
+✓
+✓
+✗
+✗
+✗
+Liu and Lai (2023) citeliu2023efficient
+✗
+✓
+✗
+✓
+✓
+✓
+✓
+✓
+✗
+✓
+✗
+Zheng et al. (2023) [Zheng et al., 2023]
+✗
+✓
+✗
+✓
+✓
+✓
+✗
+✗
+✓
+✗
+✗
+Ours
+✓
+✓
+✗
+(✓,✗)
+✗
+✗
+✗
+✗
+✓
+✗
+✗
+operate to surround a moving target, if an adversary causes
+each agent to observe a different target position, their ability
+to coordinate is severely compromised. We design our pertur-
+bations to induce this effect and refer to the resulting attack
+as the Align attack.
+Our second main contribution introduces an even more
+constrained attack. We consider an adversary with no ac-
+cess whatsoever (no observations, actions, or weights), hav-
+ing only the ability to perturb each agent’s observation. The
+literature refers to this setting as free attacks, which predom-
+inantly rely on random noise injection. In contrast, we apply
+the same misalignment principle and propose a novel attack
+using partial Hadamard matrices to generate structured per-
+turbations. As discussed in Section 4.5, misalignment can be
+induced through orthogonal matrices. We refer to this attack
+as the Hadamard attack.
+Moreover, we propose a targeted attack that combines
+ideas from both methods by using observations to identify
+critical agents and Hadamard matrices to craft adversarial
+perturbations. This leverages the profiling capability of the
+Align attack and the fast generation of the Hadamard attack,
+resulting in an efficient and lightweight attack.
+Our contributions are illustrated in Figure 1. Most prior
+work considers attacks that require access to some form of
+policy, real or surrogate, and tend to be effective. However,
+such methods rely on strong access assumptions, which limit
+their plausibility. In contrast, we study threat models with
+weak access, which are more challenging and remain under-
+explored. In general, fewer attacker assumptions lead to more
+plausible attacks. Figure 1 illustrates this inverse relationship
+between attack plausibility and threat model strength.
+Finally, we conduct extensive experiments on three MARL
+benchmarks and 22 tasks, covering fully observable, partially
+observable, and highly cooperative settings, along with ap-
+propriate ablation studies.
+2
+Related works
+Adversarial c-MARL can be classified according to several
+criteria: Does the attack occur during training or deploy-
+ment? Are we considering a white-box or black-box sce-
+nario? What system components does the attacker have ac-
+cess to, and which does it target?
+Training-time vs Test-time attacks. Training-time attacks,
+also called data poisoning attacks [Rakhsha et al., 2020], oc-
+cur when an adversary is present during the training and aim
+to manipulate the agent into a target policy. This can involve
+reward poisoning [Liu and Lai, 2023; Zhang et al., 2020],
+environment poisoning [Rakhsha et al., 2021], or altering ob-
+servations or actions [Hu and Zhang, 2022; Chen et al., 2024;
+Zheng et al., 2023]. However, interfering with training is not
+always feasible. MARL systems are arguably more vulner-
+able when deployed. Test-time attacks occur during deploy-
+ment and aim to degrade agent performance. This is achieved
+by exploiting the known vulnerabilities of neural networks
+to adversarial inputs [Huang et al., 2017; Szegedy, 2013],
+mainly through observation manipulation [Pham et al., 2023;
+Lin et al., 2020], or action manipulation [Nisioti et al., 2021].
+White-box vs Black-box.
+In white-box scenarios, the
+attacker knows the learning algorithm and has access to
+the policy weights and its architecture [Chen et al., 2024;
+Hu and Zhang, 2022; Nisioti et al., 2021; Lin et al., 2020;
+Pham et al., 2023; Huang et al., 2017].
+While these at-
+tacks tend to be the most effective, it is impractical for the
+attacker to have the complete knowledge of the deployed
+policies. Conversely, black box settings allow for more re-
+laxed assumptions [Huang et al., 2017]. Most existing work
+relies on learning a surrogate policy to exploit the transfer-
+ability of adversarial examples [Papernot et al., 2016]. This
+surrogate policy can be learned by training the model from
+scratch [Huang et al., 2017], but doing so requires access
+to the training environment. Alternatively, imitation learn-
+ing can be used to approximate the policy [Wu et al., 2021;
+Inkawhich et al., 2020], which would necessitate access to
+observation-action pairs or the ability to query the policy.
+Table 1 provides a comprehensive comparison between our
+work and previous work. Prior work on test-time attacks of-
+ten assumes white-box adversaries and access to multiple el-
+ements simultaneously, which is not always feasible during
+deployment. We instead focus on more practical scenarios:
+deployed c-MARL in a black-box setting with limited access.
+3
+Background
+Consider a neural network f parameterized by θ, which takes
+an input x ∈X and outputs y, and is trained to minimize a
+loss function J. An adversarial attack aims to add a pertur-
+bation δ to the input x that maximizes the loss J(x + δ, y; θ).
+Moreover, δ must remain small to avoid detection, which is
+enforced by constraining its L∞norm with a budget ϵ. This
+problem is formulated as:
+
+Health: 53
+Health: 57
+Enemy 1
+Enemy 2
+Enemy 1: 53
+Enemy 2: 57
+Fire:
+55
+54
+Enemy 1 Enemy 2
+                53
+                57
+52
+59
+Enemy 1 Enemy 1
+Enemy 1
+Agent 1
+Agent 2
+Observations
+Actions
+50
+51
+Adversarial
+Normal
+Figure 2: Coordination is prevented by flipping the lowest-health
+enemy as seen by each agent.
+δ = arg max
+δ
+J(x + δ, y; θ)
+subject to
+∥δ∥∞≤ϵ
+(1)
+Many methods have been proposed to find δ. Fast Gradi-
+ent Signed Methods (FGSM) [Goodfellow et al., 2014] is a
+simple technique that computes the perturbations as:
+δ = ϵ × sign(∇x(J(x, y; θ)))
+(2)
+where ∇x(J(x, y; θ)) is the gradient of the loss function J with
+respect to the input x and sign is a function which returns +1
+if the argument is positive, -1 if negative, and 0 if zero.
+FGSM is a single-step attack. A stronger multistep variant
+is Projected Gradient Descent (PGD) [Kurakin et al., 2018;
+Madry et al., 2018] which applies iterative perturbations over
+K steps with a small step size α. After each step, the per-
+turbed input is projected back into the valid domain X :
+x∗
+0 = x, x∗
+t+1 = ClipX {x∗
+t + α × sign(∇xJ(x∗
+t , y; θ))} (3)
+where ClipX is an element-wise clipping operator that en-
+sures the results remain within the valid domain X.
+Using FGSM or PGD against a c-MARL system requires
+access to the agents’ policy or value networks in order to com-
+pute the loss in Equation 1. Since we consider attacks in a
+black-box setting, the main challenge our paper tries to solve
+is how to circumvent the need for direct access to the policy
+and still be able to use powerful methods like PGD.
+4
+Methodology
+4.1
+Problem statement
+We consider a cooperative multi-agent system during its de-
+ployment phase. Let N = {1, . . . , n} be the set of agents.
+We denote by oi the observation of agent i, which is of di-
+mension d, o−i is the concatenated observations of all the
+agents except agent i, and o is the joint observation. The
+adversary cannot directly control the agents’ actions but can
+inject small perturbations into their observations before the
+policy networks process them. This assumption is standard
+in adversarial c-MARL (see Section 2).
+4.2
+Intuition
+In cooperative tasks, effective collaboration depends on
+agents having aligned perceptions and beliefs about their en-
+vironment. By aligned perceptions, we mean that agents ob-
+serving the same object receive consistent information about
+its attributes. For instance, in the SMAC benchmark [Ellis
+et al., 2024], agents cooperate to defeat enemy units, which
+requires skills such as focus fire, where agents jointly attack
+a single opponent to eliminate it quickly . This typically in-
+volves selecting the weakest enemy based on health level. Ef-
+fective coordination therefore requires agreement on the tar-
+get’s health and position. Adversarial manipulation of these
+perceptions, as shown in Figure 2, can disrupt coordination.
+We do not necessarily assume that the agents must observe
+the same objects. The same intuition applies to partially ob-
+servable environments where there is minimal to no overlap
+between agents’ observations. In this case, our goal is to in-
+duce misalignment in the common beliefs among the agents
+[Zhang et al., 2022; Moreno et al., 2021]. Accordingly, our
+experiments mainly focus on partially observable tasks.
+Overall, our attack exploits agents’ dependence on aligned
+perceptions by manipulating their observations. Our idea is
+similar to a divide-and-conquer strategy: we make each agent
+perceive the environment differently, which undermines co-
+ordination and ultimately degrades team performance.
+4.3
+The Align attack
+Cooperative MARL typically assumes that agents have
+aligned perceptions. Under this assumption, agents’ obser-
+vations {o1, . . . , on} are initially aligned.
+Our goal is to
+perturb each observation so that the modified observations
+{o1 + δ1, . . . , on + δn} become misaligned. Therefore, we
+first need a quantitative measure of misalignment.
+Aligned observations are correlated because they encode
+similar information and beliefs about the environment. As a
+result, one agent’s observation oi can be approximated from
+the observations of other agents o−i. In contrast, misaligned
+observations exhibit weaker correlation, making such an ap-
+proximation difficult.
+Formally, aligned observations allow us to train the follow-
+ing neural network fθ using the mean squared error J(o; θ) :
+fθ(o−i) ≈oi
+∀i ∈N
+(4)
+J(o; θ) = 1
+n
+X
+i∈N
+(fθ(o−i) −oi))2
+(5)
+Once fθ is properly trained, it can be used to measure mis-
+alignment, as high loss values are associated with misaligned
+observations. Therefore, our strategy to induce misalignment
+is to find small perturbations {δi}i∈N that will maximize the
+loss of the trained network fθ. This is formally expressed as:
+δ = arg max
+δ
+J(o + δ; θ)
+s.t
+∥δ∥∞≤ϵ
+(6)
+The main benefits of our formulation in Equation (6) are
+threefold. First, it is black-box and does not require access
+to policy parameters. Second, unlike prior attacks, it does
+not rely on any policy or value function to generate perturba-
+tions. Third, it enables the use of PGD attacks similar to those
+
+in Equation (1). However, a subtle but important distinction
+must be noted. In Equation (1), the perturbation is added only
+to the input, whereas in Equation (6), it is added to both the
+input and the output.
+To summarize, our attack consists of two phases. In the
+first phase, we collect the observations of deployed agents for
+a sufficient period T c, which are then used to train fθ. No
+attack is executed during this phase. In the second phase,
+we intercept the current observations {oi}1,...,n, generate the
+corresponding perturbations, and inject them into the agents.
+A full and detailed pseudocode can be found in the appendix.
+4.4
+Targeted Align attack
+Attacking all agents may be computationally expensive and
+may reduce the stealthiness of the attack. Therefore, we may
+be forced to only attack a subset of agents M ⊂N with
+m = |M| < n. For a targeted attack, we choose the sub-
+set of agents whose observations are most mutually aligned;
+we interpret them as agents who are most likely to coordinate
+among each other, and we aim to undermine their collabora-
+tion. Formally, for a fixed number of targeted agents m, we
+seek the subset M that satisfies the following:
+M = arg min
+S⊂N
+|S|=m
+J({oi}i∈S; θ) =
+X
+i∈S
+(fθ(o−i) −oi)2
+(7)
+4.5
+Free misalignment attacks
+Our goal is to exploit alignment without access to observa-
+tions. To illustrate our method, imagine a two-dimensional
+game in which two agents must jointly catch an object. Each
+agent observes the (x, y) coordinates of the target. An ad-
+versary can manipulate their observations by pushing them
+toward completely different directions to prevent them from
+jointly catching the target. A suitable strategy is to push the
+agents in perpendicular directions1. This idea generalizes to
+high-dimensional observations using vector orthogonality.
+To design a misalignment attack, we will generate a matrix
+δ =
+
+δ⊤
+1
+· · ·
+δ⊤
+n
+
+∈Rn×d that must satisfy two condi-
+tions:
+1. Condition 1: The rows are orthogonal :
+δ⊤
+i δj = 0
+∀i, j ∈N, i ̸= j,
+(8)
+2. Condition 2: Satisfy the attack budget constraint
+∥δi∥∞≤ϵ
+∀i ∈N
+(9)
+Generating such perturbations is nontrivial. Greedy con-
+struction can satisfy the budget constraint but often fails to en-
+sure orthogonality, especially in high dimensions. Sampling
+and orthogonalizing a random matrix guarantees orthogonal-
+ity but not the budget constraint (low magnitudes).
+To generate perturbations that satisfy both constraints, we
+use partial Hadamard matrices ˜H which are obtained by
+selecting a subset of rows from a full Hadamard matrix H.
+1We did not choose opposite directions as we cannot generalize
+the idea with more than 2 agents. We cannot have a set of three or
+more vectors where every pair points into opposite directions.
+Hadamard matrices have orthogonal rows, whose entries are
+either +1 or −1. Thus, it is clear that the following matrix
+satisfies both conditions (1) and (2):
+δ = ϵ × ˜H
+(10)
+Hadamard matrices exist only for specific dimensions:
+when d is a multiple of 4. To bypass this, we generate a full
+Hadamard matrix of size ˜d, where ˜d is the largest power of
+two such that ˜d ≤d:
+˜d = 2⌊log2 d⌋
+(11)
+We then pad the remaining columns with zeros.
+This
+padding affects neither orthogonality nor the budget con-
+straint.
+We use Sylvester’s construction to generate
+Hadamard matrices.
+5
+Experiments
+The goal of this section is to thoroughly investigate the perfor-
+mance of our attacks. To this end, we deliberately select mul-
+tiple environments from three different MARL benchmarks,
+each chosen with a specific purpose to evaluate distinct as-
+pects of our approach.
+• Level-Based Foraging (LBF) [Papoudakis et al., 2021]:
+is a grid-world environment where agents collect scat-
+tered food. We select fully observable, highly coopera-
+tive, and partially observable tasks. In fully observable
+tasks, agents observe the entire grid. In the highly co-
+operative setting (“-coop” in Figure 5), food is collected
+only if all agents surround it simultaneously, leading to
+overlapping observations that facilitate training fθ. Par-
+tially observable tasks are more challenging: agents see
+only a limited area around them (2-square or 1-square
+radius, with “-2s” or “-1s” flags). We use 10 LBF envi-
+ronments, with observation dimensions ranging from 15
+to 18. The maximum number of agents is 4.
+• Multi-Robot Warehouse (RWARE) [Papoudakis et al.,
+2021]: is a partially observable multi-agent environ-
+ment where robots are tasked with collecting requested
+shelves inside a warehouse. We test with three differ-
+ent levels of partial observability, where agents observe
+a 7×7, 5×5, or 3×3 grid around them (“sr-3”, “sr-2” and
+“sr-1” flags in Figure 4). In addition to partial observ-
+ability, this benchmark allows experiments with higher-
+dimensional observations, ranging from 71 to 351. The
+number of agents is 4 in all the tasks.
+• StarCraft Multi-Agent Challenge (SMAC) [Ellis et al.,
+2024]: SMAC is the most used benchmark in c-MARL
+and provides partially observable environments with a
+large number of agents, allowing us to evaluate how our
+algorithms scale. Since SMAC tasks are combat sce-
+narios, agents can be removed during an episode due to
+death, leading to situations where the adversary loses ac-
+cess to some agents. This setting allows us to evaluate
+the robustness of our attacks under partial and dynamic
+access, where not all agents can be attacked throughout
+the episode. Such conditions reflect many realistic sce-
+narios in which adversarial capabilities may be limited
+
+0.0
+0.1
+0.2
+8
+10
+12
+14
+16
+18
+20
+IQM Return
+10m_vs_11m
+0.0
+0.1
+0.2
+MMM2
+0.0
+0.1
+0.2
+27m_vs_30m
+0.0
+0.1
+0.2
+protoss_5_vs_5
+0.0
+0.1
+0.2
+terran_5_vs_5
+0.0
+0.1
+0.2
+zerg_5_vs_5
+Align
+Noise
+Whitebox
+Hadamard
+Figure 3: Performance on SMAC: IQM returns and 95% CIs estimated using 50 runs.
+0.0
+0.1
+0.2
+0
+3
+6
+9
+12
+15
+18
+21
+IQM Return
+small-4ag-sr-1
+0.0
+0.1
+0.2
+0
+4
+8
+12
+16
+20
+24
+28
+small-4ag-sr-2
+0.0
+0.1
+0.2
+0
+4
+8
+12
+16
+20
+24
+28
+small-4ag-sr-3
+0.0
+0.1
+0.2
+0
+6
+12
+18
+24
+30
+36
+42
+48
+54
+tiny-4ag-sr-1
+0.0
+0.1
+0.2
+0
+6
+12
+18
+24
+30
+36
+42
+48
+54
+tiny-4ag-sr-2
+0.0
+0.1
+0.2
+0
+6
+12
+18
+24
+30
+36
+42
+48
+tiny-4ag-sr-3
+Align
+Noise
+Whitebox
+Hadamard
+Figure 4: Performance on RWARE: IQM returns and 95% CIs estimated using 50 runs.
+or intermittent. We selected six games with observation
+dimensions ranging from 82 to 285, and with 5, 10, or
+27 agents.
+Adversarial baselines: We use the following baselines: (1)
+White-box attack. (2) Random attacks. Most previous works
+considered only uniform and normal distributions. In addi-
+tion, we include a non-symmetric distribution (exponential
+Exp(λ)) and temporally correlated noise generated using the
+Ornstein–Uhlenbeck (OU) process.
+We report the perfor-
+mance of the best random attack (i.e, the random noise with
+the lowest return). Although comparing our limited-access
+attacks to a white-box attack is not entirely fair, we include
+it to estimate an upper bound and to select meaningful values
+for the attack budget as it is pointless to choose ϵ where the
+random attacks outperform the white-box attack.
+As we consider test-time attacks, we train the agents in
+each environment using QMIX
+[Rashid et al., 2018] and
+MAPPO [Yu et al., 2022]. We test different architectures to
+train fθ: feedforward, recurrent, and the encoder-only trans-
+former. Unless otherwise stated, the results in the subsequent
+paragraphs are of agents trained with MAPPO, and the ad-
+versary collects a dataset of observations from 5,000 environ-
+ment transitions and uses RNNS to train fθ. We fix PGD
+iterations at K = 10 and the step size of α =
+ϵ
+K . Full de-
+tails of the used hyperparameters and additional results can
+be found in the appendix.
+Metrics: We evaluate our attacks using episodic return.
+To ensure robust results, we report the interquartile mean
+(IQM) [Agarwal et al., 2021] of returns over 50 independent
+episodes, along with 95% confidence intervals. IQM is ro-
+bust to outliers and less biased than the median. Our code is
+open-source.2
+5.1
+Numerical results
+Figures 3, 4, and 5 present the IQM returns (y-axis) for
+SMAC, RWARE, and LBF benchmarks, respectively, across
+2Github:
+https://github.com/AmineAndam04/black-box-marl.
+git
+selected ϵ values (x-axis). The values at ϵ = 0 represent the
+benign performance of the agents during deployment.
+- LBF (Figure 5):
+We observe that both Align and
+Hadamard attacks are effective in both fully and partially
+observable tasks (first two vs last three columns). Compar-
+ing each task with its highly cooperative variant (1st vs 2nd,
+and 3rd vs 4th columns), attacks are substantially more ef-
+fective in highly cooperative settings, leading to much lower
+returns. Notably, in most partially observable scenarios, the
+Hadamard attack, despite being a free attack, matches or even
+outperforms the Align attack. The same pattern is observed
+on the RWARE benchmark.
+- RWARE (Figure 4): Overall, both attacks are effective
+across tasks. Under the strongest partial observability (sr = 1,
+1st and 4th columns), the Align attack remains effective but
+is outperformed by Hadamard. As partial observability de-
+creases (e.g, from the 1st to the 3rd column), the performance
+gap narrows, as learning a good network fθ becomes easier.
+Results on RWARE further indicate that attack effectiveness
+is not degraded by high dimensional observations.
+- SMAC (Figure 3): The Align attack exhibits consistent
+performance across all games. In contrast, the Hadamard at-
+tack struggles to achieve significant gains over random noise
+in several scenarios (1st, 3rd, and 4th columns).
+Beyond
+partial observability and high dimensionality, SMAC further
+demonstrates that the Align attack remains effective in sce-
+narios with large numbers of agents and without persistent
+access to the agents.
+Next, we evaluate targeted attacks. For a fixed number of
+agents m, the Align attack uses the targeted procedure from
+Section 4.4, while Hadamard selects agents randomly. Re-
+sults are shown in Figures 6, 7, and 8, with the number of
+attacked agents indicated at the right of each subplot. Two
+observations stand out: first, Align maintains strong perfor-
+mance when 50% or more agents are targeted; second, Align
+is less sensitive than Hadamard to targeting fewer agents. To
+illustrate this second point, in Figures 7 and 8 we specifi-
+cally show tasks where Hadamard outperforms Align when
+all agents are attacked, but as fewer agents are targeted, Align
+
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+IQM Return
+8x8-3p-2f
+8x8-3p-2f-coop
+2s-8x8-3p-2f
+2s-8x8-3p-2f-coop
+1s-8x8-3p-2f
+0.0
+0.2
+0.4
+0.6
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+IQM Return
+10x10-4p-2f
+0.0
+0.2
+0.4
+0.6
+10x10-4p-2f-coop
+0.0
+0.2
+0.4
+0.6
+2s-10x10-4p-2f
+0.0
+0.2
+0.4
+0.6
+2s-10x10-4p-2f-coop
+0.0
+0.2
+0.4
+0.6
+1s-10x10-4p-2f
+Align
+Noise
+Whitebox
+Hadamard
+Figure 5: Performance on LBF: IQM returns and 95% CIs estimated using 50 runs.
+0.03
+0.10
+0.15
+0.20
+8
+10
+12
+14
+16
+18
+IQM Return
+10
+7
+5
+1
+10
+7
+5
+1
+10m_vs_11m
+0.03
+0.10
+0.15
+0.20
+10
+7
+5
+1
+10
+7
+5
+1
+MMM2
+0.03
+0.10
+0.15
+0.20
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+27
+20
+15
+10
+5
+27
+20
+15
+10
+5
+27m_vs_30m
+Align
+Hadamard
+Figure 6: Performance of targeted attacks on SMAC.
+becomes more effective.
+The last remark also indicates that the Align attack effec-
+tively identifies vulnerable agents. To further test this, we
+isolate the targeting mechanism: we select agents using the
+Align network (Equation 7) but inject Hadamard perturba-
+tions instead of Align perturbations.
+In Tables 2 and 3, we report the performance gap between
+Hadamard attack obtained with and without selection mech-
+anisms.
+For example, if the untargeted Hadamard attack
+causes a -15% drop relative to the benign return and the table
+reports a -10% drop, this means that the targeted Hadamard
+attack yields a total drop of -25%. Across all benchmarks, the
+targeted Hadamard attack consistently outperforms the untar-
+geted variant, with a performance gap of more than two digits
+in many environments, with a maximum additional drop of -
+57%. On average across all the tasks, the additional drop is
+-11.5% on LBF, -6.18% on RWARE, and -6.28% on SMAC.
+These results demonstrate the effectiveness of the alignment
+network fθ for target selection.
+5.2
+Ablations
+To normalize returns across tasks with different magnitudes,
+the y-axis in the following figures reports the percentage drop
+in return caused by our attack relative to the benign reward.
+Data collection: Figure 9 evaluates the Align attack with
+training data ranging from 1,000 to 100,000 steps. Surpris-
+ingly, a strong attack performance is achieved with few sam-
+ples, with no observable gains from larger datasets.
+This
+reduces data collection requirements, which improves the
+0.03
+0.10
+0.15
+0.20
+0
+5
+10
+15
+20
+IQM Return
+4
+3
+2
+1
+4
+3
+2
+1
+small-4ag-sr-1
+0.03
+0.10
+0.15
+0.20
+0
+6
+12
+18
+24
+30
+36
+42
+48
+54
+4
+3
+2
+1
+4
+3
+2
+1
+tiny-4ag-sr-1
+Align
+Hadamard
+Figure 7: Performance of targeted attacks on RWARE.
+0.10
+0.25
+0.50
+0.75
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+IQM Return
+3
+2
+1
+3
+2
+1
+2s-8x8-coop
+0.10
+0.25
+0.50
+0.75
+3
+2
+1
+3
+2
+1
+1s-8x8
+0.10
+0.25
+0.50
+0.75
+4
+3
+2
+1
+4
+3
+2
+1
+1s-10x10
+Align
+Hadamard
+Figure 8: Performance of targeted attacks on LBF.
+stealth of the attack and lowers storage and training costs for
+the adversary.
+Network architecture: Figure 10 compares the Align at-
+tack across different neural architectures. Across all bench-
+marks, RNNs generally achieve the strongest performance,
+with a particularly large margin on RWARE. MLPs and
+Transformers perform comparably, but MLPs provide a bet-
+ter cost-performance trade-off due to faster training with only
+three hidden layers. RNNs share this advantage, as we em-
+ploy shallow variants with one or two recurrent layers. We
+also tested deeper and more complex architectures, but they
+did not yield further performance gains.
+PGD and FGSM: We investigate the impact of the number
+of PGD steps K. Figure 11 compares performance for K ∈
+{1, 5, 10}. A key observation is that a single step is often
+sufficient to achieve strong performance, which is important
+for real-time attacks, as it allows perturbations to be generated
+quickly with minimal computational cost.
+
+Task
+m
+ϵ = 0.15
+ϵ = 0.2
+ϵ = 0.25
+1s-10x10
+2
+-23.57
+-4.99
+-6.6
+3
+2.32
+-6.28
+-7.48
+1s-8x8
+1
+-6.01
+-0.96
+-19.24
+2
+-7.42
+-0.79
+-19.34
+2s-8x8-coop
+1
+0
+-3.84
+-3.84
+2
+-32.69
+-48.07
+-57.69
+Table 2: Targeted Hadamard attack on LBF
+Task
+m
+ϵ = 0.05
+ϵ = 0.09
+ϵ = 0.15
+tiny-4ag-sr-1
+1
+0.22
+-0.37
+-4.50
+3
+-1.35
+-2.1
+-16.80
+small-4ag-sr-1
+1
+-9.80
+-6.71
+-2.35
+3
+-2.17
+-14.51
+-19.23
+10m vs 11m
+3
+-8.3
+-10.17
+-3.71
+7
+-14.35
+0.40
+1.98
+MMM2
+3
+3.26
+0.73
+-6.32
+7
+-2.76
+1.22
+-7.10
+Table 3: Targeted Hadamard attack on RWARE and SMAC
+5.3
+Discussion
+Most adversarial MARL work, including ours, evaluates at-
+tack effectiveness primarily using episodic return. We be-
+lieve episode length is another important metric that is of-
+ten overlooked, particularly in real-world scenarios with con-
+strained adversaries.
+In such settings, fully incapacitating
+the c-MARL system is not always realistic; a more plausible
+outcome is delaying task completion by increasing episode
+length, even if tasks are eventually completed.
+Longer
+episodes can substantially increase operational costs, includ-
+ing energy and computation, making this a meaningful mea-
+sure of adversarial impact. We illustrate this using the Align
+attack on LBF. Table 4 shows percentage increases in episode
+length, which often exceed double digits and reach up to
+226% in the worst case.
+Tasks
+ϵ = 0.1
+0.15
+0.2
+0.25
+0.5
+2s-8x8-coop
+9.59
+43.55
+138.52
+152.49
+170.86
+2s-10x10-coop
+34.44
+23.78
+65.78
+68.52
+79.04
+8x8-coop
+10.59
+29.67
+103.86
+188.56
+226.80
+8x8
+5.94
+21.06
+51.93
+75.93
+193.21
+Table 4: Episode length increase (%) on LBF tasks
+Limitations: Our proposed algorithm faces the same core
+challenges as any MARL training procedure, such as par-
+tial observability, which we discuss thoroughly in the pa-
+per. In addition, issues like handling heterogeneous agents
+and multi-modal observations may further affect the effec-
+tiveness of our attack. Moreover, we studied realistic attacks
+from the perspective of the adversary’s access and capabili-
+ties. However, other perspectives can also be considered, in-
+.1
+.25
+.5
+.75
+80
+60
+40
+20
+0
+IQM Return drop (%)
+LBF
+.03
+.09
+.15
+.2
+SMAC
+.03
+.09
+.15
+.2
+RWARE
+1K
+5K
+50K
+100K
+Figure 9: Collected data size effect across MARL benchmarks
+.1
+.25
+.5
+.75
+0.8
+0.6
+0.4
+0.2
+0.0
+IQM Return drop (%)
+LBF
+.03
+.09
+.15
+.2
+SMAC
+.03
+.09
+.15
+.2
+RWARE
+MLP
+RNN
+Transformer
+Figure 10: Neural architecture effect across MARL benchmarks
+cluding system-level constraints, attack deployment, and de-
+tectability in real-world settings. We plan to address these
+aspects in future work.
+6
+Conclusion
+In this paper, we present two novel adversarial attacks specif-
+ically designed for collaborative MARL during deployment.
+We consider a black-box scenario under highly constrained
+conditions: First, a scenario where the adversary has ac-
+cess solely to the observations of deployed agents. Second,
+a more constrained scenario where the adversary has no ac-
+cess at all. Our approach exploits the reliance of collaborative
+agents on aligned perceptions for effective cooperation and
+adds small perturbations to the agents’ observations specif-
+ically designed to induce misaligned perceptions. Our em-
+pirical investigation showed the effectiveness of our attacks.
+Notably, our method requires minimal data to generate effec-
+tive perturbations; we found that as few as 1,000 steps are
+sufficient to create impactful damage. Moreover, the adver-
+sary can choose to execute the attack in fewer steps while still
+.1
+.25
+.5
+.75
+0.8
+0.6
+0.4
+0.2
+0.0
+IQM Return drop (%)
+LBF
+.03
+.09
+.15
+.2
+SMAC
+.03
+.09
+.15
+.2
+RWARE
+K=1
+K=5
+K=10
+Figure 11: PGD’s iteration effect across MARL benchmarks.
+
+achieving satisfactory results.
+References
+[Agarwal et al., 2021] Rishabh Agarwal, Max Schwarzer,
+Pablo Samuel Castro, Aaron C. Courville, and Marc G.
+Bellemare.
+Deep reinforcement learning at the edge of
+the statistical precipice. In Marc’Aurelio Ranzato, Alina
+Beygelzimer, Yann N. Dauphin, Percy Liang, and Jen-
+nifer Wortman Vaughan, editors, Advances in Neural In-
+formation Processing Systems 34: Annual Conference on
+Neural Information Processing Systems 2021, NeurIPS
+2021, December 6-14, 2021, virtual, pages 29304–29320,
+2021.
+[Chen et al., 2024] Zhen Chen, Yong Liao, Youpeng Zhao,
+Zipeng Dai, and Jian Zhao. Cuda2: An approach for in-
+corporating traitor agents into cooperative multi-agent sys-
+tems. arXiv preprint arXiv:2406.17425, 2024.
+[Chen et al., 2025] Jianming Chen, Yawen Wang, Junjie
+Wang, Xiaofei Xie, Yuanzhe Hu, Qing Wang, and Fan-
+jiang Xu. Adversarial attack on black-box multi-agent by
+adaptive perturbation. CoRR, abs/2511.15292, 2025.
+[Ellis et al., 2024] Benjamin Ellis, Jonathan Cook, Skander
+Moalla, Mikayel Samvelyan, Mingfei Sun, Anuj Mahajan,
+Jakob Foerster, and Shimon Whiteson. Smacv2: An im-
+proved benchmark for cooperative multi-agent reinforce-
+ment learning. Advances in Neural Information Process-
+ing Systems, 36, 2024.
+[Goodfellow et al., 2014] Ian
+J
+Goodfellow,
+Jonathon
+Shlens, and Christian Szegedy. Explaining and harnessing
+adversarial examples.
+arXiv preprint arXiv:1412.6572,
+2014.
+[Gupta et al., 2017] Jayesh K Gupta, Maxim Egorov, and
+Mykel Kochenderfer. Cooperative multi-agent control us-
+ing deep reinforcement learning. In Autonomous Agents
+and Multiagent Systems: AAMAS 2017 Workshops, Best
+Papers, S˜ao Paulo, Brazil, May 8-12, 2017, Revised Se-
+lected Papers 16, pages 66–83. Springer, 2017.
+[Hu and Zhang, 2022] Yizheng
+Hu
+and
+Zhihua
+Zhang.
+Sparse adversarial attack in multi-agent reinforcement
+learning. arXiv preprint arXiv:2205.09362, 2022.
+[Huang et al., 2017] Sandy Huang, Nicolas Papernot, Ian
+Goodfellow, Yan Duan, and Pieter Abbeel.
+Adversar-
+ial attacks on neural network policies.
+arXiv preprint
+arXiv:1702.02284, 2017.
+[Inkawhich et al., 2020] Matthew Inkawhich, Yiran Chen,
+and Hai Li. Snooping attacks on deep reinforcement learn-
+ing. In Proceedings of the 19th International Conference
+on Autonomous Agents and MultiAgent Systems, pages
+557–565, 2020.
+[Kos and Song, 2017] Jernej Kos and Dawn Song. Delving
+into adversarial attacks on deep policies. arXiv preprint
+arXiv:1705.06452, 2017.
+[Kurakin et al., 2018] Alexey Kurakin, Ian J Goodfellow,
+and Samy Bengio. Adversarial examples in the physical
+world. In Artificial intelligence safety and security, pages
+99–112. Chapman and Hall/CRC, 2018.
+[Lin et al., 2020] Jieyu Lin, Kristina Dzeparoska, Sai Qian
+Zhang, Alberto Leon-Garcia, and Nicolas Papernot. On
+the robustness of cooperative multi-agent reinforcement
+learning. In 2020 IEEE Security and Privacy Workshops
+(SPW), pages 62–68. IEEE, 2020.
+[Liu and Lai, 2023] Guanlin Liu and Lifeng Lai. Efficient
+adversarial attacks on online multi-agent reinforcement
+learning. Advances in Neural Information Processing Sys-
+tems, 36:24401–24433, 2023.
+[Lv et al., 2025] Yang Lv, Jinlong Lei, and Peng Yi. A local
+information aggregation-based multiagent reinforcement
+learning for robot swarm dynamic task allocation. IEEE
+Transactions on Neural Networks and Learning Systems,
+36(6):10437–10449, 2025.
+[Madry et al., 2018] Aleksander
+Madry,
+Aleksandar
+Makelov,
+Ludwig
+Schmidt,
+Dimitris
+Tsipras,
+and
+Adrian Vladu.
+Towards deep learning models resistant
+to adversarial attacks.
+In 6th International Conference
+on Learning Representations, ICLR 2018, Vancouver,
+BC, Canada, April 30 - May 3, 2018, Conference Track
+Proceedings. OpenReview.net, 2018.
+[Moreno et al., 2021] Pol
+Moreno,
+Edward
+Hughes,
+Kevin R. McKee, Bernardo ´Avila Pires, and Th´eophane
+Weber.
+Neural recursive belief states in multi-agent
+reinforcement learning. CoRR, abs/2102.02274, 2021.
+[Nisioti et al., 2021] Eleni Nisioti, Daan Bloembergen, and
+Michael Kaisers.
+Robust multi-agent Q-learning in co-
+operative games with adversaries. In Proceedings of the
+AAAI conference on artificial intelligence, volume 2, 2021.
+[Papernot et al., 2016] Nicolas Papernot, Patrick McDaniel,
+and Ian Goodfellow. Transferability in machine learning:
+from phenomena to black-box attacks using adversarial
+samples. arXiv preprint arXiv:1605.07277, 2016.
+[Papoudakis et al., 2021] Georgios
+Papoudakis,
+Filippos
+Christianos, Lukas Sch¨afer, and Stefano V. Albrecht.
+Benchmarking multi-agent deep reinforcement learning
+algorithms in cooperative tasks. In Joaquin Vanschoren
+and Sai-Kit Yeung, editors, Proceedings of the Neural
+Information Processing Systems Track on Datasets and
+Benchmarks 1, NeurIPS Datasets and Benchmarks 2021,
+December 2021, virtual, 2021.
+[Park et al., 2024] Kidon Park, Hong-Gyu Jung, Tae-San
+Eom, and Seong-Whan Lee.
+Uncertainty-aware portfo-
+lio management with risk-sensitive multiagent network.
+IEEE Trans. Neural Networks Learn. Syst., 35(1):362–
+375, 2024.
+[Pham et al., 2023] Nhan H Pham, Lam M Nguyen, Jie
+Chen, Hoang Thanh Lam, Subhro Das, and Tsui-Wei
+Weng. Attacking c-marl more effectively: A data driven
+approach. In 2023 IEEE International Conference on Data
+Mining (ICDM), pages 1271–1276. IEEE, 2023.
+[Rakhsha et al., 2020] Amin Rakhsha, Goran Radanovic,
+Rati Devidze, Xiaojin Zhu, and Adish Singla.
+Policy
+teaching via environment poisoning: Training-time adver-
+sarial attacks against reinforcement learning.
+In Inter-
+
+national Conference on Machine Learning, pages 7974–
+7984. PMLR, 2020.
+[Rakhsha et al., 2021] Amin Rakhsha, Goran Radanovic,
+Rati Devidze, Xiaojin Zhu, and Adish Singla.
+Policy
+teaching in reinforcement learning via environment poi-
+soning attacks. Journal of Machine Learning Research,
+22(210):1–45, 2021.
+[Rashid et al., 2018] Tabish Rashid, Mikayel Samvelyan,
+Christian Schroeder, Gregory Farquhar, Jakob Foerster,
+and Shimon Whiteson. Qmix: Monotonic value function
+factorisation for deep multi-agent reinforcement learning.
+In International Conference on Machine Learning, pages
+4295–4304. PMLR, 2018.
+[Szegedy, 2013] C Szegedy. Intriguing properties of neural
+networks. arXiv preprint arXiv:1312.6199, 2013.
+[Wu et al., 2021] Xian Wu, Wenbo Guo, Hua Wei, and
+Xinyu Xing. Adversarial policy training against deep rein-
+forcement learning. In 30th USENIX Security Symposium
+(USENIX Security 21), pages 1883–1900, 2021.
+[Yu et al., 2022] Chao Yu, Akash Velu, Eugene Vinitsky, Ji-
+axuan Gao, Yu Wang, Alexandre Bayen, and Yi Wu. The
+surprising effectiveness of ppo in cooperative multi-agent
+games. Advances in Neural Information Processing Sys-
+tems, 35:24611–24624, 2022.
+[Zhang et al., 2020] Xuezhou Zhang,
+Yuzhe Ma,
+Adish
+Singla, and Xiaojin Zhu. Adaptive reward-poisoning at-
+tacks against reinforcement learning.
+In International
+Conference on Machine Learning, pages 11225–11234.
+PMLR, 2020.
+[Zhang et al., 2022] Xianjie Zhang, Yu Liu, Hangyu Mao,
+and Chao Yu. Common belief multi-agent reinforcement
+learning based on variational recurrent models. Neurocom-
+puting, 513:341–350, 2022.
+[Zhang et al., 2024] Ying Zhang, Meng Yue, Jianhui Wang,
+and Shinjae Yoo. Multi-agent graph-attention deep rein-
+forcement learning for post-contingency grid emergency
+voltage control. IEEE Transactions on Neural Networks
+and Learning Systems, 35(3):3340–3350, 2024.
+[Zheng et al., 2023] Haibin Zheng, Xiaohao Li, Jinyin Chen,
+Jianfeng Dong, Yan Zhang, and Changting Lin. One4all:
+Manipulate one agent to poison the cooperative multi-
+agent reinforcement learning.
+Computers & Security,
+124:103005, 2023.
+
+A
+supplementary material
+A.1
+Pseudo-codes
+In Algorithm 1 and Algorithm 2 we provide the detailed pseudo-codes of align attack and PGD attack respectively.
+Algorithm 1 Adversarial Attack to Induce Misalignment
+1: Input: Data collection period T c, attack period T a, PGD parameters.
+2: Initialization: Initialize fθ and the dataset D = ∅
+3: Phase One: Data collection and model training
+4: for t = 1 to T c do
+5:
+Collect {o1,t, o2,t, . . . , on,t} and store it in D.
+6: end for
+7: Train fθ using the collected dataset D
+8: Phase Two: Adversarial attack on infected agents
+9: for t = 1 to T a do
+10:
+Compute the perturbation δ using PGD (Algorithm 2)
+11:
+Inject the perturbations
+12: end for
+Algorithm 2 Projected Gradient Descent algorithm
+1: Input: Trained neural network f, observations o, attack budget ϵ, step size α, number of iteration K, loss function J,
+allowed observation values [omin, omax].
+2: Initialization: Perturbation δ(0) = 0, perturbed observation ˜o(0) = o.
+3: Output: Perturbed observations: ˜o(0) = ˜o(K) .
+4: for k = 1 to K do
+5:
+Compute the gradient ∇˜o(k−1)J(˜o(k−1); θ)
+6:
+Compute δk:
+δ(k) = α × sign(∇˜o(k−1)J(˜o(k−1); θ))
+7:
+Clip δ(k) to [−ϵ, ϵ]
+8:
+Compute ˜o(k)
+˜o(k) = ˜o(k−1) + δ(k)
+9:
+Clip ˜o(k) to [omin, omax]
+10: end for
+A.2
+Hadamard matrices
+In our implementations, we generate Hadamard matrices using Sylvester’s construction. It is important to note that Hadamard
+matrices exist only for specific dimensions: when d is a multiple of 4. To bypass the requirement that d must be a multiple of
+4, we generate a full Hadamard matrix of size ˜d, where ˜d is the largest power of two such that ˜d ≤d:
+˜d = 2⌊log2 d⌋
+(12)
+We then pad the remaining d −˜d columns with zeros. This padding affects neither orthogonality nor the budget constraint.
+As an example when n = 3 and d = 10, we generate the following matrix in Figure 12: the first ˜d = 8 columns correspond
+to the scaled partial Hadamard matrix, while the remaining d −˜d = 2 columns are zero-padded to extend the dimensionality to
+d = 10.
+Figure 12: Padded partial Hadamard matrix for n = 3, d = 10.
+
+We can theoretically combine the Hadamard attack with the Align attack in two ways: (1) by using a scaled partial Hadamard
+matrix to initialize the adversarial perturbations in Algorithm 2, line 2; or (2) by encouraging the perturbations of the Align
+attack to be orthogonal by adding a penalty to Equation (6):
+−λ
+δ⊤δ −I
+
+2
+2 .
+(13)
+We implemented these two approaches, but did not notice any substantial improvements. However, using the targeted version
+of the Align attack to select a subset of agents and injecting Hadamard perturbations proved very effective in our experiments.
+A.3
+Experimental details
+We provide full details on the used environmnets in table 5, 7, 6.
+Environment
+FO
+PO
+HC
+dim(oi)
+N
+8x8-3p-2f
+✓
+✗
+✗
+15
+3
+8x8-3p-2f-coop
+✓
+✗
+✓
+15
+3
+1s-8x8-3p-2f
+✗
+✓
+✗
+15
+3
+2s-8x8-3p-2f
+✗
+✓
+✗
+15
+3
+2s-8x8-3p-2f-coop
+✗
+✓
+✓
+15
+3
+10x10-4p-2f
+✓
+✗
+✗
+18
+4
+10x10-4p-2f-coop
+✓
+✗
+✓
+18
+4
+1s-10x10-4p-2f
+✓
+✗
+✗
+18
+4
+2s-10x10-4p-2f
+✓
+✗
+✗
+18
+4
+2s-10x10-4p-2f-coop
+✓
+✗
+✗
+18
+4
+Table 5: Selected LBF environments: we select (FO) fully observable, (PO) partial observable, and (HC) highly cooperative tasks.
+Environment
+PO
+SR
+dim(oi)
+N
+tiny-4ag-sr-1
+✓
+3 × 3
+71
+4
+tiny-4ag-sr-2
+✓
+5 × 5
+183
+4
+tiny-4ag-sr-3
+✓
+7 × 7
+351
+4
+small-4ag-sr-1
+✓
+3 × 3
+71
+4
+small-4ag-sr-2
+✓
+5 × 5
+183
+4
+small-4ag-sr-3
+✓
+7 × 7
+351
+4
+Table 6: Selected RWARE environments we select sensory range (SR) of 3 × 3, 5 × 5 and 7 × 7.
+Environment
+PO
+dim(oi)
+N
+27m vs 30m
+✓
+285
+27
+10m vs 11m
+✓
+105
+10
+MMM2
+✓
+176
+10
+protoss 5 vs 5
+✓
+92
+5
+terran 5 vs 5
+✓
+82
+5
+zerg 5 vs 5
+✓
+82
+5
+Table 7: Selected SMAC environments: all environments are partially observable (PO)
+We trained QMIX and MAPPO agents using the hyperparameters specified in tables 8, 9, 10 , and 11. We use the Epymarl
+library [Papoudakis et al., 2021] for training. We only report hyperparameters that are different from the default values found
+in Epymarl configurations. For the RWARE benchmark, we only train MAPPO agents, as QMIX performs poorly at this
+task [Papoudakis et al., 2021]. Once the training is complete, we freeze the policy weights.
+We test with three different neural architectures:
+• Feedforward neural network: It consists of three hidden layers with 1024 hidden units.
+• Recurrent neural network: For LBF and SMAC, we use one recurrent layer with a hidden dimension of 1024. For RWARE,
+we use 2 consecutive layers.
+• Encoder-only transformer: For RWARE and LBF, we use d model=256 and dim feedforward=2048 with 16 heads. For
+SMAC, we use d model=128 and dim feedforward=1024 with 8 heads.
+
+We use a learning rate of 0.0001 and a batch size of 64. The feedforward and transformer networks are trained for 100
+epochs, while the RNN network is trained for 300 epochs.
+Table 8: QMIX Hyperparameters Used for SMAC and LBF benchmark
+Hyperparameter
+SMAC
+LBF
+Runner type
+parallel
+episode
+Batch size per run
+8
+1
+Network hidden dimension
+128
+64
+Learning rate
+0.001
+0.0003
+Standardise rewards
+True
+True
+Use RNN
+True
+True
+Epsilon anneal time
+50000
+200000
+Target update interval
+200
+0.01
+Training batch size
+64
+32
+Maximum timesteps (tmax)
+20,050,000
+5050000
+Table 9: MAPPO Hyperparameters for SMAC benchmark.
+Environments hdim1
+lr
+Stand2
+ent
+q nstep Buffer Epochs
+MMM2
+64
+0.0005
+False
+0.001
+10
+10
+4
+27m vs 30m
+64
+0.0005
+False
+0.001
+10
+10
+4
+10m vs 11m
+128
+0.001
+True
+0
+5
+8
+10
+SMACv2
+128
+0.0003
+True
+0.001
+5
+10
+4
+protoss 5 vs 5
+64
+0.0005
+False
+0.001
+10
+10
+4
+terran 5 vs 5
+128
+0.0003
+True
+0.001
+5
+10
+4
+zerg 5 vs 5
+128
+0.0003
+True
+0.001
+5
+10
+4
+1hdim: Network hidden dimension 2Stand: Standardise rewards
+Table 10: MAPPO Hyperparameters for LBF benchmark.
+Environment
+lr
+hdim
+Stand
+RNN
+q nstep
+8x8-3p-2f
+0.0003
+128
+False
+False
+5
+8x8-3p-2f-coop
+0.0005
+32
+True
+True
+5
+1s-8x8-3p-2f
+0.0003
+128
+False
+True
+10
+2s-8x8-3p-2f
+0.0003
+128
+False
+False
+5
+2s-8x8-3p-2f-coop
+0.0005
+128
+True
+True
+5
+10x10-4p-2f
+0.0003
+128
+False
+False
+5
+10x10-4p-2f-coop
+0.0003
+32
+True
+True
+5
+1s-10x10-4p-2f
+0.0003
+128
+False
+True
+10
+2s-10x10-4p-2f
+0.0003
+128
+False
+False
+5
+2s-10x10-4p-2f-coop
+0.0005
+128
+True
+False
+5
+A.4
+Baselines:
+We use the following baselines:
+• White box attack: It is the most powerful attack; it assumes access to the agent policy. In our paper, the white-box
+perturbation corresponds to the perturbation that minimizes the probability (or the q-value for QMIX) of the optimal
+action:
+δ = arg min
+δ
+π(o + δ, a∗)
+s.t
+∥δ∥∞≤ϵ
+(14)
+• Random attacks: Most previous works used only uniform distributions δi ∼U(−ϵ, ϵ) and normal distributions δi ∼
+N(0, ϵ2). In addition to these two distributions, we add a non-symmetric distribution and a temporally correlated noise:
+for the former, we use the exponential distribution Exp(λ). The value of λ is chosen such that 99% of the sampled values
+satisfy the budget constraint:
+λ = −ln(0.01)
+ϵ
+(15)
+
+Table 11: MAPPO Hyperparameters for RWARE.
+Environment
+lr
+Stand
+RNN
+q nstep
+tmax
+tiny-4ag-sr-1
+0.0005
+False
+False
+10
+25M
+tiny-4ag-sr-2
+0.0008
+False
+False
+10
+25M
+tiny-4ag-sr-3
+0.0008
+False
+False
+10
+25M
+small-4ag-sr-1
+0.0005
+False
+False
+10
+25M
+small-4ag-sr-2
+0.0008
+False
+True
+10
+25M
+small-4ag-sr-3
+0.0008
+False
+False
+20
+40M
+As correlated noise, we use the Ornstein–Uhlenbeck (OU) process:
+δt+1 = δt + θ(µ −δt)∆t + σ
+√
+∆t N(0, 1)
+(16)
+In our experiments, we use:
+µ = ϵ, θ ≈ϵ, σ ≈ϵ
+10 ± 0.001, ∆t = 1
+We test different values of attack budget ϵ ∈{0.03, 0.05, 0.07, 0.09, 0.1, 0.15, 0.2} for RWARE and SMAC and ϵ ∈
+{0.1, 0.15, 0.2, 0.25, 0.5, 0.75} for LBF.
+A.5
+More results
+We provide the following additional results
+• Performance across different MARL algorithms: In the main paper, we reported attacks against MAPPO agents. In Figures
+13 and 14 we compare the performance of our attack against MAPPO and QMIX. Both figures show that our approach
+works for both policy-based and value-based algorithms. On the LBF benchmark, the performance is nearly identical. For
+SMAC, however, the Align attack tends to be more impactful on QMIX agents at higher ϵ values.
+• Additional results for targeted align attacks: in Figures 15 16, 17 we show the performance of targeted align attack for all
+the environments.
+• Additional result for the combination of align attack for selection and Hadamard attack for perturbation: Tables 12,
+13, 14 present the effect of selecting agents using align a-network fθ and using Hadamard perturbations for all the 22
+environments.
+• Additional results on episode length: Table 15 shows the impact of Align attack on the episode lengths of all LBF tasks.
+.1 .15 .2 .25
+.5
+.75
+Epsilon
+80
+60
+40
+20
+0
+IQM Return drop (%)
+Level-Based Foragin
+MAPPO
+QMIX
+Figure 13: Performance across MARL algorithms on LBF.
+.03
+.05
+.07
+.09.1
+.15
+.2
+Epsilon
+50
+40
+30
+20
+10
+0
+10
+IQM Return drop (%)
+SMAC
+MAPPO
+QMIX
+Figure 14: Performance across MARL algorithms on SMAC.
+
+0.03
+0.10
+0.15
+0.20
+Epsilon
+8
+10
+12
+14
+16
+18
+IQM Return
+10
+7
+5
+3
+1
+10
+7
+5
+3
+1
+10m_vs_11m
+0.03
+0.10
+0.15
+0.20
+Epsilon
+8
+10
+12
+14
+16
+18
+10
+7
+5
+3
+1
+10
+7
+5
+3
+1
+MMM2
+0.03
+0.10
+0.15
+0.20
+Epsilon
+12
+14
+16
+18
+20
+27
+20
+15
+10
+5
+27
+20
+15
+10
+5
+27m_vs_30m
+0.03
+0.10
+0.15
+0.20
+Epsilon
+12
+13
+14
+15
+16
+17
+18
+19
+20
+5
+3
+2
+15
+3
+2
+1
+protoss_5_vs_5
+0.03
+0.10
+0.15
+0.20
+Epsilon
+8
+10
+12
+14
+16
+18
+20
+5
+3
+2
+1
+5
+3
+2
+1
+terran_5_vs_5
+0.03
+0.10
+0.15
+0.20
+Epsilon
+8
+10
+12
+14
+16
+18
+5
+3
+2
+1
+5
+3
+2
+1
+zerg_5_vs_5
+Align
+Hadamard
+Figure 15: Performance of targeted align attacks on SMAC. For games with 10 agents, we report return curves when attacking 10, 7,5,3, and
+1 agent(s). For games with 5 agents, we show the returns when targeting 5,3,2,1 agent(s). For the 27m vs 30m map, we report when having
+27,20 15,10, and 5 victims.
+0.03
+0.10
+0.15
+0.20
+Epsilon
+0
+5
+10
+15
+20
+IQM Return
+4
+3
+2
+1
+4
+3
+2
+1
+small-4ag
+0.03
+0.10
+0.15
+0.20
+Epsilon
+5
+10
+15
+20
+25
+30
+4
+3
+2
+1
+4
+3
+2
+1
+small-4ag-sr-2
+0.03
+0.10
+0.15
+0.20
+Epsilon
+0
+5
+10
+15
+20
+25
+30
+4
+3
+2
+1
+4
+3
+2
+1
+small-4ag-sr-3
+0.03
+0.10
+0.15
+0.20
+Epsilon
+0
+10
+20
+30
+40
+50
+4
+3
+2
+1
+4
+3
+2
+1
+tiny-4ag
+0.03
+0.10
+0.15
+0.20
+Epsilon
+0
+10
+20
+30
+40
+50
+4
+3
+2
+1
+4
+3
+2
+1
+tiny-4ag-sr-2
+0.03
+0.10
+0.15
+0.20
+Epsilon
+0
+6
+12
+18
+24
+30
+36
+42
+48
+4
+3
+2
+1
+4
+3
+2
+1
+tiny-4ag-sr-3
+Align
+Hadamard
+Figure 16: Performance of lighter attacks on RWARE. We report return curves when attacking 4,3,2,3, and 1 agent(s).
+0.10
+0.25
+0.50
+0.75
+0.2
+0.4
+0.6
+0.8
+1.0
+IQM Return
+3
+2
+1
+3
+21
+8x8
+0.10
+0.25
+0.50
+0.75
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+3
+2
+1
+3
+2
+1
+8x8-coop
+0.10
+0.25
+0.50
+0.75
+0.2
+0.4
+0.6
+0.8
+1.0
+3
+2
+1
+3
+2
+1
+2s-8x8
+0.10
+0.25
+0.50
+0.75
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+32
+1
+3
+2
+1
+2s-8x8-coop
+0.10
+0.25
+0.50
+0.75
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+3
+2
+1
+3
+2
+1
+1s-8x8
+0.10
+0.25
+0.50
+0.75
+Epsilon
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+IQM Return
+4
+3
+21
+4
+3
+2
+1
+10x10
+0.10
+0.25
+0.50
+0.75
+Epsilon
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+4
+3
+2
+1
+4
+3
+21
+10x10-coop
+0.10
+0.25
+0.50
+0.75
+Epsilon
+0.2
+0.4
+0.6
+0.8
+1.0
+4
+3
+2
+1
+4
+3
+2
+1
+2s-10x10
+0.10
+0.25
+0.50
+0.75
+Epsilon
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+4
+3
+2
+1
+4
+3
+2
+1
+2s-10x10-coop
+0.10
+0.25
+0.50
+0.75
+Epsilon
+0.2
+0.4
+0.6
+0.8
+1.0
+4
+3
+2
+1
+4
+3
+2
+1
+1s-10x10
+Align
+Hadamard
+Figure 17: Performance of lighter attacks on LBF. For games with 3 agents, the first row, we report return curves when attacking 3, 2, and 1
+agent(s). For tasks with 4 agents, the second row, we include the returns when targeting 4,3,2,1 agent(s).
+
+Task
+m
+ϵ = 0.15
+ϵ = 0.2
+ϵ = 0.25
+1s-10x10-4p-2f
+2
+-23.57
+-4.99
+-6.6
+3
+2.32
+-6.28
+-7.48
+2s-10x10-4p-2f
+2
+-10.02
+-21
+-8,57
+3
+-10.49
+-11.71
+-15.26
+2s-10x10-4p-2f-coop
+2
+-3.84
+-15.36
+-17.30
+3
+-3.84
+-13.46
+-15.38
+1s-8x8-3p-2f
+1
+-6.01
+-0.96
+-19.24
+2
+-7.42
+-0.79
+-19.34
+2s-8x8-3p-2f
+1
+-0.93
+3.15
+1.88
+2
+3.75
+-18.10
+-11.17
+2s-8x8-3p-2f-coop
+1
+0
+-3.84
+-3.84
+2
+-32.69
+-48.07
+-57.69
+Table 12: Targeted Hadamard attack on LBF
+Task
+m
+ϵ = 0.05
+ϵ = 0.09
+ϵ = 0.15
+tiny-4ag-sr-1
+1
+0.22
+-0.37
+-4.50
+2
+0.52
+-1.12
+-9.97
+3
+-1.35
+-2.1
+-16.80
+small-4ag
+1
+-9.80
+-6.71
+-2.35
+2
+3.26
+-11.61
+-12.70
+3
+-2.17
+-14.51
+-19.23
+Table 13: Targeted Hadamard attack on RWARE
+Task
+m
+ϵ = 0.05
+ϵ = 0.09
+ϵ = 0.15
+10m vs 11m
+3
+-8.3
+-10.17
+-3.71
+7
+-14.35
+0.40
+1.98
+MMM2
+3
+3.26
+0.73
+-6.32
+7
+-2.76
+1.22
+-7.10
+protoss 5 vs 5
+2
+-4.40
+-7.58
+-4.10
+3
+-10.10
+-1.37
+-4.88
+terran 5 vs 5
+2
+4.05
+-3.05
+-19.48
+3
+-12.35
+-21.03
+-5.15
+zerg 5 vs 5
+2
+-22.28
+-11.09
+-3.77
+3
+0.27
+-12.86
+-4.40
+Table 14: Targeted Hadamard attack on SMAC
+
+Tasks
+0.1
+0.15
+0.2
+0.25
+0.5
+0.75
+1s-8x8
+1.30
+1.55
+2.09
+3.63
+12.09
+12.18
+1s-10x10
+-5.68
+-9.66
+2.26
+7.94
+16.64
+22.88
+2s-8x8-coop
+9.59
+43.55
+138.52
+152.49
+170.86
+170.86
+2s-8x8
+5.17
+18.84
+31.93
+44.26
+72.24
+72.24
+2s-10x10-coop
+34.44
+23.78
+65.78
+68.52
+79.04
+85.19
+2s-10x10
+12.45
+-2.72
+14.36
+20.78
+52.38
+54.29
+8x8-coop
+10.59
+29.67
+103.86
+188.56
+226.80
+226.80
+8x8
+5.94
+21.06
+51.93
+75.93
+193.21
+285.80
+10x10-coop
+23.49
+18.89
+23.43
+42.13
+190.87
+214.86
+10x10
+0.66
+20.32
+11.93
+29.41
+49.43
+110.93
+Table 15: Episode length increase (%) on LBF tasks

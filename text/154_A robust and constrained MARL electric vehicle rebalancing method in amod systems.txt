@@ -1,0 +1,1034 @@
+A Robust and Constrained Multi-Agent Reinforcement Learning
+Electric Vehicle Rebalancing Method in AMoD Systems
+Sihong He1
+Yue Wang2
+Shuo Han3
+Shaofeng Zou2
+Fei Miao1
+Abstract— Electric vehicles (EVs) play critical roles in
+autonomous mobility-on-demand (AMoD) systems, but
+their unique charging patterns increase the model uncer-
+tainties in AMoD systems (e.g. state transition probability).
+Since there usually exists a mismatch between the training
+and test/true environments, incorporating model uncer-
+tainty into system design is of critical importance in real-
+world applications. However, model uncertainties have not
+been considered explicitly in EV AMoD system rebalancing
+by existing literature yet, and the coexistence of model un-
+certainties and constraints that the decision should satisfy
+makes the problem even more challenging. In this work, we
+design a robust and constrained multi-agent reinforcement
+learning (MARL) framework with state transition kernel
+uncertainty for EV AMoD systems. We then propose a
+robust and constrained MARL algorithm (ROCOMA) with
+robust natural policy gradients (RNPG) that trains a robust
+EV rebalancing policy to balance the supply-demand ratio
+and the charging utilization rate across the city under
+model uncertainty. Experiments show that the ROCOMA
+can learn an effective and robust rebalancing policy. It
+outperforms non-robust MARL methods in the presence
+of model uncertainties. It increases the system fairness by
+19.6% and decreases the rebalancing costs by 75.8%.
+I. INTRODUCTION
+Autonomous mobility-on-demand (AMoD) system is
+one of the most promising energy-efficient transportation
+solutions as it provides people with one-way rides from
+their origins to destinations [1]. Electric vehicles (EVs)
+are being adopted worldwide for environmental and
+economical benefits [2], and AMoD systems embrace
+this trend without exception. However, the trips spo-
+radically appear, and the origins and destinations are
+asymmetrically distributed. Such spatial-temporal nature
+of urban mobility motivates researchers to study vehicle
+1Sihong He and Fei Miao are with the Department of Computer
+Science and Engineering, University of Connecticut, Storrs, CT.
+{sihong.he, fei.miao}@uconn.edu.
+2Yue Wang and Shaofeng Zou are with the Department of Electrical
+Engineering, University at Buffalo, The State University of New York.
+{ywang294, szou3}@buffalo.edu.
+3Shuo Han is with the Department of Electrical and Computer
+Engineering, University of Illinois, Chicago. hanshuo@uic.edu.
+This work is supported by National Science Foundation under
+Grants CNS-1952096, CMMI-1932250, CNS-2047354, Grants CCF-
+2106560 and CCF-2007783.
+Fig. 1. The model mismatch between the simulator and the real world
+degrades the performance of vehicle rebalancing methods. The red EV
+chooses to go to the blue region at time t and thinks it can pick up a
+passenger at time t + 1 according to the simulator model. However,
+in the real world, at time t + 1, the red EV gets no passengers in the
+blue region and a passenger gets no cars in the green region.
+rebalancing methods [3], [4], i.e. redistribution of vacant
+EVs to areas of high demand and assigning low-battery
+EVs to charging stations.
+In real-world AMoD systems, the simulation-to-
+reality gap remains challenging for vehicle rebalancing
+solutions calculated based on simulators, since there
+usually exists a model mismatch between the simulator
+(training environment) and the real world (test envi-
+ronment). For instance, at the current time, with the
+system state information such as the number of available
+vehicles and passenger demand in each region of the
+city, and the action to take as the number of available
+vehicles to be balanced among regions according to
+the mobility demand, it is difficult to accurately predict
+the state of the system (available vehicle supply and
+mobility demand) at the next time [1], [5], [6]. Hence,
+we usually do not have the true dynamic model of
+the system, i.e., the state transition probability. Thus,
+existing EV AMoD vehicle rebalancing methods [7]–
+[9] may have significant performance degradation in
+the test (true) environment. One example is provided in
+Fig. 1. Moreover, in real-world applications, the vehicle
+rebalancing decisions should satisfy specific constraints
+such as providing similar mobility and charging ser-
+vices in different regions which we call mobility and
+charging fairness. When there is a model mismatch,
+1
+arXiv:2209.08230v2  [cs.MA]  27 Sep 2023
+
+the rebalancing solution based on a simulator may
+violate the constraints in real AMoD systems. Despite
+model-based methods considering prediction errors in
+mobility demand or vehicle supply [4], [5], [10], [11],
+how to calculate policies that satisfy the constraints
+and optimize the objectives under the uncertainty of
+state transition remains largely unexplored for AMoD
+rebalancing methods.
+In this work, to address the simulation-to-reality gap
+and calculate solutions that satisfy the fairness con-
+straints, we propose a robust and constrained multi-
+agent reinforcement learning (MARL) framework for
+EV AMoD systems. The goal is to find robust policies
+that minimize the rebalancing distance of the vacant and
+low-battery EVs under model uncertainties and achieve
+mobility and charging fairness. The advantages of our
+methodology are two-fold: (i) fairness constraints can be
+satisfied even if there exist model uncertainty, and (ii) the
+expected rebalancing distance is optimized when there
+is a model mismatch. Our key contributions are:
+(1) To the best of our knowledge, this work is the first
+to formulate EV AMoD system vehicle rebalancing as
+a robust and constrained MARL problem under model
+uncertainty. Via a proper design of the state, action,
+reward, cost constraints, and uncertainty set, we set
+our goal as minimizing the rebalancing distance while
+balancing the city’s charging utilization and service
+quality, under model uncertainty.
+(2) We design a robust and constrained MARL al-
+gorithm (ROCOMA) to efficiently train robust policies.
+The proposed algorithm adopts the centralized training
+and decentralized execution (CTDE) framework. We
+also develop the robust natural policy gradient (RNPG)
+in robust and constrained MARL for the first time.
+(3) We run experiments based on real-world E-taxi
+system data. We show that our proposed algorithm per-
+forms better in terms of reward and fairness, which are
+increased by 19.6%, and 75.8%, respectively, compared
+with a non-robust MARL-based method when model
+uncertainty is present.
+II. RELATED WORK
+AMoD system vehicle rebalancing algorithms re-
+allocate vacant vehicles, sometimes considering charg-
+ing constraints. Heuristics lead to sub-optimal rebalanc-
+ing solutions [12]. Other major categories of AMoD
+system rebalancing methods include optimization-based
+algorithms [13], Model Predictive Control (MPC) [14]
+and Reinforcement Learning (RL) [15].
+Optimization and MPC-based approaches usually for-
+mulate the AMoD system vehicle rebalancing problem
+as an optimization problem, where the objective is to
+improve service quality [16], [17] or maximize the
+number of served passengers with fewer vehicles [10],
+[18], [19]. These model-based approaches usually rely
+on knowledge of the probability transition model of
+AMoD systems. Though robust and distributionally ro-
+bust optimization-based methods have been designed
+to consider uncertainties caused by mobility demand,
+supply, or covariates predictions [4], [11], the probabil-
+ity transition error or uncertainty in system dynamics
+has not been addressed yet. Various RL-based methods
+include DQN, A2C and their variants [3], [20]–[22] have
+been proposed to solve the vehicle rebalancing problem.
+However, RL suffers from the sim-to-real gap; that is, the
+gap between the simulator and the real world often leads
+to unsuccessful implementation if the learned policy is
+not robust to model uncertainties [23]. None of the above
+RL-based rebalancing strategies consider this gap.
+Robust RL has been proposed to find a policy that
+maximizes the worst-case cumulative reward over an
+uncertainty set of MDPs [24]–[26]. To achieve a desired
+level of system fairness while minimizing rebalancing
+distance under model uncertainty, we put the fairness
+constraints in our RL formulation, which is known as
+Constrained RL that aims to find a policy that max-
+imizes an objective function while satisfying certain
+cost constraints [27]. However, it remains challenging to
+design a robust EV rebalancing algorithm under model
+uncertainties and policy constraints, since the problem of
+robust constrained RL itself is already difficult to solve
+even in a simple tabular case. A robust and constrained
+RL for AMoD rebalancing cannot directly apply exist-
+ing robust constrained RL solutions due to the high-
+dimensional state and action spaces commonly present
+in transportation systems. Our proposed robust and
+constrained MARL formulation and algorithm explicitly
+consider model uncertainties and policy constraints to
+learn robust rebalancing solutions for AMoD systems.
+III. ROBUST AND CONSTRAINED MARL
+FRAMEWORK FOR EV REBALANCING
+A. Preliminary: Multi-Agent Reinforcement Learning
+We denote a Multi-Agent Reinforcement Learning
+(MARL) problem by a tuple G = ⟨N, S, A, r, p, γ⟩,
+in which N is the set of N agents. Each agent is
+associated with an action ai ∈Ai and a state si ∈S.
+We use A = A1 × · · · × AN to denote the joint
+action space, and S = S1 × · · · × SN the joint state
+space. At time t, each agent chooses an action ai
+t
+according to a policy πi : Si →∆(Ai), where ∆(Ai)
+represents the set of probability distributions over the
+action set Ai. We use π = QN
+i=1 πi : S →∆(A) to
+2
+
+denote the joint policy. After executing the joint action
+is executed, the next state follows the state transition
+probability which depends on the current state and the
+joint action, i.e. p : S × A →∆(S). And each
+agent receives a reward according to the reward function
+ri : S × A →R. Each agent aims to learn a policy
+πi to maximize its expected total discounted reward,
+i.e. maxπi vπ,i
+r (s) for all s ∈S, where vπ,i
+r (s) =
+E[P∞
+t=1 γt−1ri
+t(st, at)|at ∼π(·|st), s1 = s] which is
+also known as the state value function for agent i. γ ∈
+(0, 1) is the discounted rate. When these agents belong
+to a team, the objective of all agents is to collaboratively
+maximize the average expected total discounted reward
+over all agents, i.e. maxπ vπ
+r (s) for all s ∈S, where
+vπ
+r (s) = Eπ[P∞
+t=1 γt−1 P
+i∈N ri
+t(st, at)/N|s1 = s].
+B. Problem Statement
+We consider the problem of managing a large-scale
+EV fleet to provide fair and robust AMoD service. The
+goal is to (i) rebalance vacant EVs among different re-
+gions to provide fair mobility service on the passenger’s
+side; (ii) allocate low-battery EVs to charging stations
+for fair charging service on the EVs’ side; (iii) minimize
+the rebalancing distance of (i) and (ii). These three
+goals need to be achieved in the presence of model
+uncertainties, i.e. uncertainties in the state transition
+probability model of AMoD systems.
+We divide the city into N regions according to a pre-
+defined partition method [4], [9]. A day is divided into
+equal-length time intervals. In each time interval [t, t +
+1), customers’ ride requests and EVs’ charging needs
+are aggregated in each region. After the location and
+status of each EV are observed, a local trip and charging
+assignment algorithm matches vacant EVs with passen-
+gers and low-battery EVs with charging stations, using
+existing methods in the literature [28], [29]. Then the
+state information of each region is updated, including the
+numbers of vacant EVs and available charging spots in
+each region. Each region then rebalances both vacant and
+low-battery EVs according to the well-trained MARL
+policy. This work focuses on a robust EV rebalancing
+algorithm design under model uncertainties to maximize
+the worst-case expected reward of the system while sat-
+isfying fairness constraints. For notational convenience,
+the parameters and variables defined in the following
+omit the time index t when there is no confusion.
+C. Robust and Constrained Multi-Agent Reinforcement
+Learning Formulation for EV Rebalancing
+We
+formulate
+the
+EV
+rebalancing
+problem
+as
+a robust and constrained MARL problem Grc
+=
+⟨N, S, A, P, r, c, d, γ⟩, and we define the agent, state,
+action, transition kernel uncertainty set, reward, and cost
+and fairness constraints as follows.
+a) Agent: The city is partitioned into a number
+of predetermined regions. Within each region, all the
+vacant and low-battery EVs are commanded by a single
+authority, which is referred to as a region agent, whereas
+region agents from different regions independently make
+their rebalancing decisions of vacant and low-battery
+EVs. This multi-agent setting is more tractable for
+large-scale fleet management than a single-agent setting
+because the action space can be prohibitively large if we
+use a single system-wide agent [21].
+b) State: A state si of a region agent i consists two
+parts that indicate its spatiotemporal status from both the
+local view and global view of the city. We define the
+state si = {si
+loc, si
+glo}, where si
+loc = (Vi, Li, Di, Ei, Ci)
+is the state of region i from the local view, denoting the
+number/amount of vacant EVs, low-battery EVs, mobil-
+ity demand, empty charging spots, and total charging
+spots in region i, respectively. And si
+glo = (t, posi),
+where t is the time index (which time interval), posi is
+region location information (longitudes, latitudes, region
+index). The initial state distribution is ρ.
+c) Action: The rebalancing action for vacant EVs
+is denoted as ai
+v = {ai
+v,j}j∈Nebri, the charging action for
+low-battery EVs as ai
+l = {ai
+l,j}j∈Nebri, where ai
+v,j, ai
+l,j ∈
+[0, 1] is the percentage of currently vacant EVs and low-
+battery EVs to be assigned to region j from region i,
+respectively. And Nebri is the set consisting of region i
+and its adjacent regions as defined by the given partition.
+Therefore P
+j∈Nebri ai
+v,j = 1 and P
+j∈Nebri ai
+l,j = 1 for
+all i. We denote mi
+v,j = h(ai
+v,jvi) the actual number of
+vacant EVs assigned from region i to region j, mi
+l,j =
+h(ai
+l,jli) the actual number of low-battery EVs in region
+i assigned to region j. The function h(·) is used to ensure
+that the numbers remain as integers and the constraints
+P
+j mi
+v,j = vi, P
+j mi
+l,j = li hold for all i.
+d) Transition Kernel Uncertainty Set: We restrict
+the transition kernel p to a δ-contamination uncertainty
+set P [27], in which the state transition could be arbi-
+trarily perturbed by a small probability δ. Specifically,
+let ˜p = {˜pa
+s | s ∈S, a ∈A} be the centroid transition
+kernel, from which training samples are generated. The
+δ-contamination uncertainty set centered at ˜p is defined
+as P := N
+s∈S,a∈A P a
+s , where P a
+s := {(1 −δ)˜pa
+s + δq |
+q ∈∆(S)}, s ∈S, a ∈A.
+e) Reward: Since one of our goals is to min-
+imize the rebalancing distance, we define the shared
+reward as the negative value of the total rebalancing
+distance after EVs execute the decisions: r(s, a) :=
+−[dv(s, a) + ¯αdl(s, a)], where ¯α is a positive coef-
+ficient, and dv(s, a), dl(s, a) are moving distances of
+3
+
+all vacant and low-battery EVs under the joint state s
+and action a, respectively. We then define the worst-
+case value function of a joint policy π as the worst-
+case expected total discounted reward under joint policy
+π over P: vπ
+r (s) = minp∈P Eπ
+P∞
+t=1 γt−1rt|s1 = s
+
+.
+The notation is the same as MARL without considering
+uncertainty. By maximizing the value function, region
+agents are cooperating for the same goal.
+f) Fairness Definition: We consider both the mo-
+bility supply-demand ratio [5], [17] and the charging
+utilization rate [13], [30] in each region as service
+quality metrics. With limited supply volume in a city,
+keeping the supply-demand ratio of each region at a
+similar level allows passengers in the city to receive
+fair service [10], [31]. Similarly, given a limited number
+of charging stations and spots, to improve the charging
+service quality and charging efficiency with limited
+infrastructures, balancing the charging utilization rate of
+all regions across the entire city is usually one objective
+in the scheduling of EV charging [8], [30].
+The fairness metrics of the charging utilization rate
+uc and supply-demand ratio um are designed based on
+the difference between the local and global quantities:
+uc(s, a) = −PN
+i=1
+
+Ei
+Ci −
+PN
+j=1 Ej
+PN
+j=1 Cj
+,
+um(s, a) = −PN
+i=1
+
+Di
+Vi −
+PN
+j=1 Dj
+PN
+j=1 Vj
+,
+where Vi is the number of vacant EVs in region i. The
+fairness metrics us(s, a) and um(s, a) are calculated
+given the EVs rebalancing action a, and the larger
+the better. One advantage of the proposed robust and
+constrained MARL formulation is that the forms of the
+reward function and constraints do not need to satisfy
+the requirements as those of the robust optimization
+methods [5], [13], e.g., the objective/constraints do not
+need to be convex of the decision variable or concave
+of the uncertain parameters.
+g) Cost Function and Fairness Constraints:
+Another goal is to achieve the system-level benefit,
+i.e., balanced charging utilization and fair service. If
+the values of these fairness metrics are higher than
+some thresholds by applying a rebalancing policy π, we
+say the policy π provides fair mobility and charging
+services among the city. We then augment the MARL
+problem G with an auxiliary cost function c, and a
+limit d. The function c : S × A →R maps transition
+tuples to cost, like the usual reward. Similarly, we
+let vπ
+c (s) denote the worst-case state value function
+of policy π with respect to cost function c: vπ
+c (s) =
+minp∈P Eπ[P∞
+t=1 γt−1c(st, at)|s1 = s]. The cost func-
+tion c is defined as the system fairness (a weighted sum
+Fig. 2.
+An Algorithm Overview for ROCOMA.
+of city’s charging fairness uc and mobility fairness um),
+i.e., c(s, a) := uc(s, a)+¯βum(s, a), where ¯β is a positive
+coefficient. Then the set of feasible joint policies for our
+robust and constrained MARL EV rebalancing problem
+is ΠC := {π : ∀s ∈S, vπ
+c (s) ≥d}.
+h) Goal: The goal of our robust and constrained
+MARL EV rebalancing problem is to find an optimal
+joint policy π∗that maximizes the worst-case expected
+value function subject to constraints on the worst-case
+expected cost:
+max
+π
+Es∼ρ[vπ
+r (s)] s.t. Es∼ρ[vπ
+c (s)] ≥d
+(1)
+We define vπθ
+tp (ρ) = Es∼ρ[vπθ
+tp (s)], tp ∈{r, c}. We then
+consider policies π(·|θ) parameterized by θ and consider
+the following equivalent max-min problem based on the
+Lagrangian [32]:
+max
+θ
+min
+λ≥0 J(θ, λ) := vπθ
+r (ρ) + λ(vπθ
+c (ρ) −d),
+(2)
+IV. ALGORITHM
+A. Robust and Constrained Multi-Agent Reinforcement
+Learning Algorithm (ROCOMA)
+We propose a robust and constrained MARL (RO-
+COMA) algorithm to solve the problem (2) and train
+robust policies. The proposed algorithm is shown in
+Algorithm 1. An algorithm overview is in Fig. 2. RO-
+COMA adopts the centralized training and decentralized
+execution (CTDE) framework, which enables us to train
+agents in the simulator using global information but
+executes well-trained policies in a decentralized man-
+ner in the real world. Specifically, we use centralized
+critic networks to approximate the value functions and
+decentralized actor networks to represent policies. Be-
+sides, for the first, time, we develop a robust natural
+4
+
+policy gradient (RNPG) descent ascent to update actor
+networks and the Lagrange multiplier in MARL.
+As shown in Algorithm 1, in line 1, we randomly ini-
+tialize the actor network parameter θ0 and the Lagrange
+multiplier parameter λ0. At each iteration t, in line 3,
+we estimate the critic networks vθt
+r , vθt
+c
+under policy
+πθt using Algorithm 3 in [27]. Line 4 to line 14 are
+to estimate the robust natural policy gradient (RNPG)
+˜gr,t, ˜gc,t for vθt
+r
+and vθt
+c , respectively. For notational
+convenience, we omit the subscripts r and c in the value
+functions when there is no confusion. In lines 5 and
+6, we sample an initial state sj
+1 following the initial
+distribution ρ and a time horizon Tj from the geometric
+distribution Geom(1 −γ + γδ) at iteration j = 1, ..., M.
+We use these samples to estimate the RNPG according
+to Corollary 1. Specifically, we initialize ˜gj
+t,0 = 0 and
+use the following stochastic gradient descent (SGD)
+steps: ˜gj
+t,k+1 = ˜gj
+t,k −ζ∇˜gL(˜gj
+t,k, θt), where ζ is the
+learning rate and L(˜gj
+t,k, θt) = P
+D(sj
+Tj )[˜g⊤ψθt(s, a) −
+ϕθt(τ) −bθt]2/D, D(sj
+Tj) is a set of trajectories τ
+starting at sj
+Tj using policy πθt, i.e. τ = (sj
+Tj, a, r, c, s′),
+D = |D(sj
+Tj)|. After W steps of SGD iterations, the
+robust natural policy gradient for vθt(sj
+1) is estimated
+as PW
+k=1 ˜gj
+t,k/W.
+To reduce the computational complexity, we adopt the
+centralized training and decentralized execution (CTDE)
+framework [33] in ROCOMA and assume all agents
+share the same policy πθi(ai|si), where θ1 = · · · =
+θN = θ. Then we have ∇π(a|s) = PN
+i ψθ
+i (s, a) where
+ψθ
+i (s, a) := π−i(a−i|s−i)∇πi(ai|si), π−i(a−i|s−i) :=
+Q
+j̸=i πj(aj|sj). Therefore, in lines 7 to 12, we address
+the high-dimensional action and state space issue in
+computing RNPG by using ψθ
+i (s, a) instead of ψθ(s, a)
+in (5). Finally, we update θt+1 and λt+1 using Gradient
+Descent Ascent (GDA) [34] in lines 15, 16.
+B. Robust Natural Policy Gradient
+Natural policy gradient (NPG) [35], [36] applies a
+preconditioning matrix to the gradient, and updates the
+policy along the steepest descent direction in the policy
+space [37]. It has been proved that NPG moves toward
+choosing a greedy optimal action rather than just a better
+action [38]. Generally, for a function L defined on a
+Riemannian manifold Θ with a metric M, the steepest
+descent direction of L at θ is given by −M −1(θ)∇L(θ),
+which is called the natural gradient of L [39]. In the
+policy parameter space {πθ}, the natural gradient of
+L at θ is given by ˜∇L(θ) = F(θ)−1∇L(θ), where
+F(θ) := Es [Fs(θ)] is the Fisher information matrix
+at θ and Fs(θ) = Eπ(a|s,θ)
+h
+∂log π(a|s,θ)
+∂θi
+∂log π(a|s,θ)
+∂θj
+i
+[38]. Although the natural gradient method has been
+studied in non-robust RL, it is not straightforward to
+efficiently find the NPG for a robust and constrained
+MARL problem. We show the robust natural policy gra-
+dient for robust and constrained MARL in the following
+Proposition 1.
+Algorithm 1 Robust and Constrained Multi-Agent Re-
+inforcement Learning Algorithm (ROCOMA)
+1: Input ζ, α, β, γ, δ. Initialize θ0, λ0.
+2: for t = 0 to T do
+3:
+Estimate vθt
+r , vθt
+c using Algorithm 3 in [27]
+4:
+for j = 1 to M do
+5:
+Sample Tj ∼Geom(1 −γ + γδ), sj
+1 ∼ρ
+6:
+Sample trajectory from sj
+1: (sj
+1, aj
+1, · · · , sj
+Tj)
+7:
+for agent i = 1 to N do
+8:
+for k = 1 to W do
+9:
+˜gj
+t,k+1(i) = ˜gj
+t,k(i)−ζ∇˜gL(˜gj
+t,k(i), θt), L
+is defined in (5)
+10:
+end for
+11:
+˜gj
+t,k = PN
+i=1 ˜gj
+t,k(i)/N
+12:
+end for
+13:
+end for
+14:
+˜gt = PM
+j=1
+PW
+k=1 ˜gj
+t,k/MW
+15:
+θt+1 = θt + αt(˜gr,t + λt˜gc,t)
+16:
+λt+1 = max{λt −βt(P
+j vθt
+c (sj
+1)/M −d), 0}
+17: end for
+18: Output θT
+Proposition 1 (Robust Natural Policy Gradient): Let
+˜g∗minimizes the objective J(˜g, πθ) defined as follows:
+X
+s,a
+dπ
+γ,δ,s1π(a|s)[˜g⊤ψπ(s, a) −ϕπ(τ) −bπ]2,
+(3)
+where dπ
+γ,δ,s1 ∝P
+k γk(1 −δ)kpπ(sk = s|s1) is the
+discounted visitation distribution of sk = s when the
+initial state is s1 and policy π is used; ψπ(s, a) denotes
+∇log π(a|s, θ); τ denotes a trajectory (s, a, r, c, s′);
+ϕπ(τ) = r + γδ mins vπ(s) + γ(1 −δ)vπ(s′) −vπ(s) is
+the TD residual; bπ = γδ/(1 −γ + γδ)∂θ mins vπ(s).
+Then ˜g∗= F(θ)−1∇θvπ(s1) is the robust natural
+policy gradient of the objective function vπ(s1). For
+notational convenience, we omit the subscripts r and
+c in the value functions when there is no confusion.
+Proof:
+Considering we have denoted ψπ(s, a) =
+∇log π(a|s, θ), Fisher information matrix is then given
+by F(θ)
+=
+P
+s,a dπ
+γ,δ,s1(s)π(a|s)ψπ(s, a)ψπ(s, a)⊤.
+The robust policy gradient of the value function is given
+by ∇θvπ(s1) = P
+s,a dπ
+γ,δ,s1(s)∇θπ(a|s)ϕπ(τ) + bπ ∝
+Eπ,s1[ϕπ(τ)∇log π(a|s) + bπ] [27].
+5
+
+Since ˜g∗minimizes (3), it satisfies the condition
+∂J/∂˜gi
+=
+0, which implies: P
+s,a dπ
+γ,δ,s1π(a|s) ×
+ψπ(s, a)[ψπ(s, a)⊤˜g∗−ϕπ(τ)−bπ] = 0. Then we have
+X
+s,a
+dπ
+γ,δ,s1π(a|s)ψπ(s, a)ψπ(s, a)⊤˜g∗
+(4)
+=
+X
+s,a
+dπ
+γ,δ,s1π(a|s)ψπ(s, a)[ϕπ(τ) + bπ].
+By the definition of Fisher information: LHS = F(θ)˜g∗
+and RHS = ∇θvπ(s1), which lead to: F(θ)˜g∗
+=
+∇θvπ(s1). Solving for ˜g∗gives ˜g∗= F(θ)−1∇θvπ(s1)
+which follows from the definition of the NPG on the
+worst-case value function of robust and constrained
+MARL. We name it a robust natural policy gradient in
+robust and constrained MARL.
+Considering the vanilla policy gradient may suffer
+from overshooting or undershooting and high variance,
+which results in slow convergence [40], our proposed
+robust natural policy gradient (RNPG) method updates
+the policy along the steepest ascent direction in the
+policy space in robust and constrained MARL [37]. In
+Corollary 1, we show how to efficiently calculate RNPG
+by stochastic gradient descent (SGD).
+Corollary 1 (Calculating RNPG by SGD): As shown
+in Proposition 1, we can get the RNPG of vπ(s1) by
+minimizing the objective defined in (3). To minimize (3)
+and get the minimizer, we initialize ˜g0 = 0 and use the
+following stochastic gradient descent (SGD) steps:
+˜gk+1 = ˜gk −ζ∇˜gL(˜gk, π),
+where ζ is the learning rate and L is defined as follows:
+L(˜g, π) =
+X
+D(s1)
+[˜g⊤ψπ(s, a) −ϕπ(τ) −bπ]2/D,
+(5)
+where D(s1) is a set of trajectories τ starting at s1 using
+policy π, i.e. (s1, a, r, c, s′), D = |D(s1)|. After W steps
+of SGD iterations, the robust natural policy gradient for
+vπ(s1) is estimated as PW
+k=1 ˜gk/W.
+V. EXPERIMENT
+A. Experiment Setup
+Three different data sets [4] including E-taxi GPS
+data, transaction data, and charging station data are
+used to build an EV AMoD system simulator as the
+training and testing environment. We infer parameters
+of order/charging station/vehicle generation models [40]
+from these data sets, then generate (1) the locations and
+availability of charging stations, (2) the number, origins,
+and destinations of mobility demand, (3) the initial
+location and state of charging of EVs. We modify the
+parameters of the simulator model such that the testing
+TABLE I
+COMPARISON: ROCOMA VS OTHER REBALANCING METHODS
+rebalancing
+system
+expired
+response
+cost
+fairness
+order
+rate
+ROCOMA
+2.06 × 105
+−292.14
+1.20 × 102
+99.82%
+MADDPG
+1.94 × 105
+−679.72
+3.46 × 103
+85.06%
+COP
+1.88 × 105
+−383.19
+1.61 × 103
+93.05%
+EDP
+2.15 × 105
+−409.49
+6.90 × 101
+99.69%
+RDP
+2.43 × 105
+−629.85
+3.68 × 103
+84.34%
+NO
+-
+−4317.53
+7.64 × 103
+66.89%
+1 Compared to no rebalancing, by using our method, the expired
+orders number is decreased by 98.4%, the system fairness and order
+response rate are increased by about 93.2% and 32.9%, respectively.
+environment is different from the training environment,
+e.g., the parameters of the order generator. The simulated
+map is set as a grid city. The policy networks and critic
+networks are two-layer fully-connected networks, both
+with 32 nodes. We use Softplus as activations to ensure
+the output is positive. The output of policy networks is
+used to be the concentration parameters of the Dirichlet
+distribution to satisfy the action constraints (sum to one).
+We set the maximal training episode number = 20000,
+the maximal policy/critic estimation number = 2000, the
+RNPG SDG iteration number = 500, the discount rate
+γ = 0.99, the perturbed rate δ = 0.05, the coefficients
+¯α = ¯β = 1, the fairness constraint limit d = −20 for one
+simulation step, and use Adam optimizer with a learning
+rate of 0.001 for both policy and critic networks.
+B. Experiment Results
+Our goal of the experiments is to validate the fol-
+lowing hypothesis: (1) The proposed ROCOMA can
+learn effective rebalancing policies; (2) Our proposed
+ROCOMA learns more robust policies than a non-robust
+MARL algorithm does by considering state transition
+uncertainties and constraints in the MARL problem
+formulation and the proposed RNPG method for policy
+training. We compare metrics: Rebalancing distance: the
+total moving distance of vacant and low-battery EVs
+by using a rebalancing policy (the lower the better);
+and System fairness: the weighted sum of mobility
+and charging fairness (the higher the better); we also
+monitor Number of expired orders: the total number
+of canceled orders due to waiting for more than 20
+minutes (the lower the better) and Order response rate:
+the ratio between the number of served demands and
+the number of total passenger demand (the higher the
+better). All metrics are calculated in every testing period
+which consists of 25 simulation steps. Then the fairness
+constraint limit for one testing period is −500. We repeat
+testing for 10 times and show the average values.
+a) ROCOMA is effective: In Table I, we compare
+ROCOMA with no rebalancing scenario (NO), multi-
+agent deep deterministic policy gradient (MADDPG)
+which is a state-of-the-art non-robust MARL algorithm
+6
+
+Fig. 3.
+Comparison of ROCOMA and Non-robust MARL method:
+Compared to the non-robust method, ROCOMA decreases the rebal-
+ancing distance and increases the system fairness by 19.6% and 75.8%,
+respectively, when model uncertainties are present.
+[33], and the following rebalancing algorithms: (1) Con-
+strained optimization policy (COP): The optimization
+goal is to minimize the rebalancing distance under the
+fairness constraints [4]. The fairness limit is the same
+as that used in ROCOMA. The dynamic models are
+calculated from the same data sets used in simulator
+construction. (2) Equally distributed policy (EDP): EVs
+are assigned to their current and adjacent regions using
+equal probability (20%). (3) Randomly distributed policy
+(RDP): EVs are randomly distributed to their current and
+adjacent regions.
+In Table I, compared to the no rebalancing scenario,
+ROCOMA is effective in rebalancing AMoD systems
+in terms of fairness, expired orders and response rate.
+Specifically, ROCOMA policy decreases the number
+of expired orders by 98.4%, and increases the sys-
+tem fairness and order response rate by about 93.2%
+and 32.9%, respectively. Besides, ROCOMA achieves
+a higher system fairness and order response rate using
+less rebalancing distance than EDP and RDP. Though
+ROCOMA takes more rebalancing distances than COP
+and MADDPG, it has a better system fairness and
+order response rate. It is within expectation since the
+constrained optimization method is a centralized method
+that aims to optimize the rebalancing distance and it does
+not consider any uncertainties.
+b) ROCOMA is robust: In Figure 3 and Table II,
+we compare ROCOMA with (1) Non-constrained MARL
+algorithm: Instead of considering fairness constraints in
+MARL, the reward is designed as a weighted sum of
+negative rebalancing distance and system fairness. The
+coefficient is 1. And model uncertainty is considered; (2)
+Non-robust MARL algorithm: The model uncertainty is
+not considered but the fairness constraint is considered
+in MARL. They use the same network structures and
+other hyper-parameters as that in ROCOMA.
+TABLE II
+COMPARISON: ROCOMA VS NON-CONSTRAINED MARL METHOD
+rebalancing
+system
+expired
+response
+cost
+fairness
+order
+rate
+ROCOMA
+2.06 × 105
+−292.14
+120
+99.82%
+Non-constrained
+1.98 × 105
+−1812.48
+1607
+93.06%
+3 Our method achieves 83.9% higher in fairness compared to the non-
+constrained MARL method with 4% extra rebalancing distance.
+In Figure 3, we test well-trained robust and non-
+robust methods in a testing environment (different from
+the training environment) to show the robustness of
+the ROCOMA policy. We can see ROCOMA policy
+achieves better performance in terms of all metrics.
+Specifically, ROCOMA decreases the rebalancing dis-
+tance and increases the system fairness by about 19.6%
+and 75.8% , respectively, when model uncertainty exists,
+compared to the non-robust method.
+In Table II, ROCOMA achieves 83.9% higher in fair-
+ness compared to the non-constrained MARL algorithm
+with just 4% extra rebalancing distance. Without the
+fairness constraint design, the non-constrained MARL
+method falls into a pit that sacrifices fairness to achieve
+a lower rebalancing distance since its objective is a
+weighted sum of them. It would take a lot of effort to
+tune the hyper-parameter to find a policy that performs
+well in both rebalancing distance and fairness. The
+constrained MARL design of ROCOMA avoids such
+extra tuning efforts.
+VI. CONCLUSION
+It remains challenging to address AMoD system
+model uncertainties caused by EVs’ unique charging
+patterns and AMoD systems’ mobility dynamics in algo-
+rithm design. In this work, we design a robust and con-
+strained multi-agent reinforcement learning framework
+to balance the mobility supply-demand ratio and the
+charging utilization rate, and minimize the rebalancing
+distance for EV AMoD systems under state transition
+uncertainties. We then design a robust and constrained
+MARL algorithm (ROCOMA) to train robust policies.
+Experiments show that our proposed robust algorithm
+can learn effective and robust rebalancing policies.
+REFERENCES
+[1] G. Zardini, N. Lanzetti, M. Pavone, and E. Frazzoli, “Analysis
+and control of autonomous mobility-on-demand systems: A
+review,” arXiv preprint arXiv:2106.14827, 2021.
+[2] IEA, “Iea (2020), global ev outlook 2020, iea, paris,” 2020.
+[3] J. Wen, J. Zhao, and P. Jaillet, “Rebalancing shared mobility-on-
+demand systems: A reinforcement learning approach,” in 2017
+IEEE 20th international conference on intelligent transportation
+systems (ITSC).
+Ieee, 2017, pp. 220–225.
+7
+
+[4] S. He, L. Pepin, G. Wang, D. Zhang, and F. Miao, “Data-driven
+distributionally robust electric vehicle balancing for mobility-
+on-demand systems under demand and supply uncertainties,” in
+2020 IEEE/RSJ International Conference on Intelligent Robots
+and Systems (IROS).
+IEEE, 2020, pp. 2165–2172.
+[5] F. Miao, S. He, L. Pepin, S. Han, A. Hendawi, M. E. Khalefa,
+J. A. Stankovic, and G. Pappas, “Data-driven distributionally
+robust optimization for vehicle balancing of mobility-on-demand
+systems,” ACM Transactions on Cyber-Physical Systems, 2021.
+[6] B. P. G. V. Parys, D. Kuhn, P. J. Goulart, and M. Morari, “Dis-
+tributionally robust control of constrained stochastic systems,”
+IEEE Transactions on Automatic Control, vol. 61, no. 2, pp.
+430–442, Feb 2016.
+[7] Y. Yuan, D. Zhang, F. Miao, J. Chen, T. He, and S. Lin,
+“p2charging proactive partial charging for electric taxi systems,”
+in IEEE International Conference on Distributed Computing
+Systems, ser. ICDCS’19, 2019.
+[8] N. Sadeghianpourhamami, J. Deleu, and C. Develder, “Definition
+and evaluation of model-free coordination of electrical vehicle
+charging with reinforcement learning,” IEEE Transactions on
+Smart Grid, vol. 11, no. 1, pp. 203–214, 2020.
+[9] B. Turan, R. Pedarsani, and M. Alizadeh, “Dynamic pricing and
+fleet management for electric autonomous mobility on demand
+systems,” Transportation Research Part C: Emerging Technolo-
+gies, vol. 121, p. 102829, 2020.
+[10] R. Zhang, F. Rossi, and M. Pavone, “Model predictive control
+of autonomous mobility-on-demand systems,” in 2016 IEEE
+International Conference on Robotics and Automation (ICRA).
+IEEE, 2016, pp. 1382–1389.
+[11] Z. Hao, L. He, Z. Hu, and J. Jiang, “Robust vehicle pre-
+allocation with uncertain covariates,” Production and Operations
+Management, vol. 29, no. 4, pp. 955–972, 2020.
+[12] Z. Liu, T. Miwa, W. Zeng, M. G. Bell, and T. Morikawa,
+“Dynamic shared autonomous taxi system considering on-time
+arrival reliability,” Transportation Research Part C: Emerging
+Technologies, vol. 103, pp. 281–297, 2019.
+[13] S. He, Z. Zhang, S. Han, L. Pepin, G. Wang, D. Zhang, J. A.
+Stankovic, and F. Miao, “Data-driven distributionally robust
+electric vehicle balancing for autonomous mobility-on-demand
+systems under demand and supply uncertainties,” IEEE Trans-
+actions on Intelligent Transportation Systems, 2023.
+[14] E. F. Camacho and C. B. Alba, Model predictive control.
+Springer science & business media, 2013.
+[15] R. S. Sutton and A. G. Barto, Reinforcement learning: An
+introduction.
+MIT press, 2018.
+[16] J. Miller and J. P. How, “Predictive positioning and quality of
+service ridesharing for campus mobility on demand systems,” in
+2017 IEEE International Conference on Robotics and Automa-
+tion (ICRA), May 2017, pp. 1402–1408.
+[17] J. Pfrommer, J. Warrington, G. Schildbach, and M. Morari,
+“Dynamic vehicle redistribution and online price incentives
+in shared mobility systems,” IEEE Transactions on Intelligent
+Transportation Systems, vol. 15, no. 4, pp. 1567–1578, Aug
+2014.
+[18] A. Wallar, M. Van Der Zee, J. Alonso-Mora, and D. Rus,
+“Vehicle rebalancing for mobility-on-demand systems with ride-
+sharing,” in 2018 IEEE/RSJ International Conference on Intelli-
+gent Robots and Systems (IROS), Oct 2018, pp. 4539–4546.
+[19] R. Iglesias, F. Rossi, K. Wang, D. Hallac, J. Leskovec, and
+M. Pavone, “Data-driven model predictive control of autonomous
+mobility-on-demand systems.” in IEEE International Conference
+on Robotics and Automation, vol. abs/1709.07032, 2018.
+[20] J. Holler, R. Vuorio, Z. Qin, X. Tang, Y. Jiao, T. Jin, S. Singh,
+C. Wang, and J. Ye, “Deep reinforcement learning for multi-
+driver vehicle dispatching and repositioning problem,” in 2019
+IEEE International Conference on Data Mining (ICDM). IEEE,
+2019, pp. 1090–1095.
+[21] K. Lin, R. Zhao, Z. Xu, and J. Zhou, “Efficient large-scale fleet
+management via multi-agent deep reinforcement learning,” in
+Proceedings of the 24th ACM SIGKDD International Conference
+on Knowledge Discovery & Data Mining, 2018, pp. 1774–1783.
+[22] S. He and K. G. Shin, “Spatio-temporal capsule-based rein-
+forcement learning for mobility-on-demand coordination,” IEEE
+Transactions on Knowledge and Data Engineering, 2020.
+[23] L. Pinto, J. Davidson, R. Sukthankar, and A. Gupta, “Robust
+adversarial reinforcement learning,” in International Conference
+on Machine Learning.
+PMLR, 2017, pp. 2817–2826.
+[24] J. A. Bagnell, A. Y. Ng, and J. G. Schneider, “Solving uncertain
+markov decision processes,” 2001.
+[25] S. He, S. Han, S. Su, S. Han, S. Zou, and F. Miao, “Robust
+multi-agent reinforcement learning with state uncertainty,”
+Transactions on Machine Learning Research, 2023. [Online].
+Available: https://openreview.net/forum?id=CqTkapZ6H9
+[26] S. Han, S. Su, S. He, S. Han, H. Yang, and F. Miao, “What
+is the solution for state adversarial multi-agent reinforcement
+learning?” arXiv preprint arXiv:2212.02705, 2022.
+[27] Y. Wang and S. Zou, “Policy gradient method for robust rein-
+forcement learning,” arXiv preprint arXiv:2205.07344, 2022.
+[28] A. Mourad, J. Puchinger, and C. Chu, “A survey of models
+and algorithms for optimizing shared mobility,” Transportation
+Research Part B: Methodological, vol. 123, pp. 323 – 346, 2019.
+[29] X. Chen, F. Miao, G. Pappas, and V. Preciado, “Hierarchical
+data-driven vehicle dispatch and ride-sharing,” in Proceedings
+of the IEEE 56th Conference on Decision and Control, ser.
+CDC’17, 2017, pp. 4458–4463.
+[30] Z. Wan, H. Li, H. He, and D. Prokhorov, “Model-free real-time
+ev charging scheduling based on deep reinforcement learning,”
+IEEE Transactions on Smart Grid, vol. 10, no. 5, pp. 5246–5257,
+2019.
+[31] R. Iglesias, F. Rossi, R. Zhang, and M. Pavone, “A bcmp
+network approach to modeling and controlling autonomous
+mobility-on-demand systems,” The International Journal of
+Robotics Research, vol. 38, no. 2-3, pp. 357–374, 2019.
+[Online]. Available: https://doi.org/10.1177/0278364918780335
+[32] S. Boyd and L. Vandenberghe, Convex Optimization.
+USA:
+Cambridge University Press, 2004.
+[33] R. Lowe and Y. I. Wu, “Multi-agent actor-critic for mixed
+cooperative-competitive environments,” in NeurIPS, 2017, pp.
+6379–6390.
+[34] T. Lin, C. Jin, and M. Jordan, “On gradient descent ascent
+for nonconvex-concave minimax problems,” in International
+Conference on Machine Learning.
+PMLR, 2020, pp. 6083–
+6093.
+[35] J. Schulman, S. Levine, P. Abbeel, M. Jordan, and P. Moritz,
+“Trust region policy optimization,” in International conference
+on machine learning.
+PMLR, 2015, pp. 1889–1897.
+[36] T. P. Lillicrap, J. J. Hunt, A. Pritzel, N. Heess, T. Erez, Y. Tassa,
+D. Silver, and D. Wierstra, “Continuous control with deep
+reinforcement learning,” arXiv preprint arXiv:1509.02971, 2015.
+[37] D. Ding, K. Zhang, T. Basar, and M. Jovanovic, “Natural policy
+gradient primal-dual method for constrained markov decision
+processes,” Advances in Neural Information Processing Systems,
+vol. 33, pp. 8378–8390, 2020.
+[38] S. M. Kakade, “A natural policy gradient,” Advances in neural
+information processing systems, vol. 14, 2001.
+[39] S.-I. Amari, “Natural gradient works efficiently in learning,”
+Neural computation, vol. 10, no. 2, pp. 251–276, 1998.
+[40] Y. Liu, K. Zhang, T. Basar, and W. Yin, “An improved analysis
+of (variance-reduced) policy gradient and natural policy gradient
+methods,” Advances in Neural Information Processing Systems,
+vol. 33, pp. 7624–7636, 2020.
+8

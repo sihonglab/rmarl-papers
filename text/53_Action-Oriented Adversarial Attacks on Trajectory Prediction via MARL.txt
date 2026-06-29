@@ -1,0 +1,812 @@
+Action-Oriented Adversarial Attacks on Trajectory Prediction in
+Connected Autonomous Vehicles via Multi-Agent Reinforcement
+Learning
+Xiaofeng Zhaoa,∗, Dengfeng Suna
+aSchool of Aeronautics and Astronautics, Purdue University, West Lafayette, IN 47906 USA
+A R T I C L E I N F O
+Keywords:
+Multi-agent reinforcement learning
+Connected autonomous vehicles
+Trajectory prediction
+Adversarial machine learning
+Reliability evaluation
+A B S T R A C T
+Infrastructure-based trajectory prediction modules in connected and automated vehicle (CAV)
+systems play a vital role in enabling safe and efficient navigation. However, their centralized
+nature introduces a critical vulnerability: adversarial manipulation can simultaneously compro-
+mise the safety of multiple autonomous agents. This paper proposes a novel framework—action-
+oriented prediction-adversarial multi-agent reinforcement learning (AO-PA-MARL)—that gen-
+erates bounded trajectory perturbations targeting infrastructure-level prediction models. Built
+on the centralized training and decentralized execution (CTDE) paradigm, AO-PA-MARL
+employs action-oriented optimization to coordinate attacks efficiently while mitigating the curse
+of dimensionality in multi-agent trajectory spaces. We formalize the problem as a prediction-
+adversarial Markov decision process (PA-MDP) and show the existence of an optimal adversarial
+policy via Bellman contraction. Experiments in crowd navigation and highway on-ramp merging
+environments demonstrate that AO-PA-MARL significantly outperforms baseline adversarial
+methods, yielding improved training rewards and substantially higher collision rates. These re-
+sults reveal vulnerabilities in prediction-based safety supervisors and demonstrate the scalability
+and effectiveness of AO-PA-MARL as an adversarial evaluation tool for assessing the robustness
+of trajectory planning models under realistic uncertainties in CAV systems.
+1. Introduction
+With the rapid advancement of connected and automated vehicles (CAVs), trajectory prediction has become a
+central capability for ensuring safe and efficient navigation in intelligent transportation systems (Guo et al., 2025;
+Hu et al., 2023; Zhou et al., 2024). Accurate forecasting of agents’ future states enables autonomous vehicles to
+proactively anticipate risks, adjust to dynamic surroundings, and coordinate with others in complex traffic scenarios
+(Cui et al., 2020; Huang et al., 2025; Ma et al., 2020). Modern CAV platforms increasingly rely on infrastructure-
+assisted prediction and communication—via vehicle-to-infrastructure (V2I) links—to enhance situational awareness
+and support cooperative planning (Chen et al., 2024a,b; Jiang and Shang, 2023; Zhang et al., 2023). Infrastructure-
+assisted control policies have also been proposed to manage mixed-traffic intersections (Ying and Feng, 2024) and
+freeway bottlenecks (Han and Zhang, 2025) through centralized prediction and planning. These systems often rely
+on roadside units (RSUs) or cloud-connected edge servers to aggregate vehicle states, forecast trajectories, and issue
+coordinated control decisions—assuming that this infrastructure layer is secure and trustworthy.
+However, the centralization of prediction and control logic introduces new cybersecurity vulnerabilities. Infrastructure-
+level components possess privileged access to aggregated trajectory information and planning interfaces, making them
+attractive and impactful targets for attackers. Prior studies have shown that attacks on V2V or V2I communication
+channels can destabilize platoons, induce unsafe spacing, or mislead cooperative behaviors (Comert et al., 2022;
+Khattak et al., 2020; Li et al., 2024). We adopt a threat model grounded in these observations: the attacker compromises
+the infrastructure-level trajectory prediction module (e.g., at an RSU), gaining access to predicted trajectories before
+they are used by downstream safety logic. This scenario is consistent with real-world cyber-physical vulnerabilities
+observed in vehicular networks, where RSUs and cloud services are exposed to risks such as outdated firmware, weak
+authentication, and remote code execution (Rathore et al., 2022; Tanaji and Roychowdhury, 2024).
+Our framework differs from previous adversarial frameworks by focusing on a black-box attacker who perturbs only
+the output of the prediction model. This access level mirrors known attack surfaces, such as falsified V2X messages
+∗Corresponding author
+ORCID(s): 0009-0001-2390-2037 (X. Zhao)
+Xiaofeng Zhao: Preprint submitted to Elsevier
+Page 1 of 13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5348784
+Preprint not peer reviewed
+
+or corrupted state estimates, without requiring any modification to onboard sensing or actuation (Khattak et al.,
+2021; Sun et al., 2023). While prior adversarial approaches target perception noise, planning injection, or direct state
+manipulation, our work focuses specifically on infrastructure-level trajectory forecasting—a relatively underexplored
+but realistic attack surface in connected autonomous vehicles. Moreover, to ensure realism, the perturbations are
+restricted to bounded deviations consistent with physical constraints and common uncertainty margins in trajectory
+prediction (Chen et al., 2024b,c). Such modest but targeted manipulations can mislead safety supervisors and degrade
+coordinated decision-making, especially in CAV systems that delegate control assistance to shared infrastructure—for
+tasks such as cooperative merging, intersection scheduling, and freeway coordination (Han and Zhang, 2025; Shi
+et al., 2021; Ying and Feng, 2024). In addition to modeling this infrastructure-level threat, our work aims to establish
+a systematic framework for evaluating the robustness of trajectory planning models under realistic CAV conditions. In
+practice, trajectory prediction must contend with a range of uncertainties—such as multi-agent interactions, stochastic
+model behavior, adverse weather, and disturbances in vehicle dynamics (Li et al., 2019, 2020). Even minor deviations
+in these inputs can propagate through the autonomy stack, leading to substantial prediction errors and performance
+degradation. Therefore, developing methods to evaluate and enhance resilience against adversarial perturbations is
+critical for the safety and reliability of future autonomous transportation systems.
+To address these challenges, we introduce action-oriented prediction-adversarial multi-agent reinforcement learn-
+ing (AO-PA-MARL), a novel adversarial framework that strategically perturbs infrastructure-generated trajectory
+predictions to degrade the effectiveness of prediction-based safety mechanisms. Our approach is motivated by the
+growing body of work that leverages multi-agent reinforcement learning (MARL) to enable coordinated behavior
+among connected vehicles in real-world traffic applications—such as online parking assignment (Zhang et al., 2022),
+mandatory lane changing (Wang and Others, 2023), intersection navigation (Bautista-Montesano and Others, 2022),
+and cooperative merging on freeways (Shi et al., 2021). The method is built on the centralized training and decentralized
+execution (CTDE) paradigm, which has shown strong performance in complex multi-agent decision-making scenarios,
+including autonomous driving (Sumanth Nakka et al., 2022), robotic manipulation (Wang and Sagawa, 2022), and
+strategic planning under uncertainty (Zhao et al., 2024). AO-PA-MARL extends the CTDE paradigm to adversarial
+evaluation by training a multi-agent policy that learns to inject coordinated and physically bounded trajectory
+perturbations. These perturbations are designed to remain plausible to the safety supervisor, yet systematically mislead
+downstream planning modules. We formalize the setting as a prediction-adversarial Markov decision process (PA-
+MDP), show the existence of an optimal adversarial policy under Bellman contraction, and introduce an action-oriented
+perturbation strategy to mitigate the curse of dimensionality in continuous trajectory spaces. Experiments in both crowd
+navigation and highway on-ramp merging environments demonstrate that AO-PA-MARL induces substantially higher
+collision rates than baseline adversarial methods, validating its effectiveness as a security stress test.
+Our approach is model-agnostic and operates entirely at the prediction output level, making it broadly compatible
+with diverse trajectory forecasting modules. Unlike gradient-based adversarial attacks (Cao et al., 2022), which
+require white-box access or direct policy injection, AO-PA-MARL perturbs only the trajectory predictions used
+in planning—making it suitable for both generative and rule-based predictors (Bautista-Montesano and Others,
+2022). In contrast to trajectory generation models like Social-GAN (Gupta et al., 2018) or CoverNet (Phan-Minh
+et al., 2020), which focus on behavioral realism, our approach explicitly targets vulnerabilities in safety-aware
+control systems. Additionally, while robust RL methods aim to withstand observation-level disturbances (Tessler
+et al., 2019; Wang et al., 2025), AO-PA-MARL exposes systemic weaknesses in prediction-dependent coordination
+under adversarial inputs. To the best of our knowledge, AO-PA-MARL is the first framework to apply multi-agent
+reinforcement learning for coordinated black-box perturbation of infrastructure-generated trajectory predictions. This
+enables systematic robustness evaluation in prediction-driven CAV systems without assuming white-box access or
+policy-level interference.
+2. Preliminary
+This section introduces the fundamental algorithms crucial for developing our approach.
+2.1. Markov Games
+Our algorithm builds upon a multi-agent extension of Markov decision processes (MDPs) known as partially
+observable Markov games (Littman, 1994). A Markov game involving 𝑁agents is characterized by a set of states 
+that represent all possible configurations of all agents, a set of actions 1, … , 𝑁and a set of observations 1, … , 𝑁
+Xiaofeng Zhao: Preprint submitted to Elsevier
+Page 2 of 13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5348784
+Preprint not peer reviewed
+
+for each agent. Each agent 𝑖utilizes a stochastic policy 𝜋𝑖∶𝑖× 𝑖↦[0, 1] parameterized by 𝜃𝑖to select actions.
+The next state is determined by the state transition function ∶× 1 × ⋯× 𝑁↦. At each time step 𝑡, Each
+agent 𝑖receives a reward 𝑟𝑖,𝑡based on the state and its action and obtains an updated observation.
+2.2. Decentralized MARL for CAV Coordination
+Multi-agent reinforcement learning (MARL) has proven effective in optimizing traffic flow and reducing conges-
+tion. Applied to CAV control, each vehicle is modeled as an independent agent that learns from interactions with
+its environment—including other vehicles, pedestrians, and road conditions. Beyond individual safety and efficiency,
+CAVs also learn to coordinate and communicate with others. A decentralized MARL algorithm is introduced in (Lowe
+et al., 2017), where collaboration is enabled by a centralized critic that estimates the state-action value using global
+observations and actions.
+In our decentralized setting, each ego vehicle 𝜂𝑖observes only nearby agents within a 150 m longitudinal range,
+denoted by its local neighborhood 𝑖, reflecting partial observability (Yu et al., 2020). Each agent perceives a local
+state 𝑠𝑖and selects an action 𝑎𝑖= 𝜋𝑖(𝑠𝑖) from the feasible high-level action space 𝐴high, which includes discrete
+maneuvers such as turn left, turn right, cruising, speed up, and slow down (Liu et al., 2022). The joint policy
+is denoted as 𝜋= (𝜋1, … , 𝜋𝑁), and the joint action distribution factorizes as: 𝜋( ̄𝑎∣̄𝑠) = ∏𝑁
+𝑖=1 𝜋𝑖(𝑎𝑖∣𝑠𝑖).
+This work adopts a cooperative MARL setting where all agents are trained to optimize a shared objective—safely
+navigating while maximizing traffic efficiency. The training objective is to maximize the cumulative expected return:
+𝑈= 𝔼𝜋
+[∑𝑇
+𝑡=0 𝛾𝑡𝑟𝑡
+]
+, where the global reward is the average of individual rewards: 𝑟𝑡= 1
+𝑁
+∑𝑁
+𝑖=1 𝑟𝑖,𝑡.
+2.3. Cooperative MARL with Prediction-Based Safety Supervisor
+Several recent works have addressed safety issues in MARL problems (Chen et al., 2023; Elsayed-Aly et al.,
+2021). Our adversarial architecture builds upon the widely studied MARL with prediction-based safety supervisor,
+which is designed to replace unsafe actions with safer alternatives (Chen et al., 2023). To enhance safety in connected
+autonomous systems, a central communication station aggregates the joint state ̄𝑠and joint action ̄𝑎from all agents
+via vehicle-to-infrastructure (V2I) communication. A prediction-based safety supervisor, denoted by , utilizes this
+information to evaluate planned actions and intervene if they pose safety risks.
+Specifically, based on estimated safety margins, the supervisor constructs a priority list 𝑃𝑡of autonomous vehicles to
+address potential conflicts in a sequential manner. The evaluation proceeds over each vehicle 𝜂𝑖∈𝑃𝑡, starting from the
+highest-priority vehicle. For each 𝜂𝑖, the supervisor simulates its proposed exploratory action and checks for potential
+collisions with neighboring agents 𝑖. Let 𝑖∶= {𝑖} ∪𝑖denote the set of agents involved in this local evaluation,
+and let 𝜁𝑖represent their joint predicted trajectories, including the predicted trajectories of neighboring agents and
+those induced by each feasible action of 𝜂𝑖. Inside the safety supervisor, the trajectory induced by the proposed action of
+𝜂𝑖, as generated by the MARL policy, is first evaluated in conjunction with the predicted trajectories of its neighboring
+agents. If the proposed action leads to a potential collision within the prediction horizon 𝑇𝑛, the supervisor selects a
+safer alternative from the set of feasible actions:
+𝑎′
+𝑡= arg max
+𝑎𝑡∈𝐴high
+(
+min
+𝑘∈𝑇𝑛
+𝑑𝑘(𝑎𝑡; 𝜁𝑖)
+)
+,
+(1)
+where 𝑑𝑘(𝑎𝑡; 𝜁𝑖) denotes the minimum pairwise distance at timestep 𝑘between the ego vehicle and its neighboring
+agents, based on the predicted trajectories assuming the ego vehicle adopts action 𝑎𝑡. Specifically, in this work, the
+minimum inter-agent distance at timestep 𝑘is computed as:
+𝑑𝑘(𝑎𝑡) ∶= min
+𝑗∈𝑖
+‖‖‖𝜁𝑘
+𝑖(𝑎𝑡) −𝜁𝑘
+𝑗
+‖‖‖2 ,
+where 𝜁𝑘
+𝑖(𝑎𝑡) is the predicted trajectory of the ego vehicle at timestep 𝑘induced by action 𝑎𝑡, and 𝜁𝑘
+𝑗is the predicted
+trajectory of neighboring agent 𝑗∈𝑖. This evaluation and correction process is applied iteratively for all AVs in the
+priority list 𝑃𝑡. At a high level, the supervisor leverages a trajectory prediction module (̄𝑠) = ̄𝜁to simulate future
+motion outcomes, where ̄𝜁= (𝜁𝑖, … , 𝜁𝑁) is the collection of joint predicted trajectories. Based on these predictions,
+the supervisor outputs a refined joint actions ̃𝑎= (̄𝑠, ̄𝑎, ̄𝜁) that ensures collective safety.
+Xiaofeng Zhao: Preprint submitted to Elsevier
+Page 3 of 13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5348784
+Preprint not peer reviewed
+
+Figure 1: This architecture illustrates the high-level impact of PA-MARL, where predicted trajectories are perturbed by a
+joint adversarial policy to mislead the safety supervisor into making unsafe decisions.
+Algorithm 1 Safety Supervisor under PA-MARL
+for 𝜂𝑖∈𝑃𝑡, starting from the highest-priority vehicle do
+Identify its neighboring agents 𝑖
+Predict joint trajectories 𝜁𝑖of neighboring agents and those induced by each feasible action of 𝜂𝑖
+The corresponding PA-MARL adversarial agent 𝜈𝑖outputs perturbed trajectory predictions ̃𝜁𝑖∼𝜈𝑖(𝑠𝑖, 𝑎𝑖, 𝜁𝑖)
+if ̃𝜁𝑖indicates potential collision then
+Replace the risky action with 𝑎𝑡←𝑎′
+𝑡according to Eq. (1)
+end if
+end for
+3. Methodology
+In this section, we begin by introducing the problem formulation and framework of prediction-adversarial multi-
+agent reinforcement learning (PA-MARL), followed by a proof of the existence and uniqueness of the optimal
+adversarial policy based on Bellman contraction. We then present the proposed algorithm—action-oriented prediction-
+adversarial multi-agent reinforcement learning (AO-PA-MARL)—which is designed to circumvent the curse of
+dimensionality and enable efficient learning. Interested readers are referred to the authors’ GitHub repository for
+implementation details and visual demonstrations (Zhao).
+3.1. Prediction-Adversarial Multi-Agent Reinforcement Learning (PA-MARL): Problem
+Formulation and Framework
+To evaluate the robustness of prediction-based safety supervisors under realistic and adversarial conditions, we
+propose a novel framework: prediction-adversarial multi-agent reinforcement learning (PA-MARL). While motivated
+by cooperative V2I scenarios, the framework is broadly applicable to a wide range of CAV systems that rely
+on prediction-driven coordination. As depicted in Fig. 1, our architecture preserves the core functionality of a
+prediction-based safety supervisor, but introduces an adversarial agent that perturbs trajectory predictions within the
+infrastructure-level communication station. These perturbations are designed to exploit vulnerabilities in the prediction
+pipeline, rather than directly attacking agent observations or actions.
+To formally model this interference, we introduce the prediction-adversarial Markov decision process (PA-MDP),
+an extension of the classical MDP that explicitly accounts for adversarial influences in V2I-based cooperative systems.
+At each time step, before the safety supervisor evaluates potential collisions for each vehicle 𝜂𝑖, the corresponding
+adversary 𝜈𝑖observes the local state, action, and predicted trajectories of agents in 𝜂𝑖’s vicinity, denoted by (𝑠𝑖, 𝑎𝑖, 𝜁𝑖),
+and outputs perturbed predictions ̃𝜁𝑖∼𝜈𝑖(𝑠𝑖, 𝑎𝑖, 𝜁𝑖). The unified network jointly predicts the perturbed trajectories
+of both ego and surrounding agents, enabling more coherent multi-agent forecasting and improved adversarial
+coordination and exploitation strategies, as supported by (Gupta et al., 2018; Phan-Minh et al., 2020; Zhao et al.,
+2019). The safety supervisor then analyzes ̃𝜁to detect potential collisions and, if necessary, selects safer alternative
+actions, as detailed in Algorithm 1.
+From a high-level perspective, under the centralized training and decentralized execution (CTDE) framework,
+the joint adversarial policy 𝜈= (𝜈1, … , 𝜈𝑁) is trained using the joint state, joint action, and the collection of
+Xiaofeng Zhao: Preprint submitted to Elsevier
+Page 4 of 13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5348784
+Preprint not peer reviewed
+
+predicted trajectories for all agents, denoted by (̄𝑠, ̄𝑎, ̄𝜁). It outputs a set of perturbed predictions ̃𝜁∼𝜈(̄𝑠, ̄𝑎, ̄𝜁),
+where ̃𝜁= ( ̃𝜁𝑈1, … , ̃𝜁𝑈𝑁) denotes the collection of perturbed local joint trajectory predictions for each agent 𝜂𝑖
+and its neighbors 𝑁𝑖. The safety supervisor evaluates the joint action in conjunction with the joint state and the
+collection of perturbed predicted trajectories, and computes a refined joint action ̃𝑎= (̄𝑠, ̄𝑎, ̃𝜁). The refined action ̃𝑎
+is subsequently executed in place of the original joint action ̄𝑎to ensure adherence to safety constraints. To incentivize
+effective disruption, the adversary receives a reward signal ̃𝑟= −𝑟, where 𝑟is the CAV global reward. Crucially, since
+the perturbed predictions ̃𝜁may deviate from the ground truth, even subtle modifications can cause the supervisor to
+select suboptimal actions, leading to degraded system performance and unsafe outcomes. To ensure the perturbations
+remain realistic and physically plausible, we constrain the adversary’s output within a bounded set ( ̄𝜁), such that
+̃𝜁∈( ̄𝜁). Formally, the PA-MDP is characterized by the 7-tuple (, , , , , , 𝛾):
+• : the joint state space of the cooperative agents,
+• : the joint action space,
+• : the predicted trajectory space,
+• : the set of feasible perturbations,
+• : the environment transition dynamics,
+• : the global cooperative reward function,
+• 𝛾: the discount factor applied to future rewards.
+In real-world scenarios, trajectory predictions are inherently uncertain due to factors such as stochastic disturbances,
+limited sensing, and model inaccuracies. Our PA-MARL framework captures these uncertainties through worst-case
+perturbations that remain physically plausible. By targeting the prediction module instead of direct agent interactions,
+the adversary can indirectly influence the behavior of multiple vehicles simultaneously. This enables large-scale
+disruptions in coordinated environments such as connected autonomous traffic, and highlights critical vulnerabilities
+in prediction-dependent safety systems. The PA-MARL framework thus offers a principled and practical foundation
+for assessing the security of V2I-integrated autonomy.
+3.2. Optimal Adversary Policy via Bellman Contraction
+Given the PA-MDP formulation, we aim to evaluate the worst-case impact of adversarial perturbations on
+cooperative decision-making in connected autonomous systems. The objective is to approximate the optimal joint
+adversarial policy 𝜈∗= (𝜈∗
+1, … , 𝜈∗
+𝑁) through iterative value-based optimization conducted during centralized training,
+aiming to minimize the expected cumulative reward of the CAV. Accordingly, we define the adversarial value function
+within the PA-MDP as:
+̃𝑉𝜋◦𝜈(̄𝑠, ̄𝑎, ̄𝜁) = 𝔼𝜋◦𝜈
+[ ∞
+∑
+𝑘=0
+𝛾𝑘𝑟𝑡+𝑘+1 ∣̄𝑠𝑡= ̄𝑠, ̄𝑎𝑡= ̄𝑎, ̄𝜁𝑡= ̄𝜁
+]
+where 𝑟𝑡denotes the cooperative reward at time step t and 𝜋◦𝜈represents the cooperative policy operating under
+adversarially perturbed trajectory predictions. This formulation captures how an adversary can indirectly influence
+agent behavior by manipulating the input provided by the trajectory prediction module. Given a fixed joint CAV
+policy 𝜋, along with the infrastructure-level modules—trajectory predictor and safety supervisor —the worst-case
+performance is described by the optimal adversarial value function:
+̃𝑉𝜋◦𝜈∗(̄𝑠, ̄𝑎, ̄𝜁) = min
+𝜈
+̃𝑉𝜋◦𝜈(̄𝑠, ̄𝑎, ̄𝜁)
+To solve for 𝜈∗, we establish a Bellman contraction property for the adversarial value function.
+Theorem 1 (Bellman contraction for optimal adversary). Define Bellman operator ∶ℝ××→ℝ××,
+(̃𝑉)(̄𝑠, ̄𝑎, ̄𝜁) =
+min
+̄𝜁′∈( ̄̄𝜁)
+∑
+̄𝑠′
+𝑝(̄𝑠′ ∣̄𝑠, ̄𝑎, ̄𝜁)
+∑
+̄𝑎′
+𝜋( ̄𝑎′ ∣̄𝑠′)
+∑
+̄𝜁′
+( ̄𝜁′ ∣̄𝑎′, ̄𝑠′) [𝑅+ 𝛾̃𝑉(̄𝑠′, ̄𝑎′, ̄𝜁′)]
+Xiaofeng Zhao: Preprint submitted to Elsevier
+Page 5 of 13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5348784
+Preprint not peer reviewed
+
+where the reward function is defined as 𝑅∶= 𝔼[𝑟∣̄𝑠, ̄𝑎, ̄𝜁, ̃𝜁, ̄𝑠′, ̄𝑎′, ̄𝜁′]. The Bellman equation for optimal adversary 𝜈∗
+satisfies the fixed-point equation: ̃𝑉𝜋◦𝜈∗= ̃𝑉𝜋◦𝜈∗, where is a contraction mapping.
+Proof. By the definition of 𝑉𝜋◦𝜈(̄𝑠, ̄𝑎, ̄𝜁),
+̃𝑉𝜋◦𝜈∗(̄𝑠, ̄𝑎, ̄𝜁)
+= min
+𝜈𝔼𝜋◦𝜈
+[ ∞
+∑
+𝑘=0
+𝛾𝑘𝑟𝑡+𝑘+1|||̄𝑠𝑡= ̄𝑠, ̄𝑎𝑡= ̄𝑎, ̄𝜁𝑡= ̄𝜁
+]
+= min
+𝜈𝔼𝜋◦𝜈
+[
+𝑟𝑡+1 + 𝛾
+∞
+∑
+𝑘=0
+𝛾𝑘𝑟𝑡+𝑘+2|||̄𝑠𝑡= ̄𝑠, ̄𝑎𝑡= ̄𝑎, ̄𝜁𝑡= ̄𝜁
+]
+= min
+𝜈
+∑
+̄𝑠′
+𝑝(̄𝑠′|̄𝑠, ̃𝑎)
+∑
+̄𝑎′
+𝜋( ̄𝑎′|̄𝑠′)
+∑
+̄𝜁′
+( ̄𝜁′| ̄𝑎′, ̄𝑠′)
+[
+𝑟𝑡+1 + 𝛾𝔼𝜋◦𝜈
+[ ∞
+∑
+𝑘=0
+𝛾𝑘𝑟𝑡+𝑘+2||| ̄𝑆𝑡+1 = ̄𝑠′, ̄𝑎𝑡+1 = ̄𝑎′, ̄𝜁𝑡+1 = ̄𝜁′
+]]
+= min
+̃𝜁∈( ̄𝜁)
+∑
+̄𝑠′
+𝑝(̄𝑠′|̄𝑠, (̄𝑠, ̄𝑎, ̃𝜁))
+∑
+̄𝑎′
+𝜋( ̄𝑎′|̄𝑠′)
+∑
+̄𝜁′
+( ̄𝜁′| ̄𝑎′, ̄𝑠′) [𝑟𝑡+1 + 𝛾̃𝑉𝜋◦𝜈∗(̄𝑠′, ̄𝑎′, ̄𝜁′)]
+= min
+̃𝜁∈( ̄𝜁)
+∑
+̄𝑠′
+𝑝′(̄𝑠′|̄𝑠, ̄𝑎, ̃𝜁)
+∑
+̄𝑎′
+𝜋( ̄𝑎′|̄𝑠′)
+∑
+̄𝜁′
+( ̄𝜁′| ̄𝑎′, ̄𝑠′) [𝑟𝑡+1 + 𝛾̃𝑉𝜋◦𝜈∗(̄𝑠′, ̄𝑎′, ̄𝜁′)]
+where 𝑝′(̄𝑠′ ∣̄𝑠, ̄𝑎, ̃𝜁) denotes 𝑝(̄𝑠′ ∣̄𝑠, (̄𝑠, ̄𝑎, ̃𝜁)). This is the Bellman equation for the optimal adversary 𝜈∗; 𝜈∗is a fixed
+point of the Bellman operator . Next, we show that is a contraction mapping, ensuring the existence of a unique
+fixed point. Without loss of generality, assume ̃𝑉𝜋◦𝜈1(̄𝑠, ̄𝑎, ̄𝜁) ≥̃𝑉𝜋◦𝜈2(̄𝑠, ̄𝑎, ̄𝜁). Then
+̃𝑉𝜋𝜋◦𝜈1(̄𝑠, ̄𝑎, ̄𝜁) −̃𝑉𝜋𝜋◦𝜈2(̄𝑠, ̄𝑎, ̄𝜁)
+≤max
+̃𝜁∈( ̄𝜁)
+⎧
+⎪
+⎨
+⎪⎩
+∑
+̄𝑠′
+𝑝′(̄𝑠′ ∣̄𝑠, ̄𝑎, ̃𝜁)
+∑
+̄𝑎′
+𝜋( ̄𝑎′ ∣̄𝑠′)
+∑
+̄𝜁′
+( ̄𝜁′ ∣̄𝑎′, ̄𝑠′)
+[
+𝑅+ 𝛾̃𝑉𝜋𝜋◦𝜈1(̄𝑠′, ̄𝑎′, ̄𝜁′)
+]
+−
+∑
+̄𝑠′
+𝑝′(̄𝑠′ ∣̄𝑠, ̄𝑎, ̃𝜁)
+∑
+̄𝑎′
+𝜋( ̄𝑎′ ∣̄𝑠′)
+∑
+̄𝜁′
+( ̄𝜁′ ∣̄𝑎′, ̄𝑠′)
+[
+𝑅+ 𝛾̃𝑉𝜋𝜋◦𝜈2(̄𝑠′, ̄𝑎′, ̄𝜁′)
+]⎫
+⎪
+⎬
+⎪⎭
+= 𝛾max
+̃𝜁∈( ̄𝜁)
+∑
+̄𝑠′
+𝑝′(̄𝑠′ ∣̄𝑠, ̄𝑎, ̃𝜁)
+∑
+̄𝑎′
+𝜋( ̄𝑎′ ∣̄𝑠′)
+∑
+̄𝜁′
+( ̄𝜁′ ∣̄𝑎′, ̄𝑠′)
+[
+̃𝑉𝜋𝜋◦𝜈1(̄𝑠′, ̄𝑎′, ̄𝜁′) −̃𝑉𝜋𝜋◦𝜈2(̄𝑠′, ̄𝑎′, ̄𝜁′)
+]
+≤𝛾max
+̃𝜁∈( ̄𝜁)
+∑
+̄𝑠′
+𝑝′(̄𝑠′ ∣̄𝑠, ̄𝑎, ̃𝜁)
+∑
+̄𝑎′
+𝜋( ̄𝑎′ ∣̄𝑠′)
+∑
+̄𝜁′
+( ̄𝜁′ ∣̄𝑎′, ̄𝑠′) ‖‖‖ ̃𝑉𝜋𝜋◦𝜈1 −̃𝑉𝜋𝜋◦𝜈2
+‖‖‖∞
+= 𝛾‖‖‖ ̃𝑉𝜋𝜋◦𝜈1 −̃𝑉𝜋𝜋◦𝜈2
+‖‖‖∞
+The first inequality follows from
+min
+𝑥1 𝑓(𝑥1) −min
+𝑥2 𝑔(𝑥2) ≤max
+𝑥(𝑓(𝑥) −𝑔(𝑥)),
+and the second follows from pointwise bounding. Similarly, if ̃𝑉2(̄𝑠, ̄𝑎, ̄𝜁) > ̃𝑉1(̄𝑠, ̄𝑎, ̄𝜁), the same argument applies.
+Thus,
+‖̃𝑉1 −̃𝑉2‖∞≤𝛾‖ ̃𝑉1 −̃𝑉2‖∞,
+proving that is a 𝛾-contraction. Since 0 < 𝛾< 1, by the Banach fixed-point theorem, there exists a unique fixed point
+̃𝑉𝜋◦𝜈∗.
+Thus, under a fixed cooperative policy 𝜋, trajectory predictor , and safety supervisor , the optimal joint
+adversarial policy 𝜈∗can be computed by iteratively applying the Bellman operator until convergence during
+Xiaofeng Zhao: Preprint submitted to Elsevier
+Page 6 of 13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5348784
+Preprint not peer reviewed
+
+Algorithm 2 Safety Supervisor under AO-PA-MARL
+for 𝜂𝑖∈𝑃𝑡, starting from the highest-priority vehicle do
+Identify its neighboring agents 𝑖
+Predict joint trajectories 𝜁𝑖of neighboring agents and those induced by each feasible action of 𝜂𝑖.
+The corresponding AO-PA-MARL adversarial agent 𝜈𝑖outputs action pairs ( ̂𝑎, ̆𝑎) ∼𝜈𝑖(𝑠𝑖, 𝑎𝑖, 𝜁𝑖)
+Compute the optimal perturbed trajectory ̃𝜁𝑖according to Eq. (2)
+if ̃𝜁𝑖indicates potential collision then
+Replace the risky action with 𝑎𝑡←𝑎′
+𝑡according to Eq. (1)
+end if
+end for
+centralized training. This contraction-based formulation guarantees the existence and uniqueness of the corresponding
+adversarial value function ̃𝑉𝜋◦𝜈∗, and provides theoretical justification for the PA-MARL framework in systematically
+evaluating worst-case adversarial influences on cooperative autonomous decision-making.
+3.3. Action-Oriented Prediction-Adversarial Multi-Agent Reinforcement Learning
+Continuous-action reinforcement learning, particularly in multi-agent contexts, faces fundamental scalability chal-
+lenges in high-dimensional action spaces. These limitations become especially pronounced in continuous-action PA-
+MARL, where the adversarial agent is tasked with generating perturbed trajectory predictions for multiple surrounding
+objects. In such cases, the action space is defined over a product of dimensions: the number of agents × prediction
+horizon × state features (e.g., 2D position and heading angle). Consequently, even modest increases in object count or
+prediction horizon lead to a combinatorial explosion in the dimensionality of the continuous action space. Standard
+algorithms—such as DDPG, TD3, and MADDPG—struggle under these conditions due to unstable gradient estimates,
+inaccurate Q-function approximation, and poor sample efficiency in high-dimensional domains (Fujimoto et al., 2018;
+Lillicrap et al., 2016). These challenges are further amplified in multi-agent settings, where simultaneous policy updates
+introduce non-stationarity that complicates value learning (Lowe et al., 2017). As a result, such methods often fail to
+converge or produce brittle policies in realistic multi-agent environments involving trajectory prediction.
+A natural approach to mitigating these challenges is to discretize the trajectory space, as discrete-action PA-MARL.
+However, in adversarial trajectory prediction, naively discretizing the full future trajectory across all agents, time
+steps, and state dimensions quickly becomes intractable. The size of the discrete action space scales as the number of
+values per dimension, raised to the power of the product of the number of dimensions, the prediction horizon, and the
+number of agents. The exponentially growing action space gives rise to the curse of dimensionality, a well-documented
+challenge in motion planning and trajectory optimization, where even coarse discretizations become computationally
+prohibitive and impractical—particularly in long-horizon or multi-agent settings (Chen et al., 2021; Erez and Todorov,
+2012; Li et al., 2023). Beyond computational concerns, discretization also reduces representational fidelity, failing to
+capture fine-grained perturbations that may lead to significant safety violations when propagated through downstream
+modules (Zeng et al., 2021).
+To overcome these limitations, we introduce the action-oriented prediction-adversarial multi-Agent reinforcement
+learning (AO-PA-MARL) framework, which balances scalability with adversarial precision. Instead of modifying the
+full continuous trajectory space—which is computationally intractable and prone to training instability—our method
+restricts the adversary’s search to a finite and structured set of discrete action candidates for each vehicle 𝜂𝑖. These
+candidates capture a small number of semantically meaningful future behaviors, enabling the adversary to efficiently
+influence the supervisor’s decisions while preserving tractability in the learning process. Within this structured action
+space, and given its local observation tuple (𝑠𝑖, 𝑎𝑖, 𝜁𝑖), each adversarial agent 𝜈𝑖generates a distribution over action
+pairs ( ̂𝑎, ̆𝑎) ∼𝜈𝑖(𝑠𝑖, 𝑎𝑖, 𝜁𝑖), where ̂𝑎∈high denotes a targeted risky action intended to increase the likelihood
+of safety violations, and ̆𝑎⊆high represents a set of reference safe actions that are likely to be selected by the
+supervisor under nominal (non-adversarial) conditions. The policy is structured to support variable action outputs,
+allowing the policy to determine whether to output only ̂𝑎, only ̆𝑎, or both as part of its adversarial strategy. An action-
+oriented trajectory optimization procedure is then used to construct a perturbed joint trajectory prediction ̃𝜁𝑖that
+maximizes the adversary’s influence. The goal is to increase the inter-agent distance associated with the risky action ̂𝑎,
+while simultaneously reducing the distances associated with the safe alternatives in ̆𝑎. Formally, the optimal perturbed
+Xiaofeng Zhao: Preprint submitted to Elsevier
+Page 7 of 13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5348784
+Preprint not peer reviewed
+
+trajectory ̃𝜁𝑖∈(𝜁𝑖) is obtained by solving:
+̃𝜁𝑖= arg
+max
+𝜁∈(𝜁𝑖)
+(
+𝑑( ̂𝑎; 𝜁) −1
+𝑀
+∑
+𝑎∈̆𝑎
+𝑑(𝑎; 𝜁)
+)
+,
+(2)
+where the scalar 𝑀denotes the number of actions in the reference set ̆𝑎, and 𝑑(𝑎; 𝜁) denotes the minimum inter-agent
+distance between the ego vehicle and its neighboring agents over the prediction horizon 𝑇𝑛, computed based on the
+perturbed predicted trajectories 𝜁assuming the ego vehicle adopts action 𝑎. Specifically,
+𝑑(𝑎; 𝜁) ∶= min
+𝑘∈𝑇𝑛
+min
+𝑗∈𝑖
+‖‖‖𝜁𝑘
+𝑖(𝑎) −𝜁𝑘
+𝑗
+‖‖‖2 ,
+where 𝜁𝑘
+𝑖(𝑎) denotes the perturbed predicted trajectory of the ego vehicle at timestep 𝑘under action 𝑎and 𝜁𝑘
+𝑗is the
+perturbed predicted trajectory of neighboring agent 𝑗∈𝑖at timestep 𝑘. The details of the proposed AO-PA-MARL
+algorithm and its interaction with the safety supervisor are provided in Algorithm 2.
+This adversarial action selection mechanism, augmented by trajectory optimization, enables each adversarial agent
+𝜈𝑖to learn which risky actions ̂𝑎are most likely to be accepted by the safety supervisor when the perceived ordering
+of safety margins is manipulated. Crucially, the adversary dynamically adapts its strategy based on the behavioral
+tendencies of the CAV policy coupled with the prediction-based safety supervisor. When the cooperative MARL policy
+already proposes the risky action ̂𝑎, the adversary reinforces this decision by maximizing its associated safety margin,
+thereby suppressing the likelihood of supervisory intervention. In this case, the optimization simplifies to:
+̃𝜁𝑖= arg
+max
+𝜁∈(𝜁𝑖) 𝑑( ̂𝑎; 𝜁).
+Conversely, if a correction by the safety supervisor is expected—or if the adversary aims to induce a deviation from
+the CAV policy’s preferred action—it strategically biases the safety evaluation by inflating the margin of risky action
+̂𝑎while reducing those of the safer alternatives.
+Multi-agent reinforcement learning in the AO-PA-MARL framework plays a critical role in enabling adversaries to
+exploit vulnerabilities in the supervisor’s decision-making process. Through interactions, the adversary learns not only
+which risky action is most likely to be accepted, but also how to construct sequences of trajectory perturbations across
+time that gradually distort the supervisor’s perception of safety over time. Even when a perturbed action ̂𝑎is objectively
+unsafe, carefully crafted perturbations can manipulate margin rankings and mislead the supervisor into permitting
+unsafe behavior. Importantly, ̂𝑎does not need to cause an immediate collision; rather, a sequence of such marginally
+risky actions can accumulate and ultimately result in critical safety violations. To support efficient learning, the AO-PA-
+MARL framework reduces the effective dimensionality of the adversarial action space by constraining perturbations to
+a discrete set of strategically selected high-level actions. This design preserves the expressiveness needed to generate
+impactful trajectory manipulations while significantly reducing the complexity of adversarial optimization in multi-
+agent environments.
+4. Experiment
+In this section, we first present the case study setup. We then evaluate the performance of the proposed AO-PA-
+MARL algorithm in two simulation environments—crowd navigation and highway on-ramp merging—followed by a
+comparative analysis against baseline algorithms. The results aim to address the following key questions:
+1. Can the proposed AO-PA-MARL algorithm, designed to circumvent the curse of dimensionality, efficiently learn
+in complex simulation environments?
+2. Does AO-PA-MARL generate perturbed trajectories that result in higher collision rates compared to baseline
+algorithms?
+4.1. Case Study Setup
+The proposed algorithm, action-oriented prediction-adversarial multi-agent reinforcement learning (AO-PA-
+MARL), is built upon the multi-agent proximal policy optimization (MAPPO) framework (Yu et al., 2021), which
+extends proximal policy optimization (PPO) to multi-agent settings via centralized critics and decentralized recurrent
+Xiaofeng Zhao: Preprint submitted to Elsevier
+Page 8 of 13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5348784
+Preprint not peer reviewed
+
+(a) Crowd navigation: the robot (top-left green box) incorrectly forecasts a human as yielding, leading to a collision.
+(b) Highway on-ramp merging: perturbed trajectories of two cyclists jointly contribute to a vehicle collision.
+Figure 2: Impact of perturbed predicted trajectories generated by the AO-PA-MARL policy. Purple denotes the ground-truth
+prediction of the ego agent; blue represents the ground-truth predictions of humans, and red represents their perturbed
+predictions. Where red and blue overlap, only red is shown. For visual clarity, perturbed trajectories corresponding to all
+feasible actions of the ego agent are not shown.
+(RNN-based) actors. To support variable action outputs, each action dimension in the high-level action space high
+is augmented with an additional “no-action” option, enabling the policy to selectively omit certain actions based
+on context. The baseline method, continuous-action PA-MARL, is implemented using MAPPO and multi-agent soft
+actor-critic (MASAC), resulting in the PA-MAPPO and PA-MASAC variants, respectively (Pu et al., 2021). Discrete-
+action PA-MARL is not considered due to the prohibitive computational cost of applying standard policy optimization
+methods to extremely large discrete action spaces.
+We evaluate AO-PA-MARL against these baselines in two simulated environments to test generalizability across
+domains: crowd navigation and highway on-ramp merging. Both scenarios reflect non-compliant settings, where
+human agents act independently and do not respond to the behavior of autonomous vehicles. To ensure physical
+plausibility while maintaining adversarial effectiveness, all perturbed trajectories are constrained within predefined
+bounds. Specifically, in the crowd navigation environment, perturbations are limited to ±0.2 m in both the 𝑥and
+𝑦directions relative to the ground-truth predictions. In the highway merging scenario, perturbations are bounded
+within ±0.4 m in the 𝑥and 𝑦directions and within ±0.2 rad in orientation. These constraints ensure that adversarial
+modifications remain physically realistic while still presenting meaningful challenges to the learned policies. The
+perturbation magnitudes used in this work are consistent with the range of empirical trajectory prediction errors
+observed in real-world autonomous driving benchmarks (Caesar et al., 2020; Chai et al., 2019; Zhan et al., 2019), where
+leading forecasting models frequently report displacement errors exceeding 0.3–0.5 m at short prediction horizons. In
+addition, adversarial attacks are applied to both learned trajectory generation models and rule-based predictors to
+demonstrate the generalizability of the proposed method across different prediction paradigms.
+In the crowd navigation environment, three autonomous vehicles operate in the presence of three human
+pedestrians, whose motions are simulated using the ORCA algorithm (van den Berg et al., 2011). Safe navigation
+in this context requires agents to reason about and adapt to the anticipated future trajectories of nearby humans. To this
+end, we implement a stochastic physics-based trajectory prediction model, formulated as a second-order linear motion
+model with additive Gaussian process noise, to simulate pedestrian motion with uncertainty and serve as the ground
+truth generator against which adversarial perturbations are evaluated. Vehicles are modeled as circles of 0.3 meters in
+diameter, and humans as 0.4-meter circles.
+In the highway on-ramp merging environment, implemented using the OpenAI Gym framework (Leurent, 2018),
+three connected autonomous vehicles (CAVs) are tasked with merging from a ramp onto a main highway while
+Xiaofeng Zhao: Preprint submitted to Elsevier
+Page 9 of 13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5348784
+Preprint not peer reviewed
+
+(a) Training performance in crowd navigation
+(b) Training performance in highway on-ramp merging
+Figure 3: Training curves comparing AO-PA-MARL, PA-MAPPO, and PA-MASAC across two environments
+interacting with three nearby cyclists. Successful merging requires agents to anticipate and plan around the future
+motions of surrounding vehicles. For CAVs, high-level control decisions—such as accelerate, decelerate, and change
+lane—are processed through the MOBIL lane change model to generate feasible maneuver sequences, which are then
+propagated using the kinematic bicycle model as predicted trajectory (Kesting et al.). Cyclist motion is predicted using
+a neural network trained via maximum likelihood estimation (MLE), with ground-truth trajectories generated from a
+second-order linear motion model incorporating additive Gaussian process noise to capture moderate maneuverability
+and uncertainty. CAVs are modeled as rectangles with dimensions 4 meters by 2 meters, and cyclists as rectangles with
+dimensions 1.8 meters by 0.8 meter.
+4.2. Crowd Navigation Environment
+In the crowd navigation environment, the AO-PA-MARL policy generates a sequence of perturbed trajectories
+across time, as illustrated in Fig. 2a. At time step T0, the adversarial perturbation modifies the predicted human
+motion to appear as if yielding, effectively deactivating the safety supervisor by making the current action seem
+safe. Consequently, the robot continues along its planned trajectory without intervention. By T1, as the robot and
+human draw closer, the supervisor begins to recognize the risk of collision. However, due to limited reaction time
+and spatial constraints, it is too late to initiate a safe corrective maneuver, and a collision occurs at T2. Although the
+perturbations are spatially bounded, they are sufficient to alter the perceived safety margin. The failure to intervene
+demonstrates the vulnerability of safety-aware systems to adversarial trajectory manipulation, especially in densely
+interactive environments.
+4.3. Highway On-Ramp Merging Environment
+In the highway on-ramp merging environment, the AO-PA-MARL policy generates perturbed trajectory predictions
+for two cyclists that strategically manipulate the robot’s perception of safety, as illustrated in Fig. 2b. At time step
+T0, the perturbed prediction of the cyclist above the ego vehicle indicates an imminent turn toward the vehicle’s path,
+creating a perceived threat. In response, the safety supervisor overrides the current action with a lane-change maneuver
+that appears safer under the manipulated forecast. Simultaneously, the perturbed trajectory of the cyclist to the right
+suggests that it is backing away from the ego vehicle, thereby suppressing the supervisor’s inclination to initiate a
+subsequent avoidance maneuver. This misrepresentation delays further intervention until T1. However, by that time,
+the supervisor lacks sufficient time or space to execute a safe correction, resulting in a collision at T2. This example
+highlights how jointly predicted perturbed trajectories can form a coherent and coordinated adversarial strategy that
+effectively deceives safety-aware decision-making systems.
+4.4. Comparison with Baseline Algorithms
+This section presents empirical evidence demonstrating the effectiveness of AO-PA-MARL in learning impactful
+adversarial strategies. As shown in Fig. 3, AO-PA-MARL consistently outperforms the baseline algorithms, PA-
+MAPPO and PA-MASAC, across both evaluation environments. In the crowd navigation setting, AO-PA-MARL
+achieves substantially higher evaluation rewards throughout training, exhibiting a steady upward trend and converging
+Xiaofeng Zhao: Preprint submitted to Elsevier
+Page 10 of 13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5348784
+Preprint not peer reviewed
+
+(a) Collision rate comparison in crowd navigation
+(b) Collision rate comparison in highway on-ramp merging
+Figure 4: Evaluation of collision rates for AO-PA-MARL, PA-MAPPO, and PA-MASAC across two environments
+to a markedly improved final performance. In the highway on-ramp merging scenario, it demonstrates faster con-
+vergence and improved training stability, quickly surpassing the baselines and maintaining a significant performance
+margin. These results indicate that AO-PA-MARL not only achieves better performance but also learns more efficiently,
+reaching high-reward policies in fewer training epochs.
+While the learning curves indicate that AO-PA-MARL effectively degrades the CAV reward—comprising lane-
+following, collision avoidance, and speed objectives—Fig. 4 further demonstrates that AO-PA-MARL consistently
+induces significantly higher collision rates than both PA-MAPPO and PA-MASAC across different environments. In
+crowd navigation, AO-PA-MARL results in an order-of-magnitude increase in collision rate compared to the baselines,
+while in the highway merging case, it achieves a smaller yet still substantial increase. This differential advantage
+suggests that AO-PA-MARL is particularly effective in densely interactive environments such as crowd navigation.
+These results highlight the algorithm’s ability to generate strategically crafted trajectory perturbations that exploit
+vulnerabilities in cooperative policies. The consistently strong performance across diverse scenarios highlights the
+robustness of AO-PA-MARL, which employs action-oriented optimization to efficiently learn high-impact adversarial
+strategies in high-dimensional multi-agent environments, thereby demonstrating the effectiveness of action-based
+attacks.
+5. Conclusion
+This paper addresses a critical security vulnerability in connected and automated vehicle (CAV) systems—specifically,
+the susceptibility of infrastructure-based trajectory prediction modules to adversarial attacks. Unlike prior approaches
+that target individual vehicles or assume unrealistic levels of adversary access, we propose a scalable framework for
+evaluating and executing prediction-level adversarial attacks through coordinated multi-agent reinforcement learning
+(MARL). To this end, we introduce the action-oriented prediction-adversarial MARL (AO-PA-MARL) framework,
+which demonstrates the feasibility of generating trajectory perturbations under realistic physical constraints. By
+leveraging action-oriented trajectory optimization within a centralized training and decentralized execution (CTDE)
+paradigm, AO-PA-MARL mitigates the curse of dimensionality in high-dimensional continuous spaces, enabling
+efficient adversarial policy learning. Empirical results in simulated crowd navigation and highway merging scenarios
+show that AO-PA-MARL significantly increases collision rates compared to baseline methods. A limitation of
+the current architecture lies in potential inconsistencies when multiple adversarial agents generate perturbations
+for the same target. Developing a consistent perturbation generation scheme—possibly through a priority-based or
+consensus-driven mechanism—represents an important direction for future research. Overall, the results demonstrate
+the scalability and effectiveness of AO-PA-MARL as an adversarial evaluation tool for assessing the robustness of
+trajectory planning models under realistic uncertainties in CAV systems.
+Xiaofeng Zhao: Preprint submitted to Elsevier
+Page 11 of 13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5348784
+Preprint not peer reviewed
+
+References
+Bautista-Montesano, R., Others, 2022. Autonomous navigation at unsignalized intersections: A coupled reinforcement learning and model predictive
+control approach. Transportation Research Part C: Emerging Technologies 150, 103850. doi:10.1016/j.trc.2022.103850.
+van den Berg, J., Guy, S.J., Lin, M., Manocha, D., 2011. Reciprocal n-body collision avoidance, in: Pradalier, C., Siegwart, R., Hirzinger, G. (Eds.),
+Robotics Research, Springer Berlin Heidelberg.
+Caesar, H., Bankiti, V., Lang, A., Vora, S., Liong, V.E., Xu, Q., Krishnan, A., Pan, Y., Baldan, G., Beijbom, O., 2020. nuscenes: A multimodal
+dataset for autonomous driving, in: CVPR, pp. 11621–11631.
+Cao, Y., Xiao, C., Anandkumar, A., Xu, D., Pavone, M., 2022. Advdo: Realistic adversarial attacks for trajectory prediction, in: Computer Vision
+– ECCV 2022: 17th European Conference, Tel Aviv, Israel, October 23–27, 2022, Proceedings, Part V, Springer-Verlag.
+Chai, Y., Sapp, B., Bansal, M., Anguelov, D., 2019. Multipath: Multiple probabilistic anchor trajectory hypotheses, in: CVPR, pp. 13620–13629.
+Chen, D., Hajidavalloo, M.R., Li, Z., Chen, K., Wang, Y., Jiang, L., Wang, Y., 2023. Deep multi-agent reinforcement learning for highway on-ramp
+merging in mixed traffic. IEEE Transactions on Intelligent Transportation Systems 24, 11623–11638.
+Chen, H., Wu, F., Hou, K., Qiu, T.Z., 2024a. Leveraging dynamic right-of-way allocation and tolling policy for cav dedicated lane management to
+promote cav and improve mobility. IEEE Transactions on Intelligent Transportation Systems 25, 6667–6676.
+Chen, J., Li, J., Fan, C., Williams, B.C., 2021. Scalable and safe multi-agent motion planning with nonlinear dynamics and bounded disturbances,
+in: Proceedings of the Thirty-Fifth AAAI Conference on Artificial Intelligence (AAAI 2021).
+Chen, X., Bhadani, R., Sun, Z., Head, L., 2024b. Msma: Multi-agent trajectory prediction in connected and autonomous vehicle environment with
+multi-source data integration. arXiv preprint arXiv:2407.21310 .
+Chen, X., Zhang, H., Deng, F., Liang, J., Yang, J., 2024c. Stochastic non-autoregressive transformer-based multi-modal pedestrian trajectory
+prediction for intelligent vehicles. IEEE Transactions on Intelligent Transportation Systems 25, 3561–3574.
+Comert, G., Rahman, M., Islam, M., Chowdhury, M., 2022.
+Change point models for real-time cyber attack detection in connected vehicle
+environment. IEEE Transactions on Intelligent Transportation Systems 23, 12328–12342. doi:10.1109/TITS.2021.3113675.
+Cui, Z., Ke, R., Pu, Z., Wang, Y., 2020. Deep bidirectional and unidirectional lstm recurrent neural network for network-wide traffic speed prediction.
+IEEE Transactions on Intelligent Transportation Systems 21, 193–204. doi:10.1109/TITS.2019.2893439.
+Elsayed-Aly, I., Bharadwaj, S., Amato, C., Ehlers, R., Topcu, U., Feng, L., 2021. Safe multi-agent reinforcement learning via shielding. arXiv
+preprint arXiv:2101.11196 .
+Erez, T., Todorov, E., 2012. Trajectory optimization for domains with contacts using inverse dynamics, in: 2012 IEEE/RSJ International Conference
+on Intelligent Robots and Systems.
+Fujimoto, S., van Hoof, H., Meger, D., 2018. Addressing function approximation error in actor-critic methods, in: International Conference on
+Machine Learning.
+Guo, J., He, Z., Wang, H., Wang, J., Li, K., 2025. Vehicle trajectory prediction by integrating data-driven and knowledge-guided technique. IEEE
+Transactions on Intelligent Transportation Systems 26, 5888–5898. doi:10.1109/TITS.2025.3549744.
+Gupta, A., Johnson, J., Fei-Fei, L., Savarese, S., Alahi, A., 2018. Social gan: Socially acceptable trajectories with generative adversarial networks,
+in: IEEE Conference on Computer Vision and Pattern Recognition (CVPR).
+Han, L., Zhang, L., 2025. Improved multi-agent deep reinforcement learning-based integrated control for mixed traffic flow in a freeway corridor
+with multiple bottlenecks. Transportation Research Part C: Emerging Technologies 174, 105077. doi:10.1016/j.trc.2025.105077.
+Hu, H., Wang, Q., Cheng, M., Gao, Z., 2023. Trajectory prediction neural network and model interpretation based on temporal pattern attention.
+IEEE Transactions on Intelligent Transportation Systems 24, 2746–2759.
+Huang, O., Rao, H., Cai, X., Wang, T., Sun, A., Xing, S., Sun, Y., Jia, G., 2025. Spatial temporal attention based target vehicle trajectory prediction
+for internet of vehicles. arXiv preprint arXiv:2501.00890 .
+Jiang, X., Shang, Q., 2023. A dynamic cav-dedicated lane allocation method with the joint optimization of signal timing parameters and smooth
+trajectory in a mixed traffic environment. IEEE Transactions on Intelligent Transportation Systems 24, 6436–6449. doi:10.1109/TITS.2022.
+3172942.
+Kesting, A., Treiber, M., Helbing, D., . General lane-changing model MOBIL for car-following models. Transportation Research Record 1999.
+Khattak, W., Nair, P.P., Comert, G., Wang, Y., Hou, J., et al., 2020. Modeling and analyzing cyberattack effects on connected automated vehicular
+platoons. Transportation Research Part C: Emerging Technologies 114, 512–536. doi:10.1016/j.trc.2020.01.011.
+Khattak, Z.H., Smith, B.L., Fontaine, M.D., 2021. Impact of cyberattacks on safety and stability of connected and automated vehicle platoons under
+lane changes. Accident Analysis Prevention 150, 105861. doi:https://doi.org/10.1016/j.aap.2020.105861.
+Leurent, E., 2018. An environment for autonomous driving decision-making. https://github.com/eleurent/highway-env. Accessed:
+2025-05-09.
+Li, J., Ma, H., Tomizuka, M., 2019. Conditional generative neural system for probabilistic trajectory prediction, in: 2019 IEEE/RSJ International
+Conference on Intelligent Robots and Systems (IROS), IEEE. pp. 6150–6156.
+Li, J., Yang, F., Tomizuka, M., Choi, C., 2020. Evolvegraph: Multi-agent trajectory prediction with dynamic relational reasoning, in: 2020 Advances
+in Neural Information Processing Systems (NeurIPS).
+Li, Y., Ju, P., Shroff, N., 2023. Achieving sample and computational efficient reinforcement learning by action space reduction via grouping. arXiv
+preprint arXiv:2306.12981 .
+Li, Z., Zhou, Y., Zhang, Y., Others, 2024.
+Enhancing vehicular platoon stability in the presence of communication cyberattacks: A reliable
+longitudinal cooperative control strategy. Transportation Research Part C: Emerging Technologies 158, 104449. doi:10.1016/j.trc.2024.
+104449.
+Lillicrap, T.P., Hunt, J.J., Pritzel, A., Heess, N., Erez, T., Tassa, Y., Silver, D., Wierstra, D., 2016. Continuous control with deep reinforcement
+learning, in: 4th International Conference on Learning Representations, ICLR 2016, San Juan, Puerto Rico, May 2-4, 2016, Conference Track
+Proceedings.
+Xiaofeng Zhao: Preprint submitted to Elsevier
+Page 12 of 13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5348784
+Preprint not peer reviewed
+
+Littman, M.L., 1994. Markov games as a framework for multi-agent reinforcement learning, in: Cohen, W.W., Hirsh, H. (Eds.), Machine Learning
+Proceedings 1994. Morgan Kaufmann, pp. 157–163.
+Liu, Q., Dang, F., Wang, X., Ren, X., 2022. Autonomous highway merging in mixed traffic using reinforcement learning and motion predictive
+safety controller, IEEE Press. p. 1063–1069. doi:10.1109/ITSC55140.2022.9921741.
+Lowe, R., Wu, Y., Tamar, A., Harb, J., Abbeel, P., Mordatch, I., 2017. Multi-agent actor-critic for mixed cooperative-competitive environments, in:
+Guyon, I., von Luxburg, U., Bengio, S., Wallach, H.M., Fergus, R., Vishwanathan, S.V.N., Garnett, R. (Eds.), Advances in Neural Information
+Processing Systems 30: Annual Conference on Neural Information Processing Systems 2017, December 4-9, 2017, Long Beach, CA, USA, pp.
+6379–6390.
+Ma, Y., Zhu, X., Wang, S., Yang, R., Manocha, D., 2020. Trafficpredict: Trajectory prediction for heterogeneous traffic-agents. IEEE Transactions
+on Intelligent Transportation Systems 21, 4640–4654. doi:10.1109/TITS.2019.2953981.
+Phan-Minh, T., Grigore, E.C., Boulton, F.A., Beijbom, O., Wolff, E.M., 2020. Covernet: Multimodal behavior prediction using trajectory sets, in:
+2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR).
+Pu, Y., Wang, S., Yang, R., Yao, X., Li, B., 2021. Decomposed soft actor-critic method for cooperative multi-agent reinforcement learning. arXiv
+preprint arXiv:2104.06655 .
+Rathore, R.S., Hewage, C., Kaiwartya, O., Lloret, J., 2022. In-vehicle communication cyber security: Challenges and solutions. Sensors 22.
+Shi, H., Zhou, Y., Wu, K., Wang, X., Lin, Y., Ran, , 2021. Connected automated vehicle cooperative control with a deep reinforcement learning
+approach in a mixed traffic environment. Transportation Research Part C: Emerging Technologies 133, 103421. doi:10.1016/j.trc.2021.
+103421.
+Sumanth Nakka, S.K., Chalaki, B., Malikopoulos, A.A., 2022. A multi-agent deep reinforcement learning coordination framework for connected
+and automated vehicles at merging roadways, in: 2022 American Control Conference (ACC), pp. 3297–3302.
+Sun, R., Luo, Q., Chen, Y., 2023. Online transportation network cyber-attack detection based on stationary sensor data. Transportation Research
+Part C: Emerging Technologies 149, 104058. doi:10.1016/j.trc.2023.104058.
+Tanaji, B.A., Roychowdhury, S., 2024. A survey of cybersecurity challenges and mitigation techniques for connected and autonomous vehicles.
+IEEE Transactions on Intelligent Vehicles , 1–18doi:10.1109/TIV.2024.3493938.
+Tessler, C., Efroni, Y., Mannor, S., 2019. Action robust reinforcement learning and applications in continuous control, in: International Conference
+on Machine Learning.
+Wang, L., Others, 2023. A multi-agent reinforcement learning-based longitudinal and lateral control of cavs to improve traffic efficiency in a
+mandatory lane change scenario. Transportation Research Part C: Emerging Technologies 148, 103535. doi:10.1016/j.trc.2023.103535.
+Wang, T., Ma, M., Liang, S., Yang, J., Wang, Y., 2025. Robust lane change decision for autonomous vehicles in mixed traffic: A safety-aware
+multi-agent adversarial reinforcement learning approach. Transportation Research Part C: Emerging Technologies 172, 105005. doi:10.1016/
+j.trc.2025.105005.
+Wang, Y., Sagawa, R., 2022. Manipulator motion planning via centralized training and decentralized execution multi-agent reinforcement learning,
+in: 2022 International Conference on Advanced Robotics and Mechatronics (ICARM), pp. 812–817.
+Ying, J., Feng, Y., 2024. Infrastructure-assisted cooperative driving and intersection management in mixed traffic conditions. Transportation
+Research Part C: Emerging Technologies 158, 104443. doi:10.1016/j.trc.2024.104443.
+Yu, C., Velu, A., Vinitsky, E., Wang, Y., Bayen, A.M., Wu, Y., 2021. The surprising effectiveness of ppo in cooperative multi-agent games, in:
+Neural Information Processing Systems.
+Yu, C., Wang, X., Xu, X., Zhang, M., Ge, H., Ren, J., Sun, L., Chen, B., Tan, G., 2020.
+Distributed multiagent coordinated learning for
+autonomous driving in highways based on dynamic coordination graphs. IEEE Transactions on Intelligent Transportation Systems 21, 735–748.
+doi:10.1109/TITS.2019.2893683.
+Zeng, J., Zhang, B., Sreenath, K., 2021. Safety-critical model predictive control with discrete-time control barrier function, in: 2021 American
+Control Conference (ACC), pp. 3882–3889. doi:10.23919/ACC50511.2021.9483029.
+Zhan, W., Liao, B., Tomizuka, M., et al., 2019. Interaction dataset: An international, adversarial and cooperative motion dataset in interactive driving
+scenarios with semantic maps, in: IEEE Intelligent Vehicles Symposium (IV), pp. 233–240.
+Zhang, J., Li, S., Li, L., 2023. Coordinating cav swarms at intersections with a deep learning model. IEEE Transactions on Intelligent Transportation
+Systems 24, 6280–6291.
+Zhang, X., Zhao, C., Liao, F., Li, X., Du, Y., 2022. Online parking assignment in an environment of partially connected vehicles: A multi-agent deep
+reinforcement learning approach. Transportation Research Part C: Emerging Technologies 138, 103624. doi:10.1016/j.trc.2022.103624.
+Zhao, T., Xu, Y., Monfort, M., Choi, W., Baker, C., Zhao, Y., Wang, Y., Wu, Y.N., 2019. Multi-agent tensor fusion for contextual trajectory prediction.
+2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 12118–12126.
+Zhao, X., . Prediction-Adversarial-MARL . URL: https://github.com/xzhao391/Prediction-Adversarial-MARL/tree/main.
+Zhao, X., Hu, H., Sun, D., 2024. Cooperation with humans of unknown intentions in confined spaces using the stackelberg friend-or-foe game.
+IEEE Transactions on Aerospace and Electronic Systems , 1–13doi:10.1109/TAES.2024.3521935.
+Zhou, C., AlRegib, G., Parchami, A., Singh, K., 2024. Trajpred: Trajectory prediction with region-based relation learning. IEEE Transactions on
+Intelligent Transportation Systems 25, 9787–9796.
+Xiaofeng Zhao: Preprint submitted to Elsevier
+Page 13 of 13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5348784
+Preprint not peer reviewed

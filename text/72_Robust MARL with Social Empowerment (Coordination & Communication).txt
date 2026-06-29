@@ -1,0 +1,843 @@
+Robust Multi-Agent Reinforcement Learning with Social Empowerment for
+Coordination and Communication
+Tessa van der Heiden,1 Herke van Hoof, 2 Efstratios Gavves, 2 Christoph Salge 3
+1 BMW Group
+2 University of Amsterdam
+3 University of Hertfordshire
+tessa.heiden@bmw.de, h.c.vanhoof@uva.nl, egavves@uva.nl, c.salge@herts.ac.uk
+Abstract
+We consider the problem of robust multi-agent reinforcement
+learning (MARL) for cooperative communication and coordi-
+nation tasks. MARL agents, mainly those trained in a central-
+ized way, can be brittle because they can overﬁt to their train-
+ing partners. This overﬁtting can produce agents that adopt
+policies that act under the expectation that other agents will
+act a certain way rather than react to their actions. Our objec-
+tive is to bias the learning process towards ﬁnding strategies
+that remain reactive towards others’ behavior. Social empow-
+erment measures the potential inﬂuence between agents’ ac-
+tions. We propose it as an additional reward term, so agents
+better adapt to other agents’ actions. We show that the pro-
+posed method results in obtaining higher rewards faster and a
+higher success rate in three cooperative communication and
+coordination tasks.
+1
+Introduction
+Multi-agent reinforcement learning (MARL) holds consid-
+erable promise to help address a variety of cooperative
+multi-agent problems. However, a problem with MARL is
+that agents can derive strong policies that are overﬁtted to
+their partners’ behavior. Speciﬁcally, with centralized train-
+ing agents can adopt strategies that expect other agents to
+act in a certain way rather than react to their actions. Such
+systems are undesirable as they may fail when their partners
+alter their strategies or have to collaborate with novel part-
+ners, either during the learning or deployment phase.
+Robust Reinforcement learning (RL) was introduced by
+Morimoto and Doya (2005) considering the generalization
+ability of the learned policy in the single-agent setting. We
+consider robustness to be a training agent’s ability to deal
+with changes in the other agents’ behavior.
+Our objective is to obtain multi-agent policies that avoid
+this speciﬁc lack of robustness and stay reactive to changes
+in other agents’ policy. Agents acting without any sensor
+input and attention towards their partners cannot have this
+ability. We want to introduce an additional reward to bias
+learning towards socially reactive strategies - which should
+fulﬁl the following constraints: 1) it should, with minimal
+adaptation, apply to a wide range of problems with different
+sensor-actuator conﬁgurations, to preserve the universality
+of the RL framework, 2) it should not negatively affect the
+performance, i.e., once good policies are found, it should
+not harm exploitation. Optimizing for the mutual informa-
+tion between agents’ actions (Jaques et al. 2019), requires
+the agents’ policies to have a certain degree of entropy and
+this might interfere with an exploitation strategy. Fulﬁlling
+the above criteria would provide a general-purpose multi-
+agent learning algorithm for various cooperative tasks.
+2
+Related work
+2.1
+Robust Multi-Agent Reinforcement Learning
+There is a large body of research on constructing agents that
+are robust to their partners. In self-play, for example, agents
+train against themselves rather than a ﬁxed opponent strat-
+egy to prevent developing exploitable strategies (Tesauro
+1994). Population based-training goes one step further by
+training agents to play against a population of other agents
+rather than only a copy of itself. For instance, Jaderberg et al.
+(2018) and Lowe et al. (2017) train an ensemble of policies
+with a variety of collaborators and competitors. By using a
+whole population rather than only a copy of itself, the agent
+is forced to be robust to a wide variety of potential pertur-
+bations instead of a single perturbation. However, it requires
+a great deal of engineering because the policy parameters
+suitable for the previous environment are not necessarily the
+next stage’s best initialization.
+Some works combine the minimax framework and
+MARL to ﬁnd policies that are robust to opponents with dif-
+ferent strategies. Minimax is a concept in game theory that
+can be applied to ﬁnd an approach that minimizes the pos-
+sible loss in a worst-case scenario (Osborne et al. 2004). Li
+et al. (2019) use it during training to optimize the reward
+for each agent under the assumption that all other agents act
+adversarial. We are interested in methods that can deal with
+perturbations in the training partners’ behavior, which dif-
+fers from dealing with partners with various strategies.
+In zero-shot coordination, agents need to cooperate with
+novel partners that are not seen during training. Other-play
+(Hu et al. 2020) constructs zero-shot coordination strategies
+by making their agents robust to how their partners break
+symmetries in the underlying system. We instead frame our
+problem as one-shot adaptation, i.e. our policy should be
+able to quickly adapt if the other agents alter their policies.
+arXiv:2012.08255v1  [cs.MA]  15 Dec 2020
+
+2.2
+Intrinsic Social Motivation
+Due to centralized training in MARL, agents might adopt
+non-reactive strategies that may struggle with other agents’
+changing behaviors. Social intrinsic motivation can give an
+additional incentive to ﬁnd reactive policies towards other
+agents.
+Intrinsic motivation (IM) in RL refers to reward func-
+tions that allow agents to learn interesting behavior, some-
+times in the absence of an environmental reward (Chentanez,
+Barto, and Singh 2005). Computational models of IM are
+generally separated into two categories (Santucci, Baldas-
+sarre, and Mirolli 2012), (Baldassarre and Mirolli 2013),
+those that focus on curiosity (Burda et al. 2018), (Pathak
+et al. 2017) and exploration (Gregor, Rezende, and Wierstra
+2016), (Eysenbach et al. 2018), and those that focus on com-
+petence and control (Oudeyer and Kaplan 2009), (Karl et al.
+2017). The information-theoretic Empowerment formalism
+is in the latter category, trying to capture how much an agent
+is in control of the world it can perceive. Empowerment
+has produced robust behaviour linked to controllability, op-
+erationality and self-preservation - in both robots (van der
+Heiden et al. 2020), (Karl et al. 2017), (Leu et al. 2013)
+and simulations (Guckelsberger, Salge, and Colton 2016),
+with (de Abril and Kanai 2018) and without (Guckelsberger,
+Salge, and Togelius 2018) reinforcement learning and neural
+network approximations (Karl et al. 2017).
+Empowerment has also been applied to multi-agent simu-
+lations, under the term of coupled empowerment maximiza-
+tion (Guckelsberger, Salge, and Colton 2016), in which it
+was used to produce supportive and antagonistic behavior.
+Of particular interest is the idea of transfer empowerment
+- a measure that quantiﬁes behaviors such as collaboration,
+coordination, and lead-taking (Salge and Polani 2017). Em-
+powerment has also been tested in collaborative scenarios
+involving humans and robots. In all scenarios, transfer em-
+powerment provides an additional incentive for agents to in-
+teract and coordinate.
+There are similar techniques that quantify the interaction
+between agents for improving coordination between agents.
+Barton et al. (2018) analyze the degree of dependence be-
+tween two agents’ policies to measure coordination, speciﬁ-
+cally by using Convergence Cross Mapping (CCM). Strouse
+et al. (2018) show how agents can share (or hide) intentions
+by maximising the mutual information between actions and
+a categorical goal. One notably relevant work is by Jaques
+et al. (2019) that design social inﬂuence which is the inﬂu-
+ence of one agent on the policies of other agents, measured
+by the mutual information between action pairs of distinct
+agents. In contrast to social inﬂuence, transfer empowerment
+considers the potential mutual information or channel capac-
+ity. When optimizing for actual mutual information, then its
+value is bounded from above by the lowest entropy of both
+agent’s action variables. This might easily interfere with an
+exploitation strategy and may need to be regularized once
+a good strategy is found. On the other hand, empowerment
+does not have this limitation and the action sets could have
+very narrow distributions.
+3
+Preliminaries
+Let us consider a Dec-POMDP, an extension of the MDP
+for multi-agent systems, being both decentralized and par-
+tially observable (Nair et al., 2003). This means that each of
+the n agents conditions the choice of its action on its partial
+observation of the world. It is deﬁned by the following tu-
+ple: (S, A, T, O, O, R, n). S is the set of true global states,
+while O = ⊗i∈[1,..,n]Oi is the set of joint local observations
+and A = ⊗i∈[1,..,n]Ai the set of possible joint actions. At
+each time step, the state transition function T maps the joint
+action and state to a new state, with probability distribution
+P(st+1|st, at).
+We consider fully cooperative tasks, so agents share a re-
+ward rt which is conditioned on the joint action and state. R
+is the reward function that maps the state and joint actions
+into a single scalar reward.
+4
+Methodology
+In the introduction, we have argued that agents that are
+trained in a centralized manner can adopt brittle policies and
+perform poorly, even in simple coordination tasks. The rea-
+son is that they adopt strategies that expect other agents will
+act in a certain way rather than observe and anticipate their
+actions.
+This section aims to describe an additional heuristic that
+biases the learning process in obtaining policies towards
+those that are reactive towards other agents’ actions.
+First we introduce our speciﬁc version of transfer empow-
+erment, that rewards the idea of an agent being responsive to
+adaptations in the other’s policy. Transfer empowerment is
+computed for a each pair of agents, which scales quadrati-
+cally with the number of agents.
+By adopting the framework of centralized training, we can
+compute empowerment over the joint action and states. This
+notion captures the causal inﬂuence of all agents’ actions
+on the overall resulting state. Since it is calculated over the
+joint actions and states and not per pair, we arrive at a more
+scalable solution.
+4.1
+Transfer Empowerment
+Suppose there are two agents, j and k, both taking actions
+and changing the overall state. Each time agent k takes an
+action, the state of agent j is modiﬁed and therefore agent j’s
+policy conditions on it. The objective of coordination is that
+by modifying the actions of agent k , agent j also reliably
+adapts its actions. Here we look at transfer empowerment,
+namely the potential causal inﬂuence that one agent has on
+another. It is computed for pairs of agents by maximizing the
+mutual information I between one agent’s action ak
+t and an-
+other agent’s action aj
+t+1 at a later point in time, conditioned
+on the current and next state, st and st+1 respectively:
+ET,k→j(st) = max
+ωk I
+h
+aj
+t+1, ak
+t |st
+i
+(1)
+Here, ωk(ak
+t+1|st+1) is the hypothetical policy of agent
+k, that takes an action ak
+t+1 after observing state st+1 and
+inﬂuencing aj
+t+2 at a later time step.
+
+Our version of transfer empowerment differs slightly from
+the one introduced by (Salge and Polani 2017), as we con-
+sider the potential information ﬂow, or channel capacity, be-
+tween one agent’s action and another agent’s action at a later
+point in time. Salge and Polani (2017) consider the empow-
+erment between one agent’s action and another agent’s sen-
+sor state. Transfer empowerment to another agent’s sensor
+captures the direct inﬂuence to change the other agents en-
+vironment, and also inﬂuencing the agent to take certain ac-
+tions, which then inﬂuences their world. Using transfer em-
+powerment to another agent’s action focuses on just the in-
+ﬂuence that affects the other agent’s decision. Since an agent
+is usually in control of their actions, inﬂuence on their action
+has to ﬂow through their sensor and be mediated by their
+policy. In other words, they have to react to the ﬁrst agent’s
+actions. This is more in line with our goal of biasing a policy
+towards more reactive strategies.
+Transfer empowerment has ties with but is different from
+social inﬂuence (Jaques et al. 2019). Social inﬂuence is the
+mutual information between agents’ actions. It is high when
+both action variables have a certain entropy, i.e., that dif-
+ferent actions are performed. Once an acceptable policy is
+found, e.g. towards end of training, a high entropy policy
+distribution might actually be suboptimal. Empowerment on
+the other hand, considers the potential and not actual infor-
+mation ﬂow, so the agent will only calculate how it could
+have affected the other agent, rather than actually carry out
+its potential. As such, action sets can have very narrow dis-
+tributions, as long as the system would still be reactive if
+those actions change. Therefore it does not interfere with
+the constraints stated earlier.
+Here we described transfer empowerment computed from
+agent k’s actions to agent’s j’ action, denoted by ET,k→j.
+ET,1:n→j = Pn
+i=1
+i̸=j ET,i→j is the extension for multiple
+agents and results in agent j being reactive to agents’ ac-
+tions. The main goal is to train a behavioral policy πj to
+maximize the transfer empowerment, which is done by esti-
+mating ET with ωk and by changing πj.
+4.2
+Joint Empowerment as Scalable Proxy
+Ideally, we would want to compute the transfer empow-
+erment from all agents to all other agents. However, this
+grows quadratically and might become quickly infeasible.
+Therefore we introduce joint empowerment as a better com-
+putable heuristic proxy. We consider multiple agent with
+ω = [ω1, ω2, ..., ωn] denoting the joint policy. Since we can
+adopt the framework of centralized training with decentral-
+ized execution, policies are allowed to use all agents’ local
+observations during training. Joint empowerment EJ(at, st)
+is computed over the joint action at and next state st+1 for
+all agents:
+EJ(st) = max
+ω
+I [st+1, at|st]
+(2)
+This is the empowerment from all agent’s actions to the state
+at a later point in time. It captures the causal inﬂuence of all
+agents actions on the overall resulting state. It also provides
+an upper bound on each single agent self-empowerment, a
+measure associated with robust single-agent behavior. It also
+provides a measure of the agents’ collective empowerment
+if seen as a single organism. As such, it might also favor
+strategies that keep the overall population operational and
+increase their controllability over the world, which may pos-
+itively affect the learning rate and performance.
+This reward is preferred in systems with many agents
+as it scales linearly with the number of agents, rather than
+quadratic.
+4.3
+Training with Social Empowerment
+In summary, training with joint and transfer empowerment
+results in joint policies that are reactive, because for em-
+powerment to be high it requires considering the decisions
+of others. As such, social empowerment rewards a very gen-
+eralized idea of coordination that requires paying attention
+to each other and reliably reacting to a variation in their ac-
+tions. While empowerment does not care how this reaction
+looks, or even if it is good, combined with the actual reward
+should lead to the selection of a strategy that both solves the
+problem, while also avoiding the brittleness that comes from
+not being reactive to information from other agents. Specif-
+ically, we will modify an agent’s reward function Ri so that
+it becomes:
+Ri,t(st+1, at, st) = r(at, st) + E(st+1)
+(3)
+where r is the environmental reward and E can be either
+transfer ET or joint EJ empowerment. Policies π that are
+trained with EJ jointly select actions that result in highly
+empowered states (like in classical empowerment algo-
+rithms). A policy πj trained with ET,n→j selects more re-
+active actions, therefore also increases the empowerment of
+states.
+4.4
+Lower bound on E
+Many works on empowerment operate in discrete action-
+state space because the computation requires integrating
+over all possible actions and states, which in many cases
+is intractable. We choose to operate in continuous action-
+state space to extend the applicability of our approach. Karl
+et al. (2017) introduced an efﬁcient implementation to esti-
+mate empowerment that maximises a lower bound on mutual
+information (Barber and Agakov 2003). The lower bound
+on empowerment contains a source distribution, ω(at, st)
+and a variational approximation of the planning distribution,
+q(at|st+1, st). By representing both distributions by a neu-
+ral network, maximizing ˆI requires backpropagation using
+gradient ascent. Taking inspiration from, Karl et al. (2017),
+transfer empowerment can be estimated by:
+ET
+i (θ, φ) = ln qξ(aω
+i+1|πj
+φ(si+2), si+2, si+1)−ln ωk
+χ(aω
+i+1|si+1)
+(4)
+where the combination of the parameters ξ and χ are de-
+noted by θ. Similarly, joint empowerment can be estimated
+by:
+EJ
+i (θ) = ln qξ(aω
+i+1|si+2, si+1) −ln ωχ(aω
+i+1|si+1)
+(5)
+The training procedures are summarized in algorithm 1 and
+2 for transfer and joint empowerment respectively. First,
+
+Algorithm 1 πj
+φ trained with ET
+Set random parameters for ωχ and qξ with θ = {χ, ξ} and
+πφ and Qβ. Initialize experience replay memory with mini
+batches B with N transitions.
+for each {si, aπ
+i , si+1, ri(aπ, si)} ∈B do
+ϵi = (si+1 −pψ(aπ
+i , si))2
+aω
+i+1 ∼ωχ(si+1), si+2 ∼pψ(aω
+i+1, si+1)
+Estimation of ET as in eq. (4)
+yi = ET
+i (θ, φ) + ri + γQ′
+β′(si+1, π′φ′(si+1))
+end for
+ψ ←ψ −λ∇ψ 1
+N
+PN
+i ϵi
+θ ←θ + λ∇θ 1
+N
+PN
+i ET
+i (θ, φ)
+β ←β + λ∇β 1
+N
+PN
+i (Qβ(si, ai) −yi)2
+φ ←φ + λ∇φ 1
+N
+PN
+i (Qβ(si, πφ(si)) + ET
+i (θ, φ))
+Algorithm 2 πφ trained with EJ
+Set random parameters for ωχ and qξ with θ = {χ, ξ} and
+πφ and Qβ, pψ trained as in algorithm 1. Initialize experi-
+ence replay memory with mini batches B with N transitions.
+for each {si, aπ
+i , si+1, ri(aπ, si)} ∈B do
+aω
+i+1 ∼ωχ(si+1),
+si+2 ∼pψ(aω
+i+1, si+1)
+Estimation of EJ as in eq. (5)
+yi = EJ
+i (θ) + ri + γQ′
+β′(si+1, π′
+φ′(si+1))
+end for
+θ ←θ + λ∇θ 1
+N
+PN
+i EJ
+i (θ)
+β ←β + λ∇β 1
+N
+PN
+i (Qβ(si, ai) −yi)2
+φ ←φ + λ∇φ 1
+N
+PN
+i (Qβ(si, πφ(si))
+samples from the system dynamics with the behavioral pol-
+icy are collected. The transition network p is trained to min-
+imize the squared error between a future state and its pre-
+dicted future state. In algorithm 2, the estimation of empow-
+erment is done by ω, q and p. Next, it is used as an additional
+reward term for the joint policy π to select actions that lead
+to high-empowered states. In algorithm 1, empowerment is
+estimated with the networks ω, q, p and πj. So here, πj
+is trained to select actions that drive to highly empowered
+states and to increase the states’ empowerment values.
+5
+Experimental Results
+5.1
+Setup
+We construct three environments that test various capabil-
+ities of our approach, transfer ET , joint EJ and social in-
+ﬂuence SI (Jaques et al. 2019) and baselines DDPG (Lill-
+icrap et al. 2015) and MADDPG (Lowe et al. 2017). The
+MADDPG is a centralized version of the DDPG, meaning
+the value function of each agent conditions on the observa-
+tions of all agents.
+We ﬁrst analyze the robustness of the methods by look-
+ing at the training curves. During training, all agents change
+their policies and a robust learning method should deal with
+Training Curves
+(i) Cover Landmarks
+(ii) Speaker Listener
+Figure 1: Training curves for Cover Landmarks and Speaker
+Listener tasks. — DDPG — MADDPG — SI — E
+these perturbations. Second, we assess each method’s abil-
+ity to obtain reactive agents. We analyze this in a simula-
+tor with two agents, one sending messages and the other
+receiving them. The task can only be fulﬁlled if messages
+are correctly decoded, and random action taking is avoided.
+Third, we evaluate each method’s ability to construct agents
+that remain responsive to its partners and not rely upon ex-
+pectations. We hypothesize that centralized training does not
+incentivize this behavior. To this end, we utilize a simulator
+containing multiple particles that need to cover distinct land-
+marks. If agents collide or go to the same landmark, we con-
+sider them not be reactive to each other. Last, we compare
+methods in a more complicated multi-agent car simulator
+and analyze their performance in more real-world scenarios.
+The ﬁrst two scenarios are constructed by OpenAI’s
+Multi-Agent Particle Environment 1. We choose this sim-
+ulator, since we are primarily interested in addressing agent
+interaction and are satisﬁed with relatively simple physics,
+i.e. it only contains inertia and friction. Transfer empow-
+erment is evaluated in the ﬁrst experiment and joint em-
+powerment in the second. The last experiment is done in
+a simulator that is a combination of the multi-agent and
+single agent OpenAI Gym 2. It allows to evaluate more
+complicated interactions, e.g. merging and overtaking be-
+haviors.The code for the simulator can be found on https:
+//github.com/tessavdheiden/social empowerment
+5.2
+Training with Empowerment
+During training, all agents change their policies, and a ro-
+bust learning method should deal with these perturbations.
+We hypothesize that training with empowerment results in
+robust methods because it incentivizes being responsive to
+changes in others’ behaviors.
+Figures 1(i) and 1(ii) show the training curves for the
+baselines and our method in the ﬁrst two tasks. When an
+agent has empowerment as an additional utility function the
+value of the average return is higher.
+1https://github.com/openai/multiagent-particle-envs
+2https://github.com/openai/gym
+
+Table 1: Percentage of episodes in which the listener reached the target landmark and average distance from the landmark.
+The right columns (3rd-6th) show results of the task in which the environment contains less channels than landmarks (L=6,
+C=5) and obstacles (O=6). Alternating frequency is the rate at which the speaker alters its message per episode. A low number
+indicates that the speaker efﬁciently uses its communication channel.
+L = 3, C = 3, O = 0
+L = 6, C = 5, O = 6
+Reward
+Average
+Target
+Reward
+Average
+Target
+Obstacle
+distance
+reach %
+distance
+reach %
+hit %
+DDPG
+-0.439
+0.456
+32.0
+-0.851
+0.653
+30.1
+60.8
+MADDPG
+-0.301
+0.133
+92.0
+-0.596
+0.260
+40.5
+49.4
+SI
+-0.569
+0.290
+88.0
+-0.666
+0.360
+31.5
+51.2
+ET
+-0.292
+0.120
+91.1
+-0.422
+0.072
+61.1
+31.1
+Table 2: Average percentage of collisions and successes per episode consisting of 25 time steps. Distance from landmark are
+averaged over all time steps. An episode is successful if all agents are within .1 distance to a distinct landmarks at the last 5
+time steps. Shaded areas indicate best (dark grey) and second best (light grey) numbers.
+Reward
+Average distance
+Collisions %
+Success %
+DDPG
+-2.302
+1.324
+50.0
+69.3
+MADDPG
+-2.198
+1.108
+53.3
+80.5
+SI
+-2.461
+1.459
+70.3
+61.9
+ET
+-2.098
+0.857
+43.3
+89.9
+EJ
+-2.063
+0.957
+13.3
+95.9
+5.3
+Experiment I: Cooperative Communication
+The ﬁrst task involves one silent moving agent (j) and
+the other one (k) sending messages that help navigate the
+listening agent. The objective for the moving agent is to
+reach a target landmark out of L landmarks by decoding the
+speaker’s message (a symbol chosen from C distinct sym-
+bols). The team reward is the Euclidean distance from the
+target landmark. The task requires both agents to reliably
+act and pay attention to each other’s actions. The agents can
+fail if the speaker outputs random symbols or if the listener
+incorrectly decodes or ignores the messages.
+If L = C, the speaker simply needs to output a unique
+symbol identifying the target landmark. By having more
+landmarks than distinct symbols, i.e. L > C, the speaker is
+forced to send more indicative signals, e.g. indicating move-
+ment direction. Last, by adding O obstacles that are only vis-
+ible to the speaker, the listener is challenged more to decode
+the messages correctly and navigate precisely.
+Table 1 shows the performance of the baselines and our
+method on the two versions of this task. We present ET,k→j
+which should motivate the listener (j) to adapt its policy to
+be more responsive to the messages. ET,j→k should have
+the speaker adapt its policy. However, as the messages are
+not blocked, there is little in term of policy change for the
+speaker that is helpful to increase the empowerment.
+The lowest number of obstacle hits was obtained by train-
+ing with ET,k→j. This can be explained by the listener’s pol-
+icy adaptation to decode the messages and navigate better.
+Fig. 2 shows an episode. DDPG does not reach the target
+and hits obstacles, see 2(i) . While MADDPG avoids the
+obstacles (see, 2(ii)), it remains at a larger distance from the
+target than our method, in 2(iii).
+Speaker Listener Task
+(i) DDPG
+(ii) MADDPG
+(iii) ET,k→j
+Figure 2: The listener (big blue circle) has to move to a target
+landmark (blue small circle) out of L = 6 landmarks (black
+small circles) while avoiding the obstacles (red crosses). The
+sender can only send messages of length C = 5 < L.
+5.4
+Experiment II: Cooperative Navigation
+In this task three agents have to move to three distinct land-
+marks. They are not told to go to a speciﬁc one, but rather
+need to attend and react to their partners and choose distinct
+ones. They observe the relative coordinates to their partners
+and landmarks. The team reward is the Euclidean distance
+between a landmark and the closed agent, summed over all
+landmarks and agents obtain a penalty for colliding with
+each other. If agents collide or go to the same landmark, we
+consider them not to be reactive to each other. We hypoth-
+esize that joint empowerment has agents moving to distinct
+landmarks faster without colliding and thus obtain a higher
+reward.
+Table 2 presents results. Our method achieves the lowest
+average distance and the lowest number of collisions. Near
+
+Table 3: Three cars need to avoid collisions and obstacles on the road. All agents are rewarded for staying on the road and
+penalized if they hit an obstacle or another car.
+Junctions
+Obstacles
+Off road %
+Collisions %
+Obstacle hit %
+Collisions %
+MADDPG
+11.8
+12.7
+29.3
+31.9
+EJ
+6.6
+5.6
+15.9
+12.4
+collisions are avoided by using joint empowerment as addi-
+tional reward, because it is low in states in which the agents
+have low maneuverability.
+Cover Landmarks Task
+(i) DDPG
+(ii) MADDPG
+(iii) EJ
+Figure 3: The task of the agents (big circles) is to reach dis-
+tinct landmarks (small circles). Each 3rd time step is shown
+(from transparent to opaque).
+Fig. 3 shows a full episode. The three agents are the big
+colored circles and the landmarks are the smaller black ones.
+MADDPG and MADDPG+E reach distinct landmarks. Em-
+powerment captures the causal inﬂuence of all agents’ ac-
+tions on the overall resulting state and agents avoid states
+with limited maneuverability. This can be seen by the blue
+agent that does not move to the closest landmark, but rather
+one that is further away from its green partner (iii). MAD-
+DPG has two colliding agents. See Fig. (ii).
+5.5
+Experiment III: Cooperative Driving
+In the last task we consider three autonomous vehicles that
+have to interact in novel trafﬁc situations. The simulator con-
+tains physical properties such as road friction and inertia.
+Agents observe a stack of 4 top view grey scale images,
+centered around their center of mass from which they need
+to infer the relative location of their partners and obstacles,
+and their own speed. They are rewarded by the number of
+pixels in their observation corresponding to the color of the
+road, motivating them to stay on the road, and are penalized
+for colliding with each other.
+Intersections and obstacles are added to assess the agents’
+abilities to react in time to others. For example, if multiple
+agents enter a point where two roads meet or a location with
+many obstacles, agents can collide if neither one gives way.
+We therefore count the number of collisions and obstacle
+hits.
+Table 3 shows the two different scenarios, the road with
+junctions and obstacles. Agents trained with empowerment
+results in agents outperforming the MADDPG on all met-
+rics.
+In Fig 4 we show two snapshots in the two scenarios. The
+agents that are trained with the MADDPG come closer to
+each other and respond very late. In contrast, when using EJ
+the vehicles respond quicker and give others space to merge
+in or to avoid obstacles. Agents (blue car) give way, see (ii)
+and (iv), to let the other cars (green, red) pass.
+Cooperative Driving
+(i) MADDPG
+(ii) EJ
+(iii) MADDPG
+(iv) EJ
+Figure 4: Comparison in the dynamic car simulator in which
+3 vehicles need to merge (i), (ii) and avoid obstacles (iii), (iv)
+while staying on the road and keeping safe distance between
+each other.
+Technical details
+All methods are trained for 25k episodes, each episode con-
+sisting of 25 time-steps in the ﬁrst two task and 50 time-
+steps in the last. The hyper-parameters as well as the op-
+timization algorithm are equal to (Lowe et al. 2017). In
+the last experiment agents obtained a stack of 4 images
+and all networks had a 5-layered CNN to convert the stack
+into a single-dimension vector. The code for the implemen-
+tation can be found on https://github.com/tessavdheiden/
+social empowerment
+6
+Conclusions and Future Work
+In this paper, we consider the problem of agents that over-
+ﬁt to their training partners and that adapt strategies that act
+under certain expectations, rather than react to their actions.
+We propose to use social empowerment that biases the learn-
+ing process to construct agents that remain reactive to their
+partners’ behaviors.
+In three experiments we show how empowerment moti-
+vates the construction of agents that are responsive to each
+other’s behavior. We have explained different variants, trans-
+fer empowerment that can be applied between a pair of
+agents, and a faster computational variant, joint empower-
+ment, which can be applied for a group of agents with any
+size.
+
+Our method, uses centralized training with decentralized
+execution, thus can be deployed with local partial observa-
+tions of the policies. We show that not only agents coordi-
+nate better by taking into account the dynamics of the whole
+group, but also more precisely, avoiding dangerous situa-
+tions.
+An exciting direction of research, which we have not ex-
+plored is cooperation with partners that agents have not seen
+during training, e.g. humans. Furthermore, many real-life
+scenarios have competitive aspects, and agents can also be
+trained by minimizing the empowerment of their opponents.
+Focusing on the before mentioned problems allows tackling
+a large number of scenarios, such as robots developed by
+different brands that need to interact with humans.
+References
+Baldassarre, G.; and Mirolli, M. 2013. Intrinsically moti-
+vated learning in natural and artiﬁcial systems. Springer.
+Barber, D.; and Agakov, F. V. 2003. The IM algorithm: a
+variational approach to information maximization. In Ad-
+vances in neural information processing systems.
+Barton, S. L.; Waytowich, N. R.; Zaroukian, E.; and Asher,
+D. E. 2018. Measuring collaborative emergent behavior in
+multi-agent reinforcement learning. In International Con-
+ference on Human Systems Engineering and Design: Future
+Trends and Applications, 422–427. Springer.
+Burda, Y.; Edwards, H.; Pathak, D.; Storkey, A.; Darrell, T.;
+and Efros, A. A. 2018. Large-scale study of curiosity-driven
+learning. arXiv preprint arXiv:1808.04355 .
+Chentanez, N.; Barto, A. G.; and Singh, S. P. 2005. Intrin-
+sically motivated reinforcement learning.
+In Advances in
+neural information processing systems, 1281–1288.
+de Abril, I. M.; and Kanai, R. 2018. A uniﬁed strategy for
+implementing curiosity and empowerment driven reinforce-
+ment learning. arXiv preprint arXiv:1806.06505 .
+Eysenbach, B.; Gupta, A.; Ibarz, J.; and Levine, S. 2018.
+Diversity is all you need: Learning skills without a reward
+function. arXiv preprint arXiv:1802.06070 .
+Gregor, K.; Rezende, D. J.; and Wierstra, D. 2016. Varia-
+tional intrinsic control. arXiv preprint arXiv:1611.07507 .
+Guckelsberger, C.; Salge, C.; and Colton, S. 2016. Intrin-
+sically motivated general companion npcs via coupled em-
+powerment maximisation.
+In 2016 IEEE Conference on
+Computational Intelligence and Games (CIG), 1–8. IEEE.
+Guckelsberger, C.; Salge, C.; and Togelius, J. 2018.
+New and surprising ways to be mean. adversarial npcs
+with coupled empowerment minimisation. arXiv preprint
+arXiv:1806.01387 .
+Hu, H.; Lerer, A.; Peysakhovich, A.; and Foerster, J. 2020.
+” Other-Play” for Zero-Shot Coordination. arXiv preprint
+arXiv:2003.02979 .
+Jaderberg, M.; Czarnecki, W.; Dunning, I.; Marris, L.;
+Lever, G.; Castaneda, A.; et al. 2018. Human-level perfor-
+mance in ﬁrst-person multiplayer games with population-
+based deep reinforcement learning. arXiv.
+arXiv preprint
+arXiv:1807.01281 .
+Jaques, N.; Lazaridou, A.; Hughes, E.; Gulcehre, C.; Ortega,
+P.; Strouse, D.; Leibo, J. Z.; and De Freitas, N. 2019. Social
+inﬂuence as intrinsic motivation for multi-agent deep rein-
+forcement learning. In International Conference on Machine
+Learning, 3040–3049. PMLR.
+Karl, M.; Soelch, M.; Becker-Ehmck, P.; Benbouzid, D.;
+van der Smagt, P.; and Bayer, J. 2017.
+Unsupervised
+real-time control through variational empowerment. arXiv
+preprint arXiv:1710.05101 .
+Leu, A.; Risti´c-Durrant, D.; Slavni´c, S.; Glackin, C.; Salge,
+C.; Polani, D.; Badii, A.; Khan, A.; and Raval, R. 2013.
+CORBYS cognitive control architecture for robotic follower.
+In Proceedings of the 2013 IEEE/SICE International Sym-
+posium on System Integration, 394–399. IEEE.
+Li, S.; Wu, Y.; Cui, X.; Dong, H.; Fang, F.; and Russell, S.
+2019. Robust multi-agent reinforcement learning via mini-
+max deep deterministic policy gradient. In Proceedings of
+the AAAI Conference on Artiﬁcial Intelligence, volume 33,
+4213–4220.
+Lillicrap, T. P.; Hunt, J. J.; Pritzel, A.; Heess, N.; Erez, T.;
+Tassa, Y.; Silver, D.; and Wierstra, D. 2015.
+Continuous
+control with deep reinforcement learning.
+arXiv preprint
+arXiv:1509.02971 .
+Lowe, R.; Wu, Y. I.; Tamar, A.; Harb, J.; Abbeel, O. P.;
+and Mordatch, I. 2017. Multi-agent actor-critic for mixed
+cooperative-competitive environments. In Advances in neu-
+ral information processing systems, 6379–6390.
+Morimoto, J.; and Doya, K. 2005.
+Robust reinforcement
+learning. Neural computation 17(2): 335–359.
+Osborne, M. J.; et al. 2004. An introduction to game theory,
+volume 3. Oxford university press New York.
+Oudeyer, P.-Y.; and Kaplan, F. 2009. What is intrinsic moti-
+vation? A typology of computational approaches. Frontiers
+in neurorobotics 1: 6.
+Pathak, D.; Agrawal, P.; Efros, A. A.; and Darrell, T. 2017.
+Curiosity-driven exploration by self-supervised prediction.
+In Proceedings of the IEEE Conference on Computer Vision
+and Pattern Recognition Workshops, 16–17.
+Salge, C.; and Polani, D. 2017. Empowerment as replace-
+ment for the three laws of robotics. Frontiers in Robotics
+and AI 4: 25.
+Santucci, V. G.; Baldassarre, G.; and Mirolli, M. 2012. In-
+trinsic motivation mechanisms for competence acquisition.
+In 2012 IEEE International Conference on Development
+and Learning and Epigenetic Robotics (ICDL), 1–6. IEEE.
+Strouse, D.; Kleiman-Weiner, M.; Tenenbaum, J.; Botvinick,
+M.; and Schwab, D. J. 2018. Learning to share and hide
+intentions using information regularization. In Advances in
+Neural Information Processing Systems, 10249–10259.
+Tesauro, G. 1994. TD-Gammon, a self-teaching backgam-
+mon program, achieves master-level play. Neural computa-
+tion 6(2): 215–219.
+
+van der Heiden, T.; Weiss, C.; Shankar, N. N.; Gavves, E.;
+and van Hoof, H. 2020. Social navigation with human em-
+powerment driven reinforcement learning.
+arXiv preprint
+arXiv:2003.08158 .

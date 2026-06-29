@@ -1,0 +1,5583 @@
+53
+Robust Multi-Agent Bandits Over Undirected Graphs
+DANIEL VIAL, University of Texas at Austin, USA
+SANJAY SHAKKOTTAI, University of Texas at Austin, USA
+R. SRIKANT, University of Illinois Urbana-Champaign, USA
+We consider a multi-agent multi-armed bandit setting in which 𝑛honest agents collaborate over a network to
+minimize regret but 𝑚malicious agents can disrupt learning arbitrarily. Assuming the network is the complete
+graph, existing algorithms incur 𝑂((𝑚+ 𝐾/𝑛) log(𝑇)/Δ) regret in this setting, where 𝐾is the number of arms
+and Δ is the arm gap. For 𝑚≪𝐾, this improves over the single-agent baseline regret of 𝑂(𝐾log(𝑇)/Δ).
+In this work, we show the situation is murkier beyond the case of a complete graph. In particular, we prove
+that if the state-of-the-art algorithm is used on the undirected line graph, honest agents can suffer (nearly)
+linear regret until time is doubly exponential in 𝐾and 𝑛. In light of this negative result, we propose a new
+algorithm for which the 𝑖-th agent has regret 𝑂((𝑑mal(𝑖) + 𝐾/𝑛) log(𝑇)/Δ) on any connected and undirected
+graph, where 𝑑mal(𝑖) is the number of 𝑖’s neighbors who are malicious. Thus, we generalize existing regret
+bounds beyond the complete graph (where 𝑑mal(𝑖) = 𝑚), and show the effect of malicious agents is entirely
+local (in the sense that only the 𝑑mal(𝑖) malicious agents directly connected to 𝑖affect its long-term regret).
+CCS Concepts: • Theory of computation →Online learning theory; Sequential decision making; Regret
+bounds; Multi-agent learning; Distributed algorithms; Adversarial learning.
+Additional Key Words and Phrases: multi-armed bandits; malicious agents
+ACM Reference Format:
+Daniel Vial, Sanjay Shakkottai, and R. Srikant. 2022. Robust Multi-Agent Bandits Over Undirected Graphs.
+Proc. ACM Meas. Anal. Comput. Syst. 6, 3, Article 53 (December 2022), 57 pages. https://doi.org/10.1145/3570614
+1
+INTRODUCTION
+Motivated by applications including distributed computing, social recommendation systems, and
+federated learning, a number of recent papers have studied multi-agent variants of the classical
+multi-armed bandit problem. Typically, these variants involve a large number of agents playing a
+bandit while communicating over a network. The goal is to devise communication protocols that
+allow the agents to efficiently amalgamate information, thereby learning the bandit’s parameters
+more quickly than they could by running single-agent algorithms in isolation.
+Among the many multi-agent variants considered in the literature (see Section 1.5), we focus on
+a particular setting studied in the recent line of work [18, 49, 52, 56]. In these papers, 𝑛agents play
+separate instances of the same 𝐾-armed bandit and are restricted to 𝑜(𝑇) pairwise and bit-limited
+communications per 𝑇arm pulls. We recount two motivating applications from this prior work.
+Example 1. For an e-commerce site (e.g., Amazon), the agents model 𝑛servers choosing one of 𝐾
+products to show visitors to the site. The product selection problem can be viewed as a bandit – products
+Authors’ addresses: Daniel Vial, dvial@utexas.edu, University of Texas at Austin, Austin, Texas, USA; Sanjay Shakkottai,
+sanjay.shakkottai@utexas.edu, University of Texas at Austin, Austin, Texas, USA; R. Srikant, rsrikant@illinois.edu, University
+of Illinois Urbana-Champaign, Urbana-Champaign, Illinois, USA.
+Permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee
+provided that copies are not made or distributed for profit or commercial advantage and that copies bear this notice and
+the full citation on the first page. Copyrights for components of this work owned by others than ACM must be honored.
+Abstracting with credit is permitted. To copy otherwise, or republish, to post on servers or to redistribute to lists, requires
+prior specific permission and/or a fee. Request permissions from permissions@acm.org.
+© 2022 Association for Computing Machinery.
+2476-1249/2022/12-ART53 $15.00
+https://doi.org/10.1145/3570614
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+arXiv:2203.00076v2  [cs.LG]  26 Jan 2023
+
+53:2
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+are arms, while purchases yield rewards – and communication among the agents/servers is restricted
+by bandwidth.
+Example 2. For a social recommendation site (e.g., Yelp), the agents represent 𝑛users choosing
+among 𝐾items, such as restaurants. This is analogously modeled as a bandit, and communication is
+limited because agents/users are exposed to a small portion of all reviews.
+To contextualize our contributions, we next discuss this line of work in more detail.
+1.1
+Fully cooperative multi-agent bandits
+The goal of [18, 49, 52] is to devise fully cooperative algorithms for which the cumulative regret
+𝑅(𝑖)
+𝑇
+of each agent 𝑖is small (see (5) for the formal definition of regret). All of these papers follow a
+similar approach, which roughly proceeds as follows (see Section 3 for details):
+• The arms are partitioned into 𝑛subsets of size 𝑂(𝐾/𝑛), and each agent is assigned a distinct
+subset called a sticky set, which they are responsible for exploring.
+• Occasionally (𝑜(𝑇) times per 𝑇arm pulls), each agent 𝑖asks a random neighbor 𝑖′ for an arm
+recommendation; 𝑖′ responds with the arm they believe is best, which 𝑖begins playing.
+For these algorithms, the regret analysis essentially contains two steps:
+• First, the authors show that the agent (say,𝑖★) with the true best arm in its sticky set eventually
+identifies it as such. Thereafter, a gossip process unfolds. Namely, 𝑖★recommends the best
+arm to its neighbors, who recommend it to their neighbors, etc., spreading the best arm to all
+agents. The spreading time (and thus the regret before this time) is shown to be polynomial
+in 𝐾, 𝑛, and 1/Δ, where Δ is the gap in mean reward between the two best arms.
+• Once the best arm spreads, agents play only it and their sticky sets, so long-term, they
+effectively face 𝑂(𝐾/𝑛)-armed bandits instead of the full 𝐾-armed bandit. By classical bandit
+results (see, e.g., [3]), this implies 𝑂((𝐾/𝑛) log(𝑇)/Δ) regret over horizon 𝑇.
+Hence, summing up the two terms, [18, 49, 52] provide regret bounds of the form1
+𝑅(𝑖)
+𝑇
+= 𝑂
+𝐾
+𝑛
+log𝑇
+Δ
++ poly
+
+𝐾,𝑛, 1
+Δ
+
+,
+(1)
+as compared to 𝑂(𝐾log(𝑇)/Δ) regret for running a single-agent algorithm in isolation.
+1.2
+Robust multi-agent bandits on the complete graph
+Despite these improved bounds, [18, 49, 52] require all agents to execute the prescribed algorithm,
+and in particular, to recommend best arm estimates to their neighbors. As pointed out in [56],
+this may be unrealistic: in Example 2, review spam can be modeled as bad arm recommendations,
+while in Example 1, servers may fail entirely. Hence, [56] considers a more realistic setting where 𝑛
+honest agents recommend best arm estimates but 𝑚malicious agents recommend arbitrarily. For
+this setting, the authors propose a robust version of the algorithm from [18] where honest agents
+block suspected malicious agents. More specifically, [56] considers the following blocking rule:
+• If agent 𝑖′ recommends arm 𝑘to honest agent 𝑖, but arm 𝑘subsequently performs poorly for 𝑖
+– in the sense that the upper confidence bound (UCB) algorithm does not select it sufficiently
+often – then 𝑖temporarily suspends communication with 𝑖′.
+As shown in [56], this blocking scheme prevents each malicious agent from recommending more
+than 𝑂(1) bad arms long-term, which (effectively) results in an 𝑂(𝑚+ 𝐾/𝑛)-armed bandit (𝑂(𝑚)
+malicious recommendations, plus the 𝑂(𝐾/𝑛)-sized sticky set). Under the assumption that honest
+1More precisely, [18, 49] prove (1), while the 𝐾/𝑛term balloons to (𝐾/𝑛) + log𝑛in [52].
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:3
+and malicious agents are connected by the complete graph, this allows [56] to prove
+𝑅(𝑖)
+𝑇
+= 𝑂
+𝐾
+𝑛+ 𝑚
+ log𝑇
+Δ
++ poly
+
+𝐾,𝑛,𝑚, 1
+Δ
+
+.
+(2)
+In [56], it is also shown that blocking is necessary: for any 𝑛∈N, if even 𝑚= 1 malicious agent is
+present, the algorithm from [18] (which does not use blocking) incurs Ω(𝐾log(𝑇)/Δ) regret. Thus,
+one malicious agent negates the improvement over the single-agent baseline.
+1.3
+Objective and challenges
+Our main goal is to generalize the results of [56] from the complete graph to the case where the
+honest agent subgraph is only connected and undirected. This is nontrivial because [56] relies
+heavily on the complete graph assumption. In particular, the analysis in [56] requires that 𝑖★(the
+agent with the best arm in its sticky set) itself recommends the best arm to each of the other honest
+agents. In other words, each honest agent 𝑖≠𝑖★relies on 𝑖★to inform them of the best arm, which
+means 𝑖★must be a neighbor of 𝑖. Thus, to extend (2) beyond complete graphs, we need to show
+a gossip process unfolds (like in the fully cooperative case): 𝑖★recommends the best arm to its
+neighbors, who recommend it to their neighbors, etc., spreading it through the network.
+The challenge is that, while blocking is necessary to prevent Ω(𝐾log(𝑇)/Δ) regret, it also causes
+honest agents to accidentally block each other. Indeed, due to the aforementioned blocking rule and
+the noisy rewards, they will block each other until they collect enough samples to reliably identify
+good arms. From a network perspective, accidental blocking means that edges in the subgraph of
+honest agents temporarily fail. Consequently, it is not clear if the best arm spreads to all honest
+agents, or if (for example) this subgraph eventually becomes disconnected, preventing the spread
+and causing the agents who do not receive the best arm to suffer Θ(𝑇) regret.
+Analytically, accidental blocking means we must deal with a gossip process over a dynamic
+graph. This process is extremely complicated, because the graph dynamics are driven by the bandit
+algorithms, which in turn affect the future evolution of the graph. Put differently, blocking causes
+the randomness of the communication protocol and that of the bandit algorithms to become
+interdependent. We note this does not occur for the original non-blocking algorithm, where the two
+sources of randomness can be cleverly decoupled and separately analyzed – see [18, Proposition 4].
+Thus, in contrast to existing work, we need to analyze the interdependent processes directly.
+1.4
+Our contributions
+Failure of the existing blocking rule: In Section 4, we show that the algorithm from [56] fails
+to achieve a regret bound of the form (2) for connected and undirected graphs in general. Toward
+this end, we define a natural “bad instance” in which 𝑛= 𝐾, the honest agent subgraph is an
+undirected line (thus connected), and all honest agents share a malicious neighbor. For this instance,
+we propose a malicious strategy that causes honest agents to repeatedly block one another, which
+results in the best arm spreading extremely slowly. More specifically, we show that if honest agents
+run the algorithm from [56], then the best arm does not reach honest agent 𝑛(the one at the
+end of the line) until time is doubly exponential in 𝑛= 𝐾. Note [56] shows the best arm spreads
+polynomially fast for the complete graph, so we demonstrate a doubly exponential slowdown for
+complete versus line graphs. This is rather surprising, because for classical rumor processes that
+do not involve bandits or blocking (see, e.g., [50]), the slowdown is only exponential (i.e., Θ(log𝑛)
+rumor spreading time on the complete graph versus Θ(𝑛) on the line graph). As a consequence of
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:4
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+the slow spread, we show the algorithm from [56] suffers regret
+𝑅(𝑛)
+𝑇
+= Ω
+
+min
+
+log(𝑇) + exp
+
+exp
+𝑛
+3
+
+,
+𝑇
+log7𝑇
+
+,
+(3)
+i.e., it incurs (nearly) linear regret until time Ω(exp(exp(𝑛/3))) and thereafter incurs logarithmic
+regret but with a huge additive term (see Theorem 1).
+Refined blocking rule: In light of this negative result, we propose a refined blocking rule in
+Section 5. Roughly, our rule is as follows: agent 𝑖blocks 𝑖′ for recommending arm 𝑘if
+• arm 𝑘performs poorly, i.e., it is not chosen sufficiently often by UCB,
+• and agent 𝑖has not changed its own best arm estimate recently.
+The second criterion is the key distinction from [56]. Intuitively, it says that agents should not
+block for seemingly-poor recommendations until they become confident that their own best arm
+estimates have settled on truly good arms. This idea is the main new algorithmic insight of the
+paper. It is directly motivated by the negative result of Section 4; see Remark 5.
+Gossip despite blocking: Analytically, our main contribution is to show that, with our refined
+blocking rule, the best arm quickly spreads to all honest agents. The proof is quite involved; we
+provide an outline in Section 7. At a very high level, the idea is to show that honest agents using
+our blocking rule eventually stop blocking each other. Thereafter, we can couple the arm spreading
+process with a much more tractable noisy rumor process that involves neither bandits nor blocking
+(see Definition 1), and that is guaranteed to spread the best arm in polynomial time.
+Regret upper bound: Combining our novel gossip analysis with some existing regret minimization
+techniques, we show in Section 5 that our refined algorithm enjoys the regret bound
+𝑅(𝑖)
+𝑇
+= 𝑂
+𝐾
+𝑛+ 𝑑mal(𝑖)
+ log𝑇
+Δ
++ poly
+
+𝐾,𝑛,𝑚, 1
+Δ
+
+,
+(4)
+where𝑑mal(𝑖) is the number of malicious neighbors of 𝑖(see Theorem 2). Thus, our result generalizes
+(2) from the complete graph (where 𝑑mal(𝑖) = 𝑚) to connected and undirected graphs. Moreover,
+note the leading log𝑇term in (4) is entirely local – only the 𝑑mal(𝑖) malicious agents directly
+connected to 𝑖affect its long-term regret. For example, in the sparse regime 𝑑mal(𝑖) = 𝑂(1), our
+log𝑇term matches the one in (1) up to constants, which (we recall) [18, 49] proved in the case
+where there are no malicious agents anywhere in the network. In fact, for honest agents 𝑖with
+𝑑mal(𝑖) = 0, we can prove that the log𝑇term in our regret bound matches the corresponding term
+from [18], including constants (see Corollary 2). In other words, we show that for large horizons 𝑇,
+the effects of malicious agents do not propagate beyond one-step neighbors. Furthermore, we note
+that the additive term in (4) is polynomial in all parameters, whereas for the existing algorithm it
+can be doubly exponential in 𝐾and 𝑛, as shown in (3) and discussed above.
+Numerical results: In Section 6, we replicate the experiments from [56] and extend them from the
+complete graph to 𝐺(𝑛+𝑚, 𝑝) random graphs. Among other findings, we show that for 𝑝= 1/2 and
+𝑝= 1/4, respectively, the algorithm from [56] can perform worse than the non-blocking algorithm
+from [18] and the single-agent baseline, respectively. In other words, the existing blocking rule
+becomes a liability as 𝑝decreases from the extreme case 𝑝= 1 considered in [56]. In contrast, we
+show that our refined rule has lower regret than [18] across the range of 𝑝tested. Additionally, it
+outperforms [56] on average for all but the largest 𝑝and has much lower variance for smaller 𝑝.
+Summary: Ultimately, the high-level messages of this paper are twofold:
+• In multi-agent bandits with malicious agents, we can devise algorithms that simultaneously
+(1) learn useful information and spread it through the network via gossip, and (2) learn who
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:5
+is malicious and block them to mitigate the harm they cause. Moreover, this harm is local in
+the sense that it only affects one-hop neighbors.
+• However, blocking must be done carefully; algorithms designed for the complete graph may
+spread information extremely slowly on general graphs. In particular, the slowdown can be
+doubly exponential, much worse than the exponential slowdown of simple rumor processes.
+1.5
+Other related work
+In addition to the paper [56] discussed above, several others have considered multi-agent bandits
+where some of the agents are uncooperative. In [6], the honest agents face a non-stochastic
+(i.e., adversarial) bandit [4] and communicate at every time step, in contrast to the stochastic
+bandit and limited communication of our work. The authors of [48] consider the objective of
+best arm identification [2] instead of cumulative regret. Most of their paper involves a different
+communication model where the agents/clients collaborate via a central server; Section 6 studies a
+“peer-to-peer” model which is closer to ours but requires additional assumptions on the number of
+malicious neighbors. A different line of work considers the case where an adversary can corrupt
+the observed rewards (see, e.g., [11, 12, 25, 26, 29, 33, 40, 41, 44], and the references therein), which
+is distinct from the role that malicious agents play in our setting.
+For the fully cooperative case, there are several papers with communication models that differ
+from the aforementioned [18, 49, 52]. For example, agents in [15, 17] broadcast information instead
+of exchanging pairwise arm recommendations, communication in [34, 36, 47] is more frequent, the
+number of transmissions in [45] depends on Δ−1 so could be large, and agents in [37] exchange
+arm mean estimates instead of (bit-limited) arm indices.
+More broadly, other papers have studied fully cooperative variants of different bandit problems.
+These include minimizing simple instead of cumulative regret (e.g., [28, 54]), minimizing the total
+regret across agents rather than ensuring all have low regret (e.g., [22, 57]), contextual instead
+of multi-armed bandits (e.g., [19, 23, 24, 35, 55]), adversarial rather than stochastic bandits (e.g.,
+[7, 16, 31]), and bandits that vary across agents (e.g., [10, 53, 58]). Another long line of work features
+collision models where rewards are lower if multiple agents simultaneously pull the same arm (e.g.,
+[1, 5, 13, 21, 30, 42, 43, 46, 51]), unlike our model. Along these lines, other reward structures have
+been studied, such as reward being a function of the agents’ joint action (e.g., [8, 9, 32]).
+1.6
+Organization
+The rest of the paper is structured as follows. We begin in Section 2 with definitions. In Section 3,
+we introduce the algorithm from [56]. Sections 4 and 5 discuss the existing and proposed blocking
+rules. Section 6 contains experiments. We discuss our analysis in Section 7 and close in Section 8.
+2
+PRELIMINARIES
+Communication network: Let 𝐺= ([𝑛+ 𝑚], 𝐸) be an undirected graph with vertices [𝑛+ 𝑚] =
+{1, . . . ,𝑛+ 𝑚}. We call [𝑛] the honest agents and assume they execute the forthcoming algorithm.
+The remaining agents are termed malicious; their behavior will be specified shortly. For instance,
+honest and malicious agents represent functioning and failed servers in Example 1. The edge set 𝐸
+encodes which agents are allowed to communicate, e.g., if (𝑖,𝑖′) ∈𝐸, the 𝑖-th and 𝑖′-th servers can
+communicate in the forthcoming algorithm.
+Denote by 𝐸hon = {(𝑖,𝑖′) ∈𝐸: 𝑖,𝑖′ ∈[𝑛]} the edges between honest agents and𝐺hon = ([𝑛], 𝐸hon)
+the honest agent subgraph. For each 𝑖∈[𝑛], we let 𝑁(𝑖) = {𝑖′ ∈[𝑛+ 𝑚] : (𝑖,𝑖′) ∈𝐸} denote
+its neighbors, 𝑁hon(𝑖) = 𝑁(𝑖) ∩[𝑛] its honest neighbors, and 𝑁mal(𝑖) = 𝑁(𝑖) \ [𝑛] its malicious
+neighbors. We write 𝑑(𝑖) = |𝑁(𝑖)|, 𝑑hon(𝑖) = |𝑁hon(𝑖)|, and 𝑑mal(𝑖) = |𝑁mal(𝑖)| for the associated
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:6
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Fig. 1. Illustration of the phases in Algorithm 1; see beginning of Section 3.1 for details.
+degrees, and ¯𝑑= max𝑖∈[𝑛] 𝑑(𝑖), ¯𝑑hon = max𝑖∈[𝑛] 𝑑hon(𝑖), and ¯𝑑mal = max𝑖∈[𝑛] 𝑑mal(𝑖) for the maximal
+degrees. We make the following assumption, which generalizes the complete graph case of [56].
+Assumption 1. The honest agent subgraph 𝐺hon is connected, i.e., for any 𝑖,𝑖′ ∈[𝑛], there exists
+𝑙∈N and 𝑖0,𝑖1, . . . ,𝑖𝑙∈[𝑛] such that 𝑖0 = 𝑖, (𝑖𝑗−1,𝑖𝑗) ∈𝐸hon ∀𝑗∈[𝑙], and 𝑖𝑙= 𝑖′.
+Multi-armed bandit: We consider the standard stochastic multi-armed bandit [38, Chapter 4].
+Denote by 𝐾∈N the number of arms and [𝐾] the set of arms. For each 𝑘∈[𝐾], we let 𝜈𝑘be a
+probability distribution over R and {𝑋𝑖,𝑡(𝑘)}𝑖∈[𝑛],𝑡∈N an i.i.d. sequence of rewards sampled from 𝜈𝑘.
+The interpretation is that, if the 𝑖-th honest agent chooses the 𝑘-th arm at time 𝑡, it earns reward
+𝑋𝑖,𝑡(𝑘). The objective (to be formalized shortly) is reward maximization. In Example 2, for instance,
+[𝐾] represents the set of restaurants in a city, and the reward 𝑋𝑖,𝑡(𝑘) quantifies how much person 𝑖
+enjoys restaurant 𝑘if they dine there on day 𝑡.
+For each arm 𝑘∈[𝐾], we let 𝜇𝑘= E[𝑋𝑖,𝑡(𝑘)] denote the corresponding expected reward. Without
+loss of generality, we assume the arms are labeled such that 𝜇1 ≥· · · ≥𝜇𝐾. We additionally assume
+the following, which generalizes the 𝜈𝑘= Bernoulli(𝜇𝑘) and 𝜇1 > 𝜇2 setting of [56]. Notice that
+under this assumption, the arm gap Δ𝑘≜𝜇1 −𝜇𝑘is strictly positive.
+Assumption 2. Rewards are [0, 1]-valued, i.e., for each 𝑘∈[𝐾], 𝜈𝑘is a distribution over [0, 1].
+Furthermore, the best arm is unique, i.e., 𝜇1 > 𝜇2.
+Objective: For each 𝑖∈[𝑛] and 𝑡∈N, let 𝐼(𝑖)
+𝑡
+∈[𝐾] denote the arm chosen by honest agent 𝑖at
+time 𝑡. Our goal is to minimize the regret 𝑅(𝑖)
+𝑇, which is the expected additive loss in cumulative
+reward for agent 𝑖’s sequence of arm pulls {𝐼(𝑖)
+𝑡
+}𝑇
+𝑡=1 compared to the optimal policy that always
+chooses the best arm 1. More precisely, we define regret as follows:
+𝑅(𝑖)
+𝑇
+≜
+𝑇∑︁
+𝑡=1
+E
+h
+𝑋𝑖,𝑡(1) −𝑋𝑖,𝑡(𝐼(𝑖)
+𝑡)
+i
+=
+𝑇∑︁
+𝑡=1
+E
+h
+𝜇1 −𝜇𝐼(𝑖)
+𝑡
+i
+=
+𝑇∑︁
+𝑡=1
+E
+h
+Δ𝐼(𝑖)
+𝑡
+i
+.
+(5)
+3
+ALGORITHM
+We next discuss the algorithm from [56] (Algorithm 1 below), which modifies the one from [18]
+to include blocking. For ease of exposition, we begin by discussing the key algorithmic design
+principles from [18] in Section 3.1. We then define Algorithm 1 formally in Section 3.2. Finally, we
+introduce and discuss one additional assumption in Section 3.3.
+3.1
+Key ideas of the non-blocking algorithm
+We assume 𝑚= 0 this subsection and describe the non-blocking algorithm from [18].
+• Phases: In [18], the time steps 1, . . . ,𝑇are grouped into phases, whose role is twofold. First,
+within the 𝑗-th phase, the 𝑖-th honest agent only pulls arms belonging to a particular subset
+𝑆(𝑖)
+𝑗
+⊂[𝐾]. We call these active sets and detail their construction next. Second, at the end of
+the 𝑗-th phase, the agents construct new active sets by exchanging arm recommendations
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:7
+(a) Initial active sets
+(b) Recommendations
+(c) Updated active sets
+(d) Later active sets
+(e) Recommendations
+(f) Updated active sets
+Fig. 2. Illustration of the active sets in Algorithm 1; see Example 3 for details.
+with neighbors, in a manner to be described shortly. See Figure 1 for a pictorial description.
+Notice that the phase durations are increasing, which will be discussed in Section 3.2.
+• Active sets: The active set 𝑆(𝑖)
+𝑗
+will always contain a subset of arms ˆ𝑆(𝑖) ⊂[𝐾] that does not
+vary with the phase 𝑗. Following [18, 56], we call ˆ𝑆(𝑖) the sticky set and its elements sticky
+arms. The sticky sets ensure that each arm is explored by some agent, as will be seen in the
+forthcoming example. In addition, 𝑆(𝑖)
+𝑗
+will contain two non-sticky arms that are dynamically
+updated across phases 𝑗based on arm recommendations from neighbors.
+• Arm recommendations: After the 𝑗-th phase, each agent𝑖contacts a random neighbor, who
+responds with whichever of their active arms performed “best” in the current phase. Upon
+receiving this recommendation, 𝑖adds it to its active set and discards whichever currently-
+active non-sticky arm (i.e., whichever element of 𝑆(𝑖)
+𝑗
+\ ˆ𝑆(𝑖)) performed “worse”. (We quantify
+“best” and “worse” in the formal discussion of Section 3.2.)
+Example 3. Each subfigure of Figure 2 depicts 𝑛= 3 honest agents as circles and their active sets as
+rectangles. The blue rectangles are sticky sets, the orange rectangles are non-sticky arms, and the arms
+are sorted by performance. For example, the left agent in Figure 2a has sticky set {1, 2} and active
+set {1, 2, 3, 6} and believes arm 3 to be the best of these. Note the blue sticky sets partition [𝐾] = [6],
+so at each phase, each arm is active for some agent. This ensures the best arm is never permanently
+discarded during the arm recommendations discussed above. Figure 2b shows agents recommending
+the active arms they believe are best, and Figure 2c depicts the updated active sets. For instance, the left
+agent replaces its worse non-sticky arm 6 with the recommendation 5. Figure 2d shows a later phase
+where the best arm 1 has spread to all agents, who have all identified it as such. Thereafter, all agents
+recommend 1, so the active set remains fixed (Figures 2e and 2f). Hence, all agents eventually exploit
+the best arm while only exploring a subset of the suboptimal arms (three instead of five here).
+3.2
+Formal definition of the blocking algorithm
+The algorithm in [56] supplements the one from Section 3.1 with a blocking procedure. Specifically,
+honest agents run the algorithm from [18] while maintaining blocklists of neighbors they are
+unwilling to communicate with. This approach is defined in Algorithm 1 and detailed next.
+Inputs (Line 1): The first input is a standard UCB exploration parameter 𝛼> 0, which will be
+discussed shortly. The input 𝛽> 1 controls the lengths of the phases; namely, the 𝑗-th phase
+encompasses times 1+𝐴𝑗−1, . . . ,𝐴𝑗, where 𝐴𝑗≜⌈𝑗𝛽⌉. Note the phase duration 𝐴𝑗−𝐴𝑗−1 = 𝑂(𝑗𝛽−1)
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:8
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Algorithm 1: Multi-agent bandits with blocking (executed by 𝑖∈[𝑛])
+1 Input: UCB parameter 𝛼> 0, phase parameter 𝛽> 1, sticky arms ˆ𝑆(𝑖) with
+| ˆ𝑆(𝑖)| = 𝑆≤𝐾−2
+2 Initialize 𝐴𝑗= ⌈𝑗𝛽⌉, 𝑃(𝑖)
+𝑗
+= ∅∀𝑗∈N (communication times and blocklists)
+3 Set 𝑗= 1 (current phase), let {𝑈(𝑖)
+𝑗, 𝐿(𝑖)
+𝑗} ⊂[𝐾] \ ˆ𝑆(𝑖) be two distinct non-sticky arms and
+𝑆(𝑖)
+𝑗
+= ˆ𝑆(𝑖) ∪{𝑈(𝑖)
+𝑗, 𝐿(𝑖)
+𝑗} the initial active set
+4 for 𝑡∈N do
+5
+Pull 𝐼(𝑖)
+𝑡
+= arg max𝑘∈𝑆(𝑖)
+𝑗
+
+ˆ𝜇(𝑖)
+𝑘(𝑡−1) +
+√︃
+𝛼log(𝑡)/𝑇(𝑖)
+𝑘
+(𝑡−1)
+
+(UCB over active set)
+6
+if 𝑡= 𝐴𝑗(if communication occurs at this time) then
+7
+𝐵(𝑖)
+𝑗
+= arg max𝑘∈𝑆(𝑖)
+𝑗
+
+𝑇(𝑖)
+𝑘
+(𝐴𝑗) −𝑇(𝑖)
+𝑘
+(𝐴𝑗−1)
+
+(most played active arm in this phase)
+8
+{𝑃(𝑖)
+𝑗′ }∞
+𝑗′=𝑗←Update-Blocklist({𝑃(𝑖)
+𝑗′ }∞
+𝑗′=𝑗) ([56] uses Alg. 3; we propose Alg. 4)
+9
+(𝐻(𝑖)
+𝑗, 𝑅(𝑖)
+𝑗) = Get-Recommendation(𝑖, 𝑗, 𝑃(𝑖)
+𝑗) (see Alg. 2)
+10
+if 𝑅(𝑖)
+𝑗
+∉𝑆(𝑖)
+𝑗
+(if recommendation not already active) then
+11
+𝑈(𝑖)
+𝑗+1 = arg max𝑘∈{𝑈(𝑖)
+𝑗
+,𝐿(𝑖)
+𝑗
+}
+
+𝑇(𝑖)
+𝑘
+(𝐴𝑗) −𝑇(𝑖)
+𝑘
+(𝐴𝑗−1)
+
+(best non-sticky active arm)
+12
+𝐿(𝑖)
+𝑗+1 = 𝑅(𝑖)
+𝑗
+(replace worst non-sticky active arm with recommendation)
+13
+𝑆(𝑖)
+𝑗+1 = ˆ𝑆(𝑖) ∪{𝑈(𝑖)
+𝑗+1, 𝐿(𝑖)
+𝑗+1} (new active set is sticky set and two non-sticky arms)
+14
+else
+15
+𝑆(𝑖)
+𝑗+1 = 𝑆(𝑖)
+𝑗
+(keep the same active set, since recommendation is already active)
+16
+𝑗←𝑗+ 1 (increment phase)
+Algorithm 2: (𝐻(𝑖)
+𝑗, 𝑅(𝑖)
+𝑗) = Get-Recommendation(𝑖, 𝑗, 𝑃(𝑖)
+𝑗) (black box to 𝑖∈[𝑛])
+1 Input: Agent 𝑖∈{1, . . . ,𝑛}, phase 𝑗∈N, blocklist 𝑃(𝑖)
+𝑗
+2 Sample 𝐻(𝑖)
+𝑗
+from 𝑁(𝑖) \ 𝑃(𝑖)
+𝑗
+(non-blocked neighbors) uniformly at random
+3 if 𝐻(𝑖)
+𝑗
+≤𝑛(if the sampled agent is honest) then
+4
+Set 𝑅(𝑖)
+𝑗
+= 𝐵
+(𝐻(𝑖)
+𝑗
+)
+𝑗
+(honest agents recommend most played arm from this phase)
+5 else
+6
+Choose 𝑅(𝑖)
+𝑗
+∈[𝐾] arbitrarily (malicious agents recommend arbitrary arms)
+7 Output: (𝐻(𝑖)
+𝑗, 𝑅(𝑖)
+𝑗)
+grows with 𝑗, as shown in Figure 1. The final input is an 𝑆-sized sticky set ˆ𝑆(𝑖) (𝑆= 2 in Example 3),
+which, as in [56], we assume are provided to the agents (see Section 3.3 for more details).
+Initialization (Lines 2-3): To start, 𝑖initializes the times 𝐴𝑗at which the 𝑗-th phase ends, along
+with the blocklist 𝑃(𝑖)
+𝑗. Additionally, 𝑖chooses two distinct (but otherwise arbitrary) non-sticky
+arms 𝑈(𝑖)
+1
+and 𝐿(𝑖)
+1
+and constructs the active set 𝑆(𝑖)
+1
+= ˆ𝑆(𝑖) ∪{𝑈(𝑖)
+1 , 𝐿(𝑖)
+1 }. Notice that the active set
+contains the sticky set and two arms that depend on the phase, as described in Section 3.1.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:9
+UCB over the active set (Line 5): As was also mentioned in Section 3.1, 𝑖only pulls arms from
+its current active set 𝑆(𝑖)
+𝑗. More specifically, at each time 𝑡during phase 𝑗, 𝑖chooses the active
+arm 𝐼(𝑖)
+𝑡
+∈𝑆(𝑖)
+𝑗
+that maximizes the UCB in Line 5 (see [38, Chapters 7-10] for background). Here
+𝑇(𝑖)
+𝑘
+(𝑡−1) and ˆ𝜇(𝑖)
+𝑘(𝑡−1) are the number of pulls of 𝑘and the empirical mean of those pulls, i.e.,
+𝑇(𝑖)
+𝑘
+(𝑡−1) =
+∑︁
+𝑠∈[𝑡−1]
+1(𝐼(𝑖)
+𝑠
+= 𝑘),
+ˆ𝜇(𝑖)
+𝑘(𝑡−1) =
+1
+𝑇(𝑖)
+𝑘
+(𝑡−1)
+∑︁
+𝑠∈[𝑡−1]:𝐼(𝑖)
+𝑠
+=𝑘
+𝑋𝑖,𝑠(𝑘),
+where 𝑋𝑖,𝑠(𝑘) ∼𝜈𝑘as in Section 2 and 1 is the indicator function.
+Best arm estimate (Line 7): At the end of phase 𝑗(i.e., when 𝑡= 𝐴𝑗), 𝑖defines its best arm
+estimate 𝐵(𝑖)
+𝑗
+as the active arm it played the most in phase 𝑗. The intuition is that, for large horizons,
+the arm chosen most by UCB is a good estimate of the true best arm [14]. Thus, because phase
+lengths are increasing (see Figure 1), 𝐵(𝑖)
+𝑗
+will be a good estimate of the best active arm for large 𝑗.
+Blocklist update (Line 8): Next, 𝑖calls the Update-Blocklist subroutine to update its blocklist
+𝑃(𝑖)
+𝑗. The implementation of this subroutine is the key distinction between [56] and our work. We
+discuss the respective implementations in Sections 4 and 5, respectively.
+Arm recommendations (Line 9): Having updated 𝑃(𝑖)
+𝑗, 𝑖requests an arm recommendation 𝑅(𝑖)
+𝑗
+via Algorithm 2. Algorithm 2 is a black box (i.e., 𝑖provides the input and observes the output),
+which samples a random non-blocked neighbor 𝐻(𝑖)
+𝑗
+∈𝑁(𝑖) \ 𝑃(𝑖)
+𝑗. If 𝐻(𝑖)
+𝑗
+is honest, it recommends
+its best arm estimate, while if malicious, it recommends an arbitrary arm.2
+Updating the active set (Lines 10-15): Finally, 𝑖updates its active set as in Section 3.1. In partic-
+ular, if the recommendation 𝑅(𝑖)
+𝑗
+is not currently active3, 𝑖defines 𝑈(𝑖)
+𝑗+1 to be the non-sticky arm
+that performed better in phase 𝑗, in the sense that UCB chose it more often (following the above
+intuition from [14]). The other non-sticky arm 𝐿(𝑖)
+𝑗+1 becomes the recommendation 𝑅(𝑖)
+𝑗, and the
+new active set becomes 𝑆(𝑖)
+𝑗+1 = ˆ𝑆(𝑖) ∪{𝑈(𝑖)
+𝑗+1, 𝐿(𝑖)
+𝑗+1} (the sticky set and two other arms, as above).
+3.3
+Additional assumption
+Observe that Algorithm 1 does not preclude the case where the best arm is not in any honest
+agent’s sticky set, i.e., 1 ∉∪𝑛
+𝑖=1 ˆ𝑆(𝑖). In this case, the best arm may be permanently discarded, which
+causes linear regret even in the absence of malicious agents. For example, this would occur if 1
+was not a sticky arm for the left agent in Figure 2 (since the right agent discards 1 in Figure 2c). To
+prevent this situation, we will follow [18, 49, 52, 56] in assuming the following.
+Assumption 3. There exists 𝑖★∈[𝑛] with the best arm in its sticky set, i.e., 1 ∈ˆ𝑆(𝑖★).
+Remark 1. As discussed in [18, Appendix N], Assumption 3 holds with high probability if 𝑆(the size
+of the sticky set input to Algorithm 1) is set to ˜Θ(𝐾/𝑛) and each sticky set ˆ𝑆(𝑖) is sampled uniformly
+at random from the 𝑆-sized subsets of [𝐾].
+Remark 2. The choice 𝑆= ˜Θ(𝐾/𝑛) from Remark 1 requires the honest agents to know an order-
+accurate estimate of 𝑛, i.e., they need to know some 𝑛′ = ˜Θ(𝑛) in order to set 𝑆= ˜Θ(𝐾/𝑛′) and ensure
+that 𝑆= ˜Θ(𝐾/𝑛). As discussed in [56, Remark 7], this amounts to knowing order-accurate estimates of
+𝑛+ 𝑚and 𝑛/(𝑛+ 𝑚). The former quantity is the total number of agents, knowledge of which is rather
+benign and is also assumed in the fully-cooperative setting [18, 49, 52]. The latter requires the agents
+2Technically, malicious recommendations need to be measurable; see [56, Section 3] for details.
+3If the recommendation is currently active, the active set remains unchanged (see Line 15 of Algorithm 1).
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:10
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+to know that, e.g., half of the others are honest, which is similar in spirit to the assumptions in related
+problems regarding social learning in the presence of adversarial agents (e.g., [39]).
+Remark 3. Alternatively, we can avoid Assumption 3 entirely by defining the set of the arms to be
+those initially known by the honest agents (i.e., their sticky sets), rather than sampling the sticky sets
+from a larger “base set" as in Remark 1. In this alternative model, the honest agents aim to identify and
+spread through the network whichever of the initially-known arms is best, similar to what happens on
+platforms like Yelp (see Example 2). In contrast, the Section 2 model allows for the pathological case
+where the base set contains a better arm than any initially known to honest agents (e.g., where no
+honest Yelp user has ever dined at the best restaurant). Coping with these pathological cases either
+requires Assumption 3, or another mode of exploration (i.e., exploration of base arms) that obfuscates
+the key point of our work (collaborative bandit exploration amidst adversaries). For these reasons,
+we prefer the alternative model, but to enable a cleaner comparison with prior work [56], we restrict
+attention to the Section 2 model (which generalizes that of [56]).
+4
+EXISTING BLOCKING RULE
+We can now define the blocking approach from [56], which is provided in Algorithm 3. In words,
+the rule is as follows: if the recommendation 𝑅(𝑖)
+𝑗−1 from phase 𝑗−1 is not 𝑖’s most played arm in the
+subsequent phase 𝑗, then the agent 𝐻(𝑖)
+𝑗−1 who recommended it is added to the blocklists 𝑃(𝑖)
+𝑗, . . . , 𝑃(𝑖)
+𝑗𝜂,
+where 𝜂> 1 is a tuning parameter. By Algorithm 2, this means 𝑖blocks (i.e., does not communicate
+with) 𝐻(𝑖)
+𝑗−1 until phase 𝑗𝜂+ 1 (at the earliest). Thus, agents block others whose recommendations
+perform poorly – in the sense that UCB does not play them often – and the blocking becomes more
+severe as the phase counter 𝑗grows. See [56, Remark 4] for further intuition.
+Algorithm 3: {𝑃(𝑖)
+𝑗′ }∞
+𝑗′=𝑗= Update-Blocklist (executed by 𝑖∈[𝑛], existing rule from
+[56])
+1 if 𝑗> 1 and 𝐵(𝑖)
+𝑗
+≠𝑅(𝑖)
+𝑗−1 (if previous recommendation not most played) then
+2
+𝑃(𝑖)
+𝑗′ ←𝑃(𝑖)
+𝑗′ ∪{𝐻(𝑖)
+𝑗−1} ∀𝑗′ ∈{𝑗, . . . , ⌈𝑗𝜂⌉} (block the recommender until phase 𝑗𝜂)
+In the remainder of this section, we define a bad instance (Section 4.1) on which this blocking
+rule provably fails (Section 4.2). Our goal here is to demonstrate a single such instance in order to
+show this blocking rule must be refined. Therefore, we have opted for a concrete example, which
+includes some numerical constants (e.g., 13/15 in (6), the 7 in the log7𝑇term in Theorem 1, etc.)
+that have no particular meaning. Nevertheless, the instance can be generalized; see Remark 4.
+4.1
+Bad instance
+The network and bandit for the bad instance are as follows:
+• There are an even number of honest agents (at least four) arranged in a line, increasing in
+index from left to right, and there is a malicious agent connected to each of the honest ones.
+Mathematically, we have 𝑛∈{4, 6, 8, . . .}, 𝑚= 1, and 𝐸= {(𝑖,𝑖+ 1)}𝑛−1
+𝑖=1 ∪{(𝑖,𝑛+ 1)}𝑛
+𝑖=1.
+• There are 𝐾= 𝑛arms that generate deterministic rewards (i.e., 𝜈𝑘= 𝛿𝜇𝑘) with
+𝜇1 = 1,
+𝜇𝑘= 13
+15 +
+(𝑛/2)−𝑘
+∑︁
+ℎ=1
+2−2ℎ+1 ∀𝑘∈{2, . . . ,𝑛/2},
+𝜇𝑘= 0 ∀𝑘> 𝑛/2.
+(6)
+Intuitively, there are three sets of arms: the best arm, (𝑛/2) −1 mediocre arms, and 𝑛/2 bad
+arms. We provide further intuition in the forthcoming proof sketch. For now, we highlight
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:11
+three key properties. First, the gap from mediocre to bad arms is constant, i.e., 𝜇𝑘1−𝜇𝑘2 ≥13/15
+when 𝑘1 ≤𝑛/2 < 𝑘2. Second, the gaps between mediocre arms are doubly exponentially
+small, i.e., 𝜇𝑘−𝜇𝑘+1 = 2−2(𝑛/2)−𝑘+1 for 𝑘∈{2, . . . , (𝑛/2) −1}. Third, the gap Δ2 from the best
+to the mediocre arms is at least 1/15, as shown in Appendix C.
+Observation 1. Since rewards are deterministic, the most played arm 𝐵(𝑖)
+𝑗+1 in phase 𝑗+ 1 is a
+deterministic function of the number of plays of the active arms at the beginning of the phase, i.e., of
+the set {𝑇(𝑖)
+𝑘
+(𝐴𝑗)}𝑘∈𝑆(𝑖)
+𝑗+1. Hence, when the 𝑗-th recommendation is already active (i.e., when 𝑅(𝑖)
+𝑗
+∈𝑆(𝑖)
+𝑗,
+which implies 𝑆(𝑖)
+𝑗+1 = 𝑆(𝑖)
+𝑗
+in Algorithm 1), 𝐵(𝑖)
+𝑗+1 is a function of {𝑇(𝑖)
+𝑘
+(𝐴𝑗)}𝑘∈𝑆(𝑖)
+𝑗, which is information
+available to the malicious agent at the 𝑗-th communication time 𝐴𝑗. Consequently, the malicious agent
+can always recommend some 𝑅(𝑖)
+𝑗
+∈𝑆(𝑖)
+𝑗
+such that 𝐵(𝑖)
+𝑗+1 = 𝑅(𝑖)
+𝑗
+to avoid being blocked by 𝑖.
+We make the following assumptions on Algorithms 1 and 2:
+• The parameters in Algorithm 1 are 𝛼= 4 and 𝛽= 2, while 𝜂= 2 in Algorithm 3.
+• Sticky sets have size 𝑆= 1 and for any 𝑖∈{1 + 𝑛/2, . . . ,𝑛}, 𝑖’s initial active set satisfies
+min𝑆(𝑖)
+1
+> 𝑛/2. Thus, active sets contain three arms, and the right half of the honest agents
+are initially only aware of the bad arms, i.e., of those that provide no reward.
+Remark 4. Note that Assumptions 1-3 all hold for this instance, and the choices 𝛼= 4 and 𝛽= 𝜂= 2
+are used for the complete graph experiments in [56]. Additionally, the instance can be significantly
+generalized – the key properties are that 𝐾and 𝑛have the same scaling, the gaps from mediocre arms
+to others are constant, the gaps among mediocre arms are doubly exponentially small, and a constant
+fraction of agents on the right initially only have bad arms active.
+Finally, we define a particular malicious agent strategy. Let 𝐽1 = 28 and inductively define
+𝐽𝑙+1 = (𝐽𝑙+ 2)2 for each 𝑙∈N. Then the malicious recommendations are as follows:
+• If 𝑗= 𝐽𝑙and 𝑖∈{𝑙+ 1 + 𝑛/2,𝑙+ 2 + 𝑛/2} for some 𝑙∈[(𝑛/2) −1], set 𝑅(𝑖)
+𝑗
+= 1 −𝑙+ 𝑛/2.
+• Otherwise, let 𝑅(𝑖)
+𝑗
+∈𝑆(𝑖)
+𝑗
+be such that 𝐵(𝑖)
+𝑗+1 = 𝑅(𝑖)
+𝑗
+(see Observation 1).
+Similar to the arm means, we will wait for the proof sketch to explain this strategy in more detail.
+For now, we only mention that the phases 𝐽𝑙grow doubly exponentially, i.e.,
+𝐽𝑙+1 = (𝐽𝑙+ 2)2 > 𝐽2
+𝑙> · · · > 𝐽2𝑙
+1 ∀𝑙∈N.
+(7)
+4.2
+Negative result
+We can now state the main result of this section. It shows that if the existing blocking rule from
+[56] is used on the above instance, then the honest agent 𝑛at the end of the line suffers nearly
+linear regret ˜Ω(𝑇) until time 𝑇exceeds a doubly exponential function of 𝑛= 𝐾.
+Theorem 1. If we run Algorithm 1 and use Algorithm 3 as the Update-Blocklist subroutine
+with the parameters and problem instance described in Section 4, then
+𝑅(𝑛)
+𝑇
+= Ω  min
+
+log(𝑇) + exp (exp (𝑛/3)) ,𝑇/log7𝑇
+	 .
+Proof sketch. We provide a complete proof in Appendix C but discuss the intuition here.
+• First, suppose honest agent 1+𝑛/2 contacts the malicious agent 𝑛+1 at all phases 𝑗∈[𝐽1 −1]
+(this occurs with constant probability since 𝐽1 is constant). Then the right half of honest agents
+(i.e., agents 1 + 𝑛/2, . . . ,𝑛) only have bad arms (i.e., arms 1 + 𝑛/2, . . . ,𝑛) in their active sets
+at phase 𝐽1. This is because their initial active sets only contain such arms (by assumption),
+𝑛+ 1 only recommends currently-active arms before 𝐽1, and no arm recommendations flow
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:12
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+from the left half of the graph to the right half (they need to first be sent from 𝑛/2 to 1 + 𝑛/2,
+but we are assuming the latter only contacts 𝑛+ 1 before 𝐽1).
+• Now consider phase 𝐽1. With constant probability, 1 +𝑛/2 and 2 +𝑛/2 both contact 𝑛+ 1, who
+recommends a currently active (thus bad) arm and the mediocre arm 𝑛/2, respectively. Then,
+again with constant probability, 2 + 𝑛/2 contacts 1 + 𝑛/2 at the next phase 𝐽1 + 1; 1 + 𝑛/2
+only has bad arms active and thus recommends a bad arm. Therefore, during phase 𝐽1 + 2,
+agent 2 + 𝑛/2 has the mediocre arm 𝑛/2 and some bad recommendation from 1 + 𝑛/2 in its
+active set. The inverse gap squared between these arms is constant, thus less than the length
+of phase 𝐽1 + 2 (for appropriate 𝐽1), so by standard bandit arguments (basically, noiseless
+versions of best arm identification results from [14]), 𝑛/2 will be most played. Consequently,
+by the blocking rule in Algorithm 3, 2 + 𝑛/2 blocks 1 + 𝑛/2 until phase (𝐽1 + 2)2 = 𝐽2.
+• We then use induction. For each 𝑙∈[(𝑛/2) −1] (𝑙= 1 in the previous bullet), suppose
+𝑙+ 1 + 𝑛/2 blocks 𝑙+ 𝑛/2 between phases 𝐽𝑙+ 2 and 𝐽𝑙+1. Then during these phases, no arm
+recommendations flow past 𝑙+ 𝑛/2, so agents ≥𝑙+ 1 + 𝑛/2 only play arms ≥1 −𝑙+ 𝑛/2. At
+phase 𝐽𝑙+1, the malicious agent recommends 𝑘≥1 −𝑙+𝑛/2 and −𝑙+𝑛/2 to agents 𝑙+ 1 +𝑛/2
+and 𝑙+ 2 + 𝑛/2, respectively, and at the subsequent phase 𝐽𝑙+1 + 1, 𝑙+ 1 + 𝑛/2 recommends
+𝑘′ ≥𝑙+1+𝑛/2 to 𝑙+2+𝑛/2. Similar to the previous bullet, we then show 𝑙+2+𝑛/2 plays arm
+−𝑙+ 𝑛/2 more than 𝑘′ during phase 𝐽𝑙+1 + 2 and thus blocks 𝑙+ 1 + 𝑛/2 until (𝐽𝑙+1 + 2)2 = 𝐽𝑙+2,
+completing the inductive step. The proof that −𝑙+ 𝑛/2 is played more than 𝑘′ during phase
+𝐽𝑙+1 + 2 again follows from noiseless best arm identification, although unlike the previous
+bullet, the relevant arm gap is no longer constant (both could be mediocre arms). However,
+we chose the mediocre arm means such that their inverse gap squared is at most doubly
+exponential in 𝑙, so by (7), the length of phase 𝐽𝑙+1 dominates it.
+In summary, we show that due to blocking amongst honest agents, 𝑙+ 1 + 𝑛/2 does not receive
+arm 1 −𝑙+ 𝑛/2 until phase 𝐽𝑙, given that some constant probability events occur at each of the
+times 𝐽1, . . . , 𝐽𝑙. This allows us to show that, with probability at least exp(−Ω(𝑛)), agent 𝑛does not
+receive the best arm until phase 𝐽𝑛/2 = exp(exp(Ω(𝑛))), and thus does not play the best arm until
+time exp(exp(Ω(𝑛))) in expectation. Since Δ2 is constant, we can lower bound regret similarly.
+□
+5
+PROPOSED BLOCKING RULE
+To summarize the previous section, we showed that the existing blocking rule (Algorithm 3) may
+result in honest agents blocking too aggressively, which causes the best arm to spread very slowly.
+In light of this, we propose a relaxed blocking criteria (see Algorithm 4): at phase 𝑗, agent 𝑖will
+block the agent 𝐻(𝑖)
+𝑗−1 who recommended arm 𝑅(𝑖)
+𝑗−1 at the previous phase 𝑗−1 if
+𝑇(𝑖)
+𝑅(𝑖)
+𝑗−1
+(𝐴𝑗) ≤𝜅𝑗
+and
+𝐵(𝑖)
+𝑗
+= 𝐵(𝑖)
+𝑗−1 = · · · = 𝐵(𝑖)
+⌊𝜃𝑗⌋,
+(8)
+where 𝜅𝑗≤𝐴𝑗and 𝜃𝑗≤𝑗are tuning parameters. Thus, 𝑖blocks if both of the following occur:
+• The recommended arm 𝑅(𝑖)
+𝑗−1 performs poorly, in the sense that UCB has not chosen it
+sufficiently often (i.e., at least 𝜅𝑗times) by the end of phase 𝑗.
+• Agent 𝑖has not changed its own best arm estimate since phase 𝜃𝑗. Intuitively, this can be
+viewed as a confidence criterion: if instead 𝑖has recently changed its estimate, then 𝑖is
+currently unsure which arm is best, so should not block for recommendations that appear
+suboptimal at first glance (i.e., those for which the first criterion in (8) may hold).
+Remark 5. The first criterion in (8) is a natural relaxation of demanding the recommended arm be
+most played. The second is directly motivated by the negative result from Section 4. In particular, recall
+from the Theorem 1 proof sketch that 𝑙+ 1 +𝑛/2 blocked 𝑙+𝑛/2 shortly after receiving a new mediocre
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:13
+Algorithm 4: {𝑃(𝑖)
+𝑗′ }∞
+𝑗′=𝑗= Update-Blocklist (executed by 𝑖∈[𝑛], proposed rule)
+1 if 𝑗> 1 and (8) holds then 𝑃(𝑖)
+𝑗′ ←𝑃(𝑖)
+𝑗′ ∪{𝐻(𝑖)
+𝑗−1} ∀𝑗∈{𝑗, . . . , ⌈𝑗𝜂⌉} (block recommender);
+arm from the malicious agent. Thus, blocking amongst honest agents was always precipitated by the
+blocking agent changing its best arm estimate. The second criterion in (8) aims to avoid this.
+Remark 6. Our proposed rule has two additional parameters compared to the existing one: 𝜅𝑗and
+𝜃𝑗. For our theoretical results, these will be specified in Theorem 2; for experiments, they are discussed
+in Section 6. For now, we only mention that they should satisfy two properties. First, 𝜅𝑗should be 𝑜(𝐴𝑗),
+so that the first criterion in (8) dictates a sublinear number of plays. Second, 𝑗−𝜃𝑗should grow with
+𝑗, since (as discussed above) the second criterion represents the confidence in the best arm estimate,
+which grows as the number of reward observations increases.
+In the remainder of this section, we introduce a further definition (Section 5.1), provide a general
+regret bound under our blocking rule (Section 5.2), and discuss some special cases (Section 5.3).
+5.1
+Noisy rumor process
+As discussed in Section 1.4, we will show that under our proposed rule (1) honest agents eventually
+stop blocking each other, and (2) honest agents with the best arm active will eventually recommend
+it to others. Thereafter, we essentially reduce the arm spreading process to a much simpler rumor
+process in which each honest agent 𝑖contacts a uniformly random neighbor 𝑖′ and, if 𝑖′ is an
+honest agent who knows the rumor (i.e., if the best arm is active for 𝑖′), then 𝑖′ informs 𝑖of the
+rumor (i.e., 𝑖′ recommends the best arm to 𝑖). The only caveat is that we make no assumption on the
+malicious agent arm recommendations, so we have no control over whether or not they are blocked.
+In other words, the rumor process unfolds over a dynamic graph, where edges between honest and
+malicious agents may or may not be present, and we have no control over these dynamics.
+In light of this, we take a worst-case view and lower bound the arm spreading process with
+a noisy rumor process that unfolds on the (static) honest agent subgraph. More specifically, we
+consider the process { ¯I𝑗}∞
+𝑗=0 that tracks the honest agents informed of the rumor. Initially, only 𝑖★
+(the agent from Assumption 3) is informed (i.e., ¯I0 = {𝑖★}). Then at each phase 𝑗∈N, each honest
+agent 𝑖contacts a random honest neighbor 𝑖′. If 𝑖′ is informed (i.e., if 𝑖′ ∈¯I𝑗−1), then 𝑖becomes
+informed as well (i.e., 𝑖∈¯I𝑗), subject to some Bernoulli(Υ) noise, where Υ ≤𝑑hon(𝑖)/𝑑(𝑖). Hence,
+𝑖becomes informed with probability | ¯I𝑗−1 ∩𝑁hon(𝑖)|Υ/𝑑hon(𝑖) ≤| ¯I𝑗−1 ∩𝑁hon(𝑖)|/𝑑(𝑖). Note the
+right side of this inequality is in turn upper bounded by the probability with which they receive
+the best arm in the process of the previous paragraph.
+More formally, we define the noisy rumor process as follows. The key quantity in Definition 1 is
+¯𝜏spr, the first phase all are informed. Analogous to [18], our most general result will be in terms
+of the expected time that this phase occurs, i.e., E[𝐴¯𝜏spr]. Under Assumption 1, the latter quantity
+is ˜𝑂((𝑛¯𝑑hon/Υ)𝛽), which cannot be improved in general (see Appendix D.4). However, Section 5.3
+provides sharper bounds for E[𝐴¯𝜏spr] in some special cases.
+Definition 1. Let Υ = min𝑖∈[𝑛] 𝑑hon(𝑖)/𝑑(𝑖). For each honest agent 𝑖∈[𝑛], let { ¯𝑌(𝑖)
+𝑗
+}∞
+𝑗=1 be i.i.d.
+Bernoulli(Υ) random variables and { ¯𝐻(𝑖)
+𝑗}∞
+𝑗=1 i.i.d. random variables chosen uniformly at random
+from 𝑁hon(𝑖). Inductively define { ¯I𝑗}∞
+𝑗=0 as follows: ¯I0 = {𝑖★} (the agent from Assumption 3) and
+¯I𝑗= ¯I𝑗−1 ∪{𝑖∈[𝑛] \ ¯I𝑗−1 : ¯𝑌(𝑖)
+𝑗
+= 1, ¯𝐻(𝑖)
+𝑗
+∈¯I𝑗−1} ∀𝑗∈N.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:14
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Finally, let ¯𝜏spr = inf{𝑗∈N : ¯I𝑗= [𝑛]}.
+5.2
+Positive result
+We can now present the main result of this section: a regret upper bound for the proposed blocking
+rule. We state it first and then unpack the statement in some ensuing remarks. The proof of this
+result (and all others in this section) is deferred to Appendix D.
+Theorem 2. Let Assumptions 1-3 hold. Suppose we run Algorithm 1 and use Algorithm 4 as the
+Update-Blocklist subroutine with 𝜃𝑗= (𝑗/3)𝜌1 and 𝜅𝑗= 𝑗𝜌2/(𝐾2𝑆) in (8). Also assume
+𝛽> 1,
+𝜂> 1,
+0 < 𝜌1 ≤1
+𝜂,
+𝛼> 3
+2 + 1
+2𝛽+
+1
+2𝜌2
+1
+,
+1
+2𝛼−3 < 𝜌2 < 𝜌1(𝛽−1).
+(9)
+Then for any honest agent 𝑖∈[𝑛] and horizon 𝑇∈N, we have
+𝑅(𝑖)
+𝑇
+≤4𝛼log(𝑇) min
+
+
+2𝜂−1
+𝜂−1
+𝑑mal(𝑖)+3
+∑︁
+𝑘=2
+1
+Δ𝑘
++
+𝑆+𝑑mal(𝑖)+4
+∑︁
+𝑘=𝑑mal(𝑖)+4
+1
+Δ𝑘
+,
+𝐾
+∑︁
+𝑘=2
+1
+Δ𝑘
+
+
++ 2E[𝐴2¯𝜏spr] + 𝐶★,
+(10)
+where Δ𝑘= 1 by convention if 𝑘> 𝐾. Here 𝐶★is a term independent of 𝑇satisfying
+𝐶★= ˜𝑂
+
+max
+n
+𝑑mal(𝑖)/Δ2, (𝐾/Δ2)2,𝑆𝛽/(𝜌2
+1 (𝛽−1)), (𝑆/Δ2
+2)𝛽/(𝛽−1), ¯𝑑𝛽/𝜌1,𝑛𝐾2𝑆
+o
+,
+where ˜𝑂(·) hides dependencies on 𝛼, 𝛽, 𝜂, 𝜌1, and 𝜌2 and log dependencies on 𝐾, 𝑛, 𝑚, and Δ−1
+2 .
+Remark 7. The theorem shows that our algorithm’s regret scales as (𝑑mal(𝑖) + 𝑆) log(𝑇)/Δ, plus an
+additive term 2E[𝐴2¯𝜏spr] + 𝐶★that is independent of 𝑇and polynomial in all other parameters. When
+𝑆= 𝑂(𝐾/𝑛) (see Remark 1), the first term is 𝑂((𝑑mal(𝑖) + 𝐾/𝑛) log(𝑇)/Δ), as stated in Section 1.4.
+Also, when 𝑑mal(𝑖) is large, we recover the 𝑂(𝐾log(𝑇)/Δ) single-agent bound (including the constant
+4𝛼), i.e., if there are many malicious agents, honest ones fare no worse than the single-agent case.
+Remark 8. In addition to Assumptions 1-3, the theorem requires the algorithmic parameters to
+satisfy (9). For example, we can choose 𝛽= 𝜂= 2, 𝜌1 = 1/2, 𝛼= 4, and 𝜌2 = 1/3. More generally, we
+view these five parameters as small numerical constants and hide them in the ˜𝑂(·) notation.
+Remark 9. The bound in Theorem 2 can be simplified under additional assumptions. For instance,
+in Example 2, it is reasonable to assume 𝐾= Θ(𝑛) (i.e., the number of restaurants is proportional to
+the population) and ¯𝑑= 𝑂(1) (i.e., the degrees are constant, as in sparse social networks). Under these
+assumptions, the choice 𝑆= 𝑂(𝐾/𝑛) = 𝑂(1) from Remark 1, and the parameters from Remark 6, the
+theorem’s regret bound can be further upper bounded by
+𝑅(𝑖)
+𝑇
+≤
+𝑂(1)
+∑︁
+𝑘=2
+48 log𝑇
+Δ𝑘
++ 2E[𝐴2¯𝜏spr] + ˜𝑂(max{(𝐾/Δ2)2, Δ−4
+2 ,𝑛𝐾2}).
+Remark 10. Note the parameters from Remark 8 were also used for the bad instance of Section 4.
+There, we had Δ𝑘> 1/15, 𝑆= 𝑑mal(𝑖) = 1, and E[𝐴2¯𝜏spr] = ˜𝑂(𝑛𝛽), so our regret is 𝑂(log𝑇) plus a
+polynomial additive term that is much smaller than the doubly exponential term in Section 4.
+Proof sketch. Let 𝜏spr = inf{𝑗∈N : 𝐵(𝑖′)
+𝑗′
+= 1 ∀𝑖′ ∈[𝑛], 𝑗′ ≥𝑗} denote the first phase where
+the best arm is most played for all honest agents at all phases thereafter. Before this phase (i.e.,
+before time 𝐴𝜏spr) we simply upper bound regret by E[𝐴𝜏spr]. The main novelty of our analysis is
+bounding E[𝐴𝜏spr] in terms of 𝐶★and E[𝐴¯𝜏spr]. We devote Section 7 to discussing this proof.
+After phase 𝜏spr, the best arm is active by definition, so 𝑖incurs logarithmic in 𝑇regret. We let
+𝜏(𝑖)
+blk = inf{𝑗∈N : 𝐻(𝑖)
+𝑗′−1 ∈𝑃(𝑖)
+𝑗′ \ 𝑃(𝑖)
+𝑗′−1 ∀𝑗′ ≥𝑗𝑠.𝑡. 𝑅(𝑖)
+𝑗′−1 ≠1}
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:15
+be the earliest phase such that 𝑖blocks for all suboptimal recommendations thereafter. We then
+split the phases after 𝜏spr into two groups: those before ˜𝜏(𝑖) ≜𝜏spr ∨𝜏(𝑖)
+blk ∨𝑇1/(𝛽𝐾) and those after.
+For the phases after 𝜏spr but before ˜𝜏(𝑖), we consider three cases:
+• ˜𝜏(𝑖) = 𝜏spr: In this case, there are no such phases, so there is nothing to prove.
+• ˜𝜏(𝑖) = 𝑇1/(𝛽𝐾): Here we have an effective horizon 𝐴˜𝜏(𝑖) = ( ˜𝜏(𝑖))𝛽= 𝑇1/𝐾, so similar to [56],
+we exploit the fact that the best arm is active and modify existing UCB analysis to bound
+regret by 𝑂(𝐾log(𝑇1/𝐾)/Δ) = 𝑂(log(𝑇)/Δ), which is dominated by (10) (in an order sense).
+• ˜𝜏(𝑖) = 𝜏(𝑖)
+blk: Here we are considering phases 𝑗where the best arm is most played by 𝑖(since
+𝑗≥𝜏spr) but 𝑖does not block suboptimal recommendations (since 𝑗≤𝜏(𝑖)
+blk). Note that no
+such phases arise for the existing blocking rule, so here the proof diverges from [56], and
+most of Appendix D.1 is dedicated to this case. Roughly speaking, the analogous argument
+of the previous case yields the regret bound 𝑂((𝐾/Δ)E[log ˜𝜏(𝑖)], and we prove this term is
+also 𝑂(log(𝑇)/Δ) by deriving a tail bound for ˜𝜏(𝑖). The tail amounts to showing that, once
+the best arm is active, 𝑖can identify suboptimal arms as such, within the phase. This in turn
+follows from best arm identification results and the growing phase lengths.
+After phase ˜𝜏(𝑖), the best arm is most played for all honest agents (since ˜𝜏(𝑖) ≥𝜏spr), so they
+only recommend this arm. Thus, 𝑖only plays the best arm, its 𝑆sticky arms, and any malicious
+recommendations. Consequently, to bound regret by 𝑂((𝑆+ 𝑑mal(𝑖)) log(𝑇)/Δ) as in (10), we need
+to show each malicious neighbor 𝑖′ only recommends 𝑂(1) suboptimal arms. It is easy to see that
+𝑖′ can only recommend 𝑂(log𝐾) such arms: if 𝑖′ recommends a bad arm at phase ˜𝜏(𝑖), they will
+be blocked until phase 𝑇𝜂/(𝛽𝐾) (since ˜𝜏(𝑖) ≥𝜏(𝑖)
+blk ∨𝑇1/(𝛽𝐾)), then until phase (𝑇𝜂/(𝛽𝐾))𝜂= 𝑇𝜂2/(𝛽𝐾),
+etc. Thus, the (log𝜂𝐾)-th bad recommendation occurs at phase 𝑇𝜂log𝜂𝐾/(𝛽𝐾) = 𝑇1/𝛽, which is time
+𝑇by definition 𝐴𝑗= 𝑗𝛽. Finally, an argument from [56] sharpens this 𝑂(log𝐾) term to 𝑂(1).
+□
+5.3
+Special cases
+We next discuss some special cases of our regret bound. First, as in [18], we can prove an explicit
+bound assuming the honest agent subgraph 𝐺hon is 𝑑-regular, i.e., 𝑑hon(𝑖) = 𝑑∀𝑖∈[𝑛].
+Corollary 1. Let the assumptions of Theorem 2 hold and further assume 𝐺hon is 𝑑-regular with
+𝑑≥2. Let 𝜙denote the conductance of 𝐺hon. Then for any honest agent 𝑖∈[𝑛] and horizon 𝑇∈N,
+𝑅(𝑖)
+𝑇
+≤4𝛼log(𝑇) min
+
+
+2𝜂−1
+𝜂−1
+𝑑mal(𝑖)+3
+∑︁
+𝑘=2
+1
+Δ𝑘
++
+𝑆+𝑑mal(𝑖)+4
+∑︁
+𝑘=𝑑mal(𝑖)+4
+1
+Δ𝑘
+,
+𝐾
+∑︁
+𝑘=2
+1
+Δ𝑘
+
+
+(11)
++ ˜𝑂
+
+max
+n
+𝑑mal(𝑖)/Δ2, (𝐾/Δ2)2,𝑆𝛽/(𝜌2
+1 (𝛽−1)), (𝑆/Δ2
+2)𝛽/(𝛽−1), ¯𝑑𝛽/𝜌1,𝑛𝐾2𝑆, (𝜙Υ)−𝛽o
+.
+Remark 11. This corollary includes the complete graph case studied in [56], where 𝑑mal(𝑖) = 𝑚,
+𝜙= Θ(1), and Υ = Θ(𝑛/(𝑛+𝑚)). In this case, the term (11) matches the corresponding term from [56]
+exactly, i.e., for large 𝑇, Corollary 1 is a strict generalization. Our additive term scales as
+max
+n
+(𝑚/Δ2), (𝐾/Δ2)2,𝑆𝛽/(𝜌2
+1 (𝛽−1)), (𝑆/Δ2
+2)𝛽/(𝛽−1), (𝑛+ 𝑚)𝛽/𝜌1,𝑛𝐾2𝑆, ((𝑛+ 𝑚)/𝑛)𝛽o
+whereas the additive term from [56] scales as max{(𝑚/Δ2), (𝐾/Δ2), (𝑆/Δ2
+2)2𝛽𝜂/(𝛽−1), (𝑛+𝑚)𝛽,𝑛𝐾2𝑆}.
+Notice our dependence on the arm gap is Δ−2𝛽/(𝛽−1)
+2
+, which matches the fully cooperative case [18],
+whereas the dependence is Δ−2𝛽𝜂/(𝛽−1)
+2
+in [56], which is potentially much larger.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:16
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Remark 12. In the setting of Remark 9, the corollary’s regret bound becomes
+𝑅(𝑖)
+𝑇
+≤
+𝑂(1)
+∑︁
+𝑘=2
+48 log𝑇
+Δ𝑘
++ ˜𝑂(max{(𝐾/Δ2)2, Δ−4
+2 ,𝑛𝐾2, (𝜙Υ)−𝛽}).
+The key difference is the dependence on conductance ˜𝑂(𝜙−𝛽), which matches the result from [19].
+Proof sketch. In light of Theorem 2, we only need to show E[𝐴¯𝜏spr] =
+˜𝑂((𝜙Υ)−𝛽). To do
+so, we let I 𝑗denote the noiseless version of ¯I𝑗(defined in the same way but with Υ = 1) and
+𝜏spr = inf{𝑗: I 𝑗= [𝑛]}. We then construct a coupling between ¯I𝑗and I 𝑗, which ensures that with
+high probability, ¯𝜏spr ≤𝑗log(𝑗)/Υ whenever 𝜏spr ≤𝑗. Finally, using this coupling and a tail bound
+for 𝜏spr from [18] (which draws upon the analysis of [20]), we derive a tail bound for ¯𝜏spr. This
+allows us to show E[𝐴¯𝜏spr] = 𝑂(((log𝑛)2 log(log(𝑛)/𝜙)/(𝜙Υ))𝛽) = ˜𝑂((𝜙Υ)−𝛽), as desired.4
+□
+Finally, we can sharpen the above results for honest agents without malicious neighbors.
+Corollary 2. For 𝑖∈[𝑛] with 𝑑mal(𝑖) = 0, the terms (10) and (11) from Theorem 2 and Corollary
+1, respectively, can (under their respective assumptions) be improved to 4𝛼log(𝑇) Í𝑆+2
+𝑘=2 Δ−1
+𝑘.
+Remark 13. The improved term in Corollary 2 matches the log𝑇term from [18], including constants.
+Thus, the corollary shows that for large 𝑇, agents who are not directly connected to malicious agents
+are unaffected by their presence elsewhere in the graph.
+Proof sketch. Recall from the Theorem 2 proof sketch that the log𝑇term arises from regret
+after phase 𝜏spr. At any such phase, the best arm is most played for all honest agents (by definition),
+so when 𝑑mal(𝑖) = 0, 𝑖’s neighbors only recommend this arm. Therefore, 𝑖’s active sets after 𝜏spr are
+fixed; they contain the best arm and 𝑆+ 1 suboptimal ones. Thus, 𝑖only plays 𝑆+ 1 suboptimal
+arms long-term, so in the worst case incurs the standard UCB regret 4𝛼log(𝑇) Í𝑆+2
+𝑘=2 Δ−1
+𝑘.
+□
+6
+NUMERICAL RESULTS
+Thus far, we have shown the proposed blocking rule adapts to general graphs more gracefully than
+the existing one, at least in theory. We now illustrate this finding empirically.
+Experimental setup: We follow [56, Section 6] except we extend those experiments to 𝐺(𝑛+𝑚, 𝑝)
+graphs, i.e., each edge is present with probability 𝑝. For each 𝑝∈{1, 1/2, 1/4} and each of two
+malicious strategies (to be defined shortly), we conduct 100 trials of the following:
+• Set 𝑛= 25 and 𝑚= 10 and generate 𝐺as a 𝐺(𝑛+𝑚, 𝑝) random graph, resampling if necessary
+until the honest agent subgraph 𝐺hon is connected (see Assumption 1).
+• Set 𝐾= 100, 𝜇1 = 0.95, and 𝜇2 = 0.85, then sample the remaining arm means {𝜇𝑘}𝐾
+𝑘=3
+uniformly from [0, 0.85] (so Δ2 = 0.1). For each 𝑘∈[𝐾], set 𝜈𝑘= Bernoulli(𝜇𝑘).
+• Set 𝑆= 𝐾/𝑛and sample the sticky sets { ˆ𝑆(𝑖)}𝑛
+𝑖=1 uniformly from the 𝑆-sized subsets of [𝐾],
+resampling if necessary until 1 ∈∪𝑛
+𝑖=1 ˆ𝑆(𝑖) (see Assumption 3).
+• Run Algorithm 1 with the existing (Algorithm 3) and proposed (Algorithm 4) blocking rules,
+along with two baselines: a no communication scheme, where agents ignore the network
+and run UCB in isolation, and the algorithm from [18], where they do not block.
+Algorithmic parameters: We set 𝛼= 4 and 𝛽= 𝜂= 2 as in Remarks 4 and 8. For the parameters
+in the proposed blocking rule, we choose 𝜅𝑗= 𝑗1.5, and 𝜃𝑗= 𝑗−log 𝑗. While these are different
+4When Υ = 1, [18] shows E[𝐴𝜏spr ] = E[𝐴¯𝜏spr ] = 𝑂((log(𝑛)/𝜙)𝛽), so our bound generalizes theirs up to log terms.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:17
+Fig. 3. Empirical results for synthetic data. Rows of subfigures correspond to the malicious strategy, while
+columns correspond to the edge probability 𝑝for the 𝐺(𝑛+ 𝑚, 𝑝) random graph.
+from the parameters specified in our theoretical results (which we found are too conservative in
+practice), they do satisfy the key properties discussed in Remark 6.
+Malicious strategies: Like [56], we use strategies we call the naive and smart strategies (they are
+called uniform and omniscient in [56]). The naive strategy simply recommends a uniformly random
+suboptimal arm. The smart strategy recommends 𝑅(𝑖)
+𝑗
+= arg min𝑘∈{2,...,𝐾}\𝑆(𝑖)
+𝑗𝑇(𝑖)
+𝑘
+(𝐴𝑗), i.e., the least
+played, inactive, suboptimal arm. Intuitively, this is a more devious strategy which forces 𝑖to play
+𝑅(𝑖)
+𝑗
+often in the next phase (to drive down its upper confidence bound). Consequently, 𝑖may play
+it most and discard a better arm in favor of it (see Lines 11-13 of Algorithm 1).
+Results: In Figure 3, we plot the average and standard deviation (across trials) of the per-agent
+regret Í𝑛
+𝑖=1 𝑅(𝑖)
+𝑇/𝑛. For the naive strategy, the existing blocking rule eventually becomes worse
+than the no blocking baseline as 𝑝decreases. More strikingly, it even becomes worse than the no
+communication baseline for the smart strategy. In other words, honest agents would have been
+better off ignoring the network and simply running UCB on their own. As in Section 4, this is
+because accidental blocking causes the best arm to spread very slowly. Additionally, the standard
+deviation becomes much higher than all other algorithms, suggesting that regret is significantly
+worse in some trials. In contrast, the proposed blocking rule improves as 𝑝decreases, because it
+is mild enough to spread the best arm at all values of 𝑝, and for smaller 𝑝, honest agents have
+fewer malicious neighbors (on average). We also observe that the proposed rule outperforms both
+baselines uniformly across 𝑝. Additionally, it improves over the existing rule more dramatically
+for the smart strategy, i.e., when the honest agents face a more sophisticated adversary. Finally,
+it is worth acknowledging the existing rule is better when 𝑝= 1 – although not in a statistically
+significant sense for the smart strategy – because it does spread the best arm quickly on the
+complete graph (as shown in [56]), and thereafter more aggressively blocks malicious agents.
+Other results: As in [56], we reran the simulations using arm means derived from the MovieLens
+dataset [27]. We also experimented with new variants of the smart and naive strategies, where the
+malicious agents follow these strategies if the best arm is active (in hopes of forcing honest agents
+to discard it) and recommend the second best arm otherwise. Intuitively, these variants differ in that
+malicious agents recommend good arms (i.e., the second best) more frequently, while still never
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:18
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+revealing the best arm (the only one that leads to logarithmic regret). For all experiments, the key
+message – that the proposed blocking rule adapts to varying graph structures more gracefully than
+the existing one – is consistent. See Appendix B for details.
+7
+GOSSIP DESPITE BLOCKING
+As discussed above, the main analytical contribution of this work is proving that the best arm
+spreads in a gossip fashion, despite accidental blocking. In this (technical) section, we provide a
+detailed sketch of this proof. We begin with a high-level outline. The key is to show that honest
+agents eventually stop blocking each other. This argument (roughly) proceeds as follows:
+• Step 1: First, we show that honest agents learn the arm statistics in a certain sense. More
+specifically, we provide a tail bound for a random phase 𝜏arm such that for all phases 𝑗≥𝜏arm
+(1) each honest agent’s most played arm in phase 𝑗is close to its true best active arm and (2)
+any active arm close to the true best one is played at least 𝜅𝑗times by the end of phase 𝑗.
+• Step 2: Next, we show that honest agents communicate with their neighbors frequently. In
+particular, we establish a tail bound for another random phase 𝜏com such that for any 𝑗≥𝜏com,
+each honest agent contacts all of its honest neighbors at least once between 𝜃𝑗and 𝑗.
+• Step 3: Finally, we use the above to show that eventually, no blocking occurs amongst honest
+agents. The basic idea is as follows. Consider a phase 𝑗, an honest agent 𝑖, and a neighbor
+𝑖′ of 𝑖. Then if 𝑖has had the same best arm estimate 𝑘since phase 𝜃𝑗– i.e., if the second
+blocking criterion in (8) holds – 𝑖′ would have contacted 𝑖at some phase 𝑗′ ∈{𝜃𝑗, . . . , 𝑗} (by
+step 2) and received arm 𝑘. Between phases 𝑗′ and 𝑗, the most played arm for 𝑖′ cannot get
+significantly worse (by step 1). Thus, if 𝑖asks 𝑖′ for a recommendation at 𝑗, 𝑖′ will respond
+with an arm whose mean is close to 𝜇𝑘, which 𝑖will play at least 𝜅𝑗times (by step 1). Hence,
+the first criterion in (8) fails, i.e., the two cannot simultaneously hold.
+In the next three sub-sections, we discuss these three steps. Then in Section 7.4, we describe how,
+once accidental blocking stops, the arm spreading process can be coupled to the noisy rumor
+process from Definition 1. Finally, in Section 7.5, we discuss how to combine all of these steps to
+bound the term E[𝐴𝜏spr] from the Theorem 2 proof sketch.
+7.1
+Learning the arm statistics
+Recall we assume 𝜇1 ≥· · · ≥𝜇𝐾, so for any 𝑊⊂[𝐾], min𝑊is the best arm in 𝑊, i.e., 𝜇min𝑊=
+max𝑤∈𝑊𝜇𝑤. Therefore, for any 𝛿∈(0, 1), 𝐺𝛿(𝑊) ≜{𝑤∈𝑊: 𝜇𝑤≥𝜇min𝑊−𝛿} is the subset of
+arms at least 𝛿-close to the best one. For each honest agent 𝑖∈[𝑛] and phase 𝑗∈N, define
+Ξ(𝑖)
+𝑗,1 =
+n
+𝐵(𝑖)
+𝑗
+∉𝐺𝛿𝑗,1(𝑆(𝑖)
+𝑗)
+o
+,
+Ξ(𝑖)
+𝑗,2 =
+(
+min
+𝑤∈𝐺𝛿𝑗,2 (𝑆(𝑖)
+𝑗)
+𝑇(𝑖)
+𝑤(𝐴𝑗) ≤𝜅𝑗
+)
+,
+Ξ(𝑖)
+𝑗
+= Ξ(𝑖)
+𝑗,1 ∪Ξ(𝑖)
+𝑗,2.
+where 𝛿𝑗,1,𝛿𝑗,2 ∈(0, 1) will be chosen shortly. Finally, define the random phase
+𝜏arm = inf{𝑗∈N : 1(Ξ(𝑖)
+𝑗′ ) = 0 ∀𝑖∈[𝑛], 𝑗′ ∈{𝑗, 𝑗+ 1, . . .}}.
+In words, 𝜏arm is the earliest phase such that, at all phases 𝑗thereafter, (1) the most played arms are
+𝛿𝑗,1-close to best active arms and (2) all arms 𝛿𝑗,2-close to the best are played at least 𝜅𝑗times.
+As discussed above, Step 1 involves a tail bound for 𝜏arm. The analysis is based on [14, Theorem
+2], which includes a tail bound showing that the most played arm is 𝛿-close to the best, provided
+that 1/𝛿2 samples have been collected from each of the 𝛿-far arms. In our case, phase 𝑗lasts
+𝐴𝑗−𝐴𝑗−1 = Θ(𝑗𝛽−1) time steps, so each of 𝑆+ 2 active arms is played Θ(𝑗𝛽−1/𝑆) times on average.
+Hence, we can show the most played arm within the phase is 𝛿𝑗,1-close to the best if we choose
+𝛿𝑗,1 = Θ(
+√︁
+𝑆/𝑗𝛽−1), which allows us to bound P(Ξ(𝑖)
+𝑗,1). Analogously, we choose 𝛿𝑗,2 = Θ(1/√𝜅𝑗)
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:19
+and show that 𝛿𝑗,2-close arms must be played 1/𝛿2
+𝑗,2 = ˜Θ(𝜅𝑗) times before they are distinguished as
+such, which allows us to bound P(Ξ(𝑖)
+𝑗,2). Taken together, we can prove a tail bound for 𝜏arm (Lemma
+9 in Appendix E.1) with these choices 𝛿𝑗,1 = Θ(
+√︁
+𝑆/𝑗𝛽−1) and 𝛿𝑗,2 = ˜Θ(1/√𝜅𝑗).
+7.2
+Communicating frequently
+Next, for any 𝑖,𝑖′ ∈[𝑛] such that (𝑖,𝑖′) ∈𝐸hon, let Ξ(𝑖→𝑖′)
+𝑗
+= ∩𝑗−2
+𝑗′=⌊𝜃𝑗⌋{𝐻(𝑖′)
+𝑗′
+≠𝑖} denote the event
+that 𝑖did not send a recommendation to 𝑖′ between phases ⌊𝜃𝑗⌋and 𝑗−2. Also define
+𝜏com = inf{𝑗∈N : 1(∪𝑖→𝑖′∈𝐸honΞ(𝑖→𝑖′)
+𝑗′
+) = 0 ∀𝑗′ ∈{𝑗, 𝑗+ 1, . . .}}.
+Here we abuse notation slightly; the union is over all (undirected) edges in 𝐸hon but viewed as pairs
+of directed edges. Hence, at all phases 𝑗≥𝜏com, each honest agent 𝑖′ receives a recommendation
+from each of its honest neighbors 𝑖at some phase 𝑗′ between 𝜃𝑗and 𝑗−2.
+Step 2 involves the tail bound for 𝜏com that was mentioned above (see Lemma 10 in Appendix
+E.2). The proof amounts to bounding the probability of Ξ(𝑖→𝑖′)
+𝑗
+. Recall this event says 𝑖′ did not
+contact 𝑖for a recommendation at any phase 𝑗′ ∈{𝜃𝑗, . . . , 𝑗−2}. Clearly, this means 𝑖′ did not
+block 𝑖at any such phase. Hence, in the worst case, 𝑖′ blocked 𝑖just before 𝜃𝑗, in which case 𝑖was
+un-blocked at 𝜃𝜂
+𝑗= (𝑗/3)𝜌1𝜂≤𝑗/3, where the inequality holds by assumption in Theorem 2. Hence,
+Ξ(𝑖→𝑖′)
+𝑗
+implies 𝑖′ was not blocking 𝑖between phases 𝑗/3 and 𝑗−2, so each of the Θ(𝑗) neighbors
+that 𝑖′ contacted in these phases was sampled uniformly from a set containing 𝑖, yet 𝑖was never
+sampled. The probability of this decays exponentially in 𝑗, which yields an exponential tail for 𝜏com.
+7.3
+Avoiding accidental blocking
+Next, we show honest agents eventually stop blocking each other. Toward this end, we first note
+∀𝑖∈[𝑛],
+∀𝑗≥𝜏arm,
+𝜇min𝑆(𝑖)
+𝑗
+≤𝜇𝐵(𝑖)
+𝑗
++ 𝛿𝑗,1 ≤𝜇min𝑆(𝑖)
+𝑗+1 + 𝛿𝑗,1
+(12)
+where the first inequality uses the definition of 𝜏arm, and the second holds because min𝑆(𝑖)
+𝑗+1 ∈
+arg max𝑘∈𝑆(𝑖)
+𝑗+1 𝜇𝑘and 𝐵(𝑖)
+𝑗
+∈𝑆(𝑖)
+𝑗+1 in Algorithm 1 (see Claim 13 in Appendix E.3 for details). In words,
+(12) says the best active arm can decay by at most 𝛿𝑗,1 at phase 𝑗. Applying iteratively and since
+there are 𝐾arms total, we then show (see Claim 14 in Appendix E.3)
+∀𝑖∈[𝑛],
+∀𝑗′ ≥𝑗≥𝜏arm,
+𝜇min𝑆(𝑖)
+𝑗′ ≥𝜇min𝑆(𝑖)
+𝑗
+−(𝐾−1)
+sup
+𝑗′′∈{𝑗,...,𝑗′}
+𝛿𝑗′′,1.
+Combining the previous two inequalities, we conclude (see Corollary 3 in Appendix E.3)
+∀𝑖∈[𝑛],
+∀𝑗′ ≥𝑗≥𝜏arm,
+𝜇𝐵(𝑖)
+𝑗′ ≥𝜇min𝑆(𝑖)
+𝑗
+−𝐾
+sup
+𝑗′′∈{𝑗,...,𝑗′}
+𝛿𝑗′′,1.
+(13)
+Now the key part of Step 3 is to use (13) to show (see Claim 15 in Appendix E.3)
+∀𝑗∈N 𝑠.𝑡. 𝜃𝑗≥𝜏arm,
+∀𝑖,𝑖′ ∈[𝑛] 𝑠.𝑡. 𝑖∈{𝐻(𝑖′)
+𝑗′ }𝑗−2
+𝑗′=𝜃𝑗,
+𝑖′ ∉𝑃(𝑖)
+𝑗
+\ 𝑃(𝑖)
+𝑗−1.
+(14)
+In words, this result says that if 𝑗is sufficiently large, and if 𝑖has sent a recommendation to 𝑖′
+since phase 𝜃𝑗, then 𝑖will not block 𝑖′ at phase 𝑗. The proof is by contraction: if instead 𝑖blocks
+𝑖′ at 𝑗, then by Algorithm 4, 𝑖has not changed its best arm estimate 𝑘since phase 𝜃𝑗, so it would
+have recommended 𝑘to 𝑖′ at some phase 𝑗′ ≥𝜃𝑗. Therefore, 𝜇min𝑆(𝑖′)
+𝑗′
+≥𝜇𝑘. Additionally, since
+𝑗′ ≥𝜃𝑗= Ω(𝑗𝜌1), we know that for any 𝑗′′ ≥𝑗′, the choice of 𝛿𝑗′′,1 in Section 7.1 guarantees that
+𝐾𝛿𝑗′′,1 ≤𝑂(𝐾𝛿𝑗′,1) = ˜𝑂
+√︃
+𝐾2𝑆/(𝑗′)𝛽−1
+
+≤˜𝑂
+√︃
+𝐾2𝑆/𝑗𝜌1(𝛽−1)
+
+.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:20
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Combining these observations and using (13) (with 𝑗′ and 𝑗replaced by 𝑗−1 and 𝑗′), we then show
+𝜇𝐵(𝑖′)
+𝑗−1 ≥𝜇min𝑆(𝑖′)
+𝑗′
+−𝐾sup
+𝑗′′≥𝑗′ 𝛿𝑗′′,1 ≥𝜇𝑘−˜𝑂
+√︃
+𝐾2𝑆/𝑗𝜌1(𝛽−1)
+
+.
+(15)
+On the other hand, 𝑖blocking 𝑖′ at phase 𝑗means 𝑖plays the recommended arm 𝐵(𝑖′)
+𝑗−1 fewer than
+𝜅𝑗times by the end of phase 𝑗. Since 𝑗≥𝜃𝑗≥𝜏arm, this implies (by definition of 𝜏arm) that
+𝜇𝑘> 𝜇𝐵(𝑖′)
+𝑗−1 + 𝛿𝑗,2, where 𝛿𝑗,2 = ˜Θ(1/√𝜅𝑗) as in Section 7.1. Combined with (15) and the choice
+𝜅𝑗= 𝑗𝜌2/(𝐾2𝑆) from Theorem 2, we conclude 𝑗𝜌1(𝛽−1) ≤˜𝑂(𝑗𝜌2). This contradicts the assumption
+𝜌2 < 𝜌1(𝛽−1) in Theorem 2, which completes the proof of (14).
+Finally, we use (14) to show honest agents eventually stop blocking each other entirely, i.e.,
+∀𝑗∈N 𝑠.𝑡. 𝜃𝑗≥𝜏com,𝜃𝜃𝑗≥𝜏arm,
+𝑃(𝑖)
+𝑗
+∩[𝑛] = ∅∀𝑖∈[𝑛]
+(16)
+(see Lemma 11 in Appendix E.3). Intuitively, (16) holds because after new blocking stops (14), old
+blocking will eventually “wear off”. The proof is again by contradiction: if 𝑖is blocking some honest
+𝑖′ at phase 𝑗, the blocking must have started at some 𝑗′ ≥𝑗1/𝜂(else, it ends by (𝑗′)𝜂< 𝑗). Thus,
+by assumption 𝑗1/𝜂≥𝑗𝜌1 ≥𝜃𝑗≥𝜏com, 𝑖blocked 𝑖′ at phase 𝑗′ ≥𝜏com. But by definition of 𝜏com, 𝑖′
+would have contacted 𝑖at some phase 𝑗′′ ∈{𝜃𝑗′, . . . , 𝑗′}. Applying (14) (at phase 𝑗′; note that by
+the above inequalities, 𝜃𝑗′ ≥𝜃𝑗1/𝜂≥𝜃𝜃𝑗≥𝜏arm, as required by (14)), we obtain a contradiction.
+7.4
+Coupling with noisy rumor process
+To begin, we define an equivalent way to sample 𝐻(𝑖)
+𝑗
+in Algorithm 2.5 This equivalent method will
+allow us to couple the arm spreading and noisy rumor processes through a set of primitive random
+variables. In particular, for each honest agent 𝑖∈[𝑛], let {𝜐(𝑖)
+𝑗}∞
+𝑗=1 and { ¯𝐻(𝑖)
+𝑗}∞
+𝑗=1 be i.i.d. sequences
+drawn uniformly from [0, 1] and 𝑁hon(𝑖). Then choose 𝐻(𝑖)
+𝑗
+according to two cases:
+• If 𝑃(𝑖)
+𝑗
+∩[𝑛] = ∅, let 𝑌(𝑖)
+𝑗
+= 1(𝜐(𝑖)
+𝑗
+≤𝑑hon(𝑖)/|𝑁(𝑖) \ 𝑃(𝑖)
+𝑗|) and consider two sub-cases. First,
+if 𝑌(𝑖)
+𝑗
+= 1, set 𝐻(𝑖)
+𝑗
+= ¯𝐻(𝑖)
+𝑗. Second, if 𝑌(𝑖)
+𝑗
+= 0, sample 𝐻(𝑖)
+𝑗
+from 𝑁mal(𝑖) \ 𝑃(𝑖)
+𝑗
+uniformly.
+• If 𝑃(𝑖)
+𝑗
+∩[𝑛] ≠∅, sample 𝐻(𝑖)
+𝑗
+from 𝑁(𝑖) \ 𝑃(𝑖)
+𝑗
+uniformly.
+Next, we observe that since 𝛿𝑗,1 →0 as 𝑗→∞by the choice of 𝛿𝑗,1 in Section 7.1 and Δ2 > 0 by
+Assumption 2, we have 𝛿𝑗,1 < Δ2 for large enough 𝑗. Paired with the definition of 𝜏arm, this allows
+us to show that for all large 𝑗and 𝑖∈[𝑛] with 1 ∈𝑆(𝑖)
+𝑗
+(i.e., with the best arm active), 𝐵(𝑖)
+𝑗
+= 1 (i.e.,
+the best arm is played most). See Claim 17 in Appendix E.4 for the formal statement.
+Finally, we observe that by (16), only the first case of the above sampling strategy occurs for
+large 𝑗. Moreover, in this case, 𝑌(𝑖)
+𝑗
+is Bernoulli with parameter
+𝑑hon(𝑖)/|𝑁(𝑖) \ 𝑃(𝑖)
+𝑗| ≥𝑑hon(𝑖)/|𝑁(𝑖)| ≜𝑑hon(𝑖)/𝑑(𝑖) ≥Υ,
+where the second inequality holds by Definition 1. Hence, the probability that 𝑌(𝑖)
+𝑗
+= 1, and thus
+the probability that 𝑖contacts the random honest neighbor ¯𝐻(𝑖)
+𝑗
+in the above sampling strategy,
+dominates the probability that𝑖contacts ¯𝐻(𝑖)
+𝑗
+in the noisy rumor process of Definition 1. Additionally,
+by the previous paragraph, agents with the best arm active will recommend it (for large enough 𝑗).
+Taken together, we can show that the probability of receiving the best arm in the arm spreading
+process dominates the probability of being informed of the rumor in the noisy rumor process. This
+allows us to prove a tail bound for 𝜏spr in terms of a tail bound for the random phase ¯𝜏spr from
+5Claim 16 in Appendix E.4 verifies this equivalency (the proof is a straightforward application of the law of total probability).
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:21
+Definition 1, on the event that the tails of 𝜏arm and 𝜏com are sufficiently small (in the sense of (16);
+see Lemma 12 in Appendix E.4 for details).
+7.5
+Spreading the best arm
+In summary, we prove tail bounds for 𝜏arm and 𝜏com (Sections 7.1 and 7.2) and show the tails of 𝜏spr
+are controlled by those of ¯𝜏spr, provided the tails of 𝜏arm and 𝜏com are not too heavy (Sections 7.3
+and 7.4). Combining and summing tails allows us to bound E[𝐴𝜏spr] in terms of 𝐶★(which accounts
+for the tails of 𝜏arm and 𝜏com) and E[𝐴¯𝜏spr] (which accounts for the tail of ¯𝜏spr), as mentioned in the
+Theorem 2 proof sketch. See Theorem 3 and Corollary 4 in Appendix E.5 for details.
+8
+CONCLUSION
+In this work, we showed that existing algorithms for multi-agent bandits with malicious agents fail
+to generalize beyond the complete graph. In light of this, we proposed a new blocking algorithm
+and showed it has low regret on any connected and undirected graph. This regret bound relied
+on the analysis of a novel process involving gossip and blocking. Our work leaves open several
+questions, such as whether our insights can be applied to multi-agent reinforcement learning.
+ACKNOWLEDGMENTS
+This work was supported by NSF Grants CCF 22-07547, CCF 19-34986, CNS 21-06801, 2019844,
+2112471, and 2107037; ONR Grant N00014-19-1-2566; the Machine Learning Lab (MLL) at UT Austin;
+and the Wireless Networking and Communications Group (WNCG) Industrial Affiliates Program.
+REFERENCES
+[1] Animashree Anandkumar, Nithin Michael, Ao Kevin Tang, and Ananthram Swami. 2011. Distributed algorithms for
+learning and cognitive medium access with logarithmic regret. IEEE Journal on Selected Areas in Communications 29, 4
+(2011), 731–745.
+[2] Jean-Yves Audibert and Sébastien Bubeck. 2010. Best Arm Identification in Multi-Armed Bandits. In COLT-23th
+Conference on Learning Theory-2010. 13–p.
+[3] Peter Auer, Nicolo Cesa-Bianchi, and Paul Fischer. 2002. Finite-time analysis of the multiarmed bandit problem.
+Machine learning 47, 2-3 (2002), 235–256.
+[4] Peter Auer, Nicolo Cesa-Bianchi, Yoav Freund, and Robert E Schapire. 1995. Gambling in a rigged casino: The adversarial
+multi-armed bandit problem. In Proceedings of IEEE 36th Annual Foundations of Computer Science. IEEE, 322–331.
+[5] Orly Avner and Shie Mannor. 2014. Concurrent bandits and cognitive radio networks. In Joint European Conference on
+Machine Learning and Knowledge Discovery in Databases. Springer, 66–81.
+[6] Baruch Awerbuch and Robert Kleinberg. 2008. Competitive collaborative learning. J. Comput. System Sci. 74, 8 (2008),
+1271–1288.
+[7] Yogev Bar-On and Yishay Mansour. 2019. Individual regret in cooperative nonstochastic multi-armed bandits. Advances
+in Neural Information Processing Systems 32 (2019), 3116–3126.
+[8] Eugenio Bargiacchi, Timothy Verstraeten, Diederik Roijers, Ann Nowé, and Hado Hasselt. 2018. Learning to coordinate
+with coordination graphs in repeated single-stage multi-agent decision problems. In International conference on machine
+learning. PMLR, 482–490.
+[9] Ilai Bistritz and Nicholas Bambos. 2020. Cooperative multi-player bandit optimization. Advances in Neural Information
+Processing Systems 33 (2020).
+[10] Ilai Bistritz and Amir Leshem. 2018. Distributed multi-player bandits-a game of thrones approach. In Advances in
+Neural Information Processing Systems. 7222–7232.
+[11] Ilija Bogunovic, Andreas Krause, and Jonathan Scarlett. 2020. Corruption-tolerant Gaussian process bandit optimization.
+In International Conference on Artificial Intelligence and Statistics. PMLR, 1071–1081.
+[12] Ilija Bogunovic, Arpan Losalka, Andreas Krause, and Jonathan Scarlett. 2021. Stochastic linear bandits robust to
+adversarial attacks. In International Conference on Artificial Intelligence and Statistics. PMLR, 991–999.
+[13] Etienne Boursier and Vianney Perchet. 2019. SIC-MMAB: Synchronisation Involves Communication in Multiplayer
+Multi-Armed Bandits. Advances in Neural Information Processing Systems 32 (2019), 12071–12080.
+[14] Sébastien Bubeck, Rémi Munos, and Gilles Stoltz. 2011. Pure exploration in finitely-armed and continuous-armed
+bandits. Theoretical Computer Science 412, 19 (2011), 1832–1852.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:22
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+[15] Swapna Buccapatnam, Jian Tan, and Li Zhang. 2015. Information sharing in distributed stochastic bandits. In 2015
+IEEE Conference on Computer Communications (INFOCOM). IEEE, 2605–2613.
+[16] Nicolo Cesa-Bianchi, Claudio Gentile, Yishay Mansour, and Alberto Minora. 2016. Delay and cooperation in non-
+stochastic bandits. In Conference on Learning Theory, Vol. 49. 605–622.
+[17] Mithun Chakraborty, Kai Yee Phoebe Chua, Sanmay Das, and Brendan Juba. 2017. Coordinated Versus Decentralized
+Exploration In Multi-Agent Multi-Armed Bandits.. In IJCAI. 164–170.
+[18] Ronshee Chawla, Abishek Sankararaman, Ayalvadi Ganesh, and Sanjay Shakkottai. 2020. The Gossiping Insert-
+Eliminate Algorithm for Multi-Agent Bandits. In Proceedings of the Twenty Third International Conference on Artificial
+Intelligence and Statistics. 3471–3481.
+[19] Ronshee Chawla, Abishek Sankararaman, and Sanjay Shakkottai. 2022. Multi-agent low-dimensional linear bandits.
+IEEE Trans. Automat. Control (2022).
+[20] Flavio Chierichetti, Silvio Lattanzi, and Alessandro Panconesi. 2010. Almost tight bounds for rumour spreading with
+conductance. In Proceedings of the forty-second ACM symposium on Theory of computing. 399–408.
+[21] Hiba Dakdouk, Raphaël Féraud, Romain Laroche, Nadège Varsier, and Patrick Maillé. 2021. Collaborative Exploration
+and Exploitation in massively Multi-Player Bandits. (2021).
+[22] Abhimanyu Dubey et al. 2020. Cooperative multi-agent bandits with heavy tails. In International Conference on Machine
+Learning. PMLR, 2730–2739.
+[23] Abhimanyu Dubey et al. 2020. Kernel methods for cooperative multi-agent contextual bandits. In International
+Conference on Machine Learning. PMLR, 2740–2750.
+[24] Abhimanyu Dubey and AlexSandy’ Pentland. 2020. Differentially-Private Federated Linear Bandits. Advances in Neural
+Information Processing Systems 33 (2020).
+[25] Evrard Garcelon, Baptiste Roziere, Laurent Meunier, Jean Tarbouriech, Olivier Teytaud, Alessandro Lazaric, and Matteo
+Pirotta. 2020. Adversarial Attacks on Linear Contextual Bandits. Advances in Neural Information Processing Systems 33
+(2020).
+[26] Anupam Gupta, Tomer Koren, and Kunal Talwar. 2019. Better Algorithms for Stochastic Bandits with Adversarial
+Corruptions. In Conference on Learning Theory. 1562–1578.
+[27] F Maxwell Harper and Joseph A Konstan. 2015. The movielens datasets: History and context. Acm transactions on
+interactive intelligent systems (tiis) 5, 4 (2015), 1–19.
+[28] Eshcar Hillel, Zohar S Karnin, Tomer Koren, Ronny Lempel, and Oren Somekh. 2013. Distributed exploration in
+multi-armed bandits. In Advances in Neural Information Processing Systems. 854–862.
+[29] Kwang-Sung Jun, Lihong Li, Yuzhe Ma, and Jerry Zhu. 2018. Adversarial attacks on stochastic bandits. Advances in
+Neural Information Processing Systems 31 (2018), 3640–3649.
+[30] Dileep Kalathil, Naumaan Nayyar, and Rahul Jain. 2014. Decentralized learning for multiplayer multiarmed bandits.
+IEEE Transactions on Information Theory 60, 4 (2014), 2331–2345.
+[31] Varun Kanade, Zhenming Liu, and Bozidar Radunovic. 2012. Distributed non-stochastic experts. In Advances in Neural
+Information Processing Systems. 260–268.
+[32] Hsu Kao, Chen-Yu Wei, and Vijay Subramanian. 2022. Decentralized cooperative reinforcement learning with
+hierarchical information structure. In International Conference on Algorithmic Learning Theory. PMLR, 573–605.
+[33] Sayash Kapoor, Kumar Kshitij Patel, and Purushottam Kar. 2019. Corruption-tolerant bandit learning. Machine Learning
+108, 4 (2019), 687–715.
+[34] Ravi Kumar Kolla, Krishna Jagannathan, and Aditya Gopalan. 2018. Collaborative learning of stochastic bandits over a
+social network. IEEE/ACM Transactions on Networking 26, 4 (2018), 1782–1795.
+[35] Nathan Korda, Balázs Szörényi, and Li Shuai. 2016. Distributed clustering of linear bandits in peer to peer networks. In
+Journal of machine learning research workshop and conference proceedings, Vol. 48. International Machine Learning
+Societ, 1301–1309.
+[36] Anusha Lalitha and Andrea Goldsmith. 2021. Bayesian Algorithms for Decentralized Stochastic Bandits. IEEE Journal
+on Selected Areas in Information Theory 2, 2 (2021), 564–583.
+[37] Peter Landgren, Vaibhav Srivastava, and Naomi Ehrich Leonard. 2016. Distributed cooperative decision-making in
+multiarmed bandits: Frequentist and Bayesian algorithms. In 2016 IEEE 55th Conference on Decision and Control (CDC).
+IEEE, 167–172.
+[38] Tor Lattimore and Csaba Szepesvári. 2020. Bandit algorithms. Cambridge University Press.
+[39] Heath J LeBlanc, Haotian Zhang, Xenofon Koutsoukos, and Shreyas Sundaram. 2013. Resilient asymptotic consensus
+in robust networks. IEEE Journal on Selected Areas in Communications 31, 4 (2013), 766–781.
+[40] Fang Liu and Ness Shroff. 2019. Data Poisoning Attacks on Stochastic Bandits. In International Conference on Machine
+Learning. 4042–4050.
+[41] Junyan Liu, Shuai Li, and Dapeng Li. 2021. Cooperative Stochastic Multi-agent Multi-armed Bandits Robust to
+Adversarial Corruptions. arXiv preprint arXiv:2106.04207 (2021).
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:23
+[42] Keqin Liu and Qing Zhao. 2010. Distributed learning in multi-armed bandit with multiple players. IEEE Transactions
+on Signal Processing 58, 11 (2010), 5667–5681.
+[43] Lydia T Liu, Horia Mania, and Michael Jordan. 2020. Competing bandits in matching markets. In International
+Conference on Artificial Intelligence and Statistics. PMLR, 1618–1628.
+[44] Thodoris Lykouris, Vahab Mirrokni, and Renato Paes Leme. 2018. Stochastic bandits robust to adversarial corruptions.
+In Proceedings of the 50th Annual ACM SIGACT Symposium on Theory of Computing. 114–122.
+[45] Udari Madhushani and Naomi Leonard. 2021. When to call your neighbor? strategic communication in cooperative
+stochastic bandits. arXiv preprint arXiv:2110.04396 (2021).
+[46] Yishay Mansour, Aleksandrs Slivkins, and Steven Wu. 2018. Competing bandits: Learning under competition. In
+9th Innovations in Theoretical Computer Science, ITCS 2018. Schloss Dagstuhl-Leibniz-Zentrum fur Informatik GmbH,
+Dagstuhl Publishing, 48.
+[47] David Martínez-Rubio, Varun Kanade, and Patrick Rebeschini. 2019. Decentralized cooperative stochastic multi-armed
+bandits. Advances in Neural Information Processing Systems (2019).
+[48] Aritra Mitra, Hamed Hassani, and George Pappas. 2021. Exploiting Heterogeneity in Robust Federated Best-Arm
+Identification. arXiv preprint arXiv:2109.05700 (2021).
+[49] Conor Newton, AJ Ganesh, and Henry Reeve. 2021. Asymptotic Optimality for Decentralised Bandits. In Reinforcement
+Learning in Networks and Queues, Sigmetrics 2021.
+[50] Boris Pittel. 1987. On spreading a rumor. SIAM J. Appl. Math. 47, 1 (1987), 213–223.
+[51] Jonathan Rosenski, Ohad Shamir, and Liran Szlak. 2016. Multi-player bandits–a musical chairs approach. In International
+Conference on Machine Learning. 155–163.
+[52] Abishek Sankararaman, Ayalvadi Ganesh, and Sanjay Shakkottai. 2019. Social learning in multi agent multi armed
+bandits. Proceedings of the ACM on Measurement and Analysis of Computing Systems 3, 3 (2019), 1–35.
+[53] Shahin Shahrampour, Alexander Rakhlin, and Ali Jadbabaie. 2017. Multi-armed bandits in multi-agent networks. In
+2017 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP). IEEE, 2786–2790.
+[54] Balázs Szörényi, Róbert Busa-Fekete, István Hegedűs, Róbert Ormándi, Márk Jelasity, and Balázs Kégl. 2013. Gossip-
+based distributed stochastic bandit algorithms. In Journal of Machine Learning Research Workshop and Conference
+Proceedings, Vol. 2. International Machine Learning Societ, 1056–1064.
+[55] Cem Tekin and Mihaela Van Der Schaar. 2015. Distributed online learning via cooperative contextual bandits. IEEE
+transactions on signal processing 63, 14 (2015), 3700–3714.
+[56] Daniel Vial, Sanjay Shakkottai, and R Srikant. 2021. Robust multi-agent multi-armed bandits. In Proceedings of the
+Twenty-second International Symposium on Theory, Algorithmic Foundations, and Protocol Design for Mobile Networks
+and Mobile Computing. 161–170.
+[57] Po-An Wang, Alexandre Proutiere, Kaito Ariu, Yassir Jedra, and Alessio Russo. 2020. Optimal algorithms for multiplayer
+multi-armed bandits. In International Conference on Artificial Intelligence and Statistics. PMLR, 4120–4129.
+[58] Zhaowei Zhu, Jingxuan Zhu, Ji Liu, and Yang Liu. 2021. Federated bandit: A gossiping approach. In Abstract Proceedings
+of the 2021 ACM SIGMETRICS/International Conference on Measurement and Modeling of Computer Systems. 3–4.
+A
+NOTES ON APPENDICES
+The appendices are organized as follows. First, Appendix B contains the additional numerical results
+that were mentioned in Section 6. Next, we prove Theorem 1 in Appendix C and all results from
+Section 5 in Appendix D. We then provide a rigorous version of the proof sketch from Section 7 in
+Appendix E. Finally, Appendix F contains some auxiliary results – namely, Appendix F.1 records
+some simple inequalities, Appendix F.2 provides some bandit results that are essentially known but
+stated in forms convenient to us, and Appendices F.3-F.4 contain some tedious calculations.
+For the analysis, we use𝐶𝑖,𝐶′
+𝑖, etc. to denote positive constants depending only on the algorithmic
+parameters 𝛼, 𝛽, 𝜂, 𝜌1, and 𝜌2. Each is associated with a corresponding claim, e.g., 𝐶1 with Claim 1.
+Within the proofs, we use 𝐶, 𝐶′, etc. to denote constants whose values may change across proofs.
+Finally, 1 denotes the indicator function, E𝑗and P𝑗are expectation and probability conditioned on
+all randomness before the 𝑗-th communication period, and 𝐴−1(𝑡) = min{𝑗∈N : 𝑡≤𝐴𝑗} denotes
+the current phase at time 𝑡∈N.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:24
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Fig. 4. Empirical results for real data. Rows of subfigures correspond to the malicious strategy, while columns
+correspond to the edge probability 𝑝for the 𝐺(𝑛+ 𝑚, 𝑝) random graph.
+Fig. 5. Empirical results for synthetic data with 𝑝= 1/2 and mixed malicious strategies.
+B
+ADDITIONAL EXPERIMENTS
+As mentioned in Section 6, we also considered arm means derived from real data. The setup was
+the same as for the synthetic means, except for two changes (as in [56]): we choose 𝑚= 15 instead
+of 𝑚= 10, and we sample {𝜇𝑘}𝐾
+𝑘=1 uniformly from a set of arm means derived from MovieLens [27]
+user film ratings via matrix completion; see [56, Section 6.2] for details. The results (Figure 4) are
+qualitatively similar to the synthetic case.
+Finally, we repeated the synthetic data experiments from Section 6 with the intermediate 𝐺(𝑛+
+𝑚, 𝑝) graph parameter 𝑝= 1/2 and two new malicious strategies called mixed naive and mixed
+smart. As discussed in Section 6, these approaches use a “mixed report” where the malicious agents
+more frequently recommend good arms – namely, the second best when the best is inactive and the
+naive or smart recommendation otherwise. Results are shown in Figure 5. They again reinforce the
+key message that the proposed rule adapts more gracefully to networks beyond the complete graph
+– in this case, our blocking rule has less than half of the regret of the existing one at the horizon
+𝑇. Additionally, we observe that the no blocking algorithm from [18] has much lower regret in
+Figure 5 than Figure 3, though still higher than our proposed blocking algorithm. This suggests
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:25
+that our algorithm remains superior even for “nicer” malicious strategies under which blocking is
+less necessary (in the sense that [18] has lower regret in Figure 5 than Figure 3).
+C
+PROOF OF THEOREM 1
+We first observe that since ℎ≤2ℎ−1 ∀ℎ∈N, we can lower bound the arm gap as follows:
+Δ2 = 𝜇1 −𝜇2 = 1 −13
+15 −
+(𝑛/2)−2
+∑︁
+ℎ=1
+ 1
+16
+2ℎ−1
+> 1 −13
+15 −
+∞
+∑︁
+ℎ=1
+ 1
+16
+ℎ
+= 1
+15.
+Next, we show that for phases 𝑗≥𝐽𝑙, agents aware of arms at least as good as 1 −𝑙+ 𝑛/2 will
+(1) play such arms most often in phase 𝑗and (2) have such arms active thereafter. The proof is
+basically a noiseless version of a known bandit argument, specialized to the setting of Section 4.
+Lemma 1. Under the assumptions of Theorem 1, for any 𝑙∈[𝑛/2], 𝑗≥𝐽𝑙, and 𝑖∈[𝑛] such that
+min𝑆(𝑖)
+𝑗
+≤1 −𝑙+ 𝑛/2, we have 𝐵(𝑖)
+𝑗
+≤1 −𝑙+ 𝑛/2 and min𝑆(𝑖)
+𝑗′ ≤1 −𝑙+ 𝑛/2 ∀𝑗′ ≥𝑗.
+Proof. First, we prove by contradiction that 𝐵(𝑖)
+𝑗
+≤1 −𝑙+ 𝑛/2: suppose instead that 𝐵(𝑖)
+𝑗
+≥
+2 −𝑙+𝑛/2. Let 𝑘1 = min𝑆(𝑖)
+𝑗
+and 𝑘2 = 𝐵(𝑖)
+𝑗. Then 𝑇(𝑖)
+𝑘2 (𝐴𝑗) −𝑇(𝑖)
+𝑘2 (𝐴𝑗−1) ≥(𝐴𝑗−𝐴𝑗−1)/3; otherwise,
+since |𝑆(𝑖)
+𝑗| = 𝑆+ 2 = 3 by assumption and 𝑘2 is the most played arm in phase 𝑗, we obtain
+∑︁
+𝑘∈𝑆(𝑖)
+𝑗
+(𝑇(𝑖)
+𝑘
+(𝐴𝑗) −𝑇(𝑖)
+𝑘
+(𝐴𝑗−1)) ≤3(𝑇(𝑖)
+𝑘2 (𝐴𝑗) −𝑇(𝑖)
+𝑘2 (𝐴𝑗−1)) < 𝐴𝑗−𝐴𝑗−1,
+which is a contradiction. Furthermore, there clearly exists 𝑡∈{1 + 𝐴𝑗−1, . . . ,𝐴𝑗} such that
+𝑇(𝑖)
+𝑘2 (𝑡−1) −𝑇(𝑖)
+𝑘2 (𝐴𝑗−1) = 𝑇(𝑖)
+𝑘2 (𝐴𝑗) −𝑇(𝑖)
+𝑘2 (𝐴𝑗−1) −1,
+𝐼(𝑖)
+𝑡
+= 𝑘2.
+Combining these observations, and since 𝑇(𝑖)
+𝑘2 (𝐴𝑗−1) ≥0, we obtain that
+𝑇(𝑖)
+𝑘2 (𝑡−1) ≥𝑇(𝑖)
+𝑘2 (𝐴𝑗) −𝑇(𝑖)
+𝑘2 (𝐴𝑗−1) −1 ≥𝐴𝑗−𝐴𝑗−1
+3
+−1,
+𝐼(𝑖)
+𝑡
+= 𝑘2.
+By the UCB policy and since 𝛼= 4 by assumption, the previous expression implies
+𝜇𝑘1 < 𝜇𝑘1 +
+v
+t
+4 log𝑡
+𝑇(𝑖)
+𝑘1 (𝑡−1)
+≤𝜇𝑘2 +
+v
+t
+4 log𝑡
+𝑇(𝑖)
+𝑘2 (𝑡−1)
+≤𝜇𝑘2 +
+√︄
+4 log𝑡
+𝐴𝑗−𝐴𝑗−1
+3
+−1
+.
+(17)
+Since 𝐴𝑗= 𝑗2 by the assumption 𝛽= 2 and 𝑡≤𝐴𝑗, we also know
+4 log𝑡
+𝐴𝑗−𝐴𝑗−1
+3
+−1
+≤
+8 log 𝑗
+2𝑗−1
+3
+−1
+= 12 log 𝑗
+𝑗−2
+= ℎ(𝑗),
+(18)
+where we define ℎ(𝑗′) = 12 log(𝑗′)/(𝑗′ −2) ∀𝑗′ > 2. Note this function decreases on [3, ∞), since
+ℎ′(𝑗′) = 12(𝑗′ −2 −𝑗′ log 𝑗′)
+𝑗′(𝑗′ −2)2
+≤12(𝑗′ −2 −𝑗′ log 3)
+𝑗′(𝑗′ −2)2
+<
+−24
+𝑗′(𝑗′ −2)2 < 0 ∀𝑗′ ≥3,
+where the second inequality is 𝑒< 3. Thus, since 𝑗≥𝐽𝑙≥𝐽1 ≥3, we know ℎ(𝑗) ≤ℎ(𝐽𝑙). Combined
+with (17) and (18), we obtain 𝜇𝑘1 < 𝜇𝑘2 +
+√︁
+ℎ(𝐽𝑙). Finally, recall 𝑘2 ≥2 −𝑙+𝑛/2 and 𝑘1 ≤1 −𝑙+𝑛/2,
+so 𝜇𝑘1 −𝜇𝑘2 ≥𝜇1−𝑙+𝑛/2 −𝜇2−𝑙+𝑛/2 > 0. Combined with 𝜇𝑘1 < 𝜇𝑘2 +
+√︁
+ℎ(𝐽𝑙), we conclude
+(𝜇1−𝑙+𝑛/2 −𝜇2−𝑙+𝑛/2)2 < ℎ(𝐽𝑙) = 12 log(𝐽𝑙)/(𝐽𝑙−2).
+(19)
+We now show that in each of three cases, (19) yields a contradiction.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:26
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+• 𝑙= 1: By definition, the left side of (19) is (𝜇𝑛/2 −𝜇1+𝑛/2)2 = (13/15)2 and the right side is
+12 log(28)/(28 −2), and one can verify that 12 log(28)/(28 −2) ≤(13/15)2.
+• 1 < 𝑙< 𝑛/2: Here 1 −𝑙+ 𝑛/2 > 1 and 2 −𝑙+ 𝑛/2 < 1 + 𝑛/2, i.e., both arms are mediocre. By
+definition, we thus have (𝜇1−𝑙+𝑛/2 −𝜇2−𝑙+𝑛/2)2 = 2−2𝑙+1, so to obtain a contradiction to (19), it
+suffices to show ℎ(𝐽𝑙) ≤2−2𝑙+1. We show by induction that this holds for all 𝑙∈{2, 3, . . .}.
+For 𝑙= 2, note 𝐽2 = (𝐽1 + 2)2 > 𝐽2
+1 + 2 = 216 + 2 (so 𝐽2 −2 > 216) and 𝐽2 = 𝐽2
+1 + 4𝐽1 + 4 =
+216 + 210 + 22 < 217 (so log 𝐽2 < 17 log 2 < 17). Thus, ℎ(𝐽2) < 12 · 17/216 = 204/216 < 2−8.
+Now assume ℎ(𝐽𝑙) < 2−2𝑙+1 for some 𝑙≥2; we aim to show ℎ(𝐽𝑙+1) < 2−2𝑙+2. Since 𝐽𝑙≥2, we
+have 𝐽𝑙+1 ≤(2𝐽𝑙)2 ≤𝐽4
+𝑙; we also know 𝐽𝑙+1 −2 = 𝐽2
+𝑙+ 4𝐽𝑙+ 2 > 𝐽𝑙(𝐽𝑙−2). Thus, we obtain
+ℎ(𝐽𝑙+1) <
+12 log 𝐽4
+𝑙
+𝐽𝑙(𝐽𝑙−2) = 4
+𝐽𝑙
+· ℎ(𝐽𝑙) < 4
+𝐽𝑙
+· 2−2𝑙+1 <
+4
+𝐽2𝑙−1
+1
+· 2−2𝑙+1 = 22−2𝑙+2−2𝑙+1,
+where the inequalities follow from the previous paragraph, the inductive hypothesis, and (7)
+from Section 4.1, respectively. Since 2 < 2𝑙+1, this completes the proof.
+• 𝑙= 𝑛/2: Recall that in the previous case, we showed ℎ(𝐽𝑙) < 2−2𝑙+1 for any𝑙∈{2, 3, . . .}. There-
+fore, ℎ(𝐽𝑛/2) ≤2−2(𝑛/2)+1 ≤2−8 by assumption 𝑛∈{4, 6, . . .}. Since (𝜇1−𝑙+𝑛/2 −𝜇2−𝑙+𝑛/2)2 =
+Δ2
+2 = (1/15)2 > (1/16)2 = 2−8 in this case, we obtain a contradiction to (19).
+Thus, we have established the first part of the lemma (𝐵(𝑖)
+𝑗
+≤1−𝑙+𝑛/2). To show min𝑆(𝑖)
+𝑗′ ≤1−𝑙+
+𝑛/2, we suppose instead that min𝑆(𝑖)
+𝑗′ > 1−𝑙+𝑛/2 for some 𝑗′ ≥𝑗. Then 𝑗† = min{𝑗′ ≥𝑗: min𝑆(𝑖)
+𝑗′ >
+1 −𝑙+ 𝑛/2} is well-defined. If 𝑗† = 𝑗, then min𝑆(𝑖)
+𝑗
+> 1 −𝑙+ 𝑛/2, which violates the assumption of
+the lemma, so we assume 𝑗† > 𝑗. In this case, we know min𝑆(𝑖)
+𝑗†−1 ≤1 −𝑙+𝑛/2 (since 𝑗† is minimal)
+and 𝐵(𝑖)
+𝑗†−1 > 1−𝑙+𝑛/2 (else, because 𝐵(𝑖)
+𝑗†−1 ∈𝑆(𝑖)
+𝑗† , we would have min𝑆(𝑖)
+𝑗† ≤𝐵(𝑖)
+𝑗†−1 ≤1−𝑙+𝑛/2). But
+since 𝑗† −1 ≥𝐽𝑙(by assumption 𝑗† > 𝑗and 𝑗≥𝐽𝑙), this contradicts the first part of the lemma.
+□
+Next, for each 𝑙∈[𝑛/2], we define the event
+E𝑙= {𝑙+ 𝑛/2 ∉𝑃(𝑙+1+𝑛/2)
+𝐽𝑙
+} ∩∩𝐽𝑙
+𝑗=1 ∩𝑛
+𝑖=𝑙+𝑛/2 {min𝑆(𝑖)
+𝑗
+> 1 −𝑙+ 𝑛/2,𝑛+ 1 ∉𝑃(𝑖)
+𝑗},
+where {𝑛∉𝑃(𝑛+1)
+𝐽𝑛/2
+} = Ω by convention (so E𝑛/2 is well-defined). Thus, in words E𝑙says (1) 𝑙+1+𝑛/2
+is not blocking 𝑙+ 𝑛/2 at phase 𝐽𝑙, (2) no honest agent 𝑖≥𝑙+ 𝑛/2 has ever been aware of arms as
+good as 1 −𝑙+ 𝑛/2 up to phase 𝐽𝑙, and (3) no such 𝑖has ever blocked the malicious agent 𝑛+ 1.
+Point (2) will allow us to show that agent 𝑛does not become aware of the best arm until phase 𝐽𝑛/2
+(when E𝑛/2 holds). The other events in the definition of {E𝑙}𝑛/2
+𝑙=1 will allow us to inductively lower
+bound their probabilities. The next lemma establishes the base of this inductive argument.
+Lemma 2. Under the assumptions of Theorem 1, P(E1) ≥3−2(𝐽1−1).
+Proof. We first observe that at all phases 𝑗∈[𝐽1 −1], only the second case of the malicious
+strategy – where the malicious agent recommends to avoid blocking – arises, which implies
+𝑛+ 1 ∉𝑃(𝑖)
+𝑗
+∀𝑗∈[𝐽1],𝑖∈[𝑛]. Therefore, it suffices to show P(E′
+1) ≥3−2(𝐽1−1), where we define
+E′
+1 = {1 + 𝑛/2 ∉𝑃(2+𝑛/2)
+𝐽1
+} ∩∩𝐽1
+𝑗=1 ∩𝑛
+𝑖=1+𝑛/2 {min𝑆(𝑖)
+𝑗
+> 𝑛/2}.
+To do so, we will show E′
+1 ⊃F ≜∩𝐽1−1
+𝑗=1 ∩2+𝑛/2
+𝑖=1+𝑛/2 {𝐻(𝑖)
+𝑗
+= 𝑛+ 1} and P(F ) ≥3−2(𝐽1−1).
+To show P(F ) ≥3−2(𝐽1−1), first note that by the law of total expectation, we have
+P(F ) = E[1(∩𝐽1−2
+𝑗=1 ∩2+𝑛/2
+𝑖=1+𝑛/2 {𝐻(𝑖)
+𝑗
+= 𝑛+ 1})P𝐽1−1(∩2+𝑛/2
+𝑖=1+𝑛/2{𝐻(𝑖)
+𝐽1−1 = 𝑛+ 1})].
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:27
+Now when ∩𝐽1−2
+𝑗=1 ∩2+𝑛/2
+𝑖=1+𝑛/2 {𝐻(𝑖)
+𝑗
+= 𝑛+ 1} occurs, the malicious strategy implies 𝑃(𝑖)
+𝐽1−1 = ∅, so 𝐻(𝑖)
+𝐽1−1 is
+sampled from a set of three agents which includes 𝑛+ 1, for each 𝑖∈{1 + 𝑛/2, 2 + 𝑛/2}. Since this
+sampling is independent, we conclude that when ∩𝐽1−2
+𝑗=1 ∩2+𝑛/2
+𝑖=1+𝑛/2 {𝐻(𝑖)
+𝑗
+= 𝑛+ 1} occurs,
+P𝐽1−1(∩2+𝑛/2
+𝑖=1+𝑛/2{𝐻(𝑖)
+𝐽1−1 = 𝑛+ 1}) = 3−2.
+Thus, combining the previous two expressions with the definition of F and iterating, we obtain
+P(∩𝐽1−1
+𝑗=1 ∩2+𝑛/2
+𝑖=1+𝑛/2 {𝐻(𝑖)
+𝑗
+= 𝑛+ 1}) = P(F ) = P(∩𝐽1−2
+𝑗=1 ∩2+𝑛/2
+𝑖=1+𝑛/2 {𝐻(𝑖)
+𝑗
+= 𝑛+ 1})/32 = 3−2(𝐽1−1).
+To show E′
+1 ⊃F , first observe that when F occurs, 2 +𝑛/2 does not contact 1 +𝑛/2 at any phase
+𝑗∈[𝐽1 −1], so 1 + 𝑛/2 ∉𝑃(2+𝑛/2)
+𝐽1
+. Thus, it only remains to show that F implies min𝑆(𝑖)
+𝑗
+> 𝑛/2
+for all 𝑗≤𝐽1 and 𝑖> 𝑛/2. Suppose instead that F holds and min𝑆(𝑖)
+𝑗
+≤𝑛/2 for some such 𝑗and
+𝑖. Let 𝑗† = min{𝑗≤𝐽1 : min𝑆(𝑖)
+𝑗
+≤𝑛/2 for some 𝑖> 𝑛/2} be the earliest 𝑗it occurs; note 𝑗† > 1
+by assumption that min𝑆(𝑖)
+1
+> 𝑛/2 for 𝑖> 𝑛/2. Let 𝑖† be some agent it occurs for, i.e., 𝑖† > 𝑛/2 is
+such that 𝑘† ∈𝑆(𝑖†)
+𝑗†
+for some 𝑘† ≤𝑛/2. Since 𝑗† is the earliest such phase and 𝑗† > 1, we know
+𝑘† was not active for 𝑖† at the previous phase 𝑗† −1, so it was recommended to 𝑖† at this phase.
+By the malicious strategy and 𝑗† −1 ≤𝐽1 −1, this implies that the agent 𝑖‡ who recommended
+𝑘† to 𝑖† is honest, so 𝑘† was active for 𝑖‡ at the previous phase, which implies 𝑖‡ ≤𝑛/2 (else, we
+contradict the minimality of 𝑗†). From the assumed line graph structure, we must have 𝑖† = 1 + 𝑛/2
+and 𝑖‡ = 𝑛/2, i.e., 1 + 𝑛/2 contacted 𝑛/2 at phase 𝑗† −1 ≤𝐽1 −1. But this contradicts the definition
+of F , which stipulates that 1 + 𝑛/2 only contacts 𝑛+ 1 before 𝐽1.
+□
+To continue the inductive argument, we lower bound P(E𝑙+1) in terms of P(E𝑙).
+Lemma 3. Under the assumptions of Theorem 1, for any 𝑙∈[(𝑛/2−1], we have P(E𝑙+1) ≥3−4P(E𝑙).
+Proof. The proof is somewhat lengthy and proceeds in four steps.
+Step 1: Probabilistic arguments. First, we define the events
+G1 = ∩𝑙+2+𝑛/2
+𝑖=𝑙+𝑛/2{𝐻(𝑖)
+𝐽𝑙
+= 𝑛+ 1},
+G2 = {𝐻(𝑙+1+𝑛/2)
+𝐽𝑙+1
+= 𝑙+ 𝑛/2},
+G = G1 ∩G2.
+Then by the law of total expectation, we know that
+P(E𝑙∩G) = E[E𝐽𝑙+1[1(E𝑙∩G1)1(G2)]] = E[1(E𝑙∩G1)P𝐽𝑙+1(G2)].
+(20)
+Now if E𝑙∩G1 occurs, then 𝑙+ 𝑛/2 ∉𝑃(𝑙+1+𝑛/2)
+𝐽𝑙
+(by E𝑙) and 𝐻(𝑙+1+𝑛/2)
+𝐽𝑙
+= 𝑛+ 1 (by G1); the latter
+implies 𝑙+ 𝑛/2 ∉𝑃(𝑙+1+𝑛/2)
+𝐽𝑙+1
+\ 𝑃(𝑙+1+𝑛/2)
+𝐽𝑙
+, so combined with the former, 𝑙+ 𝑛/2 ∉𝑃(𝑙+1+𝑛/2)
+𝐽𝑙+1
+. Thus,
+E𝑙∩G1 implies that 𝐻(𝑙+1+𝑛/2)
+𝐽𝑙+1
+is sampled from a set of most three agents containing 𝑙+ 𝑛/2, so
+P𝐽𝑙+1(G2) ≥1/3. Substituting into (20), and again using total expectation, we thus obtain
+P(E𝑙∩G) ≥P(E𝑙∩G1)/3 = E[E𝐽𝑙[1(E𝑙)1(G1)]]/3 = E[1(E𝑙)P𝐽𝑙(G1)]/3.
+Analogously, when E𝑙holds, 𝑛+ 1 ∉𝑃(𝑖)
+𝐽𝑙
+∀𝑖∈{𝑙+ 𝑛/2, . . . ,𝑙+ 2 + 𝑛/2}, which by similar
+logic gives P𝐽𝑙(G1) ≥3−3. Therefore, combining the previous two inequalities, we have shown
+P(E𝑙∩G) ≥3−4P(E𝑙). Consequently, it suffices to show that E𝑙∩G ⊂E𝑙+1.
+Step 2: Event decomposition. For 𝑙′ ∈{𝑙,𝑙+ 1}, we decompose E𝑙′ = ∩4
+ℎ=1H𝑙′,ℎ, where
+H𝑙′,1 = {𝑙′ + 𝑛/2 ∉𝑃(𝑙′+1+𝑛/2)
+𝐽𝑙′
+}, H𝑙′,2 = ∩𝐽𝑙′−1
+𝑗=1 ∩𝑛
+𝑖=𝑙′+𝑛/2 {min𝑆(𝑖)
+𝑗
+> 1 −𝑙′ + 𝑛/2,𝑛+ 1 ∉𝑃(𝑖)
+𝑗},
+H𝑙′,3 = ∩𝐽𝑙′
+𝑗=𝐽𝑙′−1+1 ∩𝑛
+𝑖=𝑙′+𝑛/2 {min𝑆(𝑖)
+𝑗
+> 1 −𝑙′ + 𝑛/2}, H𝑙′,4 = ∩𝐽𝑙′
+𝑗=𝐽𝑙′−1+1 ∩𝑛
+𝑖=𝑙′+𝑛/2 {𝑛+ 1 ∉𝑃(𝑖)
+𝑗}.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:28
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+As a simple consequence of these definitions, we note that
+H𝑙,2 ∩H𝑙,3 ∩H𝑙,4 = ∩𝐽𝑙
+𝑗=1 ∩𝑛
+𝑖=𝑙+𝑛/2 {min𝑆(𝑖)
+𝑗
+> 1 −𝑙+ 𝑛/2,𝑛+ 1 ∉𝑃(𝑖)
+𝑗}
+⊂∩𝐽𝑙
+𝑗=1 ∩𝑛
+𝑖=𝑙+1+𝑛/2 {min𝑆(𝑖)
+𝑗
+> 1 −(𝑙+ 1) + 𝑛/2,𝑛+ 1 ∉𝑃(𝑖)
+𝑗} = H𝑙+1,2.
+Hence, to prove E𝑙∩G ⊂E𝑙+1, it suffices to show E𝑙∩G ⊂H𝑙+1,1 ∩H𝑙+1,3 ∩H𝑙+1,4. For the
+remainder of the proof, we thus assume E𝑙∩G holds and argue H𝑙+1,1 ∩H𝑙+1,3 ∩H𝑙+1,4 holds.
+Step 3: Some consequences. We begin by deriving several consequences of E𝑙∩G. First, note
+each 𝑖∈{𝑙+ 1 +𝑛/2,𝑙+ 2 +𝑛/2} contacts 𝑛+ 1 at phase 𝐽𝑙(by G1), who recommends 1 −𝑙+𝑛/2 (by
+the malicious strategy). Since min𝑆(𝑖)
+𝐽𝑙
+> 1 −𝑙+ 𝑛/2 (by H𝑙,3), this implies 1 −𝑙+ 𝑛/2 = min𝑆(𝑖)
+𝐽𝑙+1,
+so 1 −𝑙+ 𝑛/2 is most played in phase 𝐽𝑙+ 1 (by Lemma 1). In summary, we have shown
+𝐻(𝑖)
+𝐽𝑙
+= 𝑛+ 1, 𝑅(𝑖)
+𝐽𝑙
+= 𝐵(𝑖)
+𝐽𝑙+1 = 1 −𝑙+ 𝑛/2 ∀𝑖∈{𝑙+ 1 + 𝑛/2,𝑙+ 2 + 𝑛/2}.
+(21)
+Second, as a consequence of the above and Lemma 1, we can also write
+1 −𝑙+ 𝑛/2 = min𝑆(𝑖)
+𝐽𝑙+1 ≥min𝑆(𝑖)
+𝐽𝑙+2 ≥· · · ∀𝑖∈{𝑙+ 1 + 𝑛/2,𝑙+ 2 + 𝑛/2}.
+(22)
+Third, we know 𝑙+ 𝑛/2 contacts 𝑛+ 1 at phase 𝐽𝑙(by G1), who responds with a currently active
+arm (by the malicious strategy), so since min𝑆(𝑙+𝑛/2)
+𝐽𝑙
+> 1 −𝑙+ 𝑛/2 (by H𝑙,3), we have
+min𝑆(𝑙+𝑛/2)
+𝐽𝑙+1
+> 1 −𝑙+ 𝑛/2.
+(23)
+As a consequence of (23), we see that when 𝑙+ 1 +𝑛/2 contacts 𝑙+𝑛/2 at phase 𝐽𝑙+ 1 (which occurs
+by G2), 𝑙+𝑛/2 recommends some arm strictly worse than 1−𝑙+𝑛/2. On the other hand, by (22) and
+Lemma 1, we know the most played arm for 𝑙+ 1 + 𝑛/2 in phase 𝐽𝑙+ 2 has index at most 1 −𝑙+ 𝑛/2.
+Taken together, the recommendation is not most played, so
+𝑙+ 𝑛/2 ∈𝑃(𝑙+1+𝑛/2)
+𝑗
+∀𝑗∈{𝐽𝑙+ 2, . . . , (𝐽𝑙+ 2)2 = 𝐽𝑙+1}.
+(24)
+Step 4: Completing the proof. Using the above, we prove in turn that H𝑙+1,4, H𝑙+1,3, and H𝑙+1,1
+hold. For H𝑙+1,4, we use proof by contradiction: if H𝑙+1,4 fails, we can find 𝑖≥𝑙+ 1 + 𝑛/2 and
+𝑗∈{𝐽𝑙+ 1, . . . , 𝐽𝑙+1} such that 𝑛+ 1 ∈𝑃(𝑖)
+𝑗. Let 𝑗† = min{𝑗∈{𝐽𝑙+ 1, . . . , 𝐽𝑙+1} : 𝑛+ 1 ∈𝑃(𝑖)
+𝑗}
+be the minimal such 𝑗(for this 𝑖). Since 𝑛+ 1 ∉𝑃(𝑖)
+𝐽𝑙
+(by H𝑙,4) and 𝑗† is minimal, we must have
+𝑛+1 ∈𝑃(𝑖)
+𝑗† \𝑃(𝑖)
+𝑗†−1, i.e., 𝑛+1 was blocked for the recommendation it provided at 𝑗†−1. If 𝑖≥𝑙+3+𝑛/2,
+this contradicts the malicious strategy, since 𝑗† −1 ∈{𝐽𝑙, . . . , 𝐽𝑙+1 −1} and the strategy avoids
+blocking for such 𝑖and 𝑗†. A similar contradiction arises if 𝑖∈{𝑙+1+𝑛/2,𝑙+2+𝑛/2} and 𝑗† ≥𝐽𝑙+2
+(since 𝑗† −1 ∈{𝐽𝑙+ 1, . . . , 𝐽𝑙+1 −1} in this case), so we must have 𝑖∈{𝑙+ 1 + 𝑛/2,𝑙+ 2 + 𝑛/2} and
+𝑗† = 𝐽𝑙+ 1. But in this case, 𝑛+ 1 ∈𝑃(𝑖)
+𝑗† \ 𝑃(𝑖)
+𝑗†−1 = 𝑃(𝑖)
+𝐽𝑙+1 \ 𝑃(𝑖)
+𝐽𝑙
+contradicts (21).
+Next, we show H𝑙+1,3 holds. The logic is similar to the end of the Lemma 2 proof. If instead H𝑙+1,3
+fails, we can find 𝑗∈{𝐽𝑙+1, . . . , 𝐽𝑙+1} and 𝑖∈{𝑙+1+𝑛/2, . . . ,𝑛} such that min𝑆(𝑖)
+𝑗
+≤(𝑛/2)−𝑙. Let 𝑗†
+be the minimal such 𝑗and 𝑖† ≥𝑙+1+𝑛/2 an agent with min𝑆(𝑖†)
+𝑗†
+= 𝑘† for some 𝑘† ≤(𝑛/2)−𝑙. Since
+min𝑆(𝑖†)
+𝐽𝑙
+> 1−𝑙+𝑛/2 (by H𝑙,3), 𝑗† ≥𝐽𝑙+1, and 𝑗† is minimal, we know that 𝑘† was recommended to
+𝑖† at phase 𝑗† −1 ∈{𝐽𝑙, . . . , 𝐽𝑙+1 −1}. By the malicious strategy, this implies that the recommending
+agent (say, 𝑖‡) was honest. Therefore, 𝑘† was active for 𝑖‡ at phase 𝑗† −1, so since 𝑗† is minimal,
+𝑖‡ ≤𝑙+ 𝑛/2. Hence, by the assumed graph structure, 𝑖† = 𝑙+ 1 + 𝑛/2 contacted 𝑖‡ = 𝑙+ 𝑛/2 at phase
+𝑗† −1, who recommended 𝑘†. If 𝑗† −1 ∈{𝐽𝑙, 𝐽𝑙+ 2, . . . , 𝐽𝑙+1 −1}, this contact cannot occur, since
+𝑙+ 1 +𝑛/2 instead contacts 𝑛+ 1 at 𝐽𝑙(by G1) and does not contact 𝑙+𝑛/2 at 𝐽𝑙+ 2, . . . , 𝐽𝑙+1 (by (24)).
+Hence, we must have 𝑗† −1 = 𝐽𝑙+ 1, so min𝑆(𝑙+𝑛/2)
+𝐽𝑙+1
+≤𝑘† ≤(𝑛/2) −𝑙, contradicting (23).
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:29
+Finally, we prove H𝑙+1,1. Suppose instead that 𝑙+ 1 +𝑛/2 ∈𝑃(𝑙+2+𝑛/2)
+𝐽𝑙+1
+, i.e., 𝑙+ 1 +𝑛/2 is blocked at
+𝐽𝑙+1. Then since 𝑃(𝑙+2+𝑛/2)
+0
+= ∅, we must have 𝑙+ 1 + 𝑛/2 ∈𝑃(𝑙+2+𝑛/2)
+𝑗
+\ 𝑃(𝑙+2+𝑛/2)
+𝑗−1
+for some 𝑗∈[𝐽𝑙+1].
+Let 𝑗† be the maximal such 𝑗. Then 𝑗† ≥√𝐽𝑙+1 = 𝐽𝑙+ 2; otherwise, if 𝑗† < √𝐽𝑙+1, 𝑙+ 1 + 𝑛/2 would
+have been un-blocked by phase 𝐽𝑙+1. Therefore, the blocking rule implies
+𝐵(𝑙+2+𝑛/2)
+𝑗†
+≠𝑅(𝑙+2+𝑛/2)
+𝑗†−1
+= 𝐵(𝑙+1+𝑛/2)
+𝑗†−1
+.
+(25)
+By 𝑗† ∈{𝐽𝑙+ 2, . . . , 𝐽𝑙+1}, H𝑙+1,3, and (22), we also know
+−𝑙+ 𝑛/2 < min𝑆(𝑙+2+𝑛/2)
+𝑗†
+, min𝑆(𝑙+1+𝑛/2)
+𝑗†−1
+≤1 −𝑙+ 𝑛/2,
+so min𝑆(𝑙+2+𝑛/2)
+𝑗†
+= min𝑆(𝑙+1+𝑛/2)
+𝑗†−1
+= 1 −𝑙+ 𝑛/2. Combined with (25), we must have 𝐵(𝑙+ℎ+𝑛/2)
+𝑗†+ℎ−2
+>
+min𝑆(𝑙+ℎ+𝑛/2)
+𝑗†+ℎ−2
+= 1 −𝑙+ 𝑛/2 for some ℎ∈{1, 2}, which contradicts Lemma 1 (since 𝑗† ≥𝐽𝑙+ 2).
+□
+Finally, we can prove the theorem. Define 𝜎= min{𝑗∈N : 1 ∈𝑆(𝑛)
+𝑗
+}. Then by definition, 𝐼(𝑛)
+𝑡
+≠1
+for any 𝑡≤𝐴𝜎−1. Hence, because Δ2 = 1/15 in the problem instance of the theorem, we obtain
+𝐴𝜎−1 ∧𝑇
+15
+=
+𝐴𝜎−1∧𝑇
+∑︁
+𝑡=1
+1(𝐼(𝑛)
+𝑡
+≠1)
+15
+=
+𝐴𝜎∧𝑇
+∑︁
+𝑡=1
+𝐾
+∑︁
+𝑘=2
+1(𝐼(𝑛)
+𝑡
+= 𝑘)
+15
+≤
+𝑇∑︁
+𝑡=1
+𝐾
+∑︁
+𝑘=2
+Δ𝑘1(𝐼(𝑛)
+𝑡
+= 𝑘).
+Thus, by Claim 23 from Appendix F.1 and since 𝐴𝜎−1 = (𝜎−1)2 by the choice 𝛽= 2, we can write
+𝑅(𝑛)
+𝑇
+= E
+" 𝑇∑︁
+𝑡=1
+𝐾
+∑︁
+𝑘=2
+Δ𝑘1(𝐼(𝑖)
+𝑡
+= 𝑘)
+#
+≥E[𝐴𝜎−1 ∧𝑇]
+15
+= E[(𝜎−1)2 ∧𝑇]
+15
+.
+Let 𝑙∈[𝑛/2] be chosen later. Then 𝜎> 𝐽𝑙implies 𝜎−1 ≥𝐽𝑙(since 𝜎, 𝐽𝑙∈N). Thus, we can write
+E[(𝜎−1)2 ∧𝑇] ≥E[((𝜎−1)2 ∧𝑇)1(𝜎> 𝐽𝑙)] ≥(𝐽2
+𝑙∧𝑇)P(𝜎> 𝐽𝑙).
+By definition of 𝜎and E𝑙, along with Lemmas 2 and 3, we also know
+P(𝜎> 𝐽𝑙) ≥P(E𝑙) ≥3−4(𝑙−1)P(E1) ≥3−4(𝑙−1) · 3−2(𝐽1−1) = 93−2𝑙−𝐽1.
+By (7) from Section 4.1, we know 𝐽2
+𝑙≥𝐽2𝑙
+1
+= (28)2𝑙= 22𝑙+3. Combined with the previous three
+bounds, and letting 𝐶denote the constant 𝐶= 93−𝐽1/15, we thus obtain
+𝑅(𝑛)
+𝑇
+≥(22𝑙+3 ∧𝑇) · 93−2𝑙−𝐽1/15 = 𝐶· 81−𝑙· (22𝑙+3 ∧𝑇) ∀𝑙∈[𝑛/2].
+(26)
+We now consider three different cases, each with a different choice of 𝑙.
+• If 𝑇> 22(𝑛/2)+3, choose 𝑙= 𝑛/2. Then (26) becomes 𝑅(𝑛)
+𝑇
+≥𝐶· 81−𝑛/2 · 22(𝑛/2)+3. Observe that
+81−𝑛/2 · 22(𝑛/2)+3 ≥16−𝑛· 22(𝑛/2)+3 = (24)2·2𝑛/2−𝑛≥(24)2𝑛/2 > exp(2𝑛/2)
+= exp(exp(𝑛log(2)/2)) > exp(exp(𝑛/3)),
+where the second inequality is 𝑛≤2𝑛/2 for 𝑛∈{2, 4, 8, . . .}. On the other hand, Claim 1 below
+shows 𝑅(𝑛)
+𝑇
+≥log(𝑇)/𝐶1 for some absolute constant 𝐶1 > 0. Thus, we have shown
+𝑅(𝑛)
+𝑇
+= (𝑅(𝑛)
+𝑇/2) + (𝑅(𝑛)
+𝑇/2) ≥(𝐶/2) exp(exp(𝑛/3)) + log(𝑇)/(2𝐶1).
+• If 𝑇∈(28, 22(𝑛/2)+3], let 𝑙= ⌈log2(log2(𝑇)) −3⌉. Then 22𝑙+3 ≥𝑇, so 22𝑙+3 ∧𝑇= 𝑇. Furthermore,
+we know 𝑙≤log2(log2(𝑇)) −2, which implies
+81−𝑙≥812 · 81−log2(log2(𝑇)) ≥812 · 2−7 log2(log2(𝑇)) = 812/log7
+2(𝑇) = 812 log7(2)/log7(𝑇).
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:30
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Next, observe that 0 = log2(log2(28)) −3 < log2(log2(𝑇)) −3 ≤𝑛/2 for this case of 𝑇, so
+𝑙∈[𝑛/2]. Thus, we can choose this 𝑙in (26) and combine with the above bounds to lower
+bound regret as 𝑅(𝑛)
+𝑇
+≥812 log7(2)𝐶𝑇/log7(𝑇).
+• If 𝑇≤28, choose 𝑙= 1. Then 22𝑙+3 = 216 ≥𝑇, so (26) implies 𝑅(𝑛)
+𝑇
+≥𝐶𝑇/81.
+Hence, in all three cases, we have shown 𝑅(𝑛)
+𝑇
+≥𝐶′ min{log(𝑇) + exp(exp(𝑛/3)),𝑇/log7(𝑇)} for
+some absolute constant 𝐶′ > 0. This establishes the theorem.
+We return to state and prove the aforementioned Claim 1. We note the analysis is rather coarse;
+our only goal here is to establish a log𝑇scaling (not optimize constants).
+Claim 1. Under the assumptions of Theorem 1, we have 𝑅(𝑛)
+𝑇
+≥log(𝑇)/𝐶1, where 𝐶1 = 15 log 99.
+Proof. If 𝑇= 1, the bound holds by nonnegativity. If 𝑇∈{2, . . . , 99}, then since min𝑆(𝑛)
+1
+> 𝑛/2
+and Δ2 ≥1/15 by assumption in Theorem 1, we know Δ𝐼(𝑛)
+1
+≥1/15, which implies 𝑅(𝑛)
+𝑇
+≥1/15 ≥
+log(𝑇)/𝐶1. Thus, only the case 𝑇≥100 remains. By Claim 23 from Appendix F.1 and Δ2 ≥1/15,
+𝑅(𝑛)
+𝑇
+≥E[Í𝑇
+𝑡=1 1(𝐼(𝑛)
+𝑡
+≠1)]
+15
+= log(99)E[Í𝑇
+𝑡=1 1(𝐼(𝑛)
+𝑡
+≠1)]
+𝐶1
+> 2E[Í𝑇
+𝑡=1 1(𝐼(𝑛)
+𝑡
+≠1)]
+𝐶1
+.
+Thus, it suffices to show that Í𝑇
+𝑡=1 1(𝐼(𝑛)
+𝑡
+≠1) ≥log(𝑇)/2. Suppose instead that this inequality
+fails. Then since the left side is an integer, we have Í𝑇
+𝑡=1 1(𝐼(𝑛)
+𝑡
+≠1) ≤⌊log(𝑇)/2⌋by assumption.
+Therefore, we can find 𝑡∈{𝑇−⌊log(𝑇)/2⌋+ 1, . . . ,𝑇} such that 𝐼(𝑛)
+𝑡
+= 1 (else, we violate the
+assumed inequality). By this choice of 𝑡and the assumed inequality, we can then write
+𝑇(𝑛)
+1
+(𝑡−1) = 𝑡−1 −
+𝑡−1
+∑︁
+𝑠=1
+1(𝐼(𝑛)
+𝑡
+≠1) ≥(𝑇−⌊log(𝑇)/2⌋) −(⌊log(𝑇)/2⌋) ≥𝑇−log𝑇.
+We can lower bound the right side by 4 log𝑇(else, applying Claim 20 from Appendix F.1 with 𝑥= 𝑇,
+𝑦= 1, and 𝑧= 5 yields 𝑇< 100, a contradiction), which is further bounded by 4 log𝑡. Combined
+with the fact that rewards are deterministic, 𝜇1 = 1, and 𝛼= 4 in Theorem 1, we obtain
+ˆ𝜇(𝑛)
+1
+(𝑡−1) +
+√︃
+𝛼log(𝑡)/𝑇(𝑛)
+1
+(𝑡−1) = 1 +
+√︃
+4 log(𝑡)/𝑇(𝑛)
+1
+(𝑡−1) ≤2.
+(27)
+Next, let 𝑘∈𝑆(𝑛)
+𝐴−1(𝑡) be any other arm which is active for 𝑛at time 𝑡. Then clearly
+𝑇(𝑛)
+𝑘
+(𝑡−1) ≤
+𝑇∑︁
+𝑡=1
+1(𝐼(𝑛)
+𝑡
+= 𝑘) ≤
+𝑇∑︁
+𝑡=1
+1(𝐼(𝑛)
+𝑡
+≠1) ≤⌊log(𝑇)/2⌋≤log(𝑇)/2
+⇒ˆ𝜇(𝑛)
+𝑘
+(𝑡−1) +
+√︃
+𝛼log(𝑡)/𝑇(𝑛)
+𝑘
+(𝑡−1) ≥
+√︁
+8 log(𝑡)/log(𝑇) = 2
+√︃
+log(𝑡)/log(
+√
+𝑇).
+(28)
+By (27), (28), the fact that 𝐼(𝑛)
+𝑡
+= 1, and the UCB policy, we conclude 𝑡≤
+√
+𝑇. Since 𝑇≥4, this
+further implies 𝑡≤𝑇/2. But we also know that 𝑡≥𝑇−⌊log(𝑇)/2⌋+ 1 > 𝑇−log(𝑇)/2. Combining
+these inequalities gives 𝑇< log𝑇, a contradiction.
+□
+D
+PROOFS FROM SECTION 5
+D.1
+Proof of Theorem 2
+Fix an honest agent 𝑖∈[𝑛]. Let 𝜏(𝑖) = 𝜏spr ∨𝜏(𝑖)
+blk, where we recall from the proof sketch that
+𝜏spr = inf{𝑗∈N : 𝐵(𝑖′)
+𝑗′
+= 1 ∀𝑖′ ∈[𝑛], 𝑗′ ≥𝑗},
+𝜏(𝑖)
+blk = inf{𝑗∈N : 𝐻(𝑖)
+𝑗′−1 ∈𝑃(𝑖)
+𝑗′ \ 𝑃(𝑖)
+𝑗′−1 ∀𝑗′ ≥𝑗𝑠.𝑡. 𝑅(𝑖)
+𝑗′−1 ≠1}.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:31
+Let 𝛾𝑖∈(0, 1) be chosen later. Denote by 𝑆
+(𝑖) = {2, . . . , 𝐾} ∩ˆ𝑆(𝑖) and 𝑆(𝑖) = {2, . . . , 𝐾} \ ˆ𝑆(𝑖) the
+suboptimal sticky and non-sticky arms, respectively, for agent 𝑖. Then by Claim 23 from Appendix
+F.1, we can decompose regret as 𝑅(𝑖)
+𝑇
+= Í4
+ℎ=1 𝑅(𝑖)
+𝑇,ℎ, where
+𝑅(𝑖)
+𝑇,1 = E
+
+𝐴𝜏spr∧𝑇
+∑︁
+𝑡=1
+Δ𝐼(𝑖)
+𝑡
+
+,
+𝑅(𝑖)
+𝑇,2 =
+∑︁
+𝑘∈𝑆
+(𝑖)
+Δ𝑘E
+
+𝑇∑︁
+𝑡=1+𝐴𝜏spr
+1(𝐼(𝑖)
+𝑡
+= 𝑘)
+
+,
+𝑅(𝑖)
+𝑇,3 =
+∑︁
+𝑘∈𝑆(𝑖)
+Δ𝑘E
+
+𝐴𝜏(𝑖) ∨⌈𝑇𝛾𝑖/𝛽⌉∧𝑇
+∑︁
+𝑡=1+𝐴𝜏spr
+1(𝐼(𝑖)
+𝑡
+= 𝑘)
+
+,
+𝑅(𝑖)
+𝑇,4 =
+∑︁
+𝑘∈𝑆(𝑖)
+Δ𝑘E
+
+𝑇∑︁
+𝑡=1+𝐴𝜏(𝑖) ∨⌈𝑇𝛾𝑖/𝛽⌉
+1(𝐼(𝑖)
+𝑡
+= 𝑘)
+
+,
+and where Í𝑠2
+𝑡=𝑠1 1(𝐼(𝑖)
+𝑡
+= 𝑘) = 0 whenever 𝑠1 > 𝑠2 by convention. Thus, we have rewritten regret as
+the sum of four terms: 𝑅(𝑖)
+𝑇,1, which accounts for regret before the best arm spreads; 𝑅(𝑖)
+𝑇,2, the regret
+due to sticky arms after the best arm spreads; 𝑅(𝑖)
+𝑇,3, regret from non-sticky arms after the best arm
+spreads but before phase 𝜏(𝑖) ∨⌈𝑇𝛾𝑖/𝛽⌉; and 𝑅(𝑖)
+𝑇,4, regret from non-sticky arms after this phase. The
+subsequent lemmas bound these terms in turn.
+Lemma 4. Under the assumptions of Theorem 2, for any 𝑖∈[𝑛] and 𝑇∈N, we have
+𝑅(𝑖)
+𝑇,1 ≤E[𝐴𝜏spr] = 𝑂(𝑆𝛽/(𝜌2
+1 (𝛽−1)) ∨(𝑆log(𝑆/Δ2)/Δ2
+2)𝛽/(𝛽−1) ∨( ¯𝑑log(𝑛+𝑚))𝛽/𝜌1 ∨𝑛𝐾2𝑆) +E[𝐴2¯𝜏spr].
+Proof. Assumption 2 ensures Δ𝑘≤1, so 𝑅(𝑖)
+𝑇,1 ≤E[𝐴𝜏spr]. The result follows from the bound on
+E[𝐴𝜏spr] discussed in Section 7.5 and formally stated as Corollary 4 in Appendix E.5.
+□
+Lemma 5. Under the assumptions of Theorem 2, for any 𝑖∈[𝑛] and 𝑇∈N, we have
+𝑅(𝑖)
+𝑇,2 ≤
+∑︁
+𝑘∈𝑆
+(𝑖)
+4𝛼log𝑇
+Δ𝑘
++ 4(𝛼−1)|𝑆
+(𝑖)|
+2𝛼−3
+.
+Proof. For any 𝑘∈𝑆
+(𝑖), Claim 22 and Corollary 6 from Appendix F.2 imply
+E
+
+𝑇∑︁
+𝑡=1+𝐴𝜏spr
+1
+
+𝐼(𝑖)
+𝑡
+= 𝑘
+
+= E
+
+𝑇∑︁
+𝑡=1+𝐴𝜏spr
+1
+ 
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) < 4𝛼log𝑡
+Δ2
+𝑘
+!
++ E
+
+𝑇∑︁
+𝑡=1+𝐴𝜏spr
+1
+ 
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) ≥4𝛼log𝑡
+Δ2
+𝑘
+!
+≤4𝛼log𝑇
+Δ2
+𝑘
++ 4(𝛼−1)
+2𝛼−3 ,
+so multiplying by Δ𝑘, using Δ𝑘≤1, and summing over 𝑘∈𝑆
+(𝑖) completes the proof.
+□
+Lemma 6. Under the assumptions of Theorem 2, for any 𝑖∈[𝑛], 𝛾𝑖∈(0, 1), and 𝑇∈N, we have
+𝑅(𝑖)
+𝑇,3 ≤
+∑︁
+𝑘∈𝑆(𝑖)
+4𝛼log𝐴⌈𝑇𝛾𝑖/𝛽⌉
+Δ𝑘
++ 4(𝛼−1)|𝑆(𝑖)|
+2𝛼−3
++ 4𝐶4𝛼𝐾
+Δ2𝛾𝑖
+log
+𝐶4𝐾
+Δ2𝛾𝑖
+
++ 1 + E[𝐴𝜏spr].
+Proof. The proof is nontrivial; we defer it to the end of this sub-appendix.
+□
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:32
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Lemma 7. Under the assumptions of Theorem 2, for any 𝑖∈[𝑛], 𝛾𝑖∈(0, 1), and 𝑇∈N, we have
+𝑅(𝑖)
+𝑇,4 ≤2𝜂−1
+𝜂−1
+max
+˜𝑆⊂𝑆(𝑖):| ˜𝑆|≤𝑑mal(𝑖)+2
+∑︁
+𝑘∈˜𝑆
+4𝛼log𝑇
+Δ𝑘
++
+8𝛼𝛽log𝜂(1/𝛾𝑖)(𝑑mal(𝑖) + 2)
+Δ2
++ 4(𝛼−1)|𝑆(𝑖)|
+2𝛼−3
+.
+Proof sketch. The proof follows the same logic as that of [56, Lemma 4], so we omit it. The only
+differences are (1) we replace 𝑚(the number of malicious agents connected to 𝑖for the complete
+graph) with 𝑑mal(𝑖), and (2) we use Claim 19 from Appendix F.1 to bound the summation in [56,
+Lemma 4]. We refer the reader to the Theorem 2 proof sketch for intuition.
+□
+Additionally, we note the sum 𝑅(𝑖)
+𝑇,3 + 𝑅(𝑖)
+𝑇,4 can be naively bounded as follows.
+Lemma 8. Under the assumptions of Theorem 2, for any 𝑖∈[𝑛] and 𝑇∈N, we have
+𝑅(𝑖)
+𝑇,3 + 𝑅(𝑖)
+𝑇,4 ≤
+∑︁
+𝑘∈𝑆(𝑖)
+4𝛼log𝑇
+Δ𝑘
++ 4(𝛼−1)|𝑆(𝑖)|
+2𝛼−3
+.
+Proof. The proof follows the exact same logic as that of Lemma 5 so is omitted.
+□
+We can now prove the theorem. First, we use the regret decomposition 𝑅(𝑖)
+𝑇
+= Í4
+ℎ=1 𝑅(𝑖)
+𝑇,ℎ, Lemmas
+4-7, and the fact that |𝑆
+(𝑖)| + |𝑆(𝑖)| ≤𝐾to write
+𝑅(𝑖)
+𝑇
+≤2𝜂−1
+𝜂−1
+max
+˜𝑆⊂𝑆(𝑖):| ˜𝑆|≤𝑑mal(𝑖)+2
+∑︁
+𝑘∈˜𝑆
+4𝛼log𝑇
+Δ𝑘
++
+∑︁
+𝑘∈𝑆
+(𝑖)
+4𝛼log𝑇
+Δ𝑘
++
+∑︁
+𝑘∈𝑆(𝑖)
+4𝛼log𝐴⌈𝑇𝛾𝑖/𝛽⌉
+Δ𝑘
+(29)
++
+8𝛼𝛽log𝜂(1/𝛾𝑖)(𝑑mal(𝑖) + 2)
+Δ2
++ 8(𝛼−1)𝐾
+2𝛼−3
++ 4𝐶4𝛼𝐾
+Δ2𝛾𝑖
+log
+𝐶4𝐾
+Δ2𝛾𝑖
+
++ 1 + 2E[𝐴𝜏spr]. (30)
+Now choose 𝛾𝑖= Δ2/(𝐾Δ𝑆+𝑑mal(𝑖)+4) ∈(0, 1). Then
+(30) = ˜𝑂 (𝑑mal(𝑖)/Δ2) ∨(𝐾/Δ2)2 + 2E[𝐴𝜏spr]
+= ˜𝑂
+
+(𝑑mal(𝑖)/Δ2) ∨(𝐾/Δ2)2 ∨𝑆𝛽/(𝜌2
+1 (𝛽−1)) ∨(𝑆/Δ2
+2)𝛽/(𝛽−1) ∨¯𝑑𝛽/𝜌1 ∨𝑛𝐾2𝑆
+
++ 4E[𝐴2¯𝜏spr],
+where the second inequality is due to Lemma 4. Furthermore, by Claim 18 from Appendix F.1,
+we know that log(𝐴⌈𝑇𝛾𝑖/𝛽⌉) ≤log(𝑒2𝛽(𝑇𝛾𝑖/𝛽)𝛽) = 2𝛽+ 𝛾𝑖log𝑇. Combined with 𝑆(𝑖) ≤𝐾, Δ𝑘≥
+Δ2 ∀𝑘∈𝑆(𝑖), and the choice of 𝛾𝑖, we can thus write
+∑︁
+𝑘∈𝑆(𝑖)
+4𝛼log𝐴⌈𝑇𝛾𝑖/𝛽⌉
+Δ𝑘
+≤
+∑︁
+𝑘∈𝑆(𝑖)
+8𝛼𝛽+ 𝛾𝑖log𝑇
+Δ𝑘
+≤8𝛼𝛽𝐾+ 𝛾𝑖𝐾log𝑇
+Δ2
+= 8𝛼𝛽𝐾
+Δ2
++
+log𝑇
+Δ𝑆+𝑑mal(𝑖)+4
+.
+Therefore, we can bound (29) as follows:
+(29) ≤2𝜂−1
+𝜂−1
+max
+˜𝑆⊂𝑆(𝑖):| ˜𝑆|≤𝑑mal(𝑖)+2
+∑︁
+𝑘∈˜𝑆
+4𝛼log𝑇
+Δ𝑘
++
+∑︁
+𝑘∈𝑆
+(𝑖)
+4𝛼log𝑇
+Δ𝑘
++
+log𝑇
+Δ𝑆+𝑑mal(𝑖)+4
++ 8𝛼𝛽𝐾
+Δ2
+≤2𝜂−1
+𝜂−1
+𝑑mal(𝑖)+3
+∑︁
+𝑘=2
+4𝛼log𝑇
+Δ𝑘
++
+𝑆+𝑑mal(𝑖)+4
+∑︁
+𝑘=𝑑mal(𝑖)+4
+4𝛼log𝑇
+Δ𝑘
++ 8𝛼𝛽𝐾
+Δ2
+,
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:33
+where the second inequality holds by Δ2 ≤· · · ≤Δ𝐾and |𝑆
+(𝑖)| ≤𝑆. Combining the above yields
+𝑅(𝑖)
+𝑇
+≤4𝛼log(𝑇) ©­
+«
+2𝜂−1
+𝜂−1
+𝑑mal(𝑖)+3
+∑︁
+𝑘=2
+1
+Δ𝑘
++
+𝑆+𝑑mal(𝑖)+4
+∑︁
+𝑘=𝑑mal(𝑖)+4
+1
+Δ𝑘
+ª®
+¬
++ 2E[𝐴2¯𝜏spr]
+(31)
++ ˜𝑂
+
+(𝑑mal(𝑖)/Δ2) ∨(𝐾/Δ2)2 ∨𝑆𝛽/(𝜌2
+1 (𝛽−1)) ∨(𝑆/Δ2
+2)𝛽/(𝛽−1) ∨¯𝑑𝛽/𝜌1 ∨𝑛𝐾2𝑆
+
+.
+Alternatively, we can simply use Lemmas 4, 5, and 8 to write
+𝑅(𝑖)
+𝑇
+≤4𝛼log(𝑇)
+𝐾
+∑︁
+𝑘=2
+1
+Δ𝑘
++ 4(𝛼−1)𝐾
+2𝛼−3
++ E[𝐴𝜏spr].
+(32)
+Therefore, combining the previous two expressions and again invoking Lemma 4 to bound the
+additive terms in (32) by those in (31), we obtain the desired bound.
+Thus, it only remains to prove Lemma 6. We begin by using some standard bandit arguments
+recounted in Appendix F.2 to bound 𝑅(𝑖)
+𝑇,3 in terms of a particular tail of 𝜏(𝑖).
+Claim 2. Under the assumptions of Theorem 2, for any 𝑖∈[𝑛], 𝛾𝑖∈(0, 1), and 𝑇∈N, we have
+𝑅(𝑖)
+𝑇,3 ≤
+∑︁
+𝑘∈𝑆(𝑖)
+4𝛼log𝐴⌈𝑇𝛾𝑖/𝛽⌉
+Δ𝑘
++ 4(𝛼−1)|𝑆(𝑖)|
+2𝛼−3
++ E[𝐴𝜏spr]
++ 4𝛼𝐾log𝑇
+Δ2
+P
+
+𝜏(𝑖) > ⌈𝑇𝛾𝑖/𝛽⌉,𝐴𝜏spr < 4𝛼𝐾log𝑇
+Δ2
+
+.
+(33)
+Proof. If 𝑇= 1, we can naively bound 𝑅(𝑖)
+𝑇,3 ≤1, which completes the proof. Thus, we assume
+𝑇> 1 (which will allow us to divide by log𝑇later). For any 𝑘∈𝑆(𝑖), we first write
+E
+
+𝐴𝜏(𝑖) ∨⌈𝑇𝛾𝑖/𝛽⌉∧𝑇
+∑︁
+𝑡=1+𝐴𝜏spr
+1
+
+𝐼(𝑖)
+𝑡
+= 𝑘
+
+≤E
+
+𝑇∑︁
+𝑡=1+𝐴𝜏spr
+1
+ 
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) ≥4𝛼log𝑡
+Δ2
+𝑘
+!
+(34)
++ E
+
+1(𝜏(𝑖) ≤⌈𝑇𝛾𝑖/𝛽⌉)
+𝐴⌈𝑇𝛾𝑖/𝛽⌉∧𝑇
+∑︁
+𝑡=1+𝐴𝜏spr
+1
+ 
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) < 4𝛼log𝑡
+Δ2
+𝑘
+!
+(35)
++ E
+
+1(𝜏(𝑖) > ⌈𝑇𝛾𝑖/𝛽⌉)
+𝐴𝜏(𝑖) ∧𝑇
+∑︁
+𝑡=1+𝐴𝜏spr
+1
+ 
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) < 4𝛼log𝑡
+Δ2
+𝑘
+!
+.
+(36)
+By Corollary 6 from Appendix F.2, (34) is bounded by 4(𝛼−1)/(2𝛼−3). By Claim 22 from Appendix
+F.2 and 1(·) ≤1, (35) is bounded by 4𝛼log(𝐴⌈𝑇𝛾𝑖/𝛽⌉)/Δ2
+𝑘. For (36), Claim 22 similarly gives
+𝐴𝜏(𝑖) ∧𝑇
+∑︁
+𝑡=1+𝐴𝜏spr
+1
+ 
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) < 4𝛼log𝑡
+Δ2
+𝑘
+!
+≤4𝛼log𝑇
+Δ2
+𝑘
+,
+which clearly implies the following bound for (36):
+E
+
+1(𝜏(𝑖) > ⌈𝑇𝛾𝑖/𝛽⌉)
+𝐴𝜏(𝑖) ∧𝑇
+∑︁
+𝑡=1+𝐴𝜏spr
+1
+ 
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) < 4𝛼log𝑡
+Δ2
+𝑘
+!
+≤4𝛼log𝑇
+Δ2
+𝑘
+P(𝜏(𝑖) > ⌈𝑇𝛾𝑖/𝛽⌉).
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:34
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+For the remaining probability term, by Markov’s inequality, we have
+P(𝜏(𝑖) > ⌈𝑇𝛾𝑖/𝛽⌉) ≤P
+
+𝜏(𝑖) > ⌈𝑇𝛾𝑖/𝛽⌉,𝐴𝜏spr < 4𝛼𝐾log𝑇
+Δ2
+
++
+Δ2E[𝐴𝜏spr]
+4𝛼𝐾log𝑇.
+Hence, combining the previous two inequalities, and since Δ2 ≤Δ𝑘, we can bound (36) by
+4𝛼log𝑇
+Δ2Δ𝑘
+P
+
+𝜏(𝑖) > ⌈𝑇𝛾𝑖/𝛽⌉,𝐴𝜏spr < 4𝛼𝐾log𝑇
+Δ2
+
++
+E[𝐴𝜏spr]
+𝐾Δ𝑘
+.
+Finally, combining these bounds, then multiplying by Δ𝑘, summing over 𝑘∈𝑆(𝑖), and using Δ𝑘≤1
+and |𝑆(𝑖)| ≤𝐾, we obtain the desired result.
+□
+To bound (33), we consider two cases defined in terms of the following inequalities:
+4𝛼𝐾log(𝑇)/Δ2 < ⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋𝛽,
+4𝛼𝐾log(𝑇)/Δ2 < 𝜅⌈𝑇𝛾𝑖/𝛽⌉,
+(37)
+4𝛼log𝐴𝑗
+Δ2
+2
+< ⌈𝜅𝑗⌉−1 ∀𝑗≥⌈𝑇𝛾𝑖/𝛽⌉,
+log(𝑇)
+∞
+∑︁
+𝑗=⌈𝑇𝛾𝑖/𝛽⌉
+(⌈𝜅𝑗⌉−1)3−2𝛼< Δ2(2𝛼−3)
+8𝛼𝐾2
+.
+(38)
+Roughly speaking, when all of these inequalities hold, then 𝑇is large enough to ensure that the
+event {𝜏(𝑖) = Ω(poly(𝑇)),𝐴𝜏spr = 𝑂(log𝑇)} in (33) is unlikely. The next claim makes this precise.
+Claim 3. Under the assumptions of Theorem 2, for any 𝑖∈[𝑛], 𝛾𝑖∈(0, 1), and 𝑇∈N such that all
+of the inequalities in (37)-(38) hold, we have
+4𝛼𝐾log𝑇
+Δ2
+P
+
+𝜏(𝑖) > ⌈𝑇𝛾𝑖/𝛽⌉,𝐴𝜏spr < 4𝛼𝐾log𝑇
+Δ2
+
+≤1.
+Proof. If 𝑇= 1, the left side is zero and the bound is immediate, so we assume 𝑇> 1. First note
+that if 𝐴𝜏spr < 4𝛼𝐾log(𝑇)/Δ2, then since 𝐴𝜏spr = ⌈𝜏𝛽
+spr⌉≥𝜏𝛽
+spr by definition and 4𝛼𝐾log(𝑇)/Δ2 <
+⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋𝛽∧𝜅⌈𝑇𝛾𝑖/𝛽⌉by (37), 𝜏spr < ⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋∧𝜅1/𝛽
+⌈𝑇𝛾𝑖/𝛽⌉. By definition 𝜃⌈𝑇𝛾𝑖/𝛽⌉= (⌈𝑇𝛾𝑖/𝛽⌉/3)𝜌1 with
+𝜌1 ∈(0, 1), this further implies𝜏spr < ⌈𝑇𝛾𝑖/𝛽⌉. Thus, when𝜏(𝑖) > ⌈𝑇𝛾𝑖/𝛽⌉and 𝐴𝜏spr < 4𝛼𝐾log(𝑇)/Δ2,
+we have 𝜏spr < 𝜏(𝑖), which by definition of 𝜏(𝑖) implies 𝜏(𝑖) = 𝜏(𝑖)
+blk. Therefore, we can write
+P
+
+𝜏(𝑖) > ⌈𝑇𝛾𝑖/𝛽⌉,𝐴𝜏spr < 4𝛼𝐾log𝑇
+Δ2
+
+≤P(𝜏(𝑖)
+blk > ⌈𝑇𝛾𝑖/𝛽⌉,𝜏spr < ⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋∧𝜅1/𝛽
+⌈𝑇𝛾𝑖/𝛽⌉).
+Now by definition, 𝜏spr < ⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋implies that 𝐵(𝑖)
+𝑗
+= 1 ∀𝑗≥⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋. Also by definition,
+𝜏(𝑖)
+blk > ⌈𝑇𝛾𝑖/𝛽⌉implies that for some 𝑗≥⌈𝑇𝛾𝑖/𝛽⌉and 𝑘> 1, 𝑅(𝑖)
+𝑗−1 = 𝑘but 𝐻(𝑖)
+𝑗−1 ∉𝑃(𝑖)
+𝑗
+\ 𝑃(𝑖)
+𝑗−1. Thus,
+P(𝜏(𝑖)
+blk > ⌈𝑇𝛾𝑖/𝛽⌉,𝜏spr < ⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋∧𝜅1/𝛽
+⌈𝑇𝛾𝑖/𝛽⌉)
+≤
+𝐾
+∑︁
+𝑘=2
+∞
+∑︁
+𝑗=⌈𝑇𝛾𝑖/𝛽⌉
+P(𝑅(𝑖)
+𝑗−1 = 𝑘, 𝐻(𝑖)
+𝑗−1 ∉𝑃(𝑖)
+𝑗
+\ 𝑃(𝑖)
+𝑗−1,𝜏spr < ⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋∧𝜅1/𝛽
+⌈𝑇𝛾𝑖/𝛽⌉).
+Now fix 𝑘and 𝑗as in the double summation. Again using 𝜏spr < ⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋⇒𝐵(𝑖)
+𝑗
+= 1 ∀𝑗≥
+⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋, the blocking rules implies that if 𝜏spr < ⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋, 𝑅(𝑖)
+𝑗−1 = 𝑘, and 𝐻(𝑖)
+𝑗−1 ∉𝑃(𝑖)
+𝑗
+\ 𝑃(𝑖)
+𝑗−1,
+then 𝑇(𝑖)
+𝑘
+(𝐴𝑗) > 𝜅𝑗. Since 𝑇(𝑖)
+𝑘
+(𝐴𝑗) ∈N, this means 𝑇(𝑖)
+𝑘
+(𝐴𝑗) ≥⌈𝜅𝑗⌉. Hence, there must exist some
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:35
+𝑡∈{⌈𝜅𝑗⌉, . . . ,𝐴𝑗} such that 𝑇(𝑖)
+𝑘
+(𝑡−1) ≥⌈𝜅𝑗⌉−1 and 𝐼(𝑖)
+𝑡
+= 𝑘. Thus, taking another union bound,
+P(𝑅(𝑖)
+𝑗−1 = 𝑘, 𝐻(𝑖)
+𝑗−1 ∉𝑃(𝑖)
+𝑗
+\ 𝑃(𝑖)
+𝑗−1,𝜏spr < ⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋∧𝜅1/𝛽
+⌈𝑇𝛾𝑖/𝛽⌉)
+≤
+𝐴𝑗
+∑︁
+𝑡=⌈𝜅𝑗⌉
+P(𝑇(𝑖)
+𝑘
+(𝑡−1) ≥⌈𝜅𝑗⌉−1, 𝐼(𝑖)
+𝑡
+= 𝑘,𝜏spr < 𝜅1/𝛽
+⌈𝑇𝛾𝑖/𝛽⌉).
+Next, note 𝜏spr < 𝜅1/𝛽
+⌈𝑇𝛾𝑖/𝛽⌉implies that for any 𝑗≥⌈𝑇𝛾𝑖/𝛽⌉and 𝑡≥⌈𝜅𝑗⌉, we have 𝑡≥⌈𝜅⌈𝑇𝛾𝑖/𝛽⌉⌉≥
+⌈𝜏𝛽
+spr⌉= 𝐴𝜏spr, so 1 ∈𝑆(𝑖)
+𝐴−1(𝑡) by definition of 𝜏spr. Therefore, for any 𝑡∈{⌈𝜅𝑗⌉, . . . ,𝐴𝑗},
+P(𝑇(𝑖)
+𝑘
+(𝑡−1) ≥⌈𝜅𝑗⌉−1, 𝐼(𝑖)
+𝑡
+= 𝑘,𝜏spr < 𝜅1/𝛽
+⌈𝑇𝛾𝑖/𝛽⌉) ≤P(𝑇(𝑖)
+𝑘
+(𝑡−1) ≥⌈𝜅𝑗⌉−1, 1 ∈𝑆(𝑖)
+𝐴−1(𝑡), 𝐼(𝑖)
+𝑡
+= 𝑘).
+Now let 𝑘1 = 𝑘, 𝑘2 = 1, and ℓ= ⌈𝜅𝑗⌉−1. Then 𝜇𝑘2 −𝜇𝑘1 = Δ𝑘≥
+√︁
+4𝛼log(𝑡)/(⌈𝜅𝑗⌉−1) by definition
+and (38), respectively. Therefore, we can use Corollary 5 from Appendix F.2 to obtain
+P(𝑇(𝑖)
+𝑘
+(𝑡−1) ≥⌈𝜅𝑗⌉−1, 1 ∈𝑆(𝑖)
+𝐴−1(𝑡), 𝐼(𝑖)
+𝑡
+= 𝑘) ≤2𝑡2(1−𝛼).
+Combining the above five inequalities, then using Claim 19 from Appendix F.1 and (38), we obtain
+P
+
+𝜏(𝑖) > ⌈𝑇𝛾𝑖/𝛽⌉,𝐴𝜏spr < 4𝛼𝐾log𝑇
+Δ2
+
+≤2𝐾
+∞
+∑︁
+𝑗=⌈𝑇𝛾𝑖/𝛽⌉
+∞
+∑︁
+𝑡=⌈𝜅𝑗⌉
+𝑡2(1−𝛼)
+≤
+2𝐾
+2𝛼−3
+∞
+∑︁
+𝑗=⌈𝑇𝛾𝑖/𝛽⌉
+(⌈𝜅𝑗⌉−1)3−2𝛼≤
+Δ2
+4𝛼𝐾log𝑇,
+so multiplying both sides by 4𝛼𝐾log(𝑇)/Δ completes the proof.
+□
+On the other hand, when (37)-(38) fails, we can show that 𝑇is bounded, and thus we bound the
+log𝑇term in (33) by a constant and the probability term by 1, as shown in the following claim.
+Claim 4. Under the assumptions of Theorem 2, there exists a constant 𝐶4 > 0 such that, for any
+𝑖∈[𝑛], 𝛾𝑖∈(0, 1), and 𝑇∈N for which any of the inequalities in (37)-(38) fails, we have
+4𝛼𝐾log𝑇
+Δ2
+P
+
+𝜏(𝑖) > ⌈𝑇𝛾𝑖/𝛽⌉,𝐴𝜏spr < 4𝛼𝐾log𝑇
+Δ2
+
+≤4𝐶4𝛼𝐾
+Δ2𝛾𝑖
+log 𝐶4𝐾
+Δ2𝛾𝑖
+.
+Proof. By Claims 33-36 in Appendix F.4, we can set 𝐶4 = max𝑖∈{33,...,36} 𝐶𝑖to ensure that, if any
+of the inequalities in (37)-(38) fail, then log𝑇≤(𝐶4/𝛾𝑖) log(𝐶4𝐾/(Δ2𝛾𝑖)). The claim follows after
+upper bounding the probability by 1.
+□
+Finally, Lemma 6 follows by combining the previous three claims.
+D.2
+Proof of Corollary 1
+As discussed in the proof sketch, we will couple with the noiseless process. We define this process
+as follows: let {𝐻(𝑖)
+𝑗}∞
+𝑗=1 be i.i.d. Uniform(𝑁hon(𝑖)) random variables for each 𝑖∈N, and
+I0 = {𝑖★},
+I 𝑗= I 𝑗−1 ∪{𝑖∈[𝑛] \ I 𝑗−1 : 𝐻(𝑖)
+𝑗
+∈I 𝑗−1} ∀𝑗∈N.
+For the coupling, we first define
+𝜎0 = 0,
+𝜎𝑙= inf
+(
+𝑗> 𝜎𝑙−1 : min
+𝑖∈[𝑛]
+𝑗∑︁
+𝑗′=1+𝜎𝑙−1
+¯𝑌(𝑖)
+𝑗′
+≥1
+)
+∀𝑙∈N.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:36
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Next, for each 𝑖∈[𝑛] and 𝑙∈N, let 𝑍(𝑖)
+𝑙
+= min{𝑗∈{1 + 𝜎𝑙−1, . . . , 𝜎𝑙} : ¯𝑌(𝑖)
+𝑗
+= 1}. Note this set is
+nonempty, and since 𝑍(𝑖)
+𝑙
+is a deterministic function of { ¯𝑌𝑗}∞
+𝑗=1, which is independent of { ¯𝐻(𝑖)
+𝑗}∞
+𝑗=1,
+¯𝐻(𝑖)
+𝑍(𝑖)
+𝑙
+is Uniform(𝑁hon(𝑖)) for each 𝑙∈N. Hence, we can set
+𝐻(𝑖)
+𝑗
+=
+
+
+¯𝐻(𝑖)
+𝑍(𝑖)
+𝑙
+,
+if 𝑗= 𝑍(𝑖)
+𝑙
+for some 𝑙∈N
+Uniform(𝑁hon(𝑖)),
+if 𝑗∉{𝑍(𝑖)
+𝑙
+}∞
+𝑙=1
+without changing the distribution of {I 𝑗}∞
+𝑗=0. This results in a coupling where the noiseless process
+dominates the noisy one, in the following sense.
+Claim 5. For the coupling described above, I 𝑗⊂¯I𝜎𝑗for any 𝑗≥0.
+Proof. We use induction on 𝑗. For 𝑗= 0, we simply have I 𝑗= {𝑖★} = ¯I𝑗= ¯I𝜎𝑗. Now assume
+I 𝑗−1 ⊂¯I𝜎𝑗−1; we aim to show that if 𝑖∈I 𝑗, then 𝑖∈¯I𝜎𝑗. We consider two cases, the first of which
+is straightforward: if 𝑖∈I 𝑗−1, then 𝑖∈¯I𝜎𝑗−1 by the inductive hypothesis, so since 𝜎𝑗−1 < 𝜎𝑗by
+definition and { ¯I𝑗′}∞
+𝑗′=0 increases monotonically, we obtain 𝑖∈¯I𝜎𝑗, as desired.
+For the second case, we assume 𝑖∈[𝑛] \ I 𝑗−1 and 𝐻(𝑖)
+𝑗
+∈I 𝑗−1. Set 𝑗′ = 𝑍(𝑖)
+𝑗
+and recall
+𝑗′ ∈{1 + 𝜎𝑗−1, . . . , 𝜎𝑗} by definition. From the coupling above, we know ¯𝑌(𝑖)
+𝑗′
+= 1 and ¯𝐻(𝑖)
+𝑗′ = 𝐻(𝑖)
+𝑗.
+Since 𝐻(𝑖)
+𝑗
+∈I 𝑗−1 in the present case, we have ¯𝐻(𝑖)
+𝑗′
+∈I 𝑗−1 as well. Hence, because I 𝑗−1 ⊂¯I𝜎𝑗−1
+by the inductive hypothesis, 𝑗′ −1 ≥𝜎𝑗−1 by definition, and { ¯I𝑗′′}∞
+𝑗′′=0 is increasing, we obtain
+¯𝐻(𝑖)
+𝑗′ ∈¯I𝑗′−1. We have thus shown ¯𝑌(𝑖)
+𝑗′
+= 1 and ¯𝐻(𝑖)
+𝑗′ ∈¯I𝑗′−1, so 𝑖∈¯I𝑗′ by Definition 1 Finally, using
+𝑗′ ≤𝜎𝑗and again appealing to monotonocity, we conclude that 𝑖∈¯I𝜎𝑗.
+□
+We can now relate the rumor spreading times of the two processes. In particular, let ¯𝜏spr = inf{𝑗∈
+N : ¯I𝑗= [𝑛]} (as in Definition 1) and 𝜏spr = inf{𝑗∈N : I 𝑗= [𝑛]}. We then have the following.
+Claim 6. For any 𝑗∈{3, 4, . . .} and 𝜄> 1, we have P(¯𝜏spr > 𝜄𝑗log(𝑗)/Υ) ≤P(𝜏spr > 𝑗) + 27𝑛𝑗1−𝜄.
+Proof. Let ℎ(0) = 0 and ℎ(𝑗′) = 𝜄𝑗′ log(𝑗)/Υ for each 𝑗′ ∈N. Then clearly
+P(¯𝜏spr > 𝜄𝑗log(𝑗)/Υ) = P(¯𝜏spr > ℎ(𝑗), 𝜎𝑗≤ℎ(𝑗)) + P(¯𝜏spr > ℎ(𝑗), 𝜎𝑗> ℎ(𝑗)).
+(39)
+For the first term in (39), by definition of ¯𝜏spr and Claim 5, we have
+{¯𝜏spr > ℎ(𝑗), 𝜎𝑗≤ℎ(𝑗)} ⊂{¯𝜏spr > 𝜎𝑗} = { ¯I𝜎𝑗≠[𝑛]} ⊂{I 𝑗≠[𝑛]} = {𝜏spr > 𝑗}.
+(40)
+For the second term in (39), we first observe that for any 𝑗′ ∈N,
+⌊ℎ(𝑗′)⌋−⌈ℎ(𝑗′ −1)⌉−1 ≥ℎ(𝑗′) −ℎ(𝑗′ −1) −3 = (𝜄log(𝑗)/Υ) −3 > 0,
+where the last inequality holds by assumption on 𝑗and 𝜄. Thus, by the union bound, we can write
+P(𝜎𝑗′ > ℎ(𝑗′), 𝜎𝑗′−1 ≤ℎ(𝑗′ −1)) ≤
+𝑛
+∑︁
+𝑖=1
+P(∩⌊ℎ(𝑗′)⌋
+𝑗′′=1+⌈ℎ(𝑗′−1)⌉{ ¯𝑌(𝑖)
+𝑗′′ = 0}) = 𝑛(1 −Υ) ⌊ℎ(𝑗′)⌋−⌈ℎ(𝑗′−1)⌉−1
+≤𝑛(1 −Υ)(𝜄log(𝑗)/Υ)−3 ≤𝑛exp(−𝜄log(𝑗) + 3Υ) < 27𝑛𝑗−𝜄.
+Hence, because 𝜎0 = 0 = ℎ(0), we can iterate this argument to obtain that for any 𝑗′ ∈N,
+P(𝜎𝑗′ > ℎ(𝑗′)) ≤P(𝜎𝑗′ > ℎ(𝑗′), 𝜎𝑗′−1 ≤ℎ(𝑗′ −1)) + P(𝜎𝑗′−1 > ℎ(𝑗′ −1))
+≤27𝑛𝑗−𝜄+ P(𝜎𝑗′−1 > ℎ(𝑗′ −1)) ≤· · · ≤27𝑛𝑗′𝑗−𝜄.
+In particular, P(𝜎𝑗> ℎ(𝑗)) ≤27𝑛𝑗1−𝜄. Combining with (39) and (40) completes the proof.
+□
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:37
+To bound the tail of 𝜏spr, we will use the following result.
+Claim 7 (Lemma 19 from [18]). Under the assumptions of Corollary 1, there exists an absolute
+constant 𝐶7 > 0 such that, for any ℎ∈N, we have P(𝜏spr ≥𝐶7ℎlog(𝑛)/𝜙) ≤𝑛−4ℎ.
+Using the previous two claims, we can prove a tail bound for ¯𝜏spr.
+Claim 8. Under the assumptions of Corollary 1, there exists an absolute constant 𝐶8 > 0 such that,
+for any ℎ∈{3, 4, . . .}, we have P(¯𝜏spr ≥𝜉(ℎ)) ≤56 · 2−ℎ, where we define
+𝜉(ℎ) = 𝐶8(log𝑛)2ℎ3 log(𝐶8 log(𝑛)/𝜙)/(𝜙Υ).
+Proof. Since 𝐺hon is 𝑑-regular with 𝑑≥2 by assumption, we have 𝑛≥2 as well. Therefore,
+setting 𝐶8 = (2𝐶7) ∨((𝑒+ 1)/log(2)), we know log(𝐶8 log(𝑛)/𝜙) ≥1, which implies
+(ℎ−1) log(𝐶8 log(𝑛)/𝜙) ≥ℎ−1 ≥logℎ
+⇒
+ℎlog(𝐶8 log(𝑛)/𝜙) ≥log(𝐶8ℎlog(𝑛)/𝜙).
+Consequently, if we define 𝜄= ℎlog𝑛and 𝑗= ⌊𝐶8ℎlog(𝑛)/𝜙⌋, we can write
+𝜉(ℎ) = (ℎlog𝑛) (𝐶8ℎlog(𝑛)/𝜙) (ℎlog(𝐶8 log(𝑛)/𝜙)) /Υ
+≥(ℎlog𝑛) (𝐶8ℎlog(𝑛)/𝜙) log(𝐶8ℎlog(𝑛)/𝜙)/Υ ≥𝜄𝑗log(𝑗)/Υ.
+Because 𝐶8 ≥(𝑒+ 1)/log(2), ℎ≥3, and 𝑛≥2, we also know
+𝑗≥𝐶8 · ℎ· log(𝑛) −1 ≥((𝑒+ 1)/log(2)) · 3 · log(2) −1 = 3(𝑒+ 1) −1 > 3𝑒> 𝑒2.
+(41)
+Hence, 𝑗∈{3, 4, . . .}; combined with 𝜄≥3 log 2 > 1, we can apply Claim 6 to obtain
+P  ¯𝜏spr > 𝜉(ℎ) ≤P  ¯𝜏spr > 𝜄𝑗log(𝑗)/Υ ≤P
+
+𝜏spr > 𝑗
+
++ 27𝑛𝑗1−𝜄.
+(42)
+On the other hand, (41) implies 𝐶8ℎlog(𝑛)/𝜙≥2, so by definition of 𝐶8,
+𝑗≥(𝐶8ℎlog(𝑛)/𝜙) −1 ≥(𝐶8ℎlog(𝑛)/𝜙)/2 = (𝐶8/2)ℎlog(𝑛)/𝜙≥𝐶7ℎlog(𝑛)/𝜙.
+Therefore, by Claim 7, we know that
+P
+
+𝜏spr > 𝑗
+
+≤P
+
+𝜏spr > 𝐶7ℎlog(𝑛)/𝜙
+
+≤𝑛−4ℎ< 𝑛1−ℎ.
+Finally, notice that 𝜄= ℎlog𝑛≥3 log 2 > 2, so 1 −𝜄< −𝜄/2, thus by (41),
+27𝑛𝑗1−𝜄< 27𝑛𝑗−𝜄/2 = 27𝑛
+√︁
+𝑗
+−𝜄< 27𝑛exp(−𝜄) = 27𝑛1−ℎ.
+Hence, substituting the previous two inequalities into (42) and using 𝑛≥2 completes the proof.
+□
+We now bound E[𝐴2¯𝜏spr]. First, we define
+𝜒= ⌈𝐶8(log𝑛)2 log(𝐶8 log(𝑛)/𝜙)/(𝜙Υ)⌉,
+𝐶= 8𝛽/log 2,
+ℎ★= ⌈𝐶log𝐶⌉∨3.
+Notice that for any ℎ≥ℎ★≥𝐶log𝐶, we have 2−ℎ≤ℎ−4𝛽(else, we can invoke Claim 20 from
+Appendix F.1 with 𝑥= ℎ, 𝑦= 1, and 𝑧= 𝐶/2 to obtain ℎ< 𝐶log𝐶, a contradiction). We write
+∞
+∑︁
+𝑗=1
+(𝐴𝑗−𝐴𝑗−1)P(¯𝜏spr ≥𝑗/2) ≤𝐴2𝜒ℎ3
+★+
+∞
+∑︁
+ℎ=ℎ★
+2𝜒(ℎ+1)3
+∑︁
+𝑗=2𝜒ℎ3+1
+(𝐴𝑗−𝐴𝑗−1)P(¯𝜏spr ≥𝑗/2).
+(43)
+Now for any ℎ≥ℎ★and 𝑗≥2𝜒ℎ3 + 1, we use 2−ℎ≤ℎ−4𝛽, the definition of 𝜒, and Claim 8 to write
+P(¯𝜏spr ≥𝑗/2) ≤P(¯𝜏spr ≥𝜒ℎ3) ≤P(¯𝜏spr ≥𝜉(ℎ)) ≤56 · 2−ℎ≤56ℎ−4𝛽.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:38
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Therefore, for any such ℎ, we obtain
+2𝜒(ℎ+1)3
+∑︁
+𝑗=2𝜒ℎ3+1
+(𝐴𝑗−𝐴𝑗−1)P(¯𝜏spr ≥𝑗/2) ≤56ℎ−4𝛽
+2𝜒(ℎ+1)3
+∑︁
+𝑗=2𝜒ℎ3+1
+(𝐴𝑗−𝐴𝑗−1) ≤56ℎ−4𝛽𝐴2𝜒(ℎ+1)3.
+Furthermore, by Claim 18 in Appendix F.1 and ℎ≥1, we know that
+𝐴2𝜒(ℎ+1)3 ≤𝑒2𝛽(2𝜒(ℎ+ 1)3)𝛽≤𝑒2𝛽(2𝜒(2ℎ)3)𝛽= (4𝑒)2𝛽𝜒𝛽ℎ3𝛽∀ℎ≥1.
+Therefore, by the previous two inequalities and (43), and since ℎ★≥3, we have shown
+∞
+∑︁
+𝑗=1
+(𝐴𝑗−𝐴𝑗−1)P(¯𝜏spr ≥𝑗/2) ≤(4𝑒)2𝛽𝜒𝛽
+ 
+ℎ3𝛽
+★+ 56
+∞
+∑︁
+ℎ=ℎ★
+ℎ−𝛽
+!
+≤(4𝑒)2𝛽𝜒𝛽
+
+ℎ3𝛽
+★+
+56
+𝛽−1
+
+,
+where the second inequality follows from Claim 19 from Appendix F.1, ℎ★≥3, and 𝛽> 1. Because
+ℎ★is a constant, the right side is 𝑂(𝜒𝛽). Therefore, we have shown
+E[2¯𝜏spr] = E
+" ∞
+∑︁
+𝑗=1
+(𝐴𝑗−𝐴𝑗−1)1(2¯𝜏spr ≥𝑗)
+#
+=
+∞
+∑︁
+𝑗=1
+(𝐴𝑗−𝐴𝑗−1)P(¯𝜏spr ≥𝑗/2) = 𝑂(𝜒𝛽).
+Hence, by definition of 𝜒, we obtain E[𝐴2¯𝜏spr] = 𝑂(((log𝑛)2 log(log(𝑛)/𝜙)/(𝜙Υ))𝛽). Combining
+this bound with Theorem 2 completes the proof of Corollary 1.
+D.3
+Proof of Corollary 2
+Similar to the analysis in Appendix D.1, we can use the decomposition 𝑅(𝑖)
+𝑇
+= Í4
+ℎ=1 𝑅(𝑖)
+𝑇,ℎ, along with
+Lemmas 4 and 5, to bound regret as follows:
+𝑅(𝑖)
+𝑇
+≤
+∑︁
+𝑘∈𝑆
+(𝑖)
+4𝛼log𝑇
+Δ𝑘
++ 4(𝛼−1)|𝑆
+(𝑖)|
+2𝛼−3
++ 𝑅(𝑖)
+𝑇,3 + 𝑅(𝑖)
+𝑇,4 + E[𝐴𝜏spr].
+(44)
+Next, for each 𝑘∈𝑆(𝑖), let 𝑌𝑘= 1(∪∞
+𝑗=𝜏spr{𝑘∈𝑆(𝑖)
+𝑗}) be the indicator that 𝑘was active after 𝐴𝜏spr.
+Then as in the proof of Lemma 5, we can use Claim 22 and Corollary 6 from Appendix F.2 to write
+E
+
+𝑇∑︁
+𝑡=1+𝐴𝜏spr
+1
+
+𝐼(𝑖)
+𝑡
+= 𝑘
+
+≤E[𝑌𝑘] 4𝛼log𝑇
+Δ2
+𝑘
++ 4(𝛼−1)
+2𝛼−3 .
+(45)
+(The only difference from the proof of Lemma 5 is that, when applying Claim 22, we write
+𝑇∑︁
+𝑡=1+𝐴𝜏spr
+1
+ 
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) < 4𝛼log𝑡
+Δ2
+𝑘
+!
+≤𝑌𝑘
+4𝛼log𝑇
+Δ2
+𝑘
+,
+where we can multiply by 𝑌𝑘because the left side is also zero when 𝑌𝑘= 0.) Combining (45) with
+the definitions of 𝑅(𝑖)
+𝑇,3 and 𝑅(𝑖)
+𝑇,4 and using Δ𝑘≤1, we thus obtain
+𝑅(𝑖)
+𝑇,3 + 𝑅(𝑖)
+𝑇,4 ≤E
+
+∑︁
+𝑘∈𝑆(𝑖)
+𝑌𝑘
+4𝛼log𝑇
+Δ𝑘
+
++ 4(𝛼−1)|𝑆(𝑖)|
+2𝛼−3
+.
+We claim, and will return to prove, that when 𝑑mal(𝑖) = 0,
+∑︁
+𝑘∈𝑆
+(𝑖)
+1
+Δ𝑘
++
+∑︁
+𝑘∈𝑆(𝑖)
+𝑌𝑘
+Δ𝑘
+≤
+𝑆+2
+∑︁
+𝑘=2
+1
+Δ𝑘
+.
+(46)
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:39
+Assuming (46) holds, we can combine the previous two inequalities and substitute into (44) to obtain
+𝑅(𝑖)
+𝑇
+≤4𝛼log(𝑇) Í𝑆+2
+𝑘=2 Δ−2
+𝑘+ 𝑂(𝐾) + E[𝐴𝜏spr]. Bounding E[𝐴𝜏spr] as in Lemma 4 yields the sharper
+version of Theorem 2, and further bounding E[𝐴2¯𝜏spr] as in Appendix D.2 sharpens Corollary 2.
+To prove (46), we first show Í
+𝑘∈𝑆(𝑖) 𝑌𝑘≤1 + 1(1 ∈ˆ𝑆(𝑖)). Suppose instead that Í
+𝑘∈𝑆(𝑖) 𝑌𝑘≥
+2 + 1(1 ∈ˆ𝑆(𝑖)) ≜𝐻. Then we can find 𝐻distinct arms 𝑘1, . . . ,𝑘𝐻∈𝑆(𝑖), and 𝐻corresponding
+phases 𝑗ℎ≥𝜏spr, such that 𝑘ℎwas active at phase 𝑗ℎfor each ℎ∈[𝐻]. Without loss of generality,
+we can assume each 𝑗ℎis minimal, i.e., 𝑗ℎ= min{𝑗≥𝜏spr : 𝑘ℎ∈𝑆(𝑖)
+𝑗}. We consider two cases (which
+are exhaustive since 𝑗ℎ≥𝜏spr) and show that both yield contradictions.
+• 𝑗ℎ= 𝜏spr ∀ℎ∈[𝐻]: We consider two further sub-cases.
+– 1 ∈ˆ𝑆(𝑖), i.e., the best arm is sticky. Then 𝐻= 3, so 𝑘1, . . . ,𝑘3 are all active at phase 𝜏spr. But
+all of these arms are non-sticky and only two such arms are active per phase.
+– 1 ∉ˆ𝑆(𝑖). Here 𝑘1,𝑘2 are both active at phase 𝜏spr, as is 1 (by definition of 𝜏spr). But since 𝑘1
+and 𝑘2 are suboptimal, we again have three non-sticky active arms.
+• maxℎ∈[𝐻] 𝑗ℎ> 𝜏spr: We can assume (after possibly relabeling) that 𝑗1 > 𝜏spr. Thus, by mini-
+mality of 𝑗1, 𝑘1 was not active at phase 𝑗1 −1 but became active at 𝑗1, so it was recommended
+by some neighbor 𝑖′ at 𝑗1 −1. But since 𝑑mal(𝑖) = 0, 𝑖′ is honest, and since 𝑗1 −1 ≥𝜏spr, the
+best arm was most played for 𝑖′ in phase 𝑗1 −1, so 𝑖′ would not have recommended 𝑘1.
+Thus, Í
+𝑘∈𝑆(𝑖) 𝑌𝑘≤1 + 1(1 ∈ˆ𝑆(𝑖)) holds. Combined with the fact that |𝑆
+(𝑖)| = 𝑆−1(1 ∈ˆ𝑆(𝑖))
+by definition, at most 𝑆+ 1 terms are nonzero in the summations on the left side of (46). Since
+Δ2 ≤· · · ≤Δ𝐾by the assumed ordering of the arm means, this completes the proof.
+D.4
+Coarse analysis of the noisy rumor process
+For completeness, we provide a coarser though more general bound for E[𝐴2¯𝜏spr] than the one
+derived in Appendix D.2. To begin, let P′
+𝑗and E′
+𝑗denote probability and expectation conditioned
+on { ¯𝑌(𝑖)
+𝑗′ , ¯𝐻(𝑖)
+𝑗′ }𝑗−1
+𝑗′=1. For each ℎ∈[𝑛], define the random phase ¯𝜏(ℎ) = inf{𝑗∈N : | ¯I𝑗| = ℎ}. Note
+that ¯𝜏(1) = 1 and ¯𝜏spr = ¯𝜏(𝑛). We then have the following tail bound.
+Claim 9. For any 𝑙, 𝑗∈N, we have P(¯𝜏(𝑙) > 𝑙𝑗) ≤𝑙(1 −Υ/ ¯𝑑hon)𝑗.
+Proof. We use induction on 𝑙. For 𝑙= 1, ¯𝜏(1) = 1 ensures P(¯𝜏(𝑙) > 𝑙𝑗) = 0 for any 𝑗∈N, so the
+bound is immediate. Next, assume the bound holds for 𝑙∈N. We first write
+P(¯𝜏(𝑙+ 1) > (𝑙+ 1)𝑗) ≤P(¯𝜏(𝑙+ 1) > (𝑙+ 1)𝑗, ¯𝜏(𝑙) ≤𝑙𝑗) + P(¯𝜏(𝑙) > 𝑙𝑗).
+Thus, by the inductive hypothesis, it suffices to bound the first term by (1 −Υ/ ¯𝑑hon)𝑗. We first write
+P(¯𝜏(𝑙+ 1) > (𝑙+ 1)𝑗, ¯𝜏(𝑙) ≤𝑙𝑗) = E[1(¯𝜏(𝑙) ≤𝑙𝑗)P′
+𝑙𝑗+1(¯𝜏(𝑙+ 1) > (𝑙+ 1)𝑗)].
+Now suppose ¯𝜏(𝑙) ≤𝑙𝑗. By Assumption 1, we can find 𝑖∈¯I𝑙𝑗and 𝑖′ ∉¯I𝑙𝑗such that 𝑖∈𝑁hon(𝑖′).
+Then for ¯𝜏(𝑙+ 1) > (𝑙+ 1)𝑗to occur, it must be the case that, for each 𝑗′ ∈{𝑙𝑗+ 1, . . . , (𝑙+ 1)𝑗}, the
+event { ¯𝐻(𝑖′)
+𝑗′
+= 𝑖, ¯𝑌(𝑖′)
+𝑗′
+= 1} did not occur. Therefore, we have
+P′
+𝑙𝑗+1(¯𝜏(𝑙+ 1) > (𝑙+ 1)𝑗) ≤P′
+𝑙𝑗+1(∩(𝑙+1) 𝑗
+𝑗′=𝑙𝑗+1{ ¯𝐻(𝑖′)
+𝑗′
+= 𝑖, ¯𝑌(𝑖′)
+𝑗′
+= 1}𝐶).
+By the law of total expectation, we can write
+P′
+𝑙𝑗+1(∩(𝑙+1) 𝑗
+𝑗′=𝑙𝑗+1{ ¯𝐻(𝑖′)
+𝑗′
+= 𝑖, ¯𝑌(𝑖′)
+𝑗′
+= 1}𝐶)
+= E′
+𝑙𝑗+1[1(∩(𝑙+1) 𝑗−1
+𝑗′=𝑙𝑗+1 { ¯𝐻(𝑖′)
+𝑗′
+= 𝑖, ¯𝑌(𝑖′)
+𝑗′
+= 1}𝐶)(1 −P′
+(𝑙+1) 𝑗( ¯𝐻(𝑖′)
+(𝑙+1) 𝑗= 𝑖, ¯𝑌(𝑖′)
+(𝑙+1) 𝑗= 1))].
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:40
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Since ¯𝐻(𝑖′)
+(𝑙+1) 𝑗is Uniform(𝑁hon(𝑖)) and ¯𝑌(𝑖′)
+(𝑙+1) 𝑗is Bernoulli(Υ), we have
+P′
+(𝑙+1) 𝑗( ¯𝐻(𝑖′)
+(𝑙+1) 𝑗= 𝑖, ¯𝑌(𝑖′)
+(𝑙+1) 𝑗= 1) = Υ/𝑑hon(𝑖) ≥Υ/ ¯𝑑hon.
+Therefore, combining the previous two expressions and iterating, we obtain
+P′
+𝑙𝑗+1(∩(𝑙+1) 𝑗
+𝑗′=𝑙𝑗+1{ ¯𝐻(𝑖′)
+𝑗′
+= 𝑖, ¯𝑌(𝑖′)
+𝑗′
+= 1}𝐶) ≤P′
+𝑙𝑗+1(∩(𝑙+1) 𝑗−1
+𝑗′=𝑙𝑗+1 { ¯𝐻(𝑖′)
+𝑗′
+= 𝑖, ¯𝑌(𝑖′)
+𝑗′
+= 1}𝐶)(1 −Υ/ ¯𝑑hon)
+≤· · · ≤(1 −Υ/ ¯𝑑hon)𝑗.
+□
+Next, we have a simple technical claim.
+Claim 10. Let ℎ† = (8𝛽¯𝑑hon/Υ) log(8𝛽¯𝑑hon𝑛/Υ). Then for any ℎ≥ℎ†, exp(−ℎΥ/ ¯𝑑hon) ≤ℎ−2𝛽/𝑛.
+Proof. If the claimed bound fails, we have ℎ< (2𝛽¯𝑑hon/Υ) log(ℎ) + ( ¯𝑑hon/Υ) log(𝑛). Then since
+( ¯𝑑hon/Υ) log(𝑛) < ℎ†/2 ≤ℎ/2, we obtain ℎ< (4𝛽¯𝑑hon/Υ) logℎ. Applying Claim 20 from Appendix
+F.1 with 𝑥= ℎ, 𝑦= 1, and 𝑧= 4𝛽¯𝑑hon/Υ, we obtain ℎ< 2𝑧log(2𝑧) ≤ℎ†, a contradiction.
+□
+We can now bound E[𝐴2¯𝜏spr]. The analysis is similar to Appendix D.2. We first write
+E[𝐴2¯𝜏spr] ≤𝐴2𝑛⌈ℎ†⌉+
+∞
+∑︁
+ℎ=⌈ℎ†⌉
+P(¯𝜏spr > 𝑛ℎ)
+2𝑛(ℎ+1)
+∑︁
+𝑗=2𝑛ℎ+1
+(𝐴𝑗−𝐴𝑗−1).
+By the previous two claims, we know
+P(¯𝜏spr > 𝑛ℎ) = P(¯𝜏(𝑛) > 𝑛ℎ) ≤𝑛(1 −Υ/ ¯𝑑hon)ℎ≤𝑛exp(−ℎΥ/ ¯𝑑hon) ≤ℎ−2𝛽.
+By Claim 18 from Appendix F.1, we also have
+𝐴2𝑛⌈ℎ†⌉≤(2𝑒)2𝛽(𝑛ℎ†)𝛽,
+𝐴2𝑛(ℎ+1) ≤𝑒2𝛽(2𝑛(ℎ+ 1))𝛽≤𝑒2𝛽(2𝑛(2ℎ))𝛽= (2𝑒)2𝛽(𝑛ℎ)𝛽∀ℎ∈N.
+Therefore, combining the previous three expressions, we obtain
+E𝐴2¯𝜏spr ≤(2𝑒)2𝛽𝑛𝛽©­
+«
+ℎ𝛽
+† +
+∞
+∑︁
+ℎ=⌈ℎ†⌉
+ℎ−𝛽ª®
+¬
+≤(2𝑒)2𝛽𝑛𝛽
+
+ℎ𝛽
+† +
+1
+𝛽−1
+
+,
+where the second inequality uses 𝛽> 1, ℎ† ≥2, and Claim 19 from Appendix F.1. Hence, we have
+shown E[𝐴2¯𝜏spr] = 𝑂((𝑛ℎ†)𝛽) = ˜𝑂((𝑛¯𝑑hon/Υ)𝛽). Note this bound cannot be improved in general
+– for example, if 𝐺hon is a line graph, it becomes ˜𝑂((𝑛/Υ)𝛽), so since E[¯𝜏spr]𝛽= 𝑂(E[𝐴¯𝜏spr]), we
+have E[¯𝜏spr] = ˜𝑂(𝑛/Υ), which is the correct scaling (up to log terms) in Definition 1.
+E
+DETAILS FROM SECTION 7
+In this appendix, we formalize the analysis that was discussed in Section 7. In particular, the
+subsequent five sub-appendices provide details on the respective five subsections of Section 7.
+E.1
+Details from Section 7.1
+Let 𝜓′ = (𝜌2 + 𝛽(2𝛼−1))/(2𝛼𝛽). Note that since 𝛼> 2 and 𝜌2 ∈(0, 𝛽) by assumption,
+0 < 1 −1/(2𝛼) = 𝛽(2𝛼−1)/(2𝛼𝛽) < 𝜓′ < (𝛽+ 𝛽(2𝛼−1))/(2𝛼𝛽) = 1,
+so 𝜓=
+√︁
+𝜓′ is well-defined and 𝜓∈(0, 1). Next, for any 𝑗∈N, define
+𝛿𝑗,1 =
+√︄
+4𝛼log𝐴𝑗
+( 𝐴𝑗−𝐴𝑗−1
+𝑆+2
+−1) ∨1
+,
+𝛿𝑗,2 =
+√︃
+𝛼log(𝐴𝑗−1 ∨1)
+©­­
+«
+1 −𝜓
+√𝜅𝑗
+−
+2
+√︃
+( 𝐴𝑗−𝐴𝑗−1
+𝑆+2
+−1) ∨1
+ª®®
+¬
+∨0.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:41
+Since 𝐴𝑗−𝐴𝑗−1 = Θ(𝑗𝛽−1), 𝜓< 1, and 𝜌2 < 𝛽−1, we are guaranteed that 𝐴𝑗−𝐴𝑗−1 ≥2(𝑆+ 2)
+and 𝛿𝑗,2 > 0 for large 𝑗, so the following is well-defined:
+𝐽★
+1 = min
+
+𝑗∈N : 𝐴𝑗′ −𝐴𝑗′−1 ≥2(𝑆+ 2),𝛿𝑗′,2 > 0 ∀𝑗′ ≥𝑗
+	
+.
+(47)
+Also note 𝐽★
+1 ≥2 (since 𝐴1 −𝐴0 = 1). Next, recall from Section 7.1 that
+Ξ(𝑖)
+𝑗,1 =
+n
+𝐵(𝑖)
+𝑗
+∉𝐺𝛿𝑗,1 (𝑆(𝑖)
+𝑗)
+o
+,
+Ξ(𝑖)
+𝑗,2 =
+(
+min
+𝑤∈𝐺𝛿𝑗,2 (𝑆(𝑖)
+𝑗)
+𝑇(𝑖)
+𝑤(𝐴𝑗) ≤𝜅𝑗
+)
+,
+Ξ(𝑖)
+𝑗
+= Ξ(𝑖)
+𝑗,1 ∪Ξ(𝑖)
+𝑗,2.
+Hence, if we let S(𝑖) = {𝑊⊂[𝐾] : |𝑊| = 𝑆+ 2, ˆ𝑆(𝑖) ⊂𝑊} denote the possible active sets for agent
+𝑖(i.e., 𝑆(𝑖)
+𝑗
+∈S(𝑖) for any phase 𝑗), we can write
+Ξ(𝑖)
+𝑗
+= ∪𝑊∈S(𝑖) ((Ξ(𝑖)
+𝑗,1 ∩{𝑆(𝑖)
+𝑗
+= 𝑊}) ∪((Ξ(𝑖)
+𝑗,1)𝐶∩Ξ(𝑖)
+𝑗,2 ∩{𝑆(𝑖)
+𝑗
+= 𝑊})).
+Consequently, by the union bound, we obtain
+P(Ξ(𝑖)
+𝑗) ≤
+∑︁
+𝑊∈S(𝑖)
+
+P(Ξ(𝑖)
+𝑗,1 ∩{𝑆(𝑖)
+𝑗
+= 𝑊}) + P((Ξ(𝑖)
+𝑗,1)𝐶∩Ξ(𝑖)
+𝑗,2 ∩{𝑆(𝑖)
+𝑗
+= 𝑊})
+
+.
+(48)
+The next two claims bound the two summands on the right side.
+Claim 11. Under the assumptions of Theorem 2, for any 𝑖∈[𝑛], 𝑗≥𝐽★
+1 , and 𝑊∈S(𝑖), we have
+P(Ξ(𝑖)
+𝑗,1 ∩{𝑆(𝑖)
+𝑗
+= 𝑊}) ≤4𝑆(𝑗−1)𝛽(3−2𝛼)/(2𝛼−3).
+Proof. If𝑊\𝐺𝛿𝑗,1 (𝑊) = ∅, the claim is immediate. Otherwise, Ξ(𝑖)
+𝑗,1 ∩{𝑆(𝑖)
+𝑗
+= 𝑊} implies 𝐵(𝑖)
+𝑗
+= 𝑤
+for some 𝑤∈𝑊\ 𝐺𝛿𝑗,1 (𝑊). Thus, by the union bound,
+P(Ξ(𝑖)
+𝑗,1 ∩{𝑆(𝑖)
+𝑗
+= 𝑊}) ≤
+∑︁
+𝑤∈𝑊\𝐺𝛿𝑗,1 (𝑊)
+P(𝐵(𝑖)
+𝑗
+= 𝑤, min𝑊∈𝑆(𝑖)
+𝑗).
+(49)
+Fix 𝑤∈𝑊\ 𝐺𝛿𝑗,1(𝑊). Then 𝐵(𝑖)
+𝑗
+= 𝑤implies 𝑇(𝑖)
+𝑤(𝐴𝑗) −𝑇(𝑖)
+𝑤(𝐴𝑗−1) ≥(𝐴𝑗−𝐴𝑗−1)/(𝑆+ 2) (else, by
+definition of 𝐵(𝑖)
+𝑗, Í
+𝑘∈𝑆(𝑖)
+𝑗(𝑇(𝑖)
+𝑘
+(𝐴𝑗) −𝑇(𝑖)
+𝑘
+(𝐴𝑗−1)) < 𝐴𝑗−𝐴𝑗−1). Since 𝐴𝑗−𝐴𝑗−1 ≥𝑆+ 2 (by 𝑗≥𝐽★
+1 ),
+we conclude 𝑇(𝑖)
+𝑤(𝐴𝑗) −𝑇(𝑖)
+𝑤(𝐴𝑗−1) ≥1, so there exists 𝑡∈{1 + 𝐴𝑗−1, . . . ,𝐴𝑗} such that
+𝑇(𝑖)
+𝑤(𝑡−1) −𝑇(𝑖)
+𝑤(𝐴𝑗−1) = 𝑇(𝑖)
+𝑤(𝐴𝑗) −𝑇(𝑖)
+𝑤(𝐴𝑗−1) −1,
+𝐼(𝑖)
+𝑡
+= 𝑤.
+Combining and using the union bound and with 𝑇(𝑖)
+𝑤(𝐴𝑗−1) ≥0 by definition, we obtain
+P(𝐵(𝑖)
+𝑗
+= 𝑤, min𝑊∈𝑆(𝑖)
+𝑗) ≤
+𝐴𝑗
+∑︁
+𝑡=1+𝐴𝑗−1
+P
+
+𝑇(𝑖)
+𝑤(𝑡−1) ≥𝐴𝑗−𝐴𝑗−1
+𝑆+ 2
+−1, min𝑊∈𝑆(𝑖)
+𝑗, 𝐼(𝑖)
+𝑡
+= 𝑤
+
+.(50)
+Now fix 𝑡as in the summation. Observe that since 𝑤∈𝑊\ 𝐺𝛿𝑗,1(𝑊) and 𝑗≥𝐽★
+1 , we have
+𝜇min𝑊−𝜇𝑤> 𝛿𝑗,1 =
+√︄
+4𝛼log𝐴𝑗
+𝐴𝑗−𝐴𝑗−1
+𝑆+2
+−1
+≥
+√︄
+4𝛼log𝑡
+𝐴𝑗−𝐴𝑗−1
+𝑆+2
+−1
+.
+Therefore, for any such 𝑡, we can apply a basic bandit tail (namely, Corollary 5 from Appendix F.2
+with the parameters 𝑘1 = 𝑤, 𝑘2 = min𝑊, and ℓ= (𝐴𝑗−𝐴𝑗−1)/(𝑆+ 2) −1) to obtain
+P
+
+𝑇(𝑖)
+𝑤(𝑡−1) ≥𝐴𝑗−𝐴𝑗−1
+𝑆+ 2
+−1, min𝑊∈𝑆(𝑖)
+𝑗, 𝐼(𝑖)
+𝑡
+= 𝑤
+
+≤2𝑡2(1−𝛼).
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:42
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Substituting into (50) and using Claim 19 from Appendix F.1 (which applies since 𝛼> 2), we obtain
+P(𝐵(𝑖)
+𝑗
+= 𝑤, min𝑊∈𝑆(𝑖)
+𝑗) ≤2
+∞
+∑︁
+𝑡=1+𝐴𝑗−1
+𝑡2(1−𝛼) ≤
+2𝐴3−2𝛼
+𝑗−1
+2𝛼−3 ≤2(𝑗−1)𝛽(3−2𝛼)
+2𝛼−3
+.
+Substituting into (49) and using |𝑊\ 𝐺𝛿𝑗,1(𝑊)| ≤|𝑊| −1 = 𝑆+ 1 ≤2𝑆completes the proof.
+□
+Claim 12. Under the assumption of Theorem 2, for any 𝑖∈[𝑛], 𝑗≥𝐽★
+1 , and 𝑊∈S(𝑖),
+P((Ξ(𝑖)
+𝑗,1)𝐶∩Ξ(𝑖)
+𝑗,2 ∩{𝑆(𝑖)
+𝑗
+= 𝑊}) ≤6 · 2𝛽𝑆(𝑗−1)𝛽(3−2𝛼)/(2𝛼−3).
+Proof. By definition, we have
+(Ξ(𝑖)
+𝑗,1)𝐶∩Ξ(𝑖)
+𝑗,2 ∩{𝑆(𝑖)
+𝑗
+= 𝑊} =
+(
+𝐵(𝑖)
+𝑗
+∈𝐺𝛿𝑗,1 (𝑊),
+min
+𝑤∈𝐺𝛿𝑗,2 (𝑊)𝑇(𝑖)
+𝑤(𝐴𝑗) ≤𝜅𝑗,𝑆(𝑖)
+𝑗
+= 𝑊
+)
+.
+As in the proof of Claim 11, we know that
+𝑇(𝑖)
+𝐵(𝑖)
+𝑗
+(𝐴𝑗) ≥𝑇(𝑖)
+𝐵(𝑖)
+𝑗
+(𝐴𝑗) −𝑇(𝑖)
+𝐵(𝑖)
+𝑗
+(𝐴𝑗−1) ≥𝐴𝑗−𝐴𝑗−1
+𝑆+ 2
+>
+𝐴𝑗−𝐴𝑗−1
+𝑆+ 2
+−1
+
+∨1 > 𝜅𝑗,
+where the final inequality holds since 𝛿𝑗,2 > 0 by assumption 𝑗≥𝐽★
+1 , which implies
+( 𝐴𝑗−𝐴𝑗−1
+𝑆+2
+−1) ∨1
+𝜅𝑗
+>
+
+2
+1 −𝜓
+2
+> 1.
+Thus, (Ξ(𝑖)
+𝑗,1)𝐶∩Ξ(𝑖)
+𝑗,2 ∩{𝑆(𝑖)
+𝑗
+= 𝑊} implies 𝐵(𝑖)
+𝑗
+∉arg min𝑤∈𝐺𝛿𝑗,2 (𝑊) 𝑇(𝑖)
+𝑤(𝐴𝑗), so by the union bound,
+P((Ξ(𝑖)
+𝑗,1)𝐶∩Ξ(𝑖)
+𝑗,2 ∩{𝑆(𝑖)
+𝑗
+= 𝑊})
+(51)
+≤
+∑︁
+𝑤1∈𝐺𝛿𝑗,1 (𝑊),𝑤2∈𝐺𝛿𝑗,2 (𝑊)\{𝑤1 }
+P
+
+𝑇(𝑖)
+𝑤1 (𝐴𝑗) −𝑇(𝑖)
+𝑤1 (𝐴𝑗−1) ≥𝐴𝑗−𝐴𝑗−1
+𝑆+ 2
+,𝑇(𝑖)
+𝑤2 (𝐴𝑗) ≤𝜅𝑗,𝑆(𝑖)
+𝑗
+= 𝑊
+
+.
+Now fix 𝑤1,𝑤2 as in the double summation. Then similar to the proof of Claim 11,
+P
+
+𝑇(𝑖)
+𝑤1 (𝐴𝑗) −𝑇(𝑖)
+𝑤1 (𝐴𝑗−1) ≥𝐴𝑗−𝐴𝑗−1
+𝑆+ 2
+,𝑇(𝑖)
+𝑤2 (𝐴𝑗) ≤𝜅𝑗,𝑆(𝑖)
+𝑗
+= 𝑊
+
+(52)
+≤
+𝐴𝑗
+∑︁
+𝑡=1+𝐴𝑗−1
+P
+
+𝑇(𝑖)
+𝑤1 (𝑡−1) ≥𝐴𝑗−𝐴𝑗−1
+𝑆+ 2
+−1,𝑇(𝑖)
+𝑤2 (𝐴𝑗) ≤𝜅𝑗,𝑤2 ∈𝑆(𝑖)
+𝑗, 𝐼(𝑖)
+𝑡
+= 𝑤1
+
+≤
+𝐴𝑗
+∑︁
+𝑡=1+𝐴𝑗−1
+2𝜅𝑗𝑡1−2𝛼𝜓2 = 2
+𝐴𝑗
+∑︁
+𝑡=1+𝐴𝑗−1
+(𝜅𝑗𝑡−𝜌2/𝛽)𝑡2−2𝛼,
+where the second bound follows from applying Claim 21 from Appendix F.2 with 𝑘1 = 𝑤1, 𝑘2 = 𝑤2,
+ℓ= (𝐴𝑗−𝐴𝑗−1)/(𝑆+ 2) −1, 𝑢= 𝜅𝑗, and 𝜄= 𝜓; note this claim applies since by assumption 𝑗≥𝐽★
+1 ,
+𝜇𝑤2 −𝜇𝑤1 ≥𝜇𝑤2 −𝜇min𝑊≥−𝛿𝑗,2 ≥
+√︁
+𝛼log𝑡
+©­­
+«
+2
+√︃
+𝐴𝑗−𝐴𝑗−1
+𝑆+2
+−1
+−1 −𝜓
+√𝜅𝑗
+ª®®
+¬
+.
+Next, observe that for any 𝑡≥𝐴𝑗−1 ≥(𝑗−1)𝛽, by definition of 𝜅𝑗, 𝑗≥𝐽★
+1 ≥2, and 𝜌2 < 𝛽−1,
+𝜅𝑗𝑡−𝜌2/𝛽≤𝜅𝑗(𝑗−1)−𝜌2 = (1 −1/𝑗)−𝜌2/(𝐾2𝑆) ≤2𝛽−1/𝑆.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:43
+Similar to the proof of Claim 11, we can then use Claim 19 to obtain
+2
+𝐴𝑗
+∑︁
+𝑡=1+𝐴𝑗−1
+(𝜅𝑗𝑡−𝜌2/𝛽)𝑡2−2𝛼≤2𝛽
+𝑆
+𝐴𝑗
+∑︁
+𝑡=1+𝐴𝑗−1
+𝑡2−2𝛼≤2𝛽(𝑗−1)𝛽(3−2𝛼)
+𝑆(2𝛼−3)
+.
+Combining with (51) and (52) completes the proof, since
+|𝐺𝛿𝑗,1(𝑊)||𝐺𝛿𝑗,2(𝑊) \ {𝑤1}| < (𝑆+ 2)(𝑆+ 1) ≤(3𝑆)(2𝑆) = 6𝑆2.
+□
+Finally, we provide the tail for 𝜏arm = inf{𝑗∈N : 1(Ξ(𝑖)
+𝑗′ ) = 0 ∀𝑖∈[𝑛], 𝑗′ ≥𝑗}.
+Lemma 9. Under the assumptions of Theorem 2, for any 𝑗≥𝐽★
+1 ∨3,
+P(𝜏arm > 𝑗) ≤(6𝛽+ 2)𝑛𝐾2𝑆(𝑗−2)𝛽(3−2𝛼)+1
+(2𝛼−3)(𝛽(2𝛼−3) −1)
+.
+Proof. By (48), Claims 11 and 12, |S(𝑖)| =  𝐾
+2
+ < 𝐾2
+2 , and 𝛽≥1, we can write
+P(Ξ(𝑖)
+𝑗′ ) ≤(6 · 2𝛽+ 4)𝐾2𝑆(𝑗′ −1)𝛽(3−2𝛼)
+2(2𝛼−3)
+≤(6𝛽+ 2)𝐾2𝑆(𝑗′ −1)𝛽(3−2𝛼)
+2𝛼−3
+.
+Thus, because 𝜏arm > 𝑗implies 1(∪𝑛
+𝑖=1Ξ(𝑖)
+𝑗′ ) = 1 for some 𝑖∈[𝑛] and 𝑗′ ≥𝑗, the union bound gives
+P(𝜏arm > 𝑗) ≤
+∞
+∑︁
+𝑗′=𝑗
+𝑛
+∑︁
+𝑖=1
+P(Ξ(𝑖)
+𝑗′ ) ≤(6𝛽+ 2)𝑛𝐾2𝑆
+2𝛼−3
+∞
+∑︁
+𝑗′=𝑗
+(𝑗′ −1)𝛽(3−2𝛼).
+Finally, use Claim 19 (which applies since 𝛽(2𝛼−3) > 1) to bound the sum.
+□
+E.2
+Details from Section 7.2
+Recall 𝜃𝑗= (𝑗/3)𝜌1, where 𝜌1 ∈(0, 1/𝜂] and 𝜂> 1. Hence, for all large 𝑗, we have
+1 ≤⌊𝜃𝑗⌋≤𝑗−2,
+⌈⌊𝜃𝑗⌋𝜂⌉≤𝜃𝜂
+𝑗+ 1 ≤(𝑗/3) + 1 ≤(𝑗−2) −𝑗/3.
+Thus, the following is well-defined:
+𝐽★
+2 = min
+
+𝑗∈N : 1 ≤⌊𝜃𝑗′⌋≤𝑗′ −2, 𝑗′/3 ≤(𝑗′ −2) −⌈⌊𝜃𝑗′⌋𝜂⌉∀𝑗′ ≥𝑗
+	
+.
+(53)
+Now recall from Section 7.2 that Ξ(𝑖→𝑖′)
+𝑗
+= ∩𝑗−2
+𝑗′=⌊𝜃𝑗⌋{𝐻(𝑖′)
+𝑗′
+≠𝑖}, and
+𝜏com = inf{𝑗∈N : 1(∪(𝑖,𝑖′) ∈𝐸honΞ(𝑖→𝑖′)
+𝑗′
+) = 0 ∀𝑗′ ∈{𝑗, 𝑗+ 1, . . .}}.
+The next lemma provides a tail bound for this random phase.
+Lemma 10. Under the assumptions of Theorem 2, for any 𝑗≥𝐽★
+2 ,
+P(𝜏com > 𝑗) ≤3(𝑛+ 𝑚)3 exp(−𝑗/(3 ¯𝑑)).
+Proof. We first use the union bound to write
+P(𝜏com > 𝑗) ≤
+∞
+∑︁
+𝑗′=𝑗
+∑︁
+𝑖→𝑖′∈𝐸hon
+P(Ξ(𝑖→𝑖′)
+𝑗′
+).
+(54)
+Fix𝑖→𝑖′ ∈𝐸hon and 𝑗′ ≥𝑗. Suppose Ξ(𝑖→𝑖′)
+𝑗′
+holds. Then𝑖∉𝑃(𝑖′)
+𝑗′′ \𝑃(𝑖′)
+𝑗′′−1 ∀𝑗′′ ∈{⌊𝜃𝑗′⌋+1, . . . , 𝑗′−1};
+else, we can find 𝑗′′ ∈{⌊𝜃𝑗′⌋+1, . . . , 𝑗′−1} such that 𝐻(𝑖′)
+𝑗′′−1 = 𝑖(i.e., 𝐻(𝑖′)
+𝑗′′
+= 𝑖for 𝑗′′ ∈{⌊𝜃𝑗′⌋, . . . , 𝑗′−
+2}), contradicting Ξ(𝑖→𝑖′)
+𝑗′
+. Hence, we have two cases:𝑖∉𝑃(𝑖′)
+𝑗′′ \𝑃(𝑖′)
+𝑗′′−1 ∀𝑗′′ ∈[𝑗′−1], or𝑖∈𝑃(𝑖′)
+𝑗′′ \𝑃(𝑖′)
+𝑗′′−1
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:44
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+for some 𝑗′′ ∈[𝑗′ −1] and max{𝑗′′ ∈[𝑗′ −1] : 𝑖∈𝑃(𝑖′)
+𝑗′′
+\ 𝑃(𝑖′)
+𝑗′′−1} ≤⌊𝜃𝑗′⌋. In the former case,
+𝑖∉𝑃(𝑖′)
+𝑗′′ ∀𝑗′′ ∈[𝑗′ −1]; in the latter, 𝑖∉𝑃(𝑖′)
+𝑗′′ ∀𝑗′′ ∈{⌈⌊𝜃𝑗′⌋𝜂⌉+ 1, . . . , 𝑗′ −1}. Thus,
+P(Ξ(𝑖→𝑖′)
+𝑗′
+) ≤P(∩𝑗′−2
+𝑗′′=⌈⌊𝜃𝑗′ ⌋𝜂⌉+1{𝑖∉𝑃(𝑖′)
+𝑗′′ , 𝐻(𝑖′)
+𝑗′′
+≠𝑖})
+= E[1(∩𝑗′−3
+𝑗′′=⌈⌊𝜃𝑗′ ⌋𝜂⌉+1{𝑖∉𝑃(𝑖′)
+𝑗′′ , 𝐻(𝑖′)
+𝑗′′
+≠𝑖})1(𝑖∉𝑃(𝑖′)
+𝑗′−2)P𝑗′−2(𝐻(𝑖)
+𝑗′−2 ≠𝑖)].
+Now given that 𝑖∉𝑃(𝑖′)
+𝑗′−2, 𝐻(𝑖)
+𝑗′−2 is sampled uniformly from a set of at most ¯𝑑elements which includes
+𝑖, so P𝑗′−2(𝐻(𝑖)
+𝑗′−2 ≠𝑖) ≤(1 −1/ ¯𝑑). Substituting above and iterating yields
+P(Ξ(𝑖→𝑖′)
+𝑗′
+) ≤(1 −1/ ¯𝑑)𝑗′−2−⌈⌊𝜃′
+𝑗⌋𝜂⌉≤(1 −1/ ¯𝑑)𝑗′/3,
+(55)
+where the final inequality uses 𝑗′ ≥𝑗≥𝐽★
+2 . Combining (54) and (55) and computing a geometric
+series, we obtain
+P(𝜏com > 𝑗) ≤|𝐸hon|(1 −1/ ¯𝑑)𝑗/3
+1 −(1 −1/ ¯𝑑)𝑗/3
+≤|𝐸hon|(1 −1/ ¯𝑑)𝑗/3
+1 −(1 −1/ ¯𝑑)1/3
+Finally, using |𝐸hon| ≤𝑛2 < (𝑛+ 𝑚)2, 1 −𝑥≤𝑒−𝑥∀𝑥∈R, (1 + 𝑥)𝑟≤1 + 𝑟𝑥for any 𝑟∈(0, 1) and
+𝑥≥−1, and ¯𝑑≤𝑚+ 𝑛, we obtain the desired bound.
+□
+E.3
+Details from Section 7.3
+We begin with some intermediate claims.
+Claim 13. If the assumptions of Theorem 2 hold, then for any 𝑖∈[𝑛] and 𝑗≥𝜏arm, we have
+𝜇min𝑆(𝑖)
+𝑗
+≤𝜇𝐵(𝑖)
+𝑗
++ 𝛿𝑗,1 ≤𝜇min𝑆(𝑖)
+𝑗+1 + 𝛿𝑗,1.
+Proof. The first inequality holds by definition of 𝜏arm and assumption 𝑗≥𝜏arm. The second
+holds since min𝑆(𝑖)
+𝑗+1 is the best arm in 𝑆(𝑖)
+𝑗+1 and 𝐵(𝑖)
+𝑗
+∈𝑆(𝑖)
+𝑗+1 in the algorithm.
+□
+Claim 14. If the assumptions of Theorem 2 hold, then for any 𝑖∈[𝑛] and 𝑗′ ≥𝑗≥𝜏arm,
+𝜇min𝑆(𝑖)
+𝑗′ ≥𝜇min𝑆(𝑖)
+𝑗
+−(𝐾−1)
+sup
+𝑗′′∈{𝑗,...,𝑗′}
+𝛿𝑗′′,1.
+Proof. If 𝑗= 𝑗′ or 𝜇min𝑆(𝑖)
+𝑗′
+≥𝜇min𝑆(𝑖)
+𝑗, the bound is immediate, so we assume 𝑗′ > 𝑗and
+𝜇min𝑆(𝑖)
+𝑗′ < 𝜇min𝑆(𝑖)
+𝑗
+for the remainder of the proof. Under this assumption, there must exist a phase
+𝑗′′ ∈{𝑗+ 1, . . . , 𝑗′} at which the mean of the best active arm reaches a new strict minimum since
+𝑗, i.e., 𝜇min𝑆(𝑖)
+𝑗′′ < 𝜇min𝑆(𝑖)
+𝑗. Let 𝑚denote the number of phases this occurs and 𝑗(1), . . . , 𝑗(𝑚) these
+(ordered) phases; formally,
+𝑗(0) = 𝑗,
+𝑗(𝑙) = min
+
+𝑗′′ ∈{𝑗(𝑙−1) + 1, . . . , 𝑗′} : 𝜇min𝑆(𝑖)
+𝑗′′ < 𝜇min𝑆(𝑖)
+𝑗(𝑙−1)
+
+∀𝑙∈[𝑚].
+The remainder of the proof relies on the following three inequalities:
+𝑚≤𝐾−1,
+𝜇min𝑆(𝑖)
+𝑗(𝑚) ≤𝜇min𝑆(𝑖)
+𝑗′ ,
+𝜇min𝑆(𝑖)
+𝑗(𝑙−1) ≤𝜇min𝑆(𝑖)
+𝑗(𝑙) −1
+∀𝑙∈[𝑚].
+(56)
+The first inequality holds since 𝜇min𝑆(𝑖)
+𝑗(0) > · · · > 𝜇min𝑆(𝑖)
+𝑗(𝑚) by definition, so min𝑆(𝑖)
+𝑗(0), . . . , min𝑆(𝑖)
+𝑗(𝑚)
+are distinct arms; since there are 𝑚+ 1 of these arms and 𝐾in total, 𝑚+ 1 ≤𝐾. For the second,
+we have 𝜇min𝑆(𝑖)
+𝑗(𝑚) = 𝜇min𝑆(𝑖)
+𝑗′ when 𝑗(𝑚) = 𝑗′ and 𝜇min𝑆(𝑖)
+𝑗(𝑚) ≤𝜇min𝑆(𝑖)
+𝑗′ when 𝑗(𝑚) < 𝑗′ (if the latter
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:45
+fails, we contradict the definition of 𝑚). For the third, note 𝑗(𝑙) ≥𝑗(𝑙−1) + 1 by construction, so if
+𝑗(𝑙) = 𝑗(𝑙−1) + 1, the bound holds with equality; else, 𝑗(𝑙) −1 ≥𝑗(𝑙−1) + 1, so if the bound fails,
+𝑗(𝑙) −1 ∈
+
+𝑗′′ ∈{𝑗(𝑙−1) + 1, . . . , 𝑗′} : 𝜇min𝑆(𝑖)
+𝑗′′ < 𝜇min𝑆(𝑖)
+𝑗(𝑙−1)
+
+,
+which is a contradiction, since 𝑗(𝑙) is the minimal element of the set at right. Hence, (56) holds.
+Combined with Claim 13 (note 𝑗(𝑙) −1 ≥𝑗(0) = 𝑗≥𝜏arm ∀𝑙∈[𝑚], as required), we obtain
+𝜇min𝑆(𝑖)
+𝑗
+−𝜇min𝑆(𝑖)
+𝑗′ =
+𝑚
+∑︁
+𝑙=1
+
+𝜇min𝑆(𝑖)
+𝑗(𝑙−1) −𝜇min𝑆(𝑖)
+𝑗(𝑙)
+
++ 𝜇min𝑆(𝑖)
+𝑗(𝑚) −𝜇min𝑆(𝑖)
+𝑗′
+≤
+𝑚
+∑︁
+𝑙=1
+
+𝜇min𝑆(𝑖)
+𝑗(𝑙) −1
+−𝜇min𝑆(𝑖)
+𝑗(𝑙)
+
+≤
+𝑚
+∑︁
+𝑙=1
+𝛿𝑗(𝑙)−1,1 ≤(𝐾−1)
+sup
+𝑗′′∈{𝑗,...,𝑗′}
+𝛿𝑗′′,1,
+where the last inequality uses 𝑗= 𝑗(0) ≤𝑗(𝑙) −1 < 𝑗′ ∀𝑙∈[𝑚].
+□
+As a simple corollary of the previous two claims, we have the following.
+Corollary 3. If the assumptions of Theorem 2 hold, then for any 𝑖∈[𝑛] and 𝑗′ ≥𝑗≥𝜏arm,
+𝜇𝐵(𝑖)
+𝑗′ ≥𝜇min𝑆(𝑖)
+𝑗
+−𝐾
+sup
+𝑗′′∈{𝑗,...,𝑗′}
+𝛿𝑗′′,1.
+Proof. Since 𝑗′ ≥𝑗≥𝜏arm, we can use Claims 13 and 14, respectively, to obtain
+𝜇𝐵(𝑖)
+𝑗′ ≥𝜇min𝑆(𝑖)
+𝑗′ −𝛿𝑗′,1 ≥𝜇min𝑆(𝑖)
+𝑗′ −
+sup
+𝑗′′∈{𝑗,...,𝑗′}
+𝛿𝑗′′,1 ≥𝜇min𝑆(𝑖)
+𝑗
+−𝐾
+sup
+𝑗′′∈{𝑗,...,𝑗′}
+𝛿𝑗′′,1.
+□
+Next, inspecting the analysis in Section 7.3, we see that 𝛿𝑗,2 ≥(𝐾+ 1) sup𝑗′∈{⌊𝜃𝑗⌋,...,𝑗} 𝛿𝑗′,1 for
+large 𝑗. Thus, the following is well-defined:
+𝐽★
+3 = min
+(
+𝑗∈N : 𝛿𝑗′,2 ≥(𝐾+ 1)
+sup
+𝑗′′∈{⌊𝜃𝑗′ ⌋,...,𝑗′}
+𝛿𝑗′′,1 ∀𝑗′ ≥𝑗
+)
+.
+(57)
+As discussed in Section 7.3, we can now show that no new accidental blocking occurs at late
+phases, at least among pairs of honest agents that have recently communicated.
+Claim 15. Under the assumptions of Theorem 2, if 𝑗≥𝐽★
+3 , ⌊𝜃𝑗⌋≥𝜏arm, and 𝐻(𝑖′)
+𝑗′
+= 𝑖for some
+𝑖,𝑖′ ∈[𝑛] and 𝑗′ ∈{⌊𝜃𝑗⌋, . . . , 𝑗−2}, then 𝑖′ ∉𝑃(𝑖)
+𝑗
+\ 𝑃(𝑖)
+𝑗−1.
+Proof. Suppose instead that 𝑖′ ∈𝑃(𝑖)
+𝑗
+\ 𝑃(𝑖)
+𝑗−1. Then by the algorithm,
+𝐵(𝑖)
+𝑗
+= · · · = 𝐵(𝑖)
+⌊𝜃𝑗⌋,
+𝑇(𝑖)
+𝑅(𝑖)
+𝑗−1
+(𝐴𝑗) ≤𝜅𝑗,
+𝑅(𝑖)
+𝑗−1 = 𝐵(𝑖′)
+𝑗−1 ∈𝑆(𝑖)
+𝑗.
+(58)
+Since 𝑗≥⌊𝜃𝑗⌋≥𝜏arm, this implies 𝐵(𝑖′)
+𝑗−1 ∉𝐺𝛿𝑗,2(𝑆(𝑖)
+𝑗). We then observe the following:
+• Since 𝐵(𝑖′)
+𝑗−1 ∈𝑆(𝑖)
+𝑗
+\ 𝐺𝛿𝑗,2(𝑆(𝑖)
+𝑗), the definition of 𝐺𝛿𝑗,2 (𝑆(𝑖)
+𝑗) implies 𝜇𝐵(𝑖′)
+𝑗−1 < 𝜇min𝑆(𝑖)
+𝑗
+−𝛿𝑗,2.
+• Again using 𝑗≥𝜏arm, Claim 13 implies 𝜇min𝑆(𝑖)
+𝑗
+≤𝜇𝐵(𝑖)
+𝑗
++ 𝛿𝑗,1.
+• Since ⌊𝜃𝑗⌋≤𝑗′ ≤𝑗, (58) implies 𝐵(𝑖)
+𝑗
+= 𝐵(𝑖)
+𝑗′ , so 𝜇𝐵(𝑖)
+𝑗
+= 𝜇𝐵(𝑖)
+𝑗′ .
+• Since 𝐻(𝑖′)
+𝑗′
+= 𝑖, the algorithm implies 𝐵(𝑖)
+𝑗′ ∈𝑆(𝑖′)
+𝑗′+1, so 𝜇𝐵(𝑖)
+𝑗′ ≤𝜇min𝑆(𝑖′)
+𝑗′+1.
+• Since 𝜏arm ≤⌊𝜃𝑗⌋< 𝑗′ + 1 < 𝑗, Corollary 3 implies 𝜇min𝑆(𝑖′)
+𝑗′+1 ≤𝜇𝐵(𝑖′)
+𝑗−1 + 𝐾sup𝑗′′∈{⌊𝜃𝑗⌋,...,𝑗} 𝛿𝑗′′,1.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:46
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Stringing together these inequalities, we obtain
+𝜇𝐵(𝑖′)
+𝑗−1 < 𝜇𝐵(𝑖′)
+𝑗−1 + 𝐾
+sup
+𝑗′′∈{⌊𝜃𝑗⌋,...,𝑗}
+𝛿𝑗′′,1 −𝛿𝑗,2 + 𝛿𝑗,1 ≤𝜇𝐵(𝑖′)
+𝑗−1 + (𝐾+ 1)
+sup
+𝑗′′∈{⌊𝜃𝑗⌋,...,𝑗}
+𝛿𝑗′′,1 −𝛿𝑗,2,
+i.e., 𝛿𝑗,2 < (𝐾+ 1) sup𝑗′′∈{⌊𝜃𝑗⌋,...,𝑗} 𝛿𝑗′′,1, which contradicts 𝑗≥𝐽★
+3 .
+□
+Finally, we prove that honest agents eventually stop blocking each other.
+Lemma 11. Under the assumptions of Theorem 2, if 𝑗≥𝐽★
+2 , ⌊𝜃𝑗⌋≥𝜏com ∨𝐽★
+3 , and ⌊𝜃⌊𝜃𝑗⌋⌋≥𝜏arm,
+then for any 𝑖∈[𝑛] and 𝑗′ ≥𝑗, 𝑃(𝑖)
+𝑗′ ∩[𝑛] = ∅.
+Proof. Fix 𝑖→𝑖′ ∈𝐸hon and 𝑗′ ≥𝑗; we aim to show 𝑖′ ∉𝑃(𝑖′)
+𝑗′ . This clearly holds if 𝑖′ ∉
+𝑃(𝑖)
+𝑗′′ \ 𝑃(𝑖)
+𝑗′′−1 ∀𝑗′′ ≤𝑗′. Otherwise, 𝑗𝐵,1 = max{𝑗′′ ≤𝑗′ : 𝑖′ ∈𝑃(𝑖)
+𝑗′′ \ 𝑃(𝑖)
+𝑗′′−1} (the latest phase up to and
+including 𝑗′ that 𝑖blocked 𝑖′) is well-defined. We consider two cases of 𝑗𝐵,1.
+The first case is 𝑗𝐵,1 ≤⌊𝜃𝑗⌋. Let 𝑗𝐵,2 = min{𝑗′′ > 𝑗′ : 𝑃(𝑖)
+𝑗′′ \ 𝑃(𝑖)
+𝑗′′−1} denote the first phase after 𝑗′
+that 𝑖blocked 𝑖′. Combined with the definition of 𝑗𝐵,1, the algorithm implies
+𝑖′ ∉𝑃(𝑖)
+𝑗′′ ∀𝑗′′ ∈{⌈𝑗𝜂
+𝐵,1⌉+ 1, . . . , 𝑗𝐵,2}.
+(59)
+Since 𝑗≥𝐽★
+2 , the definition of 𝐽★
+2 implies
+⌈⌊𝜃𝑗⌋𝜂⌉+ 1 ≤(𝑗−2) −(𝑗/3) + 1 < (𝑗−2) + 1 = 𝑗−1,
+so ⌈𝑗𝜂
+𝐵⌉+ 1 < 𝑗−1 < 𝑗′ as well. Combined with 𝑗′ ≤𝑗𝐵,2 −1 by definition, 𝑖′ ∉𝑃(𝑖′)
+𝑗′
+holds by (59).
+The second case is 𝑗𝐵,1 > ⌊𝜃𝑗⌋. By assumption, 𝑗𝐵,1 > ⌊𝜃𝑗⌋≥𝜏com. Hence, by definition of 𝜏com,
+𝐻(𝑖′)
+𝑗𝐶
+= 𝑖for some 𝑗𝐶∈{⌊𝜃𝑗𝐵,1⌋, . . . , 𝑗𝐵,1−2}. Note that 𝑗𝐵,1 ≥⌊𝜃𝑗⌋≥𝐽★
+3 and ⌊𝜃𝑗𝐵,1⌋≥⌊𝜃⌊𝜃𝑗⌋⌋≥𝜏arm
+by assumption (and by monotonicity of {⌊𝜃𝑗′′⌋}𝑗′′∈N in the latter case). Hence, we can apply Claim
+15 (with 𝑗= 𝑗𝐵,1 and 𝑗′ = 𝑗𝐶in the claim) to obtain 𝑖′ ∉𝑃(𝑖)
+𝑗𝐵,1 \ 𝑃(𝑖)
+𝑗𝐵,1−1. This is a contradiction.
+□
+E.4
+Details from Section 7.4
+We first verify that the sampling strategy in Section 7.4 is identical to the one in Algorithm 2.
+Claim 16. Suppose we replace the sampling of 𝐻(𝑖)
+𝑗
+in Algorithm 2 with the sampling of Section 7.4,
+and recall P𝑗denotes probability conditioned on all randomness before this sampling occurs. Then
+P𝑗(𝐻(𝑖)
+𝑗
+= 𝑖′) = 1(𝑖′ ∈𝑁(𝑖) \ 𝑃(𝑖)
+𝑗)/|𝑁(𝑖) \ 𝑃(𝑖)
+𝑗| ∀𝑖∈[𝑛],𝑖′ ∈[𝑛+ 𝑚], 𝑗∈N.
+Proof. Since P𝑗conditions on 𝑃(𝑖)
+𝑗, we can prove the identity separately in the cases 𝑃(𝑖)
+𝑗∩[𝑛] ≠∅
+and 𝑃(𝑖)
+𝑗
+∩[𝑛] = ∅. The identity is immediate in the former case. For the latter, we have
+P𝑗(𝐻(𝑖)
+𝑗
+= 𝑖′) = P𝑗(𝐻(𝑖)
+𝑗
+= 𝑖′|𝑌(𝑖)
+𝑗
+= 1)P𝑗(𝑌(𝑖)
+𝑗
+= 1) + P𝑗(𝐻(𝑖)
+𝑗
+= 𝑖′|𝑌(𝑖)
+𝑗
+= 0)P𝑗(𝑌(𝑖)
+𝑗
+= 0)
+= 1(𝑖′ ∈𝑁hon(𝑖))
+𝑑hon(𝑖)
+𝑑hon(𝑖)
+|𝑁(𝑖) \ 𝑃(𝑖)
+𝑗|
++
+1(𝑖′ ∈𝑁mal(𝑖) \ 𝑃(𝑖)
+𝑗)
+|𝑁mal(𝑖) \ 𝑃(𝑖)
+𝑗|
+©­
+«
+1 −
+𝑑hon(𝑖)
+|𝑁(𝑖) \ 𝑃(𝑖)
+𝑗|
+ª®
+¬
+= 1(𝑖′ ∈𝑁hon(𝑖))
+|𝑁(𝑖) \ 𝑃(𝑖)
+𝑗|
++
+1(𝑖′ ∈𝑁mal(𝑖) \ 𝑃(𝑖)
+𝑗)
+|𝑁mal(𝑖) \ 𝑃(𝑖)
+𝑗|
+|𝑁(𝑖) \ 𝑃(𝑖)
+𝑗| −𝑑hon(𝑖)
+|𝑁(𝑖) \ 𝑃(𝑖)
+𝑗|
+=
+1(𝑖′ ∈𝑁hon(𝑖)) + 1(𝑖′ ∈𝑁mal(𝑖) \ 𝑃(𝑖)
+𝑗)
+|𝑁(𝑖) \ 𝑃(𝑖)
+𝑗|
+=
+1(𝑖′ ∈𝑁(𝑖) \ 𝑃(𝑖)
+𝑗)
+|𝑁(𝑖) \ 𝑃(𝑖)
+𝑗|
+.
+□
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:47
+Next, note that since 𝛿𝑗′,1 →0 as 𝑗′ →∞, the following is well-defined:
+𝐽★
+4 = min{𝑗∈{2, 3, . . .} : 𝛿𝑗′,1 < Δ2 ∀𝑗′ ≥⌊𝑗/2⌋}.
+(60)
+As in Section 7.4, we let I𝑗= {𝑖∈[𝑛] : 1 ∈𝑆(𝑖)
+𝑗} be the agents with the best arm active at phase 𝑗.
+Claim 17. Under the assumptions of Theorem 2, if 𝑗≥𝐽★
+4 and ⌊𝑗/2⌋≥𝜏arm, then 𝐵(𝑖)
+𝑗′ = 1 ∀𝑗′ ≥
+⌊𝑗/2⌋,𝑖∈I𝑗′.
+Proof. Suppose instead that 𝐵(𝑖)
+𝑗′ ≠1 for some 𝑗′ ≥⌊𝑗/2⌋and 𝑖∈I𝑗′. Since 𝑗′ ≥⌊𝑗/2⌋≥⌊𝐽★
+4 /2⌋,
+we know 𝛿𝑗′,1 < Δ2. Hence, because 1 ∈𝑆(𝑖)
+𝑗′ by definition of I𝑗′, we have 𝐺𝛿𝑗′,1(𝑆(𝑖)
+𝑗′ ) = {1}.
+Combined with 𝐵(𝑖)
+𝑗′ ≠1, we get 𝐵(𝑖)
+𝑗′ ∈𝑆(𝑖)
+𝑗′ \ 𝐺𝛿𝑗′,1(𝑆(𝑖)
+𝑗′ ), which contradicts 𝑗′ ≥⌊𝑗/2⌋≥𝜏arm.
+□
+Finally, recall 𝜏spr = inf{𝑗∈N : 𝐵(𝑖)
+𝑗′ = 1 ∀𝑖∈[𝑛], 𝑗′ ≥𝑗} and ¯𝜏spr = inf{𝑗∈N : ¯I𝑗= [𝑛]},
+where { ¯I𝑗}∞
+𝑗=1 is the noisy rumor process from Definition 1.
+Lemma 12. Under the assumptions of Theorem 2, if 𝑗≥𝐽★
+4 , ⌊𝑗/2⌋≥𝐽★
+2 , and ⌊𝜃⌊𝑗/2⌋⌋≥𝐽★
+3 , then
+P(𝜏com ≤⌊𝜃⌊𝑗/2⌋⌋,𝜏arm ≤⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋,𝜏spr > 𝑗) ≤P(¯𝜏spr > 𝑗/2).
+Proof. Let E𝑗= {𝜏com ≤⌊𝜃⌊𝑗/2⌋⌋,𝜏arm ≤⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋} and
+˜I⌊𝑗/2⌋= {𝑖★}, ˜I𝑗= ¯I𝑗−1∪{𝑖∈[𝑛]\ ˜I𝑗−1 : ¯𝑌(𝑖)
+𝑗
+= 1, ¯𝐻(𝑖)
+𝑗
+∈˜I𝑗−1} ∀𝑗∈{⌊𝑗/2⌋+1, ⌊𝑗/2⌋+2, . . .}. (61)
+Then it suffices to prove the following:
+P⌊𝑗/2⌋(E𝑗∩{𝜏spr > 𝑗}) ≤P⌊𝑗/2⌋(E𝑗∩{I𝑗≠[𝑛]}) ≤P⌊𝑗/2⌋( ˜I𝑗≠[𝑛]) = P(¯𝜏spr > 𝑗/2).
+(62)
+For the first inequality in (62), we begin by proving
+E𝑗∩{𝜏spr > 𝑗} ∩{I𝑗= [𝑛]} = ∅.
+(63)
+To do so, we show E𝑗, I𝑗= [𝑛] ⇒𝜏spr ≤𝑗. Assume E𝑗and I𝑗= [𝑛] hold; by definition of 𝜏spr,
+we aim to show 𝐵(𝑖)
+𝑗′ = 1 ∀𝑖∈[𝑛], 𝑗′ ≥𝑗. We use induction. The base of induction (𝑗′ = 𝑗) holds
+by I𝑗= [𝑛], E𝑗⊂{𝜏arm ≤⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋≤⌊𝑗/2⌋}, and Claim 17. Given the inductive hypothesis
+𝐵(𝑖)
+𝑗′ = 1 ∀𝑖∈[𝑛], we have 1 ∈𝑆(𝑖)
+𝑗′+1 by the algorithm and I𝑗′+1 = [𝑛] by definition, so we again use
+the assumption that E𝑗holds and Claim 17 to obtain 𝐵(𝑖)
+𝑗′+1 = 1 ∀𝑖∈[𝑛]. Hence, (63) holds, so
+P⌊𝑗/2⌋(E𝑗∩{𝜏spr > 𝑗}) = P⌊𝑗/2⌋(E𝑗∩{𝜏spr > 𝑗} ∩{I𝑗≠[𝑛]}) ≤P⌊𝑗/2⌋(E𝑗∩{I𝑗≠[𝑛]}).
+For the second inequality in (62), we claim, and will return to prove, the following:
+E𝑗⊂∩𝑗
+𝑗′=⌊𝑗/2⌋{ ˜I𝑗′ ⊂I𝑗′}.
+(64)
+Assuming (64) holds, we obtain
+P⌊𝑗/2⌋(E𝑗∩{I𝑗≠[𝑛]}) ≤P⌊𝑗/2⌋( ˜I𝑗⊂I𝑗, I𝑗≠[𝑛], ) ≤P⌊𝑗/2⌋( ˜I𝑗≠[𝑛]).
+Hence, it only remains to prove (64). We show by induction on 𝑗′ when E𝑗holds, ˜I𝑗′ ⊂I𝑗′ for each
+𝑗′ ∈{⌊𝑗/2⌋, . . . , 𝑗}. For 𝑗′ = ⌊𝑗/2⌋, recall 1 ∈𝑆(𝑖★)
+⌊𝑗/2⌋by Assumption 3, so I⌊𝑗/2⌋⊃{𝑖★} = ˜I⌊𝑗/2⌋.
+Now assume ˜I𝑗′−1 ⊂I𝑗′−1 for some 𝑗′ ∈{⌊𝑗/2⌋+ 1, . . . , 𝑗}. Let 𝑖∈˜I𝑗′; we aim to show that 𝑖∈I𝑗′,
+i.e., that 1 ∈𝑆(𝑖)
+𝑗′ . By (61), we have two cases to consider:
+• 𝑖∈˜I𝑗′−1: By the inductive hypothesis, 𝑖∈I𝑗′−1 as well, so 1 ∈𝑆(𝑖)
+𝑗′−1 by definition. Combined
+with 𝑗′ −1 ≥⌊𝑗/2⌋and Claim 17 (recall 𝑗≥𝐽★
+4 and ⌊𝑗/2⌋≥⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋≥𝜏arm when E𝑗holds,
+so the claim applies), this implies 𝐵(𝑖)
+𝑗′−1 = 1, so 1 ∈𝑆(𝑖)
+𝑗′ by the algorithm.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:48
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+• 𝑖∈[𝑛] \ ˜I𝑗′−1, ¯𝑌(𝑖)
+𝑗′
+= 1, ¯𝐻(𝑖)
+𝑗′ ∈˜I𝑗′−1: First observe that since ⌊𝜃⌊𝑗/2⌋⌋≥𝐽★
+3 and 𝑗′ ≥⌊𝑗/2⌋≥
+𝐽★
+2 , we can apply Lemma 11 on the event E𝑗(with 𝑗replaced by ⌊𝑗/2⌋in that lemma) to obtain
+𝑃(𝑖)
+𝑗′ ∩[𝑛] = ∅. On the other hand, recall that ¯𝑌(𝑖)
+𝑗′
+is Bernoulli(Υ) in Definition 1 and 𝜐(𝑖)
+𝑗′ is
+Uniform[0, 1] for the Section 7.4 sampling, so we can realize the former as ¯𝑌(𝑖)
+𝑗′
+= 1(𝜐(𝑖)
+𝑗′ ≤Υ).
+Hence, by assumption ¯𝑌(𝑖)
+𝑗′
+= 1 and definition Υ = min𝑖∈[𝑛] 𝑑hon(𝑖)/𝑑(𝑖), we obtain
+1 = ¯𝑌(𝑖)
+𝑗′
+= 1(𝜐(𝑖)
+𝑗′ ≤Υ) ≤1
+
+𝜐(𝑖)
+𝑗′ ≤𝑑hon(𝑖)
+𝑑(𝑖)
+
+≤1 ©­
+«
+𝜐(𝑖)
+𝑗′ ≤
+𝑑hon(𝑖)
+|𝑁(𝑖) \ 𝑃(𝑖)
+𝑗|
+ª®
+¬
+= 𝑌(𝑖)
+𝑗
+.
+In summary, we have shown that 𝑃(𝑖)
+𝑗′ ∩[𝑛] = ∅and 𝑌(𝑖)
+𝑗
+= 1. Hence, by the Section 7.4
+sampling, we conclude 𝐻(𝑖)
+𝑗
+= ¯𝐻(𝑖)
+𝑗. Let 𝑖′ = 𝐻(𝑖)
+𝑗
+denote this honest agent. Then by the
+inductive hypothesis, we know that 𝑖′ ∈˜I𝑗′−1 ⊂I𝑗′−1, i.e., that 1 ∈𝑆(𝑖′)
+𝑗′−1. By Claim 17, this
+implies 𝐵(𝑖′)
+𝑗′−1 = 1, so by the algorithm, 1 = 𝐵(𝑖′)
+𝑗′−1 = 𝑅(𝑖)
+𝑗′−1 ∈𝑆(𝑖)
+𝑗′ .
+Finally, for the equality in (62), note that ˜I𝑗′ is independent of the randomness before ⌊𝑗/2⌋. By
+˜I⌊𝑗/2⌋= ¯I0 = {𝑖★}, the fact that ¯𝑌(𝑖)
+𝑗′
+and ¯𝑌(𝑖)
+𝑗′−⌊𝑗/2⌋are both Bernoulli(Υ) random variables and ¯𝐻(𝑖)
+𝑗′
+and ¯𝐻(𝑖)
+𝑗′−⌊𝑗/2⌋are both sampled uniformly from 𝑁hon(𝑖), ˜I𝑗′ has the same distribution as ¯I𝑗′−⌊𝑗/2⌋.
+Also, note that ˜I𝑗′ is independent of the randomness before ⌊𝑗/2⌋. Finally, by definition of ¯𝜏spr,
+¯I𝑗−⌊𝑗/2⌋≠[𝑛] implies that ¯𝜏spr > 𝑗−⌊𝑗/2⌋≥𝑗/2. These observations successively imply
+P⌊𝑗/2⌋( ˜I𝑗≠[𝑛]) = P( ˜I𝑗≠[𝑛]) = P( ¯I𝑗′−⌊𝑗/2⌋≠[𝑛]) ≤P(¯𝜏spr > 𝑗/2).
+□
+E.5
+Details from Section 7.5
+Combining the lemmas of the above sub-appendices, we can bound the tail of the spreading time.
+Theorem 3. Under the assumptions of Theorem 2, for any 𝑗≥𝐽★, where 𝐽★is defined in Claim 32
+from Appendix F.3, we have
+P(𝜏spr > 𝑗) ≤
+ 
+84𝜌2
+1 (𝛽(2𝛼−3)−1) (6𝛽+ 2)𝑛𝐾2𝑆
+(2𝛼−3)(𝛽(2𝛼−3) −1)
++ 3
+!
+𝑗𝜌2
+1 (𝛽(3−2𝛼)+1) + P
+
+¯𝜏spr > 𝑗
+2
+
+.
+Proof. For any 𝑗≥𝐽★, we can use Claim 32 to obtain
+𝑗≥𝐽★
+4 ,
+⌊𝜃⌊𝑗/2⌋⌋≥𝐽★
+2 ∨𝐽★
+3 ,
+⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋≥𝐽★
+1 ∨(2 + 𝑗𝜌2
+1/84) ≥3
+(65)
+(𝑛+ 𝑚)3 exp(−⌊𝜃⌊𝑗/2⌋⌋/(3 ¯𝑑)) ≤𝑗𝜌2
+1 (𝛽(3−2𝛼)+1).
+(66)
+In particular, ⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋≥𝐽★
+1 ∨3 implies that we can use Lemma 9 with 𝑗replaced by ⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋.
+Combined with (65) (namely, ⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋−2 ≥𝑗𝜌2
+1/84); this yields
+P(𝜏arm > ⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋) ≤84𝜌2
+1 (𝛽(2𝛼−3)−1) (6𝛽+ 2)𝑛𝐾2𝑆
+(2𝛼−3)(𝛽(2𝛼−3) −1)
+𝑗𝜌2
+1 (𝛽(3−2𝛼)+1).
+Since ⌊𝜃⌊𝑗/2⌋⌋≥𝐽★
+2 by (65), we can use Lemma 10 (with 𝑗replaced by ⌊𝜃⌊𝑗/2⌋⌋) and (66) to obtain
+P(𝜏com > ⌊𝜃⌊𝑗/2⌋⌋) ≤3(𝑛+ 𝑚)2 exp
+
+−⌊𝜃⌊𝑗/2⌋⌋
+3 ¯𝑑
+
+≤3𝑗𝜌2
+1 (𝛽(3−2𝛼)+1).
+Furthermore, using the bounds 𝑗≥𝐽★
+4 , ⌊𝜃⌊𝑗/2⌋⌋≥𝐽★
+3 , and ⌊𝜃⌊𝑗/2⌋⌋≥𝐽★
+2 from (65) (the last of which
+implies ⌊𝑗/2⌋≥𝐽★
+2 , since 𝜃⌊𝑗/2⌋= (⌊𝑗/2⌋/3)𝜌1 ≤⌊𝑗/2⌋by 𝜌1 ∈(0, 1)), we can use Lemma 12 to get
+P(𝜏arm ≤⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋,𝜏com ≤⌊𝜃⌊𝑗/2⌋⌋,𝜏spr > 𝑗) ≤P(¯𝜏spr > 𝑗/2).
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:49
+Finally, by the union bound, we have
+P(𝜏spr > 𝑗) ≤P(𝜏arm > ⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋) + P(𝜏com > ⌊𝜃⌊𝑗/2⌋⌋)
++ P(𝜏arm ≤⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋,𝜏com ≤⌊𝜃⌊𝑗/2⌋⌋,𝜏spr > 𝑗),
+so combining the previous four inequalities yields the desired result.
+□
+Finally, as a corollary, we can bound E[𝐴𝜏spr].
+Corollary 4. Under the assumptions of Theorem 2, we have
+E[𝐴𝜏spr] ≤(𝐽★)𝛽+
+ 
+84𝜌2
+1 (𝛽(2𝛼−3)−1) (6𝛽+ 2)
+(2𝛼−3)(𝛽(2𝛼−3) −1) + 3
+!
+2𝛽𝑛𝐾2𝑆
+𝜌2
+1(𝛽(2𝛼−3) −1) −𝛽+ E[𝐴2¯𝜏spr]
+= 𝑂
+
+𝑆𝛽/(𝜌2
+1 (𝛽−1)) ∨(𝑆log(𝑆/Δ2)/Δ2
+2)𝛽/(𝛽−1) ∨( ¯𝑑log(𝑛+ 𝑚))𝛽/𝜌1 ∨𝑛𝐾2𝑆
+
++ E[𝐴2¯𝜏spr],
+where 𝐽★is defined as in Claim 32 from Appendix F.3.
+Proof. We first observe
+E[𝐴𝜏spr] =
+∞
+∑︁
+𝑗=1
+(𝐴𝑗−𝐴𝑗−1)P(𝜏spr ≥𝑗) ≤𝐴𝐽★−1 +
+∞
+∑︁
+𝑗=𝐽★
+(𝐴𝑗−𝐴𝑗−1)P(𝜏spr ≥𝑗).
+(67)
+For the first term in (67), using Claim 18 from Appendix F.1, we compute
+𝐴𝐽★−1 = 𝐴𝐽★−(𝐴𝐽★−𝐴𝐽★−1) = ⌈(𝐽★)𝛽⌉−(𝐴𝐽★−𝐴𝐽★−1) ≤(𝐽★)𝛽+ 1 −1 = (𝐽★)𝛽.
+For the second term in (67), define the constant
+𝐶= 84𝜌2
+1 (𝛽(2𝛼−3)−1) (6𝛽+ 2)
+(2𝛼−3)(𝛽(2𝛼−3) −1) + 3.
+Then by Theorem 3, we have
+∞
+∑︁
+𝑗=𝐽★
+(𝐴𝑗−𝐴𝑗−1)P(𝜏spr ≥𝑗) ≤
+∞
+∑︁
+𝑗=𝐽★
+(𝐴𝑗−𝐴𝑗−1)P(¯𝜏spr > 𝑗/2)
+(68)
++ 𝐶𝑛𝐾2𝑆
+∞
+∑︁
+𝑗=𝐽★
+(𝐴𝑗−𝐴𝑗−1)𝑗𝜌2
+1 (𝛽(3−2𝛼)+1).
+(69)
+For (68), we simply use nonnegativity to write
+∞
+∑︁
+𝑗=𝐽★
+(𝐴𝑗−𝐴𝑗−1)P(¯𝜏spr > 𝑗/2) ≤
+∞
+∑︁
+𝑗=1
+(𝐴𝑗−𝐴𝑗−1)P(2¯𝜏spr ≥𝑗) = E[𝐴2¯𝜏spr].
+For the second term in (69), we use Claim 18 and 𝛽> 1 and 𝜌2
+1(𝛽(2𝛼−3)−1) > 𝛽by the assumptions
+of Theorem 2 to write
+𝐶𝑛𝐾2𝑆
+∞
+∑︁
+𝑗=𝐽★
+(𝐴𝑗−𝐴𝑗−1)𝑗𝜌2
+1 (𝛽(3−2𝛼)+1) < 2𝛽𝐶𝑛𝐾2𝑆
+∞
+∑︁
+𝑗=𝐽★
+𝑗−1−(𝜌2
+1 (𝛽(2𝛼−3)−1)−𝛽)
+≤2𝛽𝐶𝑛𝐾2𝑆
+∫∞
+𝑗=1
+𝑗−1−(𝜌2
+1 (𝛽(2𝛼−3)−1)−𝛽)𝑑𝑗=
+2𝛽𝐶𝑛𝐾2𝑆
+𝜌2
+1(𝛽(2𝛼−3) −1) −𝛽.
+Finally, combining the above bounds completes the proof.
+□
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:50
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+F
+OTHER PROOFS
+F.1
+Basic inequalities
+In this sub-appendix, we prove some simple inequalities used frequently in the analysis.
+Claim 18. For any 𝑗∈N, we have
+𝑗𝛽≤𝐴𝑗≤𝑗2𝛽,
+𝛽(𝑗−1)𝛽−1 −1 < 𝐴𝑗−𝐴𝑗−1 < 𝛽𝑗𝛽−1 + 1,
+𝐴𝑗−𝐴𝑗−1 ≥1,
+and for any 𝑧≥1 and 𝑙∈N, we have 𝐴𝑙⌈𝑧⌉≤𝑒2𝛽(𝑙𝑧)𝛽.
+Proof. For the first pair of inequalities, observe 𝐴𝑗= 𝑗𝛽= 𝑗2𝛽= 1 when 𝑗= 1, and for 𝑗≥2,
+𝑗𝛽≤𝐴𝑗≤𝑗𝛽+ 1 ≤2𝑗𝛽≤𝑗1+𝛽≤𝑗2𝛽.
+For the second pair of inequalities, we first observe
+𝐴𝑗−𝐴𝑗−1 > 𝑗𝛽−(𝑗−1)𝛽−1 = 𝛽𝑥𝛽−1 −1 ≥𝛽(𝑗−1)𝛽−1 −1,
+(70)
+where the equality holds for some 𝑥∈[𝑗−1, 𝑗] by the mean value theorem and the second
+inequality is 𝑥≥𝑗−1. By analogous reasoning, one can also show 𝐴𝑗−𝐴𝑗−1 < 𝛽𝑗𝛽−1 + 1, so the
+second pair of inequalities holds. The third inequality holds with equality when 𝑗= 1, and for
+𝑗≥2, the lower bound in (70) and 𝛽> 1 imply 𝐴𝑗−𝐴𝑗−1 > 0, so since 𝐴𝑗and 𝐴𝑗−1 are integers,
+𝐴𝑗−𝐴𝑗−1 ≥1. Finally, using 𝑧≥1, 𝛽> 1, and 2 < 𝑒, we can write
+𝐴𝑙⌈𝑧⌉< (𝑙(𝑧+ 1))𝛽+ 1 < (2𝑙𝑧)𝛽+ (2𝑙𝑧)𝛽= 2𝛽+1(𝑙𝑧)𝛽< 𝑒2𝛽(𝑧𝑙)𝛽.
+□
+Claim 19. For any 𝑗∈N and 𝑐> 1, Í∞
+𝑖=𝑗+1 𝑖−𝑐≤𝑗1−𝑐/(𝑐−1).
+Proof. Since 𝑗≥1 and 𝑐> 1, we can write
+∞
+∑︁
+𝑖=𝑗+1
+𝑖−𝑐=
+∞
+∑︁
+𝑖=𝑗+1
+∫𝑖
+𝑥=𝑖−1
+𝑖−𝑐𝑑𝑥≤
+∞
+∑︁
+𝑖=𝑗+1
+∫𝑖
+𝑥=𝑖−1
+𝑥−𝑐𝑑𝑥=
+∫∞
+𝑥=𝑗
+𝑥−𝑐𝑑𝑥= 𝑗1−𝑐
+𝑐−1.
+□
+Claim 20. For any 𝑥,𝑦,𝑧> 0 such that 𝑥𝑦≤𝑧log𝑥, 𝑥< ((2𝑧/𝑦) log(2𝑧/𝑦))1/𝑦< (2𝑧/𝑦)2/𝑦.
+Proof. Multiplying and dividing the right side of the assumed inequality by 𝑦/2, we obtain 𝑥𝑦≤
+(2𝑧/𝑦) log𝑥𝑦/2. We can then loosen this bound to get 𝑥𝑦< (2𝑧/𝑦)𝑥𝑦/2, or 𝑥< (2𝑧/𝑦)2/𝑦. Plugging
+into the log term of the assumed inequality yields 𝑥𝑦< (2𝑧/𝑦) log(2𝑧/𝑦). Raising both sides to the
+power 1/𝑦establishes the first bound. The second bound follows by using log(2𝑧/𝑦) < 2𝑧/𝑦.
+□
+Remark 14. We typically apply Claim 20 with𝑦constant but 𝑧not. It allows us to invert inequalities
+of the form 𝑥𝑦≤𝑧log𝑥to obtain 𝑥= ˜𝑂(𝑧1/𝑦).
+F.2
+Bandit inequalities
+Next, we state and prove some basic bandit inequalities. The proof techniques are mostly modified
+from existing work (e.g., [3]), but we provide the bounds in forms useful for our setting.
+Claim 21. Suppose that 𝑘1,𝑘2 ∈[𝐾], 𝑡∈N, ℓ,𝑢> 0, and 𝜄∈(0, 1] satisfy
+𝜇𝑘2 −𝜇𝑘1 ≥
+√︁
+𝛼log𝑡
+ 2√
+ℓ
+−1 −𝜄
+√𝑢
+
+.
+Let 𝑗∈N be such that 𝑡∈{1 + 𝐴𝑗−1, . . . ,𝐴𝑗}, i.e., 𝑗∈𝐴−1(𝑡). Then for any 𝑖∈[𝑛], we have
+P(𝑇(𝑖)
+𝑘1 (𝑡−1) ≥ℓ,𝑇(𝑖)
+𝑘2 (𝐴𝑗) ≤𝑢,𝑘2 ∈𝑆(𝑖)
+𝑗, 𝐼(𝑖)
+𝑡
+= 𝑘1) ≤2(⌊𝑢⌋∧𝑡)𝑡1−2𝛼𝜄2
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:51
+Proof. For 𝑘∈[𝐾], let {𝑋𝑘(𝑠)}∞
+𝑠=1 be an i.i.d. sequence distributed as 𝜈𝑘, and for 𝑠∈N, let
+ˆ𝜇(𝑖)
+𝑘(𝑠) = 1
+𝑠
+𝑠∑︁
+𝑠′=1
+𝑋𝑘(𝑠′),
+𝑈(𝑖)
+𝑘(𝑡,𝑠) = ˆ𝜇(𝑖)
+𝑘(𝑠) +
+√︂
+𝛼log𝑡
+𝑠
+denote the empirical mean and UCB index of if 𝑖has pulled the 𝑘-th arm 𝑠times before 𝑡. Then
+Algorithm 1 implies that if 𝑘2 ∈𝑆(𝑖)
+𝑗
+and 𝐼(𝑖)
+𝑡
+= 𝑘1, we must have
+𝑈(𝑖)
+𝑘1 (𝑡,𝑇(𝑖)
+𝑘1 (𝑡−1)) ≥𝑈(𝑖)
+𝑘2 (𝑡,𝑇(𝑖)
+𝑘2 (𝑡−1)).
+(71)
+Next, note that if 𝑇(𝑖)
+𝑘2 (𝐴𝑗) ≤𝑢, then by monotonicity, 𝑇(𝑖)
+𝑘2 (𝑡−1) ≤𝑢as well. Combined with the
+fact that 𝑇(𝑖)
+𝑘2 (𝑡−1) ∈[𝑡] by definition, we conclude that 𝑇(𝑖)
+𝑘2 (𝐴𝑗) ≤𝑢implies 𝑇(𝑖)
+𝑘2 (𝑡−1) ≤⌊𝑢⌋∧𝑡.
+Similarly, 𝑇(𝑖)
+𝑘1 (𝑡−1) ≥ℓimplies 𝑇(𝑖)
+𝑘1 (𝑡−1) ≥⌈ℓ⌉(since 𝑇(𝑖)
+𝑘1 (𝑡−1) ∈N). Combined with (71), we
+obtain that if the event in the statement of the claim occurs, it must be the case that
+max
+𝑠1∈{⌈ℓ⌉,...,𝑡}𝑈(𝑖)
+𝑘1 (𝑡,𝑠1) ≥
+min
+𝑠2∈[ ⌊𝑢⌋∧𝑡] 𝑈(𝑖)
+𝑘2 (𝑡,𝑠2).
+Therefore, by the union bound, we obtain
+P(𝑇(𝑖)
+𝑘1 (𝑡−1) ≥ℓ,𝑇(𝑖)
+𝑘2 (𝐴𝑗) ≤𝑢,𝑘2 ∈𝑆(𝑖)
+𝑗, 𝐼(𝑖)
+𝑡
+= 𝑘1) ≤
+𝑡∑︁
+𝑠1=⌈ℓ⌉
+⌊𝑢⌋∧𝑡
+∑︁
+𝑠2=1
+P(𝑈(𝑖)
+𝑘1 (𝑡,𝑠1) ≥𝑈(𝑖)
+𝑘2 (𝑡,𝑠2)). (72)
+Now fix 𝑠1 and 𝑠2 as in the double summation. We claim 𝑈(𝑖)
+𝑘1 (𝑡,𝑠1) ≥𝑈(𝑖)
+𝑘2 (𝑡,𝑠2) implies
+ˆ𝜇(𝑖)
+𝑘1 (𝑠1) ≥𝜇𝑘1 +
+√︁
+𝛼log(𝑡)/𝑠1
+or
+ˆ𝜇(𝑖)
+𝑘2 (𝑠2) ≤𝜇𝑘2 −𝜄
+√︁
+𝛼log(𝑡)/𝑠2.
+Indeed, if instead both inequalities fail, then by choice of 𝑠1,𝑠2 and the assumption of the claim,
+𝑈(𝑖)
+𝑘1 (𝑡,𝑠1) < 𝜇𝑘1 + 2
+√︁
+𝛼log(𝑡)/𝑠1 ≤𝜇𝑘1 + 2
+√︁
+𝛼log(𝑡)/ℓ
+≤𝜇𝑘2 + (1 −𝜄)
+√︁
+𝛼log(𝑡)/𝑢≤𝜇𝑘2 + (1 −𝜄)
+√︁
+𝛼log(𝑡)/𝑠2 < 𝑈(𝑖)
+𝑘2 (𝑡,𝑠2),
+which is a contradiction. Thus, by the union bound, Hoeffding’s inequality, and 𝜄∈(0, 1), we obtain
+P(𝑈(𝑖)
+𝑘1 (𝑡,𝑠1) ≥𝑈(𝑖)
+𝑘2 (𝑡,𝑠2)) ≤P( ˆ𝜇(𝑖)
+𝑘1 (𝑠1) ≥𝜇𝑘1 +
+√︁
+𝛼log(𝑡)/𝑠1) + P( ˆ𝜇(𝑖)
+𝑘2 (𝑠2) ≤𝜇𝑘2 −𝜄
+√︁
+𝛼log(𝑡)/𝑠2)
+≤𝑒−2𝛼log𝑡+ 𝑒−2𝛼𝜄2 log𝑡= 𝑡−2𝛼+ 𝑡−2𝛼𝜄2 ≤2𝑡−2𝛼𝜄2,
+so plugging into (72) completes the proof.
+□
+Corollary 5. Suppose that 𝑘1,𝑘2 ∈[𝐾], 𝑡∈N,and ℓ> 0 satisfy 𝜇𝑘2 −𝜇𝑘1 ≥
+√︁
+4𝛼log(𝑡)/ℓ. Let
+𝑗∈N be such that 𝑡∈{1 + 𝐴𝑗−1, . . . ,𝐴𝑗}, i.e., 𝑗= 𝐴−1(𝑡). Then for any 𝑖∈[𝑛], we have
+P(𝑇(𝑖)
+𝑘1 (𝑡−1) ≥ℓ,𝑘2 ∈𝑆(𝑖)
+𝑗, 𝐼(𝑖)
+𝑡
+= 𝑘1) ≤2𝑡2(1−𝛼).
+Proof. Using 𝑇(𝑖)
+𝑘2 (𝐴𝑗) ≤𝐴𝑗by definition and applying Claim 21 with 𝑢= 𝐴𝑗and 𝜄= 1,
+P(𝑇(𝑖)
+𝑘1 (𝑡−1) ≥ℓ,𝑘2 ∈𝑆(𝑖)
+𝑗, 𝐼(𝑖)
+𝑡
+= 𝑘1) = P(𝑇(𝑖)
+𝑘1 (𝑡−1) ≥ℓ,𝑇(𝑖)
+𝑘2 (𝐴𝑗) ≤𝐴𝑗,𝑘2 ∈𝑆(𝑖)
+𝑗, 𝐼(𝑖)
+𝑡
+= 𝑘1)
+≤2(⌊𝐴𝑗⌋∧𝑡)𝑡1−2𝛼= 𝑡2(1−𝛼).
+□
+Corollary 6. For any 𝑖∈[𝑛], 𝑘∈[𝐾], and 𝑇∈N, we have
+E
+
+𝑇∑︁
+𝑡=𝐴𝜏spr+1
+1
+ 
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) ≥4𝛼log𝑡
+Δ2
+𝑘
+!
+≤4(𝛼−1)
+2𝛼−3 .
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:52
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Proof. First observe that since 1 ∈𝑆(𝑖)
+𝐴−1(𝑡) whenever 𝑡≥𝐴𝜏spr + 1 by definition, we have
+𝑇∑︁
+𝑡=𝐴𝜏spr+1
+1
+ 
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) ≥4𝛼log𝑡
+Δ2
+𝑘
+!
+≤
+∞
+∑︁
+𝑡=1
+1
+ 
+𝑇(𝑖)
+𝑘
+(𝑡−1) ≥4𝛼log𝑡
+Δ2
+𝑘
+, 1 ∈𝑆(𝑖)
+𝐴−1(𝑡), 𝐼(𝑖)
+𝑡
+= 𝑘
+!
+.
+(73)
+Next, let 𝑘1 = 𝑘, 𝑘2 = 1, and ℓ= 4𝛼log(𝑡)/Δ2
+𝑘. Then by definition, we have 𝜇𝑘2 −𝜇𝑘1 = Δ𝑘=
+√︁
+4𝛼log(𝑡)/ℓ. Therefore, we can use Corollary 5 to obtain
+P(𝑇(𝑖)
+𝑘
+(𝑡−1) ≥4𝛼log(𝑡)/Δ2
+𝑘, 1 ∈𝑆(𝑖)
+𝐴−1(𝑡), 𝐼(𝑖)
+𝑡
+= 𝑘) ≤2𝑡2(1−𝛼).
+(74)
+Hence, taking expectation in (73), then plugging in (74) to the right side and using Claim 19, yields
+E
+
+𝑇∑︁
+𝑡=𝐴𝜏spr+1
+1
+ 
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) ≥4𝛼log𝑡
+Δ2
+𝑘
+!
+≤2
+ 
+1 +
+∞
+∑︁
+𝑡=2
+𝑡2(1−𝛼)
+!
+≤4(𝛼−1)
+2𝛼−3 .
+□
+Claim 22. For any 𝑖∈[𝑛], 𝑡1,𝑡2 ∈N such that 𝑡1 < 𝑡2, and {ℓ𝑡}𝑡2
+𝑡=𝑡1 ⊂(0, ∞),
+𝑡2
+∑︁
+𝑡=𝑡1
+1
+
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) < ℓ𝑡
+
+≤
+max
+𝑡∈{𝑡1,...,𝑡2 } ℓ𝑡.
+Proof. Set ℓ= max𝑡∈{𝑡1,...,𝑡2 } ℓ𝑡. Then clearly
+𝑡2
+∑︁
+𝑡=𝑡1
+1
+
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) < ℓ𝑡
+
+≤
+𝑡2
+∑︁
+𝑡=𝑡1
+1
+
+𝐼(𝑖)
+𝑡
+= 𝑘,𝑇(𝑖)
+𝑘
+(𝑡−1) < ℓ
+
+.
+Now suppose the right strictly exceeds ℓ. Then since the right side is an integer, we can find
+⌈ℓ⌉times 𝑡∈{𝑡1, . . . ,𝑡2} such that 𝐼(𝑖)
+𝑡
+= 𝑘and 𝑇(𝑖)
+𝑘
+(𝑡−1) < ℓ. Let ¯𝑡denote the largest such 𝑡.
+Because 𝐼(𝑖)
+𝑡
+= 𝑘occurred at least ⌈ℓ⌉−1 times before 𝑡, we know 𝑇(𝑖)
+𝑘
+(¯𝑡−1) ≥⌈ℓ⌉−1. But since
+𝑇(𝑖)
+𝑘
+(¯𝑡−1) < ℓ, this implies ℓ+ 1 > ⌈ℓ⌉, which is a contradiction.
+□
+Finally, we recall a well-known regret decomposition.
+Claim 23. The regret 𝑅(𝑖)
+𝑇
+defined in (5) satisfies 𝑅(𝑖)
+𝑇
+= Í𝐾
+𝑘=2 Δ𝑘E[Í𝑇
+𝑡=1 1(𝐼(𝑖)
+𝑡
+= 𝑘)].
+Proof. See, e.g., the proof of [38, Lemma 4.5].
+□
+F.3
+Calculations for the early regret
+In this sub-appendix, we assume 𝛼, 𝛽, 𝜂, 𝜃𝑗, 𝜅𝑗, 𝜌1, and 𝜌2 are chosen as in Theorem 2. Recall 𝐶𝑖, 𝐶′
+𝑖,
+etc. denote constants associated with Claim 𝑖that only depend on 𝛼, 𝛽, 𝜂, 𝜌1, and 𝜌2.
+Claim 24. There exists 𝐶24,𝐶′
+24 > 0 such that ⌊𝜃⌊𝑗/2⌋⌋≥𝐶24𝑗𝜌1 and ⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋≥𝐶24𝑗𝜌2
+1 ∀𝑗≥𝐶′
+24.
+Proof. This follows from the choice 𝜃𝑗′ = (𝑗′/3)𝜌1 ∀𝑗′ ∈N in Theorem 2.
+□
+Claim 25. There exists 𝐶25 > 0 such that ⌊𝜃⌊𝑗/2⌋⌋≥𝐽★
+2 ∀𝑗≥𝐶25.
+Proof. This follows from Claim 24 and the fact that 𝐽★
+2 is a constant by definition (53).
+□
+Claim 26. There exists 𝐶26,𝐶′
+26 > 0 such that for any 𝑗≥𝐶26𝑆1/(𝛽−1),
+𝐴𝑗−𝐴𝑗−1
+𝑆+ 2
+−1
+
+∨1 = 𝐴𝑗−𝐴𝑗−1
+𝑆+ 2
+−1 ≥𝑗𝛽−1
+𝐶′
+26𝑆.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:53
+Proof. By Claim 18, we can find 𝐶,𝐶′ > 0 depending only on 𝛽such that 𝐴𝑗−𝐴𝑗−1 ≥𝐶𝑗𝛽−1
+whenever 𝑗≥𝐶′. Hence, for any 𝑗≥(6𝑆/𝐶)1/(𝛽−1) ∨𝐶′, we know 𝐴𝑗−𝐴𝑗−1 ≥𝐶𝑗𝛽−1 ≥6𝑆, so
+𝐴𝑗−𝐴𝑗−1
+𝑆+ 2
+−1 ≥𝐶𝑗𝛽−1 −3𝑆
+3𝑆
+≥𝐶𝑗𝛽−1 −𝐶𝑗𝛽−1/2
+3𝑆
+= 𝐶𝑗𝛽−1
+6𝑆
+≥1,
+where we also used 𝑆≥1. The claim follows if we set 𝐶26 = (6/𝐶)1/(𝛽−1) ∨𝐶′ and 𝐶′
+26 = 𝐶/6.
+□
+Claim 27. There exists 𝐶27,𝐶′
+27 > 0 such that for any 𝑗≥𝐶27𝑆1/(𝛽−1),
+log(𝐴𝑗−1 ∨1) ≥𝛽log(𝑗)/2 > 0,
+1 −𝜓
+√𝜅𝑗
+−
+2
+√︃
+( 𝐴𝑗−𝐴𝑗−1
+𝑆+2
+−1) ∨1
+>
+√︄
+𝐶′
+27𝐾2𝑆
+𝑗𝜌2
+.
+(75)
+Proof. By Claim 26, we can find constants 𝐶26,𝐶′
+26 > 0 such that for any 𝑗≥𝐶26𝑆1/(𝛽−1),
+2/
+√︃
+([(𝐴𝑗−𝐴𝑗−1)/(𝑆+ 2)] −1) ∨1 ≤
+√︃
+4𝐶′
+26𝑆/𝑗𝛽−1 ≤
+√︃
+4𝐶′
+26𝐾2𝑆/𝑗𝛽−1,
+where we also used 𝐾≥1. Furthermore, since 𝜌2 < 𝛽−1 by assumption, we can find 𝐶> 0
+depending only on 𝐶′
+26, 𝜓, 𝛽, and 𝜌2, such that for any 𝑗≥𝐶, we have 4𝐶′
+26/𝑗𝛽−1 < (1 −𝜓)2/(4𝑗𝜌2).
+Combined with the previous inequality and the choice 𝜅𝑗= 𝑗𝜌2/(𝐾2𝑆) in Theorem 2, we obtain
+1 −𝜓
+√𝜅𝑗
+−
+2
+√︃
+( 𝐴𝑗−𝐴𝑗−1
+𝑆+2
+−1) ∨1
+>
+√︄
+(1 −𝜓)2𝐾2𝑆
+4𝑗𝜌2
+∀𝑗≥(𝐶26 ∨𝐶)𝑆1/(𝛽−1).
+Hence, if we set 𝐶27 = 𝐶26 ∨𝐶∨4 and 𝐶′
+27 = (1 −𝜓)2/4, the second inequality in (75) holds for
+𝑗≥𝐶27𝑆1/(𝛽−1). Finally, define ℎ(𝑗) = 𝑗−1 −√𝑗∀𝑗∈N. Then ℎ(4) = 1 and ℎ′(𝑗) = 1 −1/(2√𝑗) >
+0 ∀𝑗≥4, so ℎ(𝑗) ≥0 ∀𝑗≥4. Thus, for any 𝑗≥𝐶27𝑆1/(𝛽−1) ≥4, we know 𝑗−1 ≥√𝑗, so by Claim
+18, log(𝐴𝑗−1) ≥log((𝑗−1)𝛽) ≥log(√𝑗𝛽) = 𝛽log(𝑗)/2, i.e., the first inequality in (75) holds.
+□
+Claim 28. There exists 𝐶28 > 0 such that for any 𝑗≥𝐶28𝑆1/(𝜌2
+1 (𝛽−1)), ⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋≥𝐽★
+1 .
+Proof. By Claims 26 and 27, we can set𝐶= 𝐶26∨𝐶27 to ensure that for 𝑗≥𝐶𝑆1/(𝛽−1), 𝐴𝑗−𝐴𝑗−1 ≥
+2(𝑆+ 2) and 𝛿𝑗,2 > 0. Hence, 𝐽★
+1 ≤𝐶𝑆1/(𝛽−1) by definition (47). On the other hand, by Claim 24,
+we know ⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋≥𝐶24𝑗𝜌2
+1 for 𝑗≥𝐶′
+24. Thus, if we set 𝐶28 = (𝐶/𝐶24)1/𝜌2
+1 ∨𝐶′
+24, then for any
+𝑗≥𝐶28𝑆1/(𝜌2
+1 (𝛽−1)), we obtain ⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋≥𝐶24𝑗𝜌2
+1 (since 𝑗≥𝐶′
+24) and 𝐶24𝑗𝜌2
+1 ≥𝐶𝑆1/(𝛽−1) (since 𝑗≥
+(𝐶/𝐶24)1/𝜌2
+1𝑆1/(𝜌2
+1 (𝛽−1)) = ((𝐶/𝐶24)𝑆1/(𝛽−1))1/𝜌2
+1), which implies ⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋≥𝐶𝑆1(𝛽−1) ≥𝐽★
+1 .
+□
+Claim 29. There exists 𝐶29 > 0 such that for any 𝑗≥𝐶29𝑆1/(𝜌2
+1 (𝛽−1)), ⌊𝜃⌊𝑗/2⌋⌋≥𝐽★
+3 .
+Proof. We first upper bound 𝐽★
+3 . By Claim 24, we can find 𝐶24,𝐶′
+24 > 0 such that ⌊𝜃𝑗⌋≥
+𝐶24𝑗𝜌1 when 𝑗≥𝐶′
+24. Let 𝑗≥𝐶′
+24 ∨((𝐶26/𝐶24)𝑆1/(𝛽−1))1/𝜌1, where 𝐶26 is from Claim 26, and
+𝑗′ ∈{⌊𝜃𝑗⌋, . . . , 𝑗}. Then 𝑗′ ≥⌊𝜃𝑗⌋≥𝐶24𝑗𝜌1 ≥𝐶26𝑆1/(𝛽−1), so we can find 𝐶′
+26 > 0 such that
+(𝐾+ 1)𝛿𝑗′,1 ≤(𝐾+ 1)
+√︄
+4𝛼log(𝐴𝑗′)𝐶′
+26𝑆
+(𝑗′)𝛽−1
+≤
+√︄
+(2𝐾)24𝛼log(𝑗2𝛽)𝐶′
+26
+(𝐶24𝑗𝜌1)𝛽−1
+=
+√︄
+𝐶𝐾2𝑆log 𝑗
+𝑗𝜌1(𝛽−1) ,
+where the first inequality uses Claim 26; the second inequality uses 𝐾≥1, 𝑗′ ≥⌊𝜃𝑗⌋≥𝐶24𝑗𝜌1, and
+Claim 18; and the equality defines 𝐶= 32𝛼𝛽𝐶′
+26/𝐶𝛽−1
+24 . On the other hand, if 𝑗≥𝐶27𝑆1/(𝛽−1), where
+𝐶27 is from Claim 27, we can find 𝐶′
+27 > 0 such that
+𝛿𝑗,2 >
+√︃
+𝛼𝛽log(𝑗)𝐶′
+27𝐾2𝑆/(2𝑗𝜌2) =
+√︁
+𝐶′𝐾2𝑆log(𝑗)/𝑗𝜌2,
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:54
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+where the inequality uses Claim 27 and the equality defines 𝐶′ = 𝛼𝛽𝐶′
+27/2. Finally, by assumption
+𝜌2 < 𝜌1(𝛽−1), we can find 𝐶′′ > 0 such that, for any 𝑗≥𝐶′′, we have 𝐶′/𝑗𝜌2 ≥𝐶/𝑗𝜌1(𝛽−1).
+Combined with the previous two inequalities, we obtain that for 𝑗≥𝐶′
+24 ∨((𝐶26/𝐶24)𝑆1/(𝛽−1))1/𝜌1 ∨
+(𝐶27𝑆1/(𝛽−1)) ∨𝐶′′ and any 𝑗′ ∈{⌊𝜃𝑗⌋, . . . , 𝑗}, 𝛿𝑗,2 > (𝐾+ 1)𝛿𝑗′,1. Therefore, by definition of 𝐽★
+3
+(57), we conclude that 𝐽★
+3 ≤˜𝐶𝑆1/(𝜌1(𝛽−1)), where ˜𝐶= 𝐶′
+24 ∨(𝐶26/𝐶24) ∨𝐶27 ∨𝐶′′. Therefore, if we
+set 𝐶29 = 𝐶′
+24 ∨( ˜𝐶/𝐶24)1/𝜌1, we obtain that for any 𝑗≥𝐶29𝑆1/(𝜌2
+1 (𝛽−1)), ⌊𝜃⌊𝑗/2⌋⌋≥𝐶24𝑗𝜌1 (since
+𝑗≥𝐶′
+24) and 𝐶9𝑗𝜌1 ≥˜𝐶𝑆1/(𝜌1(𝛽−1)) (since 𝑗≥( ˜𝐶/𝐶24)1/𝜌1𝑆1/(𝜌2
+1 (𝛽−1)) = ( ˜𝐶𝑆1/(𝜌1(𝛽−1))/𝐶24)1/𝜌1), so
+stringing together the inequalities, we conclude ⌊𝜃⌊𝑗/2⌋⌋≥𝐶24𝑗𝜌1 ≥˜𝐶𝑆1/(𝜌1(𝛽−1)) ≥𝐽★
+3 .
+□
+Claim 30. There exists 𝐶30 > 0 such that 𝐽★
+4 ≤𝐶30(𝑆log(𝐶30𝑆/Δ2
+2)/Δ2
+2)1/(𝛽−1).
+Proof. Let ˜𝐶30 = 16𝐶′
+26𝛼𝛽/(𝛽−1) and 𝐶30 = ˜𝐶30 ∨(3 ˜𝐶1/(𝛽−1)
+30
+) ∨(3𝐶26) ∨16, where 𝐶26 and
+𝐶′
+26 are the constants from Claim 26. Also define 𝐽†
+4 = 𝐶30(𝑆log(𝐶30𝑆/Δ2
+2)/Δ2
+2)1/(𝛽−1). Then by
+definition of 𝐽★
+4 (60), it suffices to show 𝛿𝑗,1 < Δ2 ∀𝑗≥⌊⌊𝐽†
+4 ⌋/2⌋. Fix such a 𝑗and suppose instead
+that 𝛿𝑗,1 ≥Δ2. Since 𝐶30 ≥16, we know 𝐽†
+4 ≥𝐶30(log𝐶30)1/(𝛽−1) ≥16, so
+𝑗≥(⌊𝐽†
+4 ⌋/2) −1 ≥((𝐽†
+4 −1)/2) −1 = (𝐽†
+4 /2) −(3/2) > 𝐽†
+4 /3.
+(76)
+Hence, because 𝐶30 ≥3𝐶26, we have 𝑗≥𝐽†
+4 /3 ≥𝐶26𝑆1/(𝛽−1), so by Claims 26 and 18, respectively,
+𝛿2
+𝑗,1 ≤4𝛼log(𝐴𝑗)𝐶′
+26𝑆/𝑗𝛽−1 ≤4𝛼log(𝑗2𝛽)𝐶′
+26𝑆/𝑗𝛽−1 = 8𝐶′
+26𝛼𝛽𝑆log(𝑗)/𝑗𝛽−1.
+Rearranging and using the assumption 𝛿𝑗,1 ≥Δ2, this implies 𝑗𝛽−1 ≤8𝐶′
+26𝛼𝛽𝑆log(𝑗)/Δ2
+2. Hence,
+applying Claim 20 with 𝑥= 𝑗, 𝑦= 𝛽−1, and 𝑧= 8𝐶′
+26𝛼𝛽𝑆/Δ2
+2, we obtain
+𝑗≤(16𝐶′
+26𝛼𝛽𝑆log(16𝐶′
+26𝛼𝛽𝑆/((𝛽−1)Δ2
+2))/((𝛽−1)Δ2
+2))1/(𝛽−1) = ( ˜𝐶30𝑆log( ˜𝐶30𝑆/Δ2
+2)/Δ2
+2)1/(𝛽−1).
+But since 𝐶30 ≥˜𝐶30 ∨(3 ˜𝐶1/(𝛽−1)
+30
+), we have shown 𝑗≤𝐽†
+4 /3, which contradicts (76).
+□
+Claim 31. There exists 𝐶31 > 0 such that, for any 𝑗≥(𝐶31 ¯𝑑log(𝐶31 ¯𝑑(𝑛+ 𝑚)))1/𝜌1,
+(𝑛+ 𝑚)3 exp(−⌊𝜃⌊𝑗/2⌋⌋/(3 ¯𝑑)) ≤𝑗𝜌2
+1 (𝛽(3−2𝛼)+1).
+(77)
+Proof. Let ˜𝐶31 = 12𝜌1(𝛽(2𝛼−3) −1)/𝐶24 and 𝐶31 = 𝐶′
+24 ∨3 ∨(18/𝐶24) ∨˜𝐶31, and suppose
+instead that (77) fails for some 𝑗≥(𝐶31 ¯𝑑log(𝐶31 ¯𝑑(𝑛+ 𝑚)))1/𝜌1. Then we can write
+⌊𝜃⌊𝑗/2⌋⌋< 9 ¯𝑑log(𝑛+ 𝑚) + 3 ¯𝑑𝜌2
+1(𝛽(2𝛼−3) −1) log 𝑗.
+(78)
+Since 𝐶31 ≥𝐶′
+24 ∨3 and 𝜌1 ∈(0, 1), we know that 𝑗≥(𝐶′
+24 log(3))1/𝜌1 > 𝐶′
+24, so ⌊𝜃⌊𝑗/2⌋⌋≥𝐶24𝑗𝜌1
+by Claim 24. Since 𝐶31 ≥(18/𝐶24) ∨1 and ¯𝑑≥1, we also have 𝑗≥((18/𝐶24) log(𝑛+ 𝑚))1/𝜌1, or
+𝐶24𝑗𝜌1/2 ≥9 ¯𝑑log(𝑛+ 𝑚). Combining these two bounds with (78), we conclude
+𝑗𝜌1 < (6𝜌2
+1(𝛽(2𝛼−3) −1)/𝐶24) ¯𝑑log 𝑗= ˜𝐶31(𝜌1/2) ¯𝑑log 𝑗.
+Applying Claim 20 with 𝑥= 𝑗, 𝑦= 𝜌1, and 𝑧= ˜𝐶31(𝜌1/2) ¯𝑑, we obtain 𝑗< ( ˜𝐶31 ¯𝑑log( ˜𝐶31 ¯𝑑))1/𝜌1. But
+since 𝐶31 ≥˜𝐶31, this contradicts the assumed lower bound on 𝑗.
+□
+Claim 32. Define 𝐶32 = 𝐶25 ∨𝐶28 ∨𝐶29 and
+𝐽★= (𝐶32𝑆1/(𝜌2
+1 (𝛽−1))) ∨(𝐶30(𝑆log(𝐶30𝑆/Δ2
+2)/Δ2
+2)1/(𝛽−1)) ∨(𝐶31 ¯𝑑log(𝐶′
+31(𝑛+ 𝑚)))1/𝜌1.
+= Θ
+
+𝑆1/(𝜌2
+1 (𝛽−1)) ∨(𝑆log(𝑆/Δ2)/Δ2
+2)1/(𝛽−1) ∨( ¯𝑑log(𝑛+ 𝑚))1/𝜌1
+
+.
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:55
+Then for any 𝑗∈N such that 𝑗≥𝐽★, we have
+𝑗≥𝐽★
+4 ,
+⌊𝜃⌊𝑗/2⌋⌋≥𝐽★
+2 ∨𝐽★
+3 ,
+⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋≥𝐽★
+1 ∨(2 + 𝑗𝜌2
+1/84) ≥3
+(𝑛+ 𝑚)3 exp(−⌊𝜃⌊𝑗/2⌋⌋/(3 ¯𝑑)) ≤𝑗𝜌2
+1 (𝛽(3−2𝛼)+1).
+Proof. The first bound holds by 𝑗≥𝐶30((𝑆/Δ2
+2) log(𝐶′
+30𝑆/Δ2
+2))1/(𝛽−1) and Claim 30. The second
+holds since ⌊𝜃⌊𝑗/2⌋⌋≥𝐽★
+2 by 𝑗≥𝐶25 and Claim 25, and since ⌊𝜃⌊𝑗/2⌋⌋≥𝐽★
+3 by 𝑗≥𝐶29𝑆1/(𝜌2
+1 (𝛽−1))
+and Claim 29. The third holds since ⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋≥𝐽★
+1 by 𝑗≥𝐶28𝑆1/(𝜌2
+1 (𝛽−1)) and Claim 28, and since
+⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋≥(2 + 𝑗𝜌2
+1/48) for large enough 𝐶′
+24. The fourth holds since ⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋> 2 (by the third)
+and ⌊𝜃⌊𝜃⌊𝑗/2⌋⌋⌋∈N. The fifth holds by 𝑗≥(𝐶31 ¯𝑑log(𝐶′
+31(𝑛+ 𝑚)))1/𝜌1 and Claim 31.
+□
+F.4
+Calculations for the later regret
+In this sub-appendix, we assume 𝛼, 𝛽, 𝜂, 𝜃𝑗, 𝜅𝑗, 𝜌1, and 𝜌2 are chosen as in Theorem 2. Recall 𝐶𝑖, 𝐶′
+𝑖,
+etc. denote constants associated with Claim 𝑖that only depend on 𝛼, 𝛽, 𝜂, 𝜌1, and 𝜌2.
+Claim 33. There exists 𝐶33 > 0 such that, for any 𝛾𝑖∈(0, 1),
+⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋𝛽≤4𝛼𝐾log(𝑇)/Δ2
+⇒
+log𝑇≤(𝐶33/𝛾𝑖) log (𝐶33𝐾/(Δ2𝛾𝑖)) .
+(79)
+Proof. Similar to Claim 24 from Appendix F.3, we can find constants 𝐶,𝐶′ > 0 such that for
+any 𝑗≥𝐶′, ⌊𝜃𝑗⌋≥𝐶𝑗𝜌1. If ⌈𝑇𝛾𝑖/𝛽⌉< 𝐶′, then 𝑇𝛾𝑖≤⌈𝑇𝛾𝑖/𝛽⌉𝛽< (𝐶′)𝛽, so log𝑇≤(𝛽/𝛾𝑖) log(𝐶′),
+and the right side of (79) will hold for 𝐶33 ≥𝛽∨𝐶′. If instead ⌈𝑇𝛾𝑖/𝛽⌉≥𝐶′, then ⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋≥
+𝐶⌈𝑇𝛾𝑖/𝛽⌉𝜌1 ≥𝐶𝑇𝛾𝑖𝜌1/𝛽, so if the left side of (79) holds, we can write
+𝐶𝛽𝑇𝛾𝑖𝜌1 = (𝐶𝑇𝛾𝑖𝜌1/𝛽)𝛽≤⌊𝜃⌈𝑇𝛾𝑖/𝛽⌉⌋𝛽≤4𝛼log(𝑇)/Δ2.
+Hence, applying Claim 20 with 𝑥= 𝑇, 𝑦= 𝛾𝑖𝜌1, and 𝑧= 4𝛼/(𝐶𝛽Δ2), we obtain
+log𝑇≤log(8𝛼/(Δ2𝛾𝑖𝐶𝛽𝜌1))2/(𝛾𝑖𝜌1) ≤(𝐶33/𝛾𝑖) log(𝐶33𝐾/(Δ2𝛾𝑖)),
+where the last inequality holds for any 𝐶33 ≥(8𝛼/(𝐶𝛽𝜌1)) ∨(2/𝜌1).
+□
+Claim 34. There exists 𝐶34 > 0 such that, for any 𝛾𝑖∈(0, 1),
+𝜅⌈𝑇𝛾𝑖/𝛽⌉≤4𝛼𝐾log(𝑇)/Δ2
+⇒
+log𝑇≤(𝐶34/𝛾𝑖) log (𝐶34𝐾/(Δ2𝛾𝑖)) .
+Proof. Recall 𝜅𝑗= 𝑗𝜌2/(𝐾2𝑆) in Theorem 2. Hence, because 𝑆≤𝐾, we know that 𝜅⌈𝑇𝛾𝑖/𝛽⌉≥
+𝑇𝛾𝑖𝜌2/𝛽/𝐾3. Rearranging and using the assumed bound, we obtain
+𝑇𝛾𝑖𝜌2/𝛽≤𝐾3 · 𝜅⌈𝑇𝛾𝑖/𝛽⌉≤𝐾3 · 4𝛼𝐾log(𝑇)/Δ2 = (4𝛼𝐾4/Δ2) log𝑇≤(4𝛼𝐾/Δ2)4 log𝑇,
+where the last inequality uses 𝛼≥1 and Δ2 ∈(0, 1). Applying Claim 20 with 𝑥= 𝑇, 𝑦= 𝛾𝑖𝜌2/𝛽,
+and 𝑧= (4𝛼𝐾/Δ2)4, and noting that 2/𝑦≤(2/𝑦)4 (since 𝛾𝑖∈(0, 1) and 𝜌2 ∈(0, 𝛽−1)), we obtain
+log𝑇≤log(8𝛼𝛽𝐾/(Δ2𝛾𝑖𝜌2))8𝛽/(𝛾𝑖𝜌2) ≤(𝐶34/𝛾𝑖) log(𝐶34𝐾/(Δ2𝛾𝑖)),
+where the second inequality holds for 𝐶34 ≥8𝛼𝛽/𝜌2.
+□
+Claim 35. There exists 𝐶35 > 0 such that, for any 𝛾𝑖∈(0, 1),
+∃𝑗≥⌈𝑇𝛾𝑖/𝛽⌉𝑠.𝑡. ⌈𝜅𝑗⌉≤1 + 4𝛼log(𝐴𝑗)/Δ2
+2
+⇒
+log𝑇≤(𝐶35/𝛾𝑖) log (𝐶35𝐾/(Δ2𝛾𝑖)) .
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+53:56
+Daniel Vial, Sanjay Shakkottai, and R. Srikant
+Proof. Fix 𝑗≥⌈𝑇𝛾𝑖/𝛽⌉such that ⌈𝜅𝑗⌉≤1+4𝛼log(𝐴𝑗)/Δ2
+2. Note that if 𝑗= 1, then 1 ≥⌈𝑇𝛾𝑖/𝛽⌉≥
+𝑇𝛾𝑖/𝛽, so since𝑇∈N, we must have𝑇= 1. This implies log𝑇= 0, so the claimed bound is immediate.
+Hence, we assume 𝑗≥2 moving forward. We first observe
+𝑗𝜌2 ≤𝐾3⌈𝜅𝑗⌉≤𝐾3
+
+1 + 4𝛼log𝐴𝑗
+Δ2
+2
+
+≤𝐾3
+
+1 + 8𝛼𝛽log 𝑗
+Δ2
+2
+
+≤𝐾3
+16𝛼𝛽log 𝑗
+Δ2
+2
+
+= 16𝛼𝛽𝐾3 log 𝑗
+Δ2
+2
+.
+where the inequalities use ⌈𝜅𝑗⌉= ⌈𝑗𝜌2/(𝐾2𝑆)⌉≥𝑗𝜌2/𝐾3, the assumed upper bound on ⌈𝜅𝑗⌉, Claim
+18, and 8𝛼𝛽log(𝑗)/Δ2
+2 ≥1 (since 𝛼, 𝛽≥1, 𝑗≥2, and Δ2 ∈(0, 1)), respectively. Applying Claim 20
+with 𝑥= 𝑗, 𝑦= 𝜌2, and 𝑧= 16𝛼𝛽𝐾3/Δ2
+2, and noting that 2𝑧/𝑦≤(32𝛼𝛽𝐾/(Δ2𝜌2))3 (since 𝛼≥1,
+𝜌2 ∈(0, 𝛽−1), and Δ2 ∈(0, 1)), we obtain 𝑗≤(32𝛼𝛽𝐾/(Δ2𝜌2))6/𝜌2 ≤(𝐶35𝐾/(Δ2𝛾𝑖))6/𝜌2 for any
+𝐶35 ≥32𝛼𝛽/𝜌2. Therefore, by assumption 𝑗≥⌈𝑇𝛾𝑖/𝛽⌉, we obtain that for any 𝐶35 ≥32𝛼𝛽/𝜌2,
+𝑇≤⌈𝑇𝛾𝑖/𝛽⌉𝛽/𝛾𝑖≤𝑗𝛽/𝛾𝑖≤(𝐶35𝐾/(Δ2𝛾𝑖))6𝛽/(𝜌2𝛾𝑖) ≤(𝐶35𝐾/(Δ2𝛾𝑖))𝐶35/𝛾𝑖.
+□
+Claim 36. There exists 𝐶36 > 0 such that, for any 𝛾𝑖∈(0, 1),
+Δ2(2𝛼−3)
+8𝛼𝐾2
+≤log(𝑇)
+∞
+∑︁
+𝑗=⌈𝑇𝛾𝑖/𝛽⌉
+(⌈𝜅𝑗⌉−1)3−2𝛼
+⇒
+log𝑇≤(𝐶36/𝛾𝑖) log(𝐶36𝐾/(Δ2𝛾𝑖)).
+(80)
+Proof. We first eliminate the corner case where min{𝑇𝛾𝑖/𝛽,𝜅⌈𝑇𝛾𝑖/𝛽⌉} < 2. In this case, one of
+𝑇𝛾𝑖/𝛽< 2 and 𝜅⌈𝑇𝛾𝑖/𝛽⌉< 2 must hold. If the former holds, then log𝑇< (𝛽/𝛾𝑖) log 2, and if the latter
+holds, then 2 > 𝜅⌈𝑇𝛾𝑖/𝛽⌉= ⌈𝑇𝛾𝑖/𝛽⌉𝜌2/(𝐾2𝑆) ≥𝑇𝛾𝑖𝜌2/𝛽/𝐾3, so log𝑇≤(𝛽/(𝛾𝑖𝜌2)) log(2𝐾3). In both
+cases, we can clearly find 𝐶36 > 0 satisfying the right side of (80).
+Next, we assume 𝜅⌈𝑇𝛾𝑖/𝛽⌉≥2 and 𝑇𝛾𝑖/𝛽≥2. By monotonicity, the former implies 𝜅𝑗≥2 for any
+𝑗≥⌈𝑇𝛾𝑖/𝛽⌉. For any such 𝑗, by definition and 𝑆≤𝐾, we can then write
+⌈𝜅𝑗⌉−1 ≥𝜅𝑗−1 ≥𝜅𝑗/2 = 𝑗𝜌2/(2𝐾2𝑆) ≥𝑗𝜌2/(2𝐾3).
+Therefore, since 3 −2𝛼< 0 by assumption in Theorem 2, we obtain
+∞
+∑︁
+𝑗=⌈𝑇𝛾𝑖/𝛽⌉
+(⌈𝜅𝑗⌉−1)3−2𝛼≤22𝛼−3𝐾3(2𝛼−3)
+∞
+∑︁
+𝑗=⌈𝑇𝛾𝑖/𝛽⌉
+𝑗𝜌2(3−2𝛼).
+For the summation at right, we use 𝑇𝛾𝑖/𝛽≥2 (which implies ⌈𝑇𝛾𝑖/𝛽⌉−1 ≥𝑇𝛾𝑖/𝛽−1 ≥𝑇𝛾𝑖/𝛽/2) and
+𝜌2(2𝛼−3) > 1 by assumption in Theorem 2, along with Claim 19, to write
+∞
+∑︁
+𝑗=⌈𝑇𝛾𝑖/𝛽⌉
+𝑗𝜌2(3−2𝛼) ≤(𝑇𝛾𝑖/𝛽/2)1+𝜌2(3−2𝛼)
+𝜌2(2𝛼−3) −1
+= 2𝜌2(2𝛼−3)𝑇𝛾𝑖(1+𝜌2(3−2𝛼))/𝛽
+2(𝜌2(2𝛼−3) −1)
+.
+Using 𝜌2(2𝛼−3) > 1 (by assumption), we also know
+𝑇𝛾𝑖(1+𝜌2(3−2𝛼))/𝛽log(𝑇) = 2𝛽𝑇𝛾𝑖(1+𝜌2(3−2𝛼))/𝛽log(𝑇𝛾𝑖(𝜌2(2𝛼−3)−1)/(2𝛽))
+𝛾𝑖(𝜌2(2𝛼−3) −1)
+≤2𝛽𝑇𝛾𝑖(1+𝜌2(3−2𝛼))/(2𝛽)
+𝛾𝑖(𝜌2(2𝛼−3) −1) .
+Combining the previous three inequalities, we then obtain
+log(𝑇)
+∞
+∑︁
+𝑗=⌈𝑇𝛾𝑖/𝛽⌉
+(⌈𝜅𝑗⌉−1)3−2𝛼) ≤
+2(𝜌2+1) (2𝛼−3)𝛽
+(𝜌2(2𝛼−3) −1)2
+𝐾3(2𝛼−3)
+𝛾𝑖
+𝑇𝛾𝑖(1+𝜌2(3−2𝛼))/(2𝛽).
+Therefore, if the left side of (80) holds, we are guaranteed that
+Δ2(2𝛼−3)
+8𝛼𝐾2
+≤
+2(𝜌2+1) (2𝛼−3)𝛽
+(𝜌2(2𝛼−3) −1)2
+𝐾3(2𝛼−3)
+𝛾𝑖
+𝑇𝛾𝑖(1+𝜌2(3−2𝛼))/(2𝛽),
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.
+
+Robust Multi-Agent Bandits Over Undirected Graphs
+53:57
+or, after rearranging, then using 𝛼> 1 and Δ2,𝛾𝑖∈(0, 1),
+𝑇𝛾𝑖(𝜌2(2𝛼−3)−1)/(2𝛽) ≤
+8 · 2(𝜌2+1) (2𝛼−3)𝛼𝛽
+(2𝛼−3)(𝜌2(2𝛼−3) −1)2
+𝐾6𝛼−7
+Δ2𝛾𝑖
+≤(𝐶36)6𝛼𝐾6𝛼−7
+Δ2𝛾𝑖
+≤
+𝐶36𝐾
+Δ2𝛾𝑖
+6𝛼
+,
+where the second inequality holds for large 𝐶36 and the third uses 𝛼≥1 and Δ2,𝛾𝑖∈(0, 1). Taking
+logarithms and choosing 𝐶36 appropriately in terms of 𝜌2, 𝛼, and 𝛽yields the right side of (80).
+□
+Received August 2022; revised October 2022; accepted November 2022
+Proc. ACM Meas. Anal. Comput. Syst., Vol. 6, No. 3, Article 53. Publication date: December 2022.

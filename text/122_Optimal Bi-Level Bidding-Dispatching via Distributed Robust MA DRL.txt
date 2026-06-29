@@ -1,0 +1,1840 @@
+IEEE TRANSACTIONS ON SMART GRID, VOL. 13, NO. 4, JULY 2022
+2833
+Optimal Bi-Level Bidding and Dispatching Strategy
+Between Active Distribution Network and Virtual
+Alliances Using Distributed Robust Multi-Agent
+Deep Reinforcement Learning
+Ziqing Zhu
+, Graduate Student Member, IEEE, Ka Wing Chan
+, Member, IEEE,
+Shiwei Xia
+, Senior Member, IEEE, and Siqi Bu
+, Senior Member, IEEE
+Abstract—The deregulated active distribution network (ADN)
+would incorporate numerous autonomous stakeholders, including
+some emerging distributed virtual alliances (DVAs) like vir-
+tual microgrids and virtual power plants. Those DVAs would
+autonomously participate in energy market trading through
+bidding among themselves and dispatching conducted by the
+ADN. In this paper, the optimal bidding and dispatching model
+for DVAs and ADN in the day-ahead market is ﬁrst developed as a
+stochastic dynamic programming model with the risk of miscon-
+duct considered, and then re-formulated as a Markov Decision
+Process to be solved by a new Distributed Robust Multi-Agent
+Deep Deterministic Policy Gradient algorithm based on the con-
+cept of robust Nash equilibrium (RNE). This algorithm is a fully
+distributed online optimization that would converge to RNE. It
+is an effective risk-averse method to obtain the optimal bid-
+ding strategies of DVAs and the optimal dispatching decisions
+of distribution system operator (DSO). Its high computational
+performance is demonstrated in the case studies, and the strategic
+decisions of DVAs and DSO are thoroughly analyzed.
+Index Terms—Active distribution network, distributed virtual
+alliance, bidding strategy, reinforcement learning.
+NOMENCLATURES
+Indices, Sets and Subscripts
+t ∈T
+Index and set of time
+i ∈I
+Index and set of controllable distributed genera-
+tors (CDGs)
+j ∈J
+Index and set of virtual microgrids (VMGs)
+n ∈N
+Index and set of virtual power plants (VPPs)
+Manuscript received November 8, 2021; revised January 25, 2022 and
+March 18, 2022; accepted March 27, 2022. Date of publication April 1, 2022;
+date of current version June 21, 2022. This work was supported in part by The
+Hong Kong Polytechnic University and in part by the National Natural Science
+Foundation of China under Grant 52077075. Paper no. TSG-01784-2021.
+(Corresponding author: Ka Wing Chan.)
+Ziqing Zhu, Ka Wing Chan, and Siqi Bu are with the Department of
+Electrical Engineering, The Hong Kong Polytechnic University, Hong Kong,
+SAR, China (e-mail: ziqing.zhu@connect.polyu.hk; eekwchan@polyu.edu.hk;
+siqi.bu@polyu.edu.hk.)
+Shiwei Xia is with the State Key Laboratory of Alternate Electrical Power
+System With Renewable Energy Sources, School of Electrical and Electronic
+Engineering, North China Electric Power University, Beijing 102206, China
+(e-mail: s.w.xia@ncepu.edu.cn).
+Color versions of one or more ﬁgures in this article are available at
+https://doi.org/10.1109/TSG.2022.3164080.
+Digital Object Identiﬁer 10.1109/TSG.2022.3164080
+g ∈G
+Index and set of DVAs
+o ∈
+Index and set of distribution lines
+s ∈S
+Index and set of state
+a ∈A
+Index and set of action
+r ∈R
+Index and set of reward
+p ∈P
+Index and set of transition probability
+k ∈K
+Index and set of agents
+m
+Index of dimensionality of action
+h
+Index of dimensionality of state
+allo
+Subscript for allocation results of market clearing
+dm
+Subscript for day-ahead energy market
+err
+Subscript for prediction errors
+ramp
+Subscript for ramping capability
+cu
+Subscript for load curtailment
+se
+Subscript for purchasing energy
+mar
+Subscript for market clearing price.
+Variables
+Ct
+DSO,dm The total cost of distribution system opera-
+tor (DSO) for purchasing energy from DVAs
+Ct
+VMG,se Cost of VMG for purchasing energy from DSO
+Ct
+dm
+Generation cost of DVAs
+Ct
+pen,dm
+The penalty of DVAs for failing to provide energy
+to the DSO as appointed
+Pt
+LA,re
+The energy demand of Load Aggregator (LA)
+Pt
+VMG,se The energy demand of VMG
+Pt−1
+dm,allo
+Allocated capacity for the DVAs
+Pt
+dm
+Devoted capacity of DVAs in DA energy market
+Pt−1
+err,dm
+The net load prediction error of DVAs
+Pt
+err
+The total net load prediction error
+Pt
+line,o
+The rated capacity of the oth line in the ADN
+Pt
+load,se
+The load demand of LA fulﬁlled by DSO
+Rt
+DSO,dm Revenue of DSO for selling energy to VMG
+and LA
+Rt
+dm
+Revenue of DVAs in DA energy market
+δt
+VMG
+Binary variable indicating VMG purchase/sell
+energy from/to DSO
+λt
+em
+Submitted bidding price of DVAs DA energy
+market
+λt
+re
+Regulated price of the retail market
+1949-3053 c⃝2022 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:59 UTC from IEEE Xplore.  Restrictions apply. 
+
+2834
+IEEE TRANSACTIONS ON SMART GRID, VOL. 13, NO. 4, JULY 2022
+λt−1
+mar,dm
+Previous market clearing price (MCP)
+λt
+pen, cu
+Penalty of DSO for load curtailment.
+Parameters
+Pline,o
+The capacity limitation of the oth line in the ADN
+Pramp,i The ramping capacity limitation of the ith DVA
+ρDSO
+Parameter for unit normalization
+μ
+Parameter of the policy
+γ
+The discount rate
+ρ
+Hyper-parameter for soft-update method.
+I. INTRODUCTION
+A. Background and Motivation
+T
+HE DEVELOPMENT of distribution-level market [1]
+is an emerging paradigm, with applications in both
+academia [2]–[4] and industry [5], to facilitate the eco-
+nomic energy management of increasing distributed energy
+resources
+(DERs).
+Particularly,
+the
+distributed
+virtual
+alliances (DVAs), including virtual microgrids (VMGs) [6]
+and virtual power plants (VPPs) [7]–[8], who serve as
+the aggregation of DERs, are autonomously participating
+in the market trading. In this emerging paradigm, DVAs
+are required to submit their available capacity and bidding
+price to the distribution system operator (DSO), who will
+perform the optimal dispatching and then determine the
+market clearing price (MCP). However, the uncertainty of
+renewable distributed generation (RDG) and load demand
+of DVAs render the prediction error of net load, which not
+only leads to the potential costs for real-time balancing, but
+also complicates: 1) the market regulation design to deal
+with the deviation between the day-ahead (DA) appointment
+and real-time (RT) actual energy procurement; 2) the energy
+schedule (including bidding decisions and energy dispatch)
+of DVAs and the DSO. This paper aims to tackle these issues
+by proposing a novel DA-RT coordination scheme designed
+to address the aforementioned uncertainties and investigate
+the bi-level bidding and dispatching interaction among DVAs
+and the DSO under such a scheme. Speciﬁcally, motivations
+of these investigations are explained as follows:
+1) By investigating the dynamic bidding behaviors and
+optimal bidding strategies of DVAs under new market regimes:
+• DVAs can precisely estimate the equilibrium, as elabo-
+rated in Section III, of MCP and submit the bidding price
+slightly lower or higher than the equilibrium in order to
+maximize the proﬁt. Note that DVAs are under a pressing
+need to estimate the MCP, especially at the early stage
+of market operation with a lack of historical data.
+• DSO can ﬁnd potential irregular behaviors of DVAs
+caused by improper market regulations and/or nega-
+tively contribute to the maximization of social welfare,
+as analyzed in Section IV, by simulating the bid-
+ding procedure of DVAs, as elaborated in Section III,
+before implementing any new market rules to guaran-
+tee the fairness of trading and effectiveness of mar-
+ket operation based on the incentive compatibility
+principle.
+• These methodologies will provide paradigmatic guidance
+for market participants and operators in other emerging
+market regimes.
+2) By investigating the DVA-DSO bidding and dispatching
+interactions under uncertainties:
+• The determination of MCP equilibrium will be more
+precise if the dispatching (market clearing) method is
+modeled in a more practical and detailed manner, because
+bidding and dispatching are always modeled as the
+upper-level and lower-level of a hierarchical program-
+ming problem, as elaborated in Section II, and will have
+signiﬁcant impact on each other.
+• The impact of uncertainties can be considered in DVAs’
+and DSO’s decisions to improve the modeling accuracy
+and indicate their relatively conservative strategies against
+the risk in the early stage of market operation. As a result,
+the decision of both DVAs and the DSO will be risk-
+averse, and the potential ﬁnancial losses caused by the
+uncertainty of DVAs’ net load can be mitigated.
+B. Literature Review
+A considerable amount of literature has been published on
+downstream DVA dispatching in the ADN with uncertain-
+ties. In [9], a bi-level robust economic dispatch model for
+microgrids (MGs) in the ADN was proposed, in which the
+upper level is a two-stage robust economic dispatch model of
+ADN, and the self-dispatch of MGs based on MCP prediction
+is formulated in the lower level. A similar bi-level dispatch-
+ing model between VPP and ADN was developed in [10],
+and solved by using Karush-Kuhn-Tucker (KKT) optimality
+conditions, Fortuny-Amat transformation and the strong dual-
+ity theorem. The demand response (DR) was incorporated
+into ADN in [11] and [12] with participation of MGs, while
+multiple objective functions were simultaneously considered.
+However, these works are based on mathematical program-
+ming methods to re-formulate the problem to a single-level
+convex optimization model. Hence, the decision making is
+static and cannot respond to change of conditions, such as
+variation of available capacities, RDG outputs, load demand.
+As a remedy, model prediction control (MPC) was adopted
+in [13] and [14], in which accurate net load prediction is
+required but hard to archive in practice.
+With the emergence of AI techniques, Reinforcement
+Learning (RL) in the multi-agent interaction environment pro-
+vides potential solutions for dynamic bidding simulation and
+market equilibrium computation. However, algorithms, such
+as conventional model-based method [15], Q-learning [16],
+WoLF-PHC
+algorithm [17],
+adopted
+the
+value
+function
+iteration method can only deal with the discrete state and
+action space. Hence, for scalability, the “curse of dimen-
+sionality” [18] will render such algorithms intractable. In
+addition, the conventional model-based RL requires detailed
+modeling of environment, which is not applicable considering
+the uncertainty of both the reward function and state transition
+probability.
+The
+emerging
+deep
+deterministic
+policy
+gradi-
+ent (DDPG) [18] is the state-of-the-art tool to deal with the
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:59 UTC from IEEE Xplore.  Restrictions apply. 
+
+ZHU et al.: OPTIMAL BI-LEVEL BIDDING AND DISPATCHING STRATEGY BETWEEN ADN AND VIRTUAL ALLIANCES
+2835
+continuous states and actions by updating the parameterized
+neural network using the policy gradient descent method
+instead of value function iteration, and has been successfully
+applied to solve the dynamic dispatching of DVAs in ADN
+in [19]–[21]. In [20], a cooperative DRL algorithm for
+distributed economic dispatch of MGs was proposed, in
+which a diffusion strategy is incorporated to coordinate the
+actions of distributed generating units and energy storage
+systems. In [21], two modiﬁcations of the DDPG algorithm
+were proposed to facilitate the dispatching of MGs consid-
+ering the non-observable state information. However, this
+method still has the following limitations: ﬁrstly, the update
+of neural network still requires the availability of other
+DVA’s bidding strategies, which is conﬁdential and therefore
+cannot be accessed; secondly, the uncertainties of net load
+and the energy trading between DVAs and DSO were not
+incorporated; lastly, the impact of such uncertainty to their
+decisions is not considered, which is an important indicator
+while simulating the bidding and dispatching procedure.
+The optimal bidding strategy for DVAs is well-investigated
+in previous literature [22]–[26]. While the net load uncertainty
+of DVAs is considered in [21]–[23] using stochastic and robust
+optimization, the more promising DDPG algorithm for dynamic
+bidding strategy modiﬁcation was adopted in [24]–[26] without
+consideration of uncertainty. However, DDPG still requires
+the bidding information of other DVAs, which would not be
+available in the competitive electricity market.
+C. Main Contributions and Paper Structure
+An interactive and risk-averse bidding and dispatching strat-
+egy is proposed in this paper to allow both DVAs and the DSO
+to dynamically optimize their strategy under a novel DA-RT
+coordination regime. This interactive bi-level dynamic pro-
+gramming model is solved by a new algorithm, Distributed
+Robust Multi-Agent (DRMA) DDPG, enabling the fully dis-
+tributed and risk-averse training of each autonomous stake-
+holder involved. This work not only contributes to the optimal
+decision for emerging distributed stakeholders but also facili-
+tates the behavior simulation and equilibrium computation of
+new market paradigms. The main contributions of this paper
+are summarized as follows:
+• A paradigm for DA and RT market coordination with
+DVAs is proposed. In this paradigm, the DSO will be
+responsible for organizing the DA market trading, and
+DVAs will be penalized for misconducting the appointed
+energy procured by DSO in the DA market. Under this
+regime, both the DSO and DVAs should consider the
+net load prediction error and the resulting penalties in
+DA bidding and dispatching.
+• A
+bi-level
+optimal
+bidding
+and
+dispatching
+strat-
+egy (OBDS) model for the decision making of DVAs and
+DSO is developed. In this model, each DVA would con-
+tinuously modify its strategy based on the market clearing
+results while the DSO would also modify the dispatching
+strategy based on the bids submitted by DVAs. The uncer-
+tainty of DVA net load is considered in the decisions of
+both DVAs and DSO.
+• A new DRMA-DDPG algorithm is proposed to solve
+the OBDS model. This algorithm is a multi-agent-based
+fully-distributed deep reinforcement learning method
+enabling both DVAs and DSO to modify their strate-
+gies without requiring any information from the oth-
+ers. The potential ﬁnancial losses caused by uncertainty
+are mitigated by obtaining the so-called robust Nash
+equilibrium (RNE).
+The remaining parts of this paper are organized as follows. In
+Section II, the market paradigm for DVA-ADN interaction and
+formulation of the OBDS model is elaborated. In Section III,
+the DRMA-DDPG algorithm is proposed to solve the OBDS
+model. The comparison of computational performance between
+the proposed algorithm and baselines and the analysis of deci-
+sions of each stakeholder are presented in Section IV. Finally,
+conclusions and future work are given in Section V.
+II. PROBLEM FORMULATION
+A. Market Paradigm and Model Description
+In the proposed DA market paradigm, the downstream
+consumers, Load Aggregator (LA), will submit their energy
+demand to DSO while the producers, DVAs including the
+Controllable Distributed Generators (CDGs) and VPPs, will
+submit their available capacity and bidding price to the DSO
+based on their prediction of generation output and bidding
+strategies. The prosumers, DVAs like VMGs will decide to
+sell or purchase energy based on their net load conditions.
+The DSO will ﬁnally clear the market while satisfying the
+demand of LAs and VMGs. The novelty of this market
+paradigm is the penalty for DVAs due to their misconduct-
+ing of day-ahead energy procurement. Such penalty has been
+deployed in some transmission-level markets, including some
+European countries, such as France, Italy, Germany, Spain,
+etc. [27], and the Midwest ISO (MISO) [28], However, to the
+best of the authors’ knowledge, no literature has incorporated
+such regulation to the distribution-level market participants
+(VMGs, VPPs, etc.). The rationale behind this setting include:
+1) to compensate for the real-time balancing cost [27] caused
+by prediction errors made by the DVAs; 2) to serve as an
+incentive [28] for DVAs to improve the accuracy of prediction
+which may effectively mitigate the real-time imbalance, with
+beneﬁt to network secure operation. Hence, DVAs need to con-
+sider the implication of such penalties before making their
+bidding decisions. After being allocated with appointment of
+energy deployment in the DA market clearing, DVAs need to
+schedule its energy for RT operation to mitigate the difference
+between the DA appointment and RT actual procurement.
+Compared with existing bi-level dispatching models, the
+novelties of the proposed OBDS model lies in the follow-
+ing aspects. Firstly, the optimal dynamic bidding strategies
+and market clearing strategies are simultaneously considered.
+DVAs would continuously modify their bidding prices and
+available capacity based on previous market clearing results.
+Meanwhile, DSO would also modify the market clearing
+results based on the updated bidding price and the avail-
+able capacity provided by DVAs. Secondly, different types
+of uncertainties are considered in formulating the strategies
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:59 UTC from IEEE Xplore.  Restrictions apply. 
+
+2836
+IEEE TRANSACTIONS ON SMART GRID, VOL. 13, NO. 4, JULY 2022
+TABLE I
+OBDS MODEL DESCRIPTION
+of DVAs and DSO. For example, DVAs would consider the
+uncertainty of inherent RDGs and load demand to minimize
+any penalty caused by failing to provide the requested amount
+of electricity to DSO or localized load curtailment. DSO
+also needs to minimize the total net load prediction error of
+DVAs when clearing the market to mitigate potential real-time
+balancing costs.
+B. Bi-Level Optimal Bidding and Dispatching
+Strategy (OBDS) Model Formulation
+The objective functions and constraints of each DVA and the
+DSO are formulated as follows. While the decision variables
+and factors affecting the decisions are explicitly presented in
+the objective functions, their detailed numerical relationships
+will be further elaborated and revealed in the implementation
+of the proposed DRMA-DDPG algorithm in Section III. The
+objectives and constraints are summarized in Table I.
+1) CDG:
+Max
+
+t∈T
+⎧
+⎪⎪⎪⎪⎪⎨
+⎪⎪⎪⎪⎪⎩
+Rt
+CDG,dm
+
+Pt
+CDG,i,dm, λt
+CDG,dm|λt−1
+mar,dm, Pt−1
+dm,allo
+
+	
+
+
+
+1
+CDG Revenue in DM
+−Ct
+CDG,dm
+
+Pt
+CDG,i,dm
+
+	
+
+
+
+2
+Generation Cost
+⎫
+⎪⎪⎪⎪⎪⎬
+⎪⎪⎪⎪⎪⎭
+(1)
+s.t. PCDG,i,min ≤Pt
+CDG,i,dm ≤PCDG,i,max, ∀t, ∀i
+(1a)
+λCDG,i,min ≤λt
+CDG,i,dm ≤λCDG,i,max, ∀t, ∀i
+(1b)
+Pramp,i,min ≤Pt
+CDG,i,dm −Pt−1
+CDG,i,dm ≤Pramp,i,max, ∀t, ∀i
+(1c)
+2) VPP:
+Max
+
+t∈T
+⎧
+⎪⎪⎪⎪⎪⎪⎨
+⎪⎪⎪⎪⎪⎪⎩
+Rt
+VPP,dm
+
+Pt
+VPP,n,dm, λt
+VPP,dm|λt−1
+mar,dm, Pt−1
+dm,allo, Pt
+err,dm
+
+	
+
+
+
+1 VPP Revenue in DM
+−Ct
+VPP,dm
+
+Pt
+VPP,n,dm
+
+	
+
+
+
+2 Generation Cost
+−Ct
+pen,dm
+
+Pt
+RDG,n,err
+
+	
+
+
+
+3 Penalty
+⎫
+⎪⎪⎪⎪⎪⎪⎬
+⎪⎪⎪⎪⎪⎪⎭
+(2)
+s.t. PVPP,i,min ≤Pt
+VPP,n,dm ≤PVPP,i,max, ∀t, ∀n
+(2a)
+λVPP,min ≤λt
+VPP,n,dm ≤λVPP,max, ∀t, ∀n
+(2b)
+Pramp,n,min ≤Pt
+VPP,n,dm −Pt−1
+VPP,n,dm ≤Pramp,n,max, ∀t, ∀n
+(2c)
+3) VMG:
+Max
+
+t∈T
+⎧
+⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎨
+⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎩
+δt
+VMG
+⎡
+⎢⎢⎢⎢⎢⎢⎣
+Rt
+VMG,dm
+
+Pt
+VMG,j,dm, λt
+VMG,dm|λt−1
+mar,dm, Pt−1
+dm,allo, Pt
+err,dm
+
+	
+
+
+
+1 VPP Revenue in DM
+−Ct
+VMG,dm
+
+Pt
+CDG,j,dm
+
+	
+
+
+
+2 Generation Cost
+−Ct
+pen,dm
+
+Pt
+RDG,j,err
+
+	
+
+
+
+3 Penalty
+⎤
+⎥⎥⎥⎥⎥⎥⎦
+−
+
+1 −δt
+VMG
+
+⎡
+⎢⎢⎢⎣Ct
+LA,se
+
+Pt
+Load,j,se
+
+	
+
+
+
+4 Cost in RM
++ Ct
+pen,se
+
+Pt
+Load,j,err
+
+	
+
+
+
+5 Penalty
+⎤
+⎥⎥⎥⎦
+⎫
+⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎬
+⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎪⎭
+(3)
+s.t. PVMG,j,min ≤Pt
+VMG,j,dm ≤PVMG,j,max, ∀t, ∀j
+(3a)
+λVMG,min ≤λt
+VMG,dm ≤λVMG,max, ∀t
+(3b)
+Pramp,j,min ≤Pt
+VMG,j,dm −Pt−1
+VMG,j,dm ≤Pramp,j,max, ∀t, ∀j
+(3c)
+Pt
+VMG,j,local −δt
+VMGPt
+VMG,j,dm +
+
+1 −δt
+VMG
+
+Pt
+Load,j,se
++Pt
+Load,j + Pt
+Load,j,cur = Pt
+Load,j,total
+(3d)
+Pt
+Load,j,cur ≤Pt
+Load,cur,max
+(3e)
+4) DSO:
+Min
+
+t∈T
+⎧
+⎪⎪⎪⎪⎪⎪⎨
+⎪⎪⎪⎪⎪⎪⎩
+Ct
+DSO,dm
+
+λt
+mar,dm, Pt
+dm,allo,g|Pt
+dm,g, λt
+dm,g
+
+	
+
+
+
+1 Cost of Purchasing from DVA producers
+−Ct
+DSO,se
+
+λt
+se, λt
+pen,cu|Pt
+load,se, Pt
+load,cu
+
+	
+
+
+
+2 Revenue of selling to DVA consumers
++
+ρDSOPt
+err
+	
+
+
+
+3 Total prediction error
+⎫
+⎪⎪⎪⎪⎪⎪⎬
+⎪⎪⎪⎪⎪⎪⎭
+(4)
+Ct
+DSO,se = λt
+sePt
+load,se −λt
+pen,cuPt
+load,cu, ∀t, ∀g
+(4a)
+Ct
+DSO,dm =
+
+g∈G
+λt
+mar,dmPt
+dm,allo,g, ∀t, ∀g
+(4b)
+s.t.
+
+g∈G
+Pt
+dm,allo,g −Pt
+load,se = 0, ∀t
+(4c)
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:59 UTC from IEEE Xplore.  Restrictions apply. 
+
+ZHU et al.: OPTIMAL BI-LEVEL BIDDING AND DISPATCHING STRATEGY BETWEEN ADN AND VIRTUAL ALLIANCES
+2837
+Pt
+dm,allo,g ≤Pt
+dm,g, ∀t, ∀g
+(4d)
+Pline,o,min ≤Pt
+line,o ≤Pline,o,max, ∀t, ∀o
+(4e)
+Pt
+Load,total,cur ≤Pt
+Load,cur,max.
+(4f)
+C. Markov Decision Process (MDP) Model Formulation
+The aforementioned OBDS model can be considered as a
+stochastic dynamic programming (SDP) problem, and it is
+essentially a sequential decision process of different agents
+interacting with the environment. Such processes can be fur-
+ther modeled as a MDP model, which describes the interaction
+between agents and the environment in a discrete time series:
+τ =< S, A, P, R >
+(5)
+where S, A, R denotes the set of state, action and reward
+of each agent with uncertainty, and P refers to the set
+of
+transition
+probability:
+P(St+1|St
+=
+st, At
+=
+at)
+and P(Rt|St = st, At = at).
+Similar to the well-known Markov chain, the components in
+MDP follows the Markov property, i.e., the values of St+1 and
+Rt are only related to st and at at time t, which are consistent
+with the assumption of OBDS model. However, even though
+the transition probability with initial values is given, the sub-
+sequent τ = s0, a0, . . . , st, at, rt is still not determined, as the
+actions of each agent are subject to their policy. The objective
+of Reinforcement Learning (RL) is to maximize the expected
+accumulated reward E[ T−1
+t=0 rt] by ﬁnding the optimal policy
+μ(At|St = st), which matches that of dynamic programming.
+Hence, without loss of generality, the SDP model in (1)-(4)
+can be re-formulated as:
+Max
+
+t∈T
+Rt
+
+At = {at,k}|St = {st,m}
+
+(6)
+s.t. at,min = at,k = at,max, ∀t, ∀k
+(6a)
+For the DVA agent, the state is the market clearing results,
+and the action refers to the submitted bidding price and
+available capacity. For the DSO agent, in contrast, the state
+is the submitted bidding price and the available capacity
+of each DVA, while the action is the allocation of capaci-
+ties and MCP. The optimization problem (6) will be solved
+using the proposed DRMA-DDPG algorithm, as elaborated in
+Section III.
+III. DISTRIBUTED ROBUST MULTI-AGENT DEEP
+DETERMINISTIC POLICY GRADIENT (DRMA-DDPG)
+ALGORITHM CONSIDERING UNCERTAINTIES
+In this section, the proposed DRMA-DDPG algorithm is
+introduced by the following steps. Firstly, the framework of
+DDPG is elaborated as the baseline to be further enhanced.
+After the baseline DDPG being extended to the multi-agent
+environment, the concept of Robust Nash Equilibrium (RNE)
+is incorporated into the formulation of policy gradient and
+value function, enabling this algorithm to be risk-averse. Then,
+the training method of this algorithm is improved to be fully
+distributed, in order to facilitate the privacy protection. Finally,
+tricks are introduced to tackle the limitations of this proposed
+algorithm.
+A. Framework of the Baseline DDPG Algorithm
+As indicated in Section II-C, the status and actions of both
+DVAs and DSO are all about market operating data, which
+are continuous in real-world applications. Hence, one of the
+most important problems to be tackled in this market bid-
+ding problem is the continuous state and action space, i.e., the
+dimensionality can be considered as inﬁnity, which will render
+the convergence of the RL algorithm intractable. Intuitively,
+to tackle these problems, the proposed algorithm is developed
+based on the DDPG because of its following characteristics:
+1) The “policy gradient” (PG) method intends to optimize
+the parameterized policy function using the deep neural
+network, which makes it applicable to consider the con-
+tinuous state and action space and tackles the “curse of
+dimensionality”.
+2) The “deterministic” PG, compared with the “stochas-
+tic” PG, avoids the random sampling in the action
+space with large dimensionality after the policy func-
+tion being obtained, and therefore effectively improves
+the computational efﬁciency.
+The DDPG is developed based on the architecture of actor-
+critic algorithm [29], in which two pairs of convolutional
+neural networks (CNN) are adopted, namely the actor network
+and critic network. The actor network refers to the CNN
+intended for ﬁtting the policy function at = μ∗(at|θμ) param-
+eterized by θμ, where μ∗= argmaxμJβ(μ) is the optimal
+policy. The “performance” of the actor network, i.e., how good
+is the obtained policy function, is assessed by the so-called
+performance objective:
+Jβ(μ) = Es∼ρβ
+
+Qμ(st, μ(st))
+
+(7)
+where ρβ denotes the distribution of state, and Qμ(st, μ(st))
+is the Q-function parameterized by θQ , which is deﬁned by
+the Bellman equation:
+Qμ(st, μ(st)) = E
+
+Rt(st, at) + γ Qμ(st+1, μ(st+1))
+
+(8)
+Hence, the policy function will be optimized by updating θμ,
+using the policy gradient descent method [29]:
+∇θμ Jβ(μ) ∼Es∼ρβ
+
+∇atQμ
+st, μ(st)|θQ
+· ∇θQμ
+
+st|θμ
+(9)
+However, (8) can only be solved by iterative computation,
+and Qμ(st, μ(st)) is therefore ﬁtted using another CNN, i.e.,
+the critic network, to improve the accuracy of “feedback”
+for the actor network. The Q-function is updated using the
+back-propagation approach [29] by minimizing the penalty
+function of critic network, and it is deﬁned as the mean square
+error (MSE):
+L = 1
+N
+
+t
+
+yt −Qμ
+st, μ(st)|θQ2
+(10)
+where
+yt = Rt(st, at) + γ Q′
+st+1, μ′
+st+1|θμ′
+|θQ′
+(11)
+The overall framework of the proposed algorithm is shown
+in Fig. 1, with the following two key points to be strength-
+ened. Firstly, the highly correlated dataset generated by the
+interaction between the actor network and the environment
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:59 UTC from IEEE Xplore.  Restrictions apply. 
+
+2838
+IEEE TRANSACTIONS ON SMART GRID, VOL. 13, NO. 4, JULY 2022
+Fig. 1.
+Framework of DRMA-DDPG Algorithm.
+will result in the overﬁtting of training. Hence, the experience
+replay buffer (ERB) is designed for the storage of datasets and
+random sampling. The generated transition {st, at, rt, st+1}
+will be stored in the ERB. When the training is conducted,
+the required dataset will be randomly sampled from the ERB
+in the size of mini-batch. Secondly, considering the parameter
+θQ is used to update both the policy and Q-function as shown
+in (7)-(11), which may result in non-stationarity of training
+process, two sets of actor and critic network are involved in
+this algorithm, namely the online network and target network.
+The parameters θQ and θμ of the online network is ﬁrstly
+updated based on (7)-(11) in each episode. After the CNN
+is trained by a mini-batch of data, the parameters of the tar-
+get network are manipulated by the soft-update approach as
+below:
+θμ′ = ρθμ + (1 −ρ)θμ′
+(12)
+θQ′ = ρθQ + (1 −ρ)θQ′
+(13)
+The architecture of conventional DDPG algorithm is elab-
+orated as aforementioned. However, to deal with the environ-
+ment considering the interaction of multi-agent and uncertainty
+of reward function, the policy gradient formulations (7)-(11)
+are required to be further amended, as discussed in the
+following sections.
+B. Robust MA-DDPG Under Uncertainty
+Consider the environment with multi-agent, the MDP in (5)
+can be re-written as follows:
+τ =
+
+Sk,h
+t
+ 
+k∈K,h∈H,
+
+Ak,m
+t
+ 
+k∈K,m∈M,
+
+Rk
+t
+ 
+k∈K,
+
+Pk
+t
+ 
+k∈K
+!
+(14)
+in which each agent k, including DVAs and DSO, will modify
+their policies ak,m
+t
+= μk(ak,m
+t
+|θμk) parameterized by θμk, in
+order to maximize the expected accumulated reward:
+Jk
+β
+
+μk, μ−k
+= Es0∼ρβ
+
+Qμk
+sk,h
+t
+, μk(sk,h
+t
+)
+
+|ak,m
+t
+∼μk
+sk,h
+t
+
+, a−k,m
+t
+∼μ−k
+s−k,h
+t
+
+(15)
+where μ−k denotes the policy function for the agent except
+for agent k. It can be concluded from (15) that, the expected
+reward of each agent is correlated with the policy of every
+involved agents. Herein the Nash Equilibrium (NE) for multi-
+agent game is deﬁned as μk
+∗, for each k ∈K the following
+holds:
+Jk
+β
+
+μk
+∗, μ−k
+∗
+
+= Jk
+β
+
+μk, μ−k
+(16)
+i.e., each agent will not be motivated to change their pol-
+icy for pursuing more rewards. However, the optimal decision
+μk
+∗should be robust to any risk of penalty resulted from
+the uncertainty of DVA net load. Hence, based on the MDP
+for multi-agent environment, the robust MDP is deﬁned as
+follows:
+τ ′ =
+
+Sk,h
+t
+ 
+k∈K,h∈H,
+
+Ak,m
+t
+ 
+k∈K,m∈M,
+
+Rk
+t
+ 
+k∈K,
+
+Pk
+t
+ 
+k∈K
+!
+(17)
+where Rk
+t ∈R denotes reward considering potential risks. Let
+μ0,k ∈˜Ek
+t be the probability distribution of uncertainty set of
+net load prediction error, and the resulted penalty is denoted as
+Lk
+t , the robust Nash equilibrium (RNE) [30] can be deﬁned as:
+Jk
+β
+
+μk
+∗, μ−k
+∗, μ0,k
+∗
+
+≤Jk
+β
+
+μk, μ−k, μ0,k
+(18)
+where
+
+μk
+∗, μ−k
+∗, μ0,k
+∈argmaxμk∗,μ−k
+∗
+Minμ0∗
+
+μ0,k∈˜Ekt
+μ0,k
+Rk
+t |sk,h
+t
+
+·
+
+ak,m
+t
+∈Ak,m
+t
+μk
+at|θμk "
+−k∈K
+μ−k
+at|θμ−k
+Vk
+μk∗,t
+
+sk,h
+t
+
+(19)
+The value-function Vk
+μk∗,t is deﬁned as the cumulative reward
+obtained by performing the optimal policy μk
+∗, and by pursuing
+the maximum reward under the worst scenario:
+Vk
+μk∗,t
+
+sk,h
+t
+
+:= MaxμkMin
+Rkt ∈R
+
+ak,m
+t
+∈Ak,m
+t
+μk
+at|θμk
+·
+"
+−k∈K
+μ−k
+at|θμ−k
+Rk
+t
+
+sk,h
+t
+, ak,m
+t
+
++ γ Vk
+μk∗,t+1
+
+sk,h
+t+1
+
+(20)
+Similar to (7), the performance objective under uncertainty is
+deﬁned as the expectation of Q-function:
+Jk
+β
+
+μk, μ−k
+:= E ˜Ekt ∼μ0,k,ak,m
+t
+∼μk,a−k,m
+t
+∼μ−kQk
+μk,t
+
+sk,h
+t
+, ak,m
+t
+
+(21)
+where
+Qk
+t
+
+sk,h
+t
+, ak,m
+t
+
+= μ0,k
+Rk
+t |sk,h
+t
+
++
+
+ak,m
+t
+∈Ak,m
+t
+"
+k∈K
+μk
+ak,m
+t+1|θμk
+Qk
+t+1
+
+sk,h
+t+1, ak,m
+t+1
+
+(22)
+Based on (20)-(22), the policy gradient of (μk, μ−k, μ0,k) can
+be derived as follows:
+∇θμk Jβ
+
+μk
+= E ˜Ekt ∼μ0,k,ak,m
+t
+∼μk,a−k,m
+t
+∼μ−k
+
+∇logμk
+ak,m
+t
+|θμk
+Qk
+t
+
+sk,h
+t
+, ak,m
+t
+, a−k,m
+t
+
+(23)
+∇θμ0,k Jβ
+
+μ0,k
+= E ˜Ekt ∼μ0,k,ak,m
+t
+∼μk,a−k,m
+t
+∼μ−k
+
+∇μ0,k
+Rk
+t |sk,h
+t
+
+(24)
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:59 UTC from IEEE Xplore.  Restrictions apply. 
+
+ZHU et al.: OPTIMAL BI-LEVEL BIDDING AND DISPATCHING STRATEGY BETWEEN ADN AND VIRTUAL ALLIANCES
+2839
+Each DVA agent, DSO agent and the nature agent will
+optimize their policy function by updating the actor network,
+i.e., renewing the parameter θμk and θμ0,k, using the pol-
+icy gradient method. Inspired by [29], such gradient can be
+estimated by the Monte Carlo method to substitute the mini-
+batch transition extracted from the ERB as an un-biased
+approximation:
+∇θμk Jβ
+
+μk
+≈1
+N
+
+n
+∇ak,m
+t
+Qk
+t
+
+sk,h
+t
+, ak,m
+t
+, a−k,m
+t
+
+|sk,h
+t
+=sk,h
+n ,ak,m
+t
+=ak,m
+n
+,a−k,m
+t
+=a−k,m
+t
+·
+·∇θμk μk
+ak,m
+t
+|θμk
+|ak,m
+t
+=ak,m
+n
+,a−k,m
+t
+=a−k,m
+t
+(25)
+where sk,h
+n , ak,m
+n
+, a−k,m
+n
+are sample transitions extracted from
+the ERB. For the critic network, similar to conventional
+DDPG, the Q-function is updated using the back-propagation
+approach by minimizing the MSE:
+Lk = 1
+N
+
+t
+
+yk
+t −Qk
+t
+
+sk,h
+t
+, ak,m
+t
+, a−k,m
+t
+2
+(26)
+where
+yk
+t = Rk
+t
+
+sk,h
+t
+, ak,m
+t
+
++ γ Qk
+t+1
+
+sk,h
+t+1, ak,m
+t+1, a−k,m
+t+1 |μk, μ−k
+.
+(27)
+C. Fully-Distributed Robust MA-DDPG
+As shown in (26) and (27), the availability of other
+agents’ policies is required while updating the critic network.
+However, such assumption cannot be held in the deregu-
+lated and competitive electricity market, as the policy of each
+involved stakeholder including DVAs and DSO is conﬁden-
+tial. In this paper, this issue is tackled by the estimated policy
+function (EPF) [31] of other agents. Each agent will use the
+EPF #μk
+ϑ−k
+t
+instead of μ−k to update the critic network, while
+the EPF is refreshed by minimizing the penalty function:
+χ
+
+ϑk
+t
+
+= −Eak,m
+t
+∼μk
+
+log#μk
+ϑ−k
+t
+
+ak,m
+t
+|sk,h
+t
+
++ λH
+
+#μk
+ϑ−k
+t
+
+(28)
+where H(#μk
+ϑ−k
+t ) denotes the cross-entropy of EPF. Hence, by
+using the EPF, equation (28) can be re-written as:
+yk
+t = Rk
+t
+
+sk,h
+t
+, ak,m
+t
+
++ γ Qk
+t+1
+
+sk,h
+t+1, ak,m
+t+1, ˆa−k,m
+t+1 |μk, #μk
+ϑ−k
+t
+
+(29)
+where the information of μ−k is no longer required, so each
+agent can implement the fully distributed training without
+requiring bidding strategy information of other agents. The
+entire workﬂow of this proposed algorithm is summarized in
+Algorithm 1.
+D. Discussions of Limitation and Applicable Tricks
+Previous subsections address the uncertainty in terms of
+DVAs’ net load and the privacy protection in the bidding pro-
+cedure. However, considering the DRMA-DDPG is developed
+based on the conventional DDPG algorithm, it also inherits
+the following drawbacks:
+• The most important limitation of DDPG is the over-
+estimation of Q-values [35], which may accumulate over
+Algorithm 1 Workﬂow of DRMA-DDPG Algorithm
+Input: The initialized value of network parameters θQ,k, θμ,k,
+θQ′,k, θμ′,k, the uncertainty set of prediction error ˜Ekt , and the
+hyperparameters
+Output: The converged policy of each DVA agent
+1: Initialize the parameters of θQ,k and θμ,k.
+2: Initialize the target networks of both actor and critic.
+3: Initialize the ERB.
+4: Initialize the uncertainty set of prediction error ˜Ekt .
+For each episode:
+5: Initialize the UO noise.
+For t = 1:T:
+For DVA agent 1:k and Nature agent:
+6: The actor network of each DVA agent generates action aDVA
+t
+based on the behavior policy.
+7: Each DVA agent submits their actions to the DSO.
+8: The actor network of DSO agent generates action (i.e., market
+clearing) aDSO
+t
+based on the behavior policy.
+9: The DSO agent returns the reward rDVA
+t
+and next state sDVA
+t+1 (i.e.,
+market clearing results) to the DVA.
+10: Each DVA agent performs the real-time dispatching using the
+method introduced in [32].
+11: The nature agent generates random net load prediction error
+s ˜EDVA
+t
+using μ0,k ∈˜Ekt , and therefore the caused penalty should
+be Lkt .
+12: Each DVA agent and DSO agent correct the reward Rkt consid-
+ering the penalty Lkt .
+13: The actor network of each DVA agent restores the transition
+{sDVA
+t
+, aDVA
+t
+, rDVA
+t
+, sDVA
+t+1 } to the ERB.
+14: A random transition is selected from ERB as a mini-batch of
+training dataset.
+15: Compute the gradient of Critic Q Network using (26) and (29).
+16: Update θQ,k using the Adam Optimizer.
+17: Estimate the policy gradient of Actor Critic Network using Monte
+Carlo method as shown in (25).
+18: Update θμ,k using the Adam Optimizer.
+End for DVA, DSO agent and Nature agent
+End for time step
+19: Update θQ′,k and θμ′,k,using (12) and (13).
+End for episode
+time and lead the agent to trap in the local optimum. To
+tackle this issue, the architecture of double critic network
+with two estimated Q-values [35] can be adopted with the
+smaller one taken as the actual estimation. Meanwhile, for
+the MSE formulated in (26), it should be modiﬁed as the
+sum of MSE of two critic networks.
+• In addition, the deterministic policy gradient renders the
+exploration of environment, which may also result in
+the local optimality. The countermeasure is to delay the
+update of critic network – the actor network is updated
+in each time step, but the critic is updated every two time
+steps in order to mitigate the impact of estimation errors.
+• Finally, soft update with delayed update frequency can
+be adopted in updating the target network – the online
+network is updated in each time step, but the target
+network is updated for every four time steps in order
+to improve the stationarity of the learning environment,
+especially considering the environment of multi-agent
+interaction with uncertainty.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:59 UTC from IEEE Xplore.  Restrictions apply. 
+
+2840
+IEEE TRANSACTIONS ON SMART GRID, VOL. 13, NO. 4, JULY 2022
+Fig. 2.
+Conﬁguration of Modiﬁed IEEE 33-Node Bus Network.
+TABLE II
+CHARACTERISTICS OF CONTROLLABLE GENERATORS
+IV. CASE STUDY
+A. Test System and Input Data
+In this case study, a test market constituted with 5 distributed
+DVAs is adopted, in which (1) DVAs are aggregations or vir-
+tual alliances of generators and loads in a modiﬁed IEEE
+33-Bus Network, as shown in Fig. 2, and (2) all the loads
+are managed by the LA except for those in VMGs. While the
+network conﬁguration parameters and line capacity limitations
+are taken from [33], the rated capacity and generation cost
+of controllable generators are listed in Table II. Meanwhile,
+the hourly renewable generation output and load proﬁle, as
+well as the generated scenarios with corresponding probabili-
+ties for prediction error simulation, are all sourced from [34].
+The bidding price limit is set to [1, 1.5] (kWh/RMB). Here,
+the real-time dispatching method of DVAs and the penalty
+calculation for failing to provide energy proposed in [32] are
+adopted.
+The neural networks mentioned in the DRMA-DDPG are
+developed and trained using Tensorﬂow in Python. The neural
+network architecture and key hyper-parameters are summa-
+rized in Table III. The hardware environment for network
+training is a laptop with Intel i7-4870HQ 2.5GHz CPU and
+32 GB RAM.
+B. Comparison of Computational Performance of Different
+MARL Algorithms
+In this section, the computational performance of the
+proposed DRMA-DDPG algorithm is compared with 3 exist-
+ing RL algorithms, MA-DDPG, DDPG and Deep Q-Learning,
+in terms of convergence speed and average reward with
+uncertainties considered.
+TABLE III
+NEURAL NETWORK ARCHITECTURES AND HYPER-PARAMETERS
+Fig. 3.
+Convergence Procedure of Different Algorithms.
+The bidding strategy convergence process of each DVA and
+its reward at 6:00 AM are shown in Fig. 3 as an example
+here. It can be observed that the proposed DRMA-DDPG algo-
+rithm can reach convergence within 8000 episodes, while the
+other algorithms fail to converge. The divergence of conven-
+tional algorithms is due to the uncertainty of reward function
+and bidding strategies of other DVA agents, which renders an
+unstable gradient ascent of policy function. Such divergence is
+effectively mitigated by the proposed DRMA-DDPG method
+by letting the policy function converge to the RNE as elabo-
+rated in Section III-B, and inferring the bidding strategies of
+other DVAs as shown in Section III-C.
+Regarding the average reward as shown in Fig. 3a,
+VPP1 obtained the highest reward when the RDG output was
+at its peak. VPP1 would therefore encounter a high risk of
+being penalized due to prediction error. Hence, VPP1 preferred
+the price-taker bidding strategy to uplift the MCP, disregarding
+that doing so would lead to bidding failure. In contrast, the
+other 4 DVA agents selected the price-taker strategy, securing
+their bidding but receiving less reward.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:59 UTC from IEEE Xplore.  Restrictions apply. 
+
+ZHU et al.: OPTIMAL BI-LEVEL BIDDING AND DISPATCHING STRATEGY BETWEEN ADN AND VIRTUAL ALLIANCES
+2841
+Fig. 4.
+Average Reward Proﬁles of Different Algorithms.
+TABLE IV
+TOTAL REWARD OF DVAS BY IMPLEMENTING DIFFERENT ALGORITHMS
+Fig. 5.
+Relationships between MCP and Total Load Demand.
+The reward proﬁles of each DVA agent in 24 hours by
+employing the aforementioned 4 algorithms are plotted in
+Fig. 4. Meanwhile, the total reward of each DVA in 24 cumu-
+lative hours is provided in Table IV. It can be observed that
+not only the total reward, but also the lowest reward (i.e., in
+the worst case scenario) by adopting the proposed DRMA-
+DDPG algorithm, are apparently higher than those baseline
+algorithms because of the effective risk mitigation.
+C. Analysis of DVA Bidding Strategy
+Based on the converged results of bidding decisions in
+24 hours using the proposed DRMA-DDPG algorithm, an in-
+depth analysis of the key factors that affect the bidding price
+decisions of DVA agents and the market clearing price (MCP)
+is provided here.
+Firstly, the relationship between MCP and total load
+demand is illustrated in Fig. 5. Interestingly, such a relation
+Fig. 6.
+Bidding Prices of DVAs in Selected Time Slots.
+Fig. 7.
+MCP Variance with Different Penalties.
+does not follow the general supply-demand-price curve, in
+which the price increases when the demand is uplifted. In con-
+trast, the MCP stays at the upper limit (150RMB/MWh) most
+of the time. This is due to the fact that the DVA agents need to
+uplift the price to “intentionally” letting their bids fail because
+the overwhelming penalty for misconducting the appointment
+will result in a minus reward.
+Fig. 6 shows the price submitted by each agent in 6 selected
+time slots. The DVA with high penetration of wind turbines
+(VPP1) but without sufﬁcient ﬂexible conventional genera-
+tors would submit the highest price when the wind power
+generation reached the peak during 0-6 AM. Similarly, the
+DVA with high penetration of PVs (VPP2) would submit
+the highest price when the solar power generation reached
+the peak from 10AM-4PM. Those with sufﬁcient controllable
+generators, including VPP3, VPP4 and VMG1, submitted the
+lower price (100-120 RMB/ MWh) when the load demand is
+at the valley during 0-8 AM, and bid at a higher price (130-
+150 RMB/MWh) in the peak load duration at 6-10 PM.To
+further investigate the relations between the imposed penalty
+and MCP, the bidding procedure was simulated again by
+setting the penalty as 60% and 30% of the rated value.
+Fig. 7 shows the new MCP results. It can be observed that,
+by reducing the penalty to about 30% of the original value
+(i.e., 300RMB/MWh), the DVA agents tend to submit a lower
+bidding price when the load demand is not at the peak, which
+is beneﬁcial to the maximization of social welfare. However,
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:59 UTC from IEEE Xplore.  Restrictions apply. 
+
+2842
+IEEE TRANSACTIONS ON SMART GRID, VOL. 13, NO. 4, JULY 2022
+Fig. 8.
+DSO Dispatching Results and Rewards Using Conventional Method.
+Fig. 9.
+DSO Dispatching Results and Rewards Using Proposed Method.
+a lower penalty will discourage the DVAs from improving
+their prediction accuracy and avoiding appointment miscon-
+duct with DSO. Hence, the determination of the penalty still
+requires further in-depth investigations.
+D. Analysis of DSO Dispatching Strategy
+In this section, the dispatching results generated by optimal
+dispatching and the proposed risk-averse reinforcement learn-
+ing are compared via the following two cases with the bid-
+ding procedure simulated using the proposed DRMA-DDPG
+method. In case 1, the DSO implements the market clearing
+using the conventional optimal dispatching method introduced
+in [32], and in case 2, the DSO clears the market by using
+the proposed DRMA-DDPG algorithm. The penalty is set as
+30% of the original value to avoid irrational bidding decisions
+mentioned in the previous section. The market clearing results
+of case 1 and 2 are shown in Fig. 8 and Fig. 9, respectively.
+Regarding capacity allocation, from 1AM to 7AM, the
+DSO with DRMA-DDPG method deploys less capacity from
+VPP1 and more from VPP2 than that with the conventional
+optimal dispatching method. This is because the large pene-
+tration of wind generation in VPP1 results in potential penalty
+for real-time imbalance. From 10AM to 3PM, the DSO with
+DRMA-DDPG method deploys less capacity from VPP2 and
+more from VPP3, VPP4 and VMG1 than that with optimal
+dispatching method, for the sake of large penetration of PV
+generation in VPP2. Such a conservative dispatching method
+will increase the cost for purchasing the energy as a result
+and, therefore, slightly decrease the average reward in some
+time slots, for example, 2AM, 5AM, 2PM, etc. However, the
+proposed method could effectively mitigate the huge penalty of
+real-time imbalance in some time slots, and the corresponding
+reward of DSO is increased, as shown at 3AM, 4AM, 10AM,
+3PM, etc. The results indicate the advantages of the proposed
+DRMA-DDPG method in the aspect of risk mitigation.
+V. CONCLUSION
+The optimal bi-level bidding and dispatching strategy in the
+ADN with participation of DVAs is an emerging problem to be
+investigated. In this paper, the proposed DRMA-DDPG algo-
+rithm is employed as a risk-averse and fully distributed method
+to simulate the dynamic bidding strategy optimization process,
+and obtain the RNE solution. In the case studies, the advan-
+tages of this proposed algorithm in terms of convergence speed
+and risk aversion are demonstrated via benchmarking with sev-
+eral existing RL algorithms. In addition, by simulating the
+bidding procedure among DVAs in 24 hours, the signiﬁcance
+and impacts of the penalty for misconducting the DA appoint-
+ment and the total load demand on the bidding decision of
+DVAs are found, and the parameters of market regulation
+should therefore be carefully determined. Furthermore, at the
+initial operation stage of new electricity market paradigms,
+the risk-averse bidding strategy proposed in this paper will be
+adopted by a large number of stakeholders, and the proposed
+algorithm can be adopted to simulate the bidding procedure
+of emerging markets and provide the theoretical and practical
+supports for market operation.
+REFERENCES
+[1] P. S. Georgilakis, “Review of computational intelligence methods
+for local energy markets at the power distribution level to facil-
+itate the integration of distributed energy resources: State-of-the-
+art and future research,” Energies, vol. 13, no. 1, p. 186, 2020,
+doi: 10.3390/en13010186.
+[2] M. H. S. Boloukat and A. A. Foroud, “Multiperiod planning of distri-
+bution networks under competitive electricity market with penetration
+of several microgrids, Part I: Modeling and solution methodology,”
+IEEE Trans. Ind. Informat., vol. 14, no. 11, pp. 4884–4894, Nov. 2018,
+doi: 10.1109/TII.2018.2807396.
+[3] S. Parhizi, A. Khodaei, and M. Shahidehpour, “Market-based versus
+price-based microgrid optimal scheduling,” IEEE Trans. Smart Grid,
+vol. 9, no. 2, pp. 615–623, Mar. 2018, doi: 10.1109/TSG.2016.2558517.
+[4] A. Alanazi, H. Lotﬁ, and A. Khodaei, “Market clearing in microgrid-
+integrated active distribution networks,” Elect. Power Syst. Res., vol. 183,
+Jun. 2020, Art. no. 106263, doi: 10.1016/j.epsr.2020.106263
+[5] C. Eid et al., “Market integration of local energy systems: Is
+local energy management compatible with European regulation for
+retail
+competition?”
+Energy,
+vol.
+114,
+pp. 913–922,
+Nov.
+2016,
+doi: 10.1016/j.energy.2016.08.072
+[6] Y. Yang, Z. Fang, F. Zeng, and P. Liu, “Research and prospect
+of virtual microgrids based on energy Internet,” in Proc. IEEE
+Conf. Energy Internet Energy Syst. Integr. (EI2), 2017, pp. 1–5,
+doi: 10.1109/EI2.2017.8245517.
+[7] G. Plancke, K. De Vos, R. Belmans and A. Delnooz, “Virtual power
+plants: Deﬁnition, applications and barriers to the implementation in the
+distribution system,” in Proc. 12th Int. Conf. Eur. Energy Market (EEM),
+2015, pp. 1–5, doi: 10.1109/EEM.2015.7216693.
+[8] N. Etherden, V. Vyatkin, and M. H. J. Bollen, “Virtual power plant for
+grid services using IEC 61850,” IEEE Trans. Ind. Informat., vol. 12,
+no. 1, pp. 437–447, Feb. 2016, doi: 10.1109/TII.2015.2414354.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:59 UTC from IEEE Xplore.  Restrictions apply. 
+
+ZHU et al.: OPTIMAL BI-LEVEL BIDDING AND DISPATCHING STRATEGY BETWEEN ADN AND VIRTUAL ALLIANCES
+2843
+[9] Z. Yi, Y. Xu, J. Zhou, W. Wu, and H. Sun, “Bi-level programming
+for optimal operation of an active distribution network with multiple
+virtual power plants,” IEEE Trans. Sustain. Energy, vol. 11, no. 4,
+pp. 2855–2869, Oct. 2020.
+[10] H. Haddadian and R. Noroozian, “Multi-microgrid-based operation of
+active distribution networks considering demand response programs,”
+IEEE Trans. Sustain. Energy, vol. 10, no. 4, pp. 1804–1812, Oct. 2019.
+[11] X. Zhou, Q. Ai, and M. Yousif, “Two kinds of decentralized robust
+economic dispatch framework combined distribution network and multi-
+microgrids,” Appl. Energy, vol. 253, no. 6, 2019, Art. no. 113588.
+[12] M. Xie, X. Ji, X. Hu, P. Cheng, Y. Du, and M. Liu, “Autonomous
+optimized economic dispatch of active distribution system with multi-
+microgrids,” Energy, vol. 153, pp. 479–489, Jun. 2018.
+[13] Y. Du and F. Li, “Intelligent multi-microgrid energy management based
+on deep neural network and model-free reinforcement learning,” IEEE
+Trans. Smart Grid, vol. 11, no. 2, pp. 1066–1076, Mar. 2020.
+[14] C. A. Hans, P. Sopasakis, J. Raisch, C. Reincke-Collon, and P. Patrinos,
+“Risk-averse model predictive operation control of Islanded microgrids,”
+IEEE Trans. Control Syst. Technol., vol. 28, no. 6, pp. 2136–2151,
+Nov. 2020.
+[15] S. Totaro, I. Boukas, A. Jonsson, and B. Cornélusse, “Lifelong
+control
+of
+off-grid
+microgrid
+with
+model-based
+reinforce-
+ment
+learning,”
+Energy,
+vol.
+232,
+Oct.
+2021,
+Art. no. 121035,
+doi: 10.1016/j.energy.2021.121035.
+[16] J. Viehmann, S. Lorenczik, and R. Malischek, “Multi-unit multiple
+bid
+auctions
+in
+balancing
+markets:
+An
+agent-based
+Q-learning
+approach,” Energy Econ., vol. 93, Jan. 2021, Art. no. 105035,
+doi: 10.1016/j.eneco.2020.105035.
+[17] X. Gao, K. W. Chan, S. Xia, X. Zhang, K. Zhang, and J. Zhou,
+“A multiagent competitive bidding strategy in a pool-based electricity
+market with price-maker participants of WPPs and EV aggregators,”
+IEEE Trans. Ind. Informat., vol. 17, no. 11, pp. 7256–7268, Nov. 2021,
+doi: 10.1109/TII.2021.3055817.
+[18] Y. Ye, D. Qiu, M. Sun, D. Papadaskalopoulos, and G. Strbac, “Deep
+reinforcement learning for strategic bidding in electricity markets,”
+IEEE Trans. Smart Grid, vol. 11, no. 2, pp. 1343–1355, Mar. 2020,
+doi: 10.1109/TSG.2019.2936142.
+[19] P. Kou, D. Liang, C. Wang, Z. Wu, and L. Gao, “Safe deep reinforcement
+learning-based constrained optimal control scheme for active distribution
+networks,” Appl. Energy, vol. 264, Apr. 2020, Art. no. 114772.
+[20] W. Liu, P. Zhuang, H. Liang, J. Peng, and Z. Huang, “Distributed
+economic dispatch in microgrids based on cooperative reinforcement
+learning,” IEEE Trans. Neural Netw. Learn. Syst., vol. 29, no. 6,
+pp. 2192–2203, Jun. 2018.
+[21] L. Lei, Y. Tan, G. Dahlenburg, W. Xiang, and K. Zheng, “Dynamic
+energy dispatch based on deep reinforcement learning in IoT-driven
+smart Isolated microgrids,” IEEE Internet Things J., vol. 8, no. 10,
+pp. 7938–7953, May 2021.
+[22] X. Lu et al., “Optimal bidding strategy of DER aggregator considering
+dual uncertainty via information gap decision theory,” IEEE Trans. Ind.
+Appl., vol. 57, no. 1, pp. 158–169, Jan./Feb. 2021.
+[23] G. Liu, Y. Xu, and K. Tomsovic, “Bidding strategy for microgrid in
+day-ahead market based on hybrid stochastic/robust optimization,” IEEE
+Trans. Smart Grid, vol. 7, no. 1, pp. 227–237, Jan. 2016.
+[24] N. Rezaei, A. Ahmadi, A. Khazali, and J. Aghaei, “Multiobjective
+risk-constrained optimal bidding strategy of smart microgrids: An
+IGDT-based normal boundary intersection approach,” IEEE Trans. Ind.
+Informat., vol. 15, no. 3, pp. 1532–1543, Mar. 2019.
+[25] Y. Liang, C. Guo, Z. Ding, and H. Hua, “Agent-based modeling in
+electricity market using deep deterministic policy gradient algorithm,”
+IEEE Trans. Power Syst., vol. 35, no. 6, pp. 4180–4192, Nov. 2020.
+[26] Y. Du, F. Li, H. Zandi, and Y. Xue, “Approximating nash equilibrium in
+day-ahead electricity market bidding with multi-agent deep reinforce-
+ment learning,” J. Modern Power Syst. Clean Energy, vol. 9, no. 3,
+pp. 534–544, May 2021.
+[27] J. Hu, R. Harmsen, W. Crijns-Graus, E. Worrell, and M. van den Broek,
+“Identifying barriers to large-scale integration of variable renewable
+electricity into the electricity market: A literature review of market
+design,” Renew. Sustain. Energy Rev., vol. 81, pp. 2181–2195, Jan. 2018,
+doi: 10.1016/j.rser.2017.06.028.
+[28] A. Botterud
+et al., “Wind power trading under uncertainty in LMP
+markets,” IEEE Trans. Power Syst., vol. 27, no. 2, pp. 894–903, May
+2012, doi: 10.1109/TPWRS.2011.2170442.
+[29] M. Sewak, “Deterministic policy gradient and the DDPG,” in Proc. Deep
+Reinforcement Learning, 2019, pp. 173–184.
+[30] S. Li, Y. Wu, X. Cui, H. Dong, F. Fang, and S. J. Russell, “Robust
+multi-agent reinforcement learning via minimax deep deterministic
+policy gradient,” in Proc. AAAI Conf. Artif. Intell., vol. 33, 2019,
+pp. 4213–4220.
+[31] R. Lowe. Y. Wu, A. Tamar, J. Harb, J. Abbeel. “Multi-agent
+actor-critic for mixed cooperative-competitive environments,” 2020,
+arXiv:1706.02275.
+[32] Z. Zhu, K. W. Chan, S. Bu, B. Zhou, and S. Xia, “Real-Time interaction
+of active distribution network and virtual microgrids: Market paradigm
+and data-driven stakeholder behavior analysis,” Appl. Energy, vol. 297,
+Sep. 2021, Art. no. 117107.
+[33] M. E. Baran and F. F. Wu “Optimal capacitor placement on radial dis-
+tribution systems,” IEEE Trans. Power Del., vol. 4, no. 1, pp. 725–734,
+Jan. 1989. [Online]. Available: https://doi.org/10.1109/61.19265
+[34] A. Ajoulabadi, S. N. Ravadanegh, and B. Mohammadi-Ivatloo, “Flexible
+scheduling of reconﬁgurable microgrid-based distribution networks con-
+sidering demand response program,” Energy, vol. 196, Apr. 2020,
+Apr. 117024.
+[35] S. Fujimoto, H. van Hoof, and D. Meger, “Addressing function
+approximation error in actor-critic methods,” in Proc. ICML, 2018,
+pp. 1582–1591.
+Ziqing Zhu (Graduate Student Member, IEEE) was
+born in Taiyuan, Shanxi, China, in 1996. He received
+the M.S. degree in electrical power systems engi-
+neering from the University of Manchester, U.K., in
+2019. He is currently pursuing the Ph.D. degree with
+the Hong Kong Polytechnic University, Hong Kong,
+SAR, China. He was a Research Assistant with the
+Huazhong University of Science and Technology,
+Wuhan, China, in 2019. His research interests
+include applications of game theory and reinforce-
+ment learning on deregulated power markets.
+Ka Wing Chan (Member, IEEE) received the
+B.Sc. (Hons.) and Ph.D. degrees in electronic and
+electrical engineering from the University of Bath,
+U.K., in 1988 and 1992, respectively. He is cur-
+rently an Associate Professor and an Associate
+Head with the Department of Electrical Engineering,
+The Hong Kong Polytechnic University. His gen-
+eral research interests include power system stability,
+analysis and control, power grid integration, security,
+resilience and optimization, and demand response
+management.
+Shiwei Xia (Senior Member, IEEE) received the
+Ph.D. degree in power systems from The Hong Kong
+Polytechnic University, Hong Kong, SAR, in 2015.
+He is currently with the State Key Laboratory of
+Alternate Electrical Power System With Renewable
+Energy Sources, School of Electrical and Electronic
+Engineering, North China Electric Power University,
+Beijing, China. His general research interests include
+security and risk analysis for power systems with
+renewable energies, distributed optimization, and
+control of multiple sustainable energy sources in
+smart grid.
+Siqi Bu (Senior Member, IEEE) received the Ph.D.
+degree in electric power and energy research clus-
+ter from The Queen’s University of Belfast, Belfast,
+U.K., where he continued his postdoctoral research
+work before entering industry. Then he was with
+National Grid U.K. as an experienced U.K. National
+Transmission System Planner and Operator. He
+is an Associate Professor with The Hong Kong
+Polytechnic University, Hong Kong, SAR, and also a
+Chartered Engineer with U.K. Engineering Council,
+London, U.K. His research interests include power
+system stability analysis and operation control, considering renewable energy
+integration, and smart grid application.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:59 UTC from IEEE Xplore.  Restrictions apply. 

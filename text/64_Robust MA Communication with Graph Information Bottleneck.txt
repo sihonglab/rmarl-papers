@@ -1,0 +1,1398 @@
+3096
+IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 46, NO. 5, MAY 2024
+Robust Multi-Agent Communication With Graph
+Information Bottleneck Optimization
+Shifei Ding
+, Member, IEEE, Wei Du
+, Ling Ding
+, Jian Zhang
+, Lili Guo
+, Member, IEEE,
+and Bo An
+, Member, IEEE
+Abstract—Recent research on multi-agent reinforcement learn-
+ing(MARL)has shownthatactioncoordinationofmulti-agents can
+be signiﬁcantly enhanced by introducing communication learning
+mechanisms. Meanwhile, graph neural network (GNN) provides
+a promising paradigm for communication learning of MARL.
+Under this paradigm, agents and communication channels can
+be regarded as nodes and edges in the graph, and agents can
+aggregate information from neighboring agents through GNN.
+However, this GNN-based communication paradigm is suscepti-
+ble to adversarial attacks and noise perturbations, and how to
+achieve robust communication learning under perturbations has
+been largely neglected. To this end, this paper explores this problem
+and introduces a robust communication learning mechanism with
+graph information bottleneck optimization, which can optimally
+realize the robustness and effectiveness of communication learning.
+We introduce two information-theoretic regularizers to learn the
+minimal sufﬁcient message representation for multi-agent commu-
+nication. The regularizers aim at maximizing the mutual informa-
+tion (MI) between the message representation and action selection
+while minimizing the MI between the agent feature and message
+representation. Besides, we present a MARL framework that can
+integrate the proposed communication mechanism with existing
+value decomposition methods. Experimental results demonstrate
+that the proposed method is more robust and efﬁcient than state-
+of-the-art GNN-based MARL methods.
+Index
+Terms—Graph
+neural
+network,
+multi-agent
+rein-
+forcement
+learning,
+graph
+information
+bottleneck
+optimi-
+zation, communication learning.
+Manuscript received 14 April 2023; revised 7 November 2023; accepted 27
+November 2023. Date of publication 29 November 2023; date of current version
+3 April 2024. This work was supported by the National Natural Science Founda-
+tion of China under Grants 62276265, 61976216, and 62206297. Recommended
+for acceptance by W. Zhang. (Corresponding authors: Wei Du; Ling Ding.)
+Shifei Ding is with the School of Computer Science and Technology,
+China University of Mining and Technology, Xuzhou 221116, China, and
+also with the Mine Digitization Engineering Research Center of Ministry of
+Education of the People’s Republic of China, Xuzhou 221116, China (e-mail:
+dingsf@cumt.edu.cn).
+Wei Du is with the School of Computer Science and Technology, China
+University of Mining and Technology, Xuzhou 221116, China (e-mail:
+1394471165@qq.com).
+Ling Ding is with the College of Intelligence and Computing, Tianjin Uni-
+versity, Tianjin 300350, China (e-mail: 414211048@qq.com).
+Jian Zhang and Lili Guo are with the School of Computer Science and
+Technology, China University of Mining and Technology, Xuzhou 221116,
+China (e-mail: zhangjian10231209@cumt.edu.cn; liliguo@cumt.edu.cn).
+Bo An is with the School of Computer Science and Engineering, Nanyang
+Technological University, Singapore 639798 (e-mail: boan@ntu.edu.sg).
+Digital Object Identiﬁer 10.1109/TPAMI.2023.3337534
+I. INTRODUCTION
+R
+EINFORCEMENT
+learning
+has
+achieved
+notable
+progress in tackling single-agent complicated tasks, such
+as robot navigation [1] and vehicle control [2]. Meanwhile,
+many real-world scenarios such as intelligent trafﬁc systems [3],
+contain not only one agent but usually multiple agents involved
+in learning cooperative tasks. Such scenarios naturally lead
+to the prevalence of multi-agent reinforcement learning
+(MARL), where crucial challenges include scalability and
+non-stationarity (caused by partial observability limitation).
+Recently,theparadigmofcentralizedtrainingwithdecentralized
+execution (CTDE) has been comprehensively adopted to tackle
+these challenges, in which agents execute only based on
+decentralized local information but their policies can be trained
+with additional global information [4], [5]. Value function
+decomposition methods [6], [7], [8], [9] further explore this
+paradigm, which decomposes the global value function into a
+set of individual value functions. However, these methods still
+fail to perform well in scenarios where action coordination is
+required, because the partial observability during the execution
+period will increase the uncertainty of one agent to actions of
+other agents, resulting in difﬁculty in action coordination.
+Allowing agents to learn to communicate efﬁciently can
+strengthen action coordination and eventually enhance the qual-
+ity of learned policies. To this end, numerous multi-agent com-
+municative reinforcement learning (MACRL) methods [10],
+[11], [12], [13], [14], [15] have been proposed, which allow
+agents to exchange messages during the decentralized execution
+phase, such as local individual observations or agent feature
+embeddings. Recently, graph neural network (GNN) has been
+developed as an efﬁcient representation learning method, which
+can process the topological information and attribute infor-
+mation of the graph-structured data to feature representation
+learning for the ﬁnal tasks. GNN has been utilized to build com-
+munication learning mechanisms of MACRL, which generally
+regards agents and communication channels as nodes and edges
+in the graph, with the action selection corresponding to node
+labeling. Many state-of-the-art MACRL methods fall into this
+GNN-based communication paradigm, such as TarMAC [16].
+The crucial task of GNN-based MACRL is to learn efﬁcient
+message representation that carries both agent feature informa-
+tion and topological relationship information for action selection
+and coordination. However, the message representation learning
+of recent GNN-based MACRL methods still encounter some
+0162-8828 © 2023 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:16:26 UTC from IEEE Xplore.  Restrictions apply. 
+
+DING et al.: ROBUST MULTI-AGENT COMMUNICATION WITH GRAPH INFORMATION BOTTLENECK OPTIMIZATION
+3097
+Fig. 1.
+MAGI aims at optimizing the communication message representation
+to extract sufﬁcient and minimal information within the D = (A, H) to select
+optimal actions Y .
+challenges. On the one side, the message representation ag-
+gregates the information of features of neighbor agents, which
+may contain useless information that negatively affects action
+selection. On the other side, GNN-based MACRL relies on
+the edges of the graph to implement the messages exchange
+among agents, which makes it susceptible to adversarial attacks
+and noise perturbations on the agent features and topological
+structure.
+AsshowninFig.1,D = (A, H)carriesinformationfromboth
+the graph topological structure A and agent feature embeddings
+H. If communication message representation carries irrelevant
+information from A and H, it is susceptible to hyperparameter
+change of model, adversarial attacks, and noise perturbations
+on D. The performance of MACRL methods tends to degrade
+under adversarial attacks, which can leave many practical ap-
+plications based on MACRL models at high risk. For example,
+researchers have shown that in multi-agent autonomous driving
+systems, adversarial attacks on the communication process be-
+tween multi-agent vehicles can trick autonomous vehicles into
+making abnormal judgments, such as driving into the opposite
+lane [17].
+Therefore, in this paper, we rethink what is and how to
+obtain an “optimal” communication message representation that
+contains sufﬁcient information to facilitate action coordination
+while avoiding the impact of adversarial attacks. For general
+representation learning, the Information Bottleneck (IB) [18]
+introduces an essential principle: the optimal representation
+should contain sufﬁcient and minimal information useful for
+the ﬁnal tasks. Inspired by this principle, we deﬁne the optimal
+message representation as the representation that contains suf-
+ﬁcient and minimal information for the action selection task
+as shown in Fig. 1. However, extending the IB principle to
+GNN-based MACRL methods to obtain the optimal message
+encounters two main challenges as follows. 1) The topological
+structure information contained in the graph structure is essential
+for communication message representation, but this information
+is discrete and therefore it is difﬁcult to optimize. 2) Previous IB-
+based representation learning methods generally restricts input
+data to satisfy independent and identically distributed condition
+(i.i.d.). Therefore, the IB principle is difﬁcult to implement in
+MACRL, because conditions are not supported for the agent
+feature.
+To tackle these challenges, we propose a Multi-Agent com-
+munication mechanism with Graph Information bottleneck op-
+timization (MAGI) for communication message representa-
+tion learning. To address the ﬁrst challenge, we propose two
+information-theoretic regularizers to derive the minimal sufﬁ-
+cient communication message: one to constrain the information
+from the graph topological structure and agent feature embed-
+dings, and the other to maximize the information for the action
+selection and coordination in the message representation. With
+these two regularizers, we can ensure that learned communica-
+tion messages is both sufﬁcient (efﬁciently facilitating the action
+selection of agents) and minimal (message representations do
+not contain unnecessary information). In addition, to address
+the second challenge caused by the non-i.i.d. property of agent
+features, we leverage the local-dependence assumption of agent
+features to capture information from graph topological structure
+A and agent feature embeddings H hierarchically. The main
+contributions of our work are summarized as follows:
+1) To the best knowledge, our work is the ﬁrst attempt to
+extend the graph information bottleneck principle [19]
+to GNN-based MACRL methods, which achieve efﬁcient
+and robust multi-agent communication learning.
+2) We propose two information-theoretic regularizers to ob-
+tain the optimal message representation that contains suf-
+ﬁcient and minimal information for action selection and
+action coordination downstream tasks.
+3) We propose a general MARL framework that can ﬂexibly
+integrate the proposed communication learning mecha-
+nism with any value function factorization methods.
+4) We evaluate the proposed method on several MARL en-
+vironments, including SMAC [20] and MAgent [21]. Ex-
+perimental results demonstrate that MAGI is more robust
+and efﬁcient than the state-of-the-art MACRL methods.
+II. RELATED WORK
+A. Multi-Agent Communicative Reinforcement Learning
+Multi-agent communicative reinforcement learning methods
+aim at achieving consensus and cooperation of multiple agents
+through communication learning. Agents need to enhance action
+coordination by learning to communicate with other agents
+and process the message representations they receive. Previous
+MACRL methods can be divided into two main categories. The
+ﬁrst category focuses on generating meaningful messages for the
+message senders. One straightforward approach is to treat raw
+local observations or the local information history as messages.
+For example, NDQ [11] aims to generate minimal messages
+for different teammates, allowing them to learn decomposable
+value functions. NDQ optimizes the message generator utiliz-
+ing two information-theoretic regularizers to achieve expressive
+communication.
+The second category of work aims to efﬁciently extract
+the most useful messages at the receiver’s end. For example,
+MASIA [12] explicitly addresses the optimization of multiple
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:16:26 UTC from IEEE Xplore.  Restrictions apply. 
+
+3098
+IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 46, NO. 5, MAY 2024
+received messages and introduces two self-supervised represen-
+tation objectives. These objectives aim to make the received
+information representation both abstract of the true states and
+predictive of the multi-step future information. TarMAC [15]
+achieves targeted communication through a soft-attention mech-
+anism, in which the sender broadcasts a key encoding the agents’
+properties, and the receiver processes all received messages for
+a weighted sum of messages to make decisions.
+The most relevant works to the idea of this paper are NDQ [11]
+and MASIA [12], both of which aim to achieve efﬁcient commu-
+nication. NDQ aims to ensure communication is both expressive
+(effectively reducing the uncertainty of action-value functions
+of agents) and succinct (only sending necessary and useful
+information). MASIA focuses on ensuring communication is
+both compact (high information density) and sufﬁcient (con-
+taining a rich amount of information). Our method is designed
+to ensure communication is sufﬁcient (efﬁciently facilitating the
+action selection of agents), minimal (not containing unnecessary
+information), and robust (not vulnerable to adversarial attacks
+and noise). Different from NDQ and MASIA, we aim at the
+redundancy and efﬁciency issue of communication information
+in the GNN-based MACRL methods and consider the robustness
+of these methods, which NDQ and MASIA do not pay attention
+to.
+B. GNN-Based MACRL
+In contrast to the above methods, GNN-based MACRL meth-
+ods generally utilize neighboring communication architecture.
+In this architecture, agents communicate with neighbors simul-
+taneously, which can reduce communication costs. Meanwhile,
+the powerful information aggregation ability and representa-
+tion learning capability provided by GNN can make GNN-
+based MACRL methods suitable for large-scale agent scenarios.
+DGN [22] ﬁrst extends GNN to MACRL methods and adopts
+neighboring architecture, where multiple rounds of communi-
+cations are utilized to widen the receptive ﬁeld. NerveNet [23]
+utilizes GNN to represent the policy of the agent and propagate
+information over the graph structure of agents and then predicts
+actions for the agents.
+HAMA[24]adoptsahierarchicalGNNbasedonapre-deﬁned
+hierarchical graph and attention mechanism to facilitate agents
+to capture interrelations. However, the predeﬁned ﬁxed grouping
+scheme adopted by HAMA restricts its adaptability in dynamic
+settings. GA2NET [25] adopts a two-stage attentional mecha-
+nism to model the multi-agent setting, which can infer whether
+there is interaction between two agents and then evaluate the
+importance of interaction. TarMAC [16] utilizes GNN with a
+soft attention mechanism to learn whom to receive messages
+and what messages to pass. MAGIC [15] presents an attentional
+GNN to operate on the constructed graph for multiple rounds of
+communication, which can tackle the issue of when to commu-
+nicate.
+Recent GNN-based MACRL methods have successfully pro-
+moted action coordination by efﬁcient communication learning,
+which aggregates information on agent features and models
+interactions among agents by diverse graph neural networks.
+Despite signiﬁcant progress in GNN-based MACRL, if these
+methods encounter adversarial attacks and noise perturbations,
+multi-agent action coordination will rapidly disintegrate. The
+issue that how to achieve robust communication under adversar-
+ial attacks and noise perturbations has been largely unstudied.
+Our work intends to provide a promising way to address this,
+which extends the graph information bottleneck optimization to
+GNN-based MACRL methods.
+C. Value Function Decomposition
+For effectiveness and scalability in multi-agent environments,
+CTDE has become a prevalent MARL paradigm. Value function
+factorization methods further explore the CTDE paradigm based
+on the Individual-Global-Max (IGM) principle [9], which is
+an essential assumption that ensures consistency between local
+greedy action selections and joint action selections. VDN [7]
+adopts linear value factorization to ensure the sufﬁcient con-
+dition for the IGM principle. Due to its excellent scalabil-
+ity, this simple linear architecture has become very preva-
+lent in MARL and has inspired many subsequent approaches.
+QMIX [8] presents a monotonic mixing network to enhance the
+expressiveness of the decomposed function class. QTRAN [6]
+aims at realizing the entire IGM function class, however, its
+proposed goal is computationally intractable and necessitates
+two additional soft regularizers to approximate IGM, where the
+strict IGM guarantee is not guaranteed. QPLEX [9] extends the
+IGM principle into the dueling network architecture, however,
+it has potential limitations in terms of scalability. Our work
+utilizes different value decomposition methods in the proposed
+MARL framework to demonstrate the ﬂexibility of the proposed
+method.
+D. Adversarial Attack
+Sun et al. [26] introduce a general deﬁnition of adversarial
+attacks on graph data: (General Adversarial Attack on Graph
+Data) Given a graph data D = (A, H), after slightly modifying
+D (denoted as D), the adversarial samples D and D should be
+similar under the imperceptibility metrics, but the performance
+of graph downstream task (such as action selection task in
+our work) becomes much worse than before. In general, the
+adversarial perturbations can be categorized as modifying node
+features, modifying (adding/deleting) edges.
+1) Modifying node features: Adversarial attacks can slightly
+modify the node features while maintaining the structure of
+the graph. Ma et al. [27] add adversarial perturbation on node
+features and set a novel local constraint on node access, pro-
+hibiting perturbation on the top node, and only a few nodes can
+be disturbed, which is more realistic in practice. Wu et al. [28]
+present an integrated gradients-based attack method that adds
+perturbations on both the node features and edges. 2) Modifying
+Edges: Adversarial attacks can add or delete edges to existing
+nodes with a given total action budget. Xu et al. [29] present
+a novel gradient-based attack method that only changes a small
+number of edges, including addition and deletion. However, this
+method can lead to a noticeable decrease in the performance of
+downstream tasks. Zang et al. [30] ﬁnd a set of anchor nodes to
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:16:26 UTC from IEEE Xplore.  Restrictions apply. 
+
+DING et al.: ROBUST MULTI-AGENT COMMUNICATION WITH GRAPH INFORMATION BOTTLENECK OPTIMIZATION
+3099
+mislead the classiﬁcation of all nodes in the graph by ﬂipping
+the connections between the anchors and the target node.
+E. Adversarial Attacks and Defenses in MACRL
+Robust single-agent RL has been investigated from different
+perspectives [31], and recently, the issue of adversarial attacks
+and defenses in MACRL has gained signiﬁcant attention. Re-
+searchers have been exploring various approaches to achieve
+robust communication in the face of adversarial attacks. Tu et
+al. [32] focus on exploring adversarial attacks speciﬁcally in
+the multi-agent setting where perturbations are introduced to
+learnedintermediaterepresentations.Mitchelletal.[33]propose
+a method that utilizes a Gaussian Process-based probabilistic
+module to calculate posterior probabilities, determining the
+truthfulness of each partner. Xue et al. [34] propose a two-stage
+message ﬁlter that involves learning an anomaly detector and
+a message reconstructor to recover the true messages. They
+employ two populations of defenders and attackers for training,
+aiming to improve the generalizability of defense mechanisms.
+Sun et al. [35] introduce the ﬁrst certiﬁable defense in MARL
+against communication attacks, which considers a particularly
+strong threat model in which half of communication messages
+can be arbitrarily compromised. Nevertheless, these previous
+methods generally focus on the malicious perturbations on the
+receivedmessageitself,buttheadversarialattackscanalsobethe
+perturbations on the communication structure and agent feature,
+which has not been paid attention to in the previous work.
+This paper tries to solve this problem by using the GNN-based
+MACRL methods as a starting point.
+III. METHODOLOGY
+A. Problem Fomulation
+The MARL problems can be generally modeled as a De-
+centralized Partially Observable Markov Decision Process
+(Dec-POMDP), which can be characterized by a tuple <
+I, S, U, P, R, O >. I represents the ﬁnite set of agents indexed
+from 1 to n. S represents the ﬁnite set of states. O denotes
+the joint observations, in which oi ∈O is local observation of
+agent i. U represents the ﬁnite space of joint actions. At each
+timestep, the agent i takes its action ai depending on its local
+observation oi. a = (a1, . . . , an) ∈U denotes a joint action.
+The state changes depending on the Markovian transition P :
+S × U →S. R : S × U →R represents the reward function.
+The overall task of the agent i is maximizing its total discounted
+reward Ri = T
+t=0 γtrt
+i, where γ ∈[0, 1] means a discount
+factor. Agents aim to learn an optimal joint policy π(τ, a) to
+maximize the global value Qπ
+tot(τ, a) = Es,a[∞
+t=0 γtR(s, a)],
+where τ means the joint observation history.
+In our work, we model the multi-agent system utilizing a
+graph G = (V, E, H) with n nodes, where V = {1, 2, . . . n}
+means the agent/node set, E ⊆V × V represents the edge set,
+H ∈Rn×f means the agent features/node attributes. We utilize
+A ∈R n×n to denote the adjacency matrix of G, if (i, j) ∈E,
+then Aij = 1, otherwise Aij = 0. We leverage d(i, j) to denote
+theshortestpathdistanceoftwoagentsi, j(∈V ).Thus,theinput
+Fig. 2.
+Overall framework of MAGI.
+feature information data for the GNN-based communication
+learning mechanism can be overall denoted as D = (A, H).
+We focus on extracting agent-level message representations
+MH ∈Rn×f ′ from D so that MH can be utilized to facilitate the
+agent to select actions Y . The subscript with an agent i ∈V is
+leveraged to denote the afﬁliation with the agent i. For example,
+the communication message representation of agent i is denoted
+by MH,i = mi and its corresponding optimal action selection is
+represented by Yi = ai.
+B. Overall Framework
+The overall framework of the proposed method is illustrated
+in Fig. 2. For agent i, it obtains local observation oi and utilizes
+gated recurrent unit (GRU) and multi-layer perceptron (MLP)
+to generate the agent feature hi. Then we fed feature hi into the
+communication learning module, where graph neural network is
+leveragedtoproducethecommunicationmessagerepresentation
+mi. In our work, we utilize graph attention network (GAT) [36]
+as the GNN structure in the communication learning module.
+We fuse the feature information of neighbor agents and topo-
+logical structure information by stacking multiple GNN layers.
+High-levelcommunicationmessagerepresentationofeachagent
+can be extracted by multiple rounds of communication. Besides,
+we utilize graph information bottleneck optimization to further
+obtain the optimal message representations, which are minimal
+and sufﬁcient for decision making.
+Then, for agent i, the message mi is concatenated with the
+current local history τi to serve as an input to the local action-
+value function Qi(τi, ai, mi). As shown in Fig. 2, we fed local
+action-values of all agents into the mixing network and ﬁnally
+obtained the estimation of global action-value Qtot. In this work,
+we select the mixing networks proposed by VDN [7], QMIX [8],
+and QPLEX [9], and it can be ﬂexibly replaced by other mixing
+networks of existing value factorization methods. For instance,
+in the case of QMIX, the mixing network consists of MLPs.
+However, the weights and biases of the mixing network are
+obtained from a hypernetwork to ensure adherence to the mono-
+tonicity constraints. In the next section, we will introduce the
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:16:26 UTC from IEEE Xplore.  Restrictions apply. 
+
+3100
+IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 46, NO. 5, MAY 2024
+multi-agent communication via graph information bottleneck
+optimization (MAGI) module of this framework in detail.
+C. Multi-Agent Communication via Graph Information
+Bottleneck
+The objective of the Multi-Agent communication via Graph
+Information bottleneck (MAGI) module is to obtain the optimal
+communication message representation, which is minimal and
+sufﬁcient. To achieve this objective, MAGI necessitates the com-
+munication message MH to maximize the mutual information
+for selecting optimal actions Y and minimize the information
+from the feature D = (A, H). The objective of MAGI is repre-
+sented in (1), where I(·; ·) means the mutual information,
+min MAGIβ(D, Y ; M) ≜[−I(Y ; M) + βI(D; M)].
+(1)
+In the MAGI, we introduce a local-dependence assumption [19]
+for the graph-structured agent features: for each agent i, given
+the neighbor-related agents within certain hops, the other agent
+features are independent of the agent feature of agent i. We
+utilize this assumption to restrict the optimal communication
+message representations space Ω, which makes the optimization
+of the MAGI objective more tractable. Concretely, we utilize
+P(MH | D) to hierarchically iterate communication message
+representations to model the correlation of agent features, where
+P(·) means joint probabilistic distribution function. Each GNN
+layer corresponds to a round of communication message ex-
+change among the agent with its neighboring agents.
+In each message exchange round l, we utilize the local-
+dependence assumption. The communication message of each
+agent can be reﬁned by aggregating the agent features of
+its neighboring agents, w.r.t a graph structure M l
+A. Thus,
+(M l
+A)1≤l≤L is obtained by adjusting the original graph topo-
+logical structure A locally, which can essentially control the
+message ﬂow from graph topological structure A. In the end, we
+utilize high-level communication message representation M l
+H to
+achieve action selection and action coordination. Therefore, the
+objective of MAGI optimization can be reduced to the following
+representation:
+min
+P(M l
+H|D)∈Ω MAGIβ(D, Y ; M l
+H)
+≜
+
+−I(Y ; M L
+H) + βI(D; M L
+H)
+
+,
+(2)
+In this equation, we just need to optimize the distributions of
+these two series: P(M l
+H | M l−1
+H , M l
+A) and P(M l
+A | M l−1
+H , A).
+Thesedistributionsareeasiertooptimizebecausetheyhavelocal
+dependence between agents. We utilize the simplistic MAGI
+principle and some appropriate parameterization of P(M l
+H |
+M l−1
+H , M l
+A) and P(M l
+A | M l−1
+H , A), however, the computation
+of I(Y ; M L
+H) and I(D; M L
+H) of (2) is still intractable. Thus, we
+should introduce variational bound regularizers on the two terms
+of (2), which facilitates the optimization of the ﬁnal objective.
+As demonstrated in [18], we can derive the lower bound of
+term I(Y ; M L
+H) and the upper bound of term I(D; M L
+H), which
+are shown in (3) and (4), respectively. For any distributions
+V1(Yi | M L
+H,i) for agent i ∈V and V2(Y ), the lower bound
+of term I(Y ; M L
+H) is shown in (3),
+I(Y ; M L
+H) ≥1 + E
+
+log
+
+i∈V V1(Yi | M L
+H,i)
+V2(Y )
+
++ EP(Y )P(ML
+H)
+
+i∈V V1(Yi | M L
+H,i)
+V2(Y )
+
+.
+(3)
+We choose two sets of indices SH, SA ⊂[L] such that D ⊥
+M L
+H | (M l
+H)l∈SH ∪(M l
+A)l∈SA depending on the Markovian de-
+pendence, where the M1 ⊥M2 | M3 denote that M1 and M2
+are conditionally independent given the M3. For the any distri-
+butions V(M l
+H), l ∈SH and V(M l
+A), l ∈SA,
+I(D; M L
+H) ≤I
+	
+D; (M l
+H)l∈SH ∪(M l
+A)l∈SA
+
+≤
+
+l∈SA
+AIBl +
+
+l∈SH
+HIBl,
+(4)
+AIBl = E
+
+log P(M l
+A | A, M l−1
+H )
+V(M l
+A)
+
+,
+(5)
+HIBl = E
+
+log P(Zl
+X | M l−1
+H , M l
+A)
+V
+	
+M l
+H
+
+
+.
+(6)
+Equation (4) illustrates that we should select a set of random
+variables with index SH and SA to satisfy the conditional inde-
+pendence between M L
+H and D. SH and SA have the following
+attributes: 1) If the maximum index in SH is l, the SA includes all
+the integers of [l + 1, L]. 2) SH ̸= ∅. To utilize MAGI principle,
+we should model P(M l
+A | M l−1
+H , A) and P(M l
+H | M l−1
+H , M l
+A).
+Next, we select certain variational distributions V(M l
+H) and
+V(M l
+A) to estimate the corresponding AIBl and HIBl for the
+regularization, and some V1(Yi | M L
+H,i. and V2(Y ) to obtain
+the lower bound in (3). Thus, we can acquire the upper bound
+to optimize the objective by plugging (3) and (4) into the (2).
+In this work, we leverage graph attention network (GAT) [36]
+as the GNN structure in the communication learning module. In
+each layer of the graph attention network, MAGI ﬁrst needs
+to reﬁne the graph structure of agents utilizing the attention
+weights to acquire M l
+A and next reﬁne communication message
+representations M l
+H by propagating M l−1
+H
+over M l
+A. For the
+neighboring agents sampling, we leverage categorical distribu-
+tion and regard attention weights as the parameters of the cate-
+gorical distributions, which can sample the topological structure
+of the reﬁned graph to capture topological structure information.
+Next, we extract k neighboring agents with alternatives from the
+built pool of agents Vic for agent i, in which Vic contains the
+agents whose shortest path distance to agent i is c. We leverage
+C to be the upper constraint of c to guarantee the assumption
+of local dependence. Next, we sum-pool the neighboring agents
+and utilize the output to calculate the parameters of the Gaussian
+distribution, in which the reﬁned agent features will be sampled.
+Then,weaimtooptimizetheparametersoftheMAGImodule.
+The bounds of term I(Y ; M L
+H) in (3) and term I(D; M L
+H)
+in (4) should be speciﬁed, further the bound of MAGI op-
+timization objective in (2) should be calculated. In order to
+characterize AIBl in (4), we take assumption that V(M l
+A) sat-
+isﬁes the non-informative distribution. Concretely, we leverage
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:16:26 UTC from IEEE Xplore.  Restrictions apply. 
+
+DING et al.: ROBUST MULTI-AGENT COMMUNICATION WITH GRAPH INFORMATION BOTTLENECK OPTIMIZATION
+3101
+the uniform categorical distribution: MA ∼V(MA), MA,i =
+∪T
+d=1{j ∈Vic | j
+iid∼Cat(
+1
+|Vic|)} and MA,i ⊥MA,j if i ̸= j.
+We leverage Cat(φ) to denote the categorical distribution with
+parameter φ, which corresponds to different categories of prob-
+abilities and therefore ∥φ∥1 = 1. After φl
+ic is calculated, we can
+acquire an empirical estimation of AIBl,
+
+AIB
+l = EP(M l
+A|A,M l−1
+H )
+
+log P(M l
+A | A, M l−1
+X )
+V(M l
+A)
+
+,
+(7)
+which is instantiated as follows,
+
+AIB
+l =
+
+i∈V,d∈[T ]
+KL
+
+Cat(φl
+id)|| Cat
+
+1
+|Vid|
+
+.
+(8)
+To further estimate HIBl, we conduct V(M l
+H) as a mixture
+of Gaussian distributions. Concretely, for any agent i, MH ∼
+V(MH),
+we
+set
+MH,i ∼m
+u=1 wu Gaussian(μ0,u, σ2
+0,u),
+where wu, μ0,u, σ0,u mean learnable parameters shared by all
+agents and MH,i ⊥MH,j, if i ̸= j. We can estimate HIBl by
+leveraging the sampled M l
+H:
+
+HIB
+l =
+
+i∈V
+⎡
+⎣log Φ
+	
+M l
+H,i; μi, σ2
+i
+
+−log
+ n
+
+u=1
+wuΦ
+	
+M l
+H,i; μ0,u, σ2
+0,u
+
+ ⎤
+⎦.
+(9)
+Thus, we can select appropriate index set SH, SA that guarantee
+the assumption in (4) and utilize substitution:
+I(D; M L
+H) →
+
+l∈SA
+
+AIB
+l +
+
+l∈SH
+
+HIB
+l.
+(10)
+To characterize (3), we can straightly set V2(Y ) = P(Y ) and
+V1(Yi | ZL
+H,i) = Cat(M L
+H,i)Wout Thus, the (3) can reduce to
+the cross-entropy loss without constants as follows,
+I(Y ; M L
+H) →−
+
+i∈V
+Cross-Entropy (M L
+H,iWout ; Yi).
+(11)
+Plugging(10)and(11)into(2),theMAGIoptimizationobjective
+can be obtained to train our proposed communication learning
+module.
+Except for the MAGI optimization constraints on the commu-
+nication message representations learning in the communication
+module, all the parameters in other modules in the framework
+are updated by minimizing the TD loss LT D. In the end, TD
+loss is shown in (12),
+LT D =
+
+r + γ max
+a′
+Qtot
+	
+τ ′, a′; θ−
+−Qtot(τ, a; θ)
+2
+, (12)
+where θ means all the parameters in the proposed method and
+θ−means the parameters of target network. The overall opti-
+mization objective of the proposed method is shown as follows,
+L = LT D + λLIB,
+(13)
+where λ denotes a hyper-parameter that can be ﬁne-tuned to
+achieve a trade-off between the graph information bottleneck
+Algorithm 1: Instantiation of MAGI.
+Input: oi ∈O and at−1
+i
+∈A of agent i.
+Initialize: The weights of networks W, the number of
+neighboring agents to be sampled k, the integral
+limitation to impose local dependence C.
+Output: Qtot.
+1: for each timestep t ∈T do
+2:
+for each agent i ∈N do
+3:
+% During the decentralized execution phase
+4:
+Process agent feature hi by GRU and MLP
+5:
+Build data matrix D = (A, H) based on hi
+6:
+Fed D to L−layers GAT
+7:
+for layers = 1, . . . , L do
+8:
+˜
+M l−1
+H,i ←σ(M l−1
+H,i )W l
+9:
+build sets Vic ←{j ∈V | d(i, j) = c}
+10:
+for c ∈[C] do
+11:
+φl
+ic ←softmax{( ˜
+M l−1
+H,i ⊕˜
+M l−1
+H,j)aT }
+12:
+M l
+A,i ←∪C
+c=1{j ∈Vic | j
+iid∼Cat(φl−1
+ic )}
+13:
+end for
+14:
+¯
+M l
+H,i ←
+j∈M l
+H,i ˜
+M l−1
+A,i
+15:
+μl
+i ←¯
+M l
+H,i[0 : f ′]
+16:
+σ2 l
+i
+←softplus( ¯
+M l
+H,i[f ′ : 2f ′])
+17:
+M l
+H,i ∼Gaussian(μl
+i, σ2 l
+i )
+18:
+end for
+19:
+Acquire ﬁnal message representation mi = M L
+H,i
+20:
+Compute action-value Qi based on mi and τi
+21:
+at
+i ←π(Qi)(ϵ−greed)
+22:
+Store episode history τi and at
+i in replay buffer
+23:
+% During centralized training phase
+24:
+Fed Qi to mixing network and acquire Qtot
+25:
+Minimize loss function according to (13)
+26:
+Update weights W of all networks
+27:
+end for
+28: end for
+optimization loss LIB = MAGIβ(D, Y ; M l
+H) and the TD loss
+LT D. The hyper-parameter λ is set to be λ = 0.1 depending on
+experimental results.
+Thedetailoftheinstantiationoftheproposedmethodisshown
+in Algorithm 1. Steps 1-4 show the feature processing phase. For
+each timestep t ∈T, each agent i ∈N obtains its observation oi
+and uses GRU and MLP to generate its initial agent feature. Steps
+5-6 describe the process of building a graph using agent features.
+The core process of message representation optimization is
+instantiated in Steps 7-18. In each layer, MAGI ﬁrst reﬁnes the
+graph structure utilizing the attention weights to obtain M l
+A,i
+(Steps 8-13) and then reﬁnes message representations M l
+H,i by
+propagating M l−1
+H,i over M l
+A,i (Steps 14-18).
+Step 14 is the sum-pooling operation of the neighbor agents,
+and the output will be leveraged to calculate the parameters
+for a Gaussian distribution in which the reﬁned message rep-
+resentations will be sampled. MAGI relies loosely on the graph
+structure because A is only utilized to decide the potential
+neighbor agents for each agent, and performs message passing
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:16:26 UTC from IEEE Xplore.  Restrictions apply. 
+
+3102
+IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 46, NO. 5, MAY 2024
+Fig. 3.
+Illustration of the SMAC scenarios.
+depending on MA. This property makes our models very robust
+against structural attacks/perturbations. Our models also keep
+robustness to the feature perturbations, which is similar to other
+IB-based methods. In Steps 19-22, agent i calculates the local
+value based on the obtained message mi and then selects action
+at
+i. In Steps 23-27 describe the centralized training phase, which
+uses the loss function in (13).
+IV. EXPERIMENTS
+In this section, we select StarCraft II Multi-Agent Challenge
+(SMAC) [20] and MAgent [21] as our benchmarks. We con-
+duct various experiments on these complicated benchmarks to
+answer: Q1: Are the proposed method and other GNN-based
+MACRL methods vulnerable to adversarial attacks and noise
+perturbations? Q2: Can MAGI optimization enhance the ro-
+bustness of communication learning under adversarial attacks
+and noise perturbations? Q3: Can MAGI achieve efﬁcient com-
+munication that facilitates action coordination? Q4: Whether
+MAGI can be applied to large-scale multi-agent scenarios? Q5:
+Which component of the proposed framework contributes to the
+performance improvement? Q6: Can MAGI ﬂexibly integrate
+with existing value function factorization methods? Q7: How
+do hyper-parameters inﬂuence the performance of MAGI? Q8:
+How does MAGI perform well under more complicated adver-
+sarial attack methods? We choose QMIX [8], TarMAC [16], and
+MAGIC [15] as baselines. QMIX proposes a mixing network
+where the joint action value is estimated through a nonlinear
+combination of individual action values. TarMAC employs GAT
+with a soft attention mechanism to determine the extent to which
+a message is processed. MAGIC constructs a communication
+graph and utilizes GAT for multiple iterations of communica-
+tion. It is worth noting that TarMAC, MAGIC, and MAGI all
+leverage GAT as a GNN structure in the communication learning
+module. The experiments are all conducted on GPU Nvidia RTX
+2080Ti with Pytorch.
+A. Environments
+SMAC: StarCraft Multi-Agent Challenge (SMAC) is con-
+structed on StarCraft II, which is a prevalent strategy game.
+SMAC consists of various StarCraft II micro scenarios, the
+example is shown in Fig. 3. These scenarios are complicated,
+in which the ally agents are necessitated to learn no less than
+one micromanagement technology to defeat the enemy agents.
+In the scenarios of SMAC, all the ally agents are trained with
+the MARL methods, and all the enemy agents are controlled by
+the built-in AI.
+The action space of agents contains 4 actions: move, attack,
+no-op, and stop. The range of attack is set to 6. At each time
+step, the ally agents can take attack action to ﬁre enemy agents
+and acquire a global reward. Besides, the ally agents can ac-
+quire an extra reward for killing the enemy agent and winning
+the game. In particular, we ﬁne-tune the default experimental
+setting to make the ally agents more difﬁcult to coordinate
+actions. We reduce the scope of vision of the ally agent from
+9 to 2. In addition, we select several complicated scenarios as
+shown in Table I. The details of the 5 scenarios are provided as
+follows.
+MMM2 and MMM3 are two super-hard scenarios, which
+contain Marines, Marauders, and Medivac. Each type of agent
+in these scenarios has its own unique attributes and skills. The
+ally agents succeed only when each agent performs to the best of
+its ability and coordinates the actions of other agents. Medivac
+has the healing ability that can provide treatment to the injured
+ally agents. To win the battle, Ally agents have to learn to
+communicate with other agents, such as sending their health
+situation to the Medivac.
+1o2r versus 4r scenario includes 1 Overseer and 2 Roaches of
+ally agents. The target of the Overseer is to ﬁnd the 4 Reapers
+of enemy units, and the goal of the 2 Roaches is to reach the
+positions of Reapers and try to defeat the Reapers. The Overseers
+and the Reapers are randomly generated in the scenario, and
+the enemy Roaches are randomly generated at other points.
+Considering that only the Overseers can get information about
+the location of enemies, the Roaches must learn to aggregate
+the information of neighbor Overseers in order to win the battle
+effectively.
+2c3s5z scenario contains Colossus, Stalkers, and Zealots both
+for ally agents and enemy agents. Ally agents must learn many
+tactics, such as utilizing Zealots to intercept enemy Zealots in
+order to protect Stalkers from serious damage. It is easier for
+agents to learn such strategies and coordinate actions under
+efﬁcient information interaction. In 8 m versus 9 m scenario,
+both the ally and enemy agents are Marines.
+MAgent: MAgent is a MARL platform that aims to support
+the tasks that necessitate hundreds of agents. We select the Battle
+scenario of MAgent to conduct experiments. The battle scenario
+contains K ally agents and Z enemy agents. The target of ally
+agents is to learn to defeat all enemy agents. Each agent can
+take two actions: move or attack and the range of action is 4.
+The individual enemy agent is more capable than an individual
+ally agent, therefore the ally agent must develop strategies to
+ﬁght cooperatively with other ally agents.
+Since the Battle scenario tends to lose balance after the death
+of agents, we stochastically add a new ally agent or enemy agent
+to the scenario to keep balance. MAGI and other baselines are
+ﬁrst trained under the same setting of K = 40 and Z = 24. In
+the Battle scenario, an agent can acquire a positive reward of
++5 while attacking the enemy. An agent can obtain a negative
+reward of -2 and -0.01, when it is killed by the enemy agent or
+hits a blank grid, respectively.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:16:26 UTC from IEEE Xplore.  Restrictions apply. 
+
+DING et al.: ROBUST MULTI-AGENT COMMUNICATION WITH GRAPH INFORMATION BOTTLENECK OPTIMIZATION
+3103
+TABLE I
+SCENARIOS OF SMAC
+Fig. 4.
+Learning curves of different methods under adversarial attacks and
+noise (η = 1.5).
+B. Performance
+Robustness (Q1, Q2): To verify whether MAGI and the
+existing GNN-based MACRL methods are vulnerable to ad-
+versarial attacks and noise perturbations, we produce random
+perturbations and inject them into adjacency matrix A and the
+agent features H. We add independent Gaussian noise to agent
+features H with increasing amplitude. Concretely, we utilize
+the average value of the maximum feature of each agent to be
+the reference amplitude φ. Then we add Gaussian noise η · φ · ϵ
+into each agent feature, where ϵ ∼N(0, 1), and η means the
+feature noise ratio. We verify the robustness of MAGI and other
+GNN-based MACRL methods with η = 1.5. In the ablation
+section, we verify the robustness under different parameters with
+η ∈{0.5, 1, 1.5}.
+To produce adversarial attacks on the adjacency matrix A,
+we ﬁrst try to randomly drop edges among agents with the
+graph structure. Nevertheless, experimental results show that
+this straightforward strategy can not signiﬁcantly affect the
+communication efﬁciency of the GNN-based MACRL methods.
+Thus, we utilize projected gradient descent (PGD) [29] to pro-
+duce attacks rather than stochastically drop edges. Fig. 4 shows
+the learning curves of MAGI and other GNN-based MACRL
+methods on four scenarios of SMAC. The solid line shows the
+mean win rate of the method without adversarial attack and noise
+perturbations, and the corresponding shaded area means a 95%
+conﬁdence interval. The dashed line illustrates the mean win rate
+of the method with adversarial attacks and noise perturbations.
+We can draw several conclusions from Fig. 4 as follows.
+1) MAGI performs signiﬁcantly better than other baseline
+TABLE II
+PERFORMANCE OF DIFFERENT METHODS ON BATTLE SCENARIO
+Fig. 5.
+Illustration of representative behaviors of MAGI (right) and other
+baselines (left) in Battle scenario.
+methods in all scenarios. 2) By comparing QMIX and GNN-
+based MACRL methods, we can see that the GNN-based com-
+munication learning mechanism of these methods can indeed
+facilitate cooperation among the agents and improve perfor-
+mance. 3) Besides, without adversarial attack, by comparing
+MAGI with other GNN-based MACRL methods (TarMAC and
+MAGIC), MAGI performs better than other baselines, which
+demonstrates the effectiveness of the proposed framework that
+fuses the communication learning mechanism with the value
+factorization method. 4) Furthermore, the performance of Tar-
+MAC+A and MAGIC+A degrades signiﬁcantly compared with
+TarMAC and MAGIC respectively, which demonstrate the other
+existing GNN-based MACRL methods are susceptible to adver-
+sarial attacks. 5) Compared with MAGI, MAGI+A shows only a
+slight performance degradation, which demonstrates that MAGI
+is robust under adversarial attacks because graph information
+bottleneck optimization can improve the robustness of commu-
+nication learning.
+Effectiveness (Q3): The performance of different methods un-
+der adversarial attacks in the Battle scenario is shown in Table II.
+For convenience, in later experiments, methods without the
+“+A” sufﬁx (such as MAGI) also default to that method under
+adversarial attack. As shown in Table II, MAGI performs better
+than other baselines, in terms of kill number (kill number of
+enemy agents), kill-death rates (kill number of enemy agents
+divided by death number of ally agents), and mean reward.
+Fig. 5 illustrates the representative actions of agents trained
+by different methods in the Battle scenario. As shown in Fig. 5,
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:16:26 UTC from IEEE Xplore.  Restrictions apply. 
+
+3104
+IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 46, NO. 5, MAY 2024
+TABLE III
+MEAN REWARD OF METHODS WITH DIFFERENT NUMBERS OF AGENTS
+TABLE IV
+WIN RATE WITH DIFFERENT VARIANTS ON SMAC
+TABLE V
+PERFORMANCE OF DIFFERENT VARIANTS ON BATTLE
+with noise perturbations and adversarial attacks, MAGI-trained
+agents learn some techniques of action coordination, such as
+encircling. For the individual enemy agent, agents trained with
+MAGI can learn to coordinate their actions to surround it and
+defeat it. For the group of enemy agents, agents trained with
+MAGI can learn the ability to coordinate attacks on one side of
+the group.
+In contrast, other GNN-based MACRL methods learn sub-
+optimal strategies under adversarial attacks and noise perturba-
+tions, such as gathering in a corner to avoid being attacked by
+enemy agents. This behavior demonstrates the communication
+learning of these methods becomes ineffective under perturba-
+tions. This may be due to that MAGI adopts the graph informa-
+tion bottleneck to learn robust and minimal sufﬁcient message
+representations, which realize the efﬁcient communication that
+promotes the action coordination and policy learning of agents.
+Scalability (Q4): To verify that MAGI can be extended to
+large-scale multi-agent scenarios, we compared MAGI and other
+baselines under perturbations in the Battle scenario with the
+different number of agents (K ∈{20, 30, 40, 50}). As shown
+in Table III, the scalability ability of the MAGI is evidenced
+by the fact that MAGI always performs best compared to the
+baselines as the number of agents increases. We believe that this
+combination of communication learning and value factorization
+can be used as a general paradigm to solve large-scale multi-
+agent problems.
+C. Ablations
+Contribution (Q5): Furthermore, we evaluate the contribu-
+tions of each component of MAGI. The MAGI contains two crit-
+ical components: the value decomposition (VD) component and
+the IB optimization component. Thus, we design two variants
+of MAGI: 1) MAGI-VD is MAGI without the VD component,
+and 2) MAGI-IB is MAGI without the IB component. As shown
+in Tables IV and V, by comparing MAGI and MAGI-IB, we
+TABLE VI
+WIN RATE WITH DIFFERENT REGULARIZERS ON SMAC
+TABLE VII
+WIN RATE WITH DIFFERENT REGULARIZERS ON BATTLE
+TABLE VIII
+WIN RATE WITH DIFFERENT VALUE DECOMPOSITION METHODS
+can see that the removal of the IB component causes a drop
+in performance under adversarial attacks and noise perturba-
+tions. Moreover, when comparing MAGI and MAGI-VD, we
+can see that the removal of the VD module also results in a
+slight decline in performance. These experimental results show
+that IB optimization can signiﬁcantly improve the robustness
+and effectiveness of communication learning under adversarial
+attacks and that the VD module can further facilitate action
+coordination and policy learning.
+To further evaluate the contributions of the two regularizers,
+we use IBr1 = I(Y ; M L
+H) to represent the IB loss of regularizer
+1 and IBr2 = I(D; M L
+H) to denote the IB loss of regularizer 2.
+Therefore, MAGI w/ IBr1 represents MAGI only with regular-
+izer 1, MAGI w/ IBr2 represents MAGI only with regularizer
+2, MAGI-IB denotes MAGI without regularizers. As shown
+in Tables VI and VII, both regularizers contribute to robust
+communication. In scenario MMM2, 8 m versus 9 m and 1o2r
+versus 4r, regularizer 1 is more effective than regularizer 2. In
+other scenarios, regularizer 2 is more effective.
+Flexibility (Q6): To demonstrate that MAGI can be ﬂexibly
+fused with any value factorization methods, we conduct exper-
+iments by integrating it with other popular value factorization
+methods VDN and QPLEX. The fused methods MAGI (VDN)
+and MAGI (QPLEX) are evaluated on various scenarios of
+SMAC. As shown in Table VIII, MAGI (VDN) and MAGI
+(QPLEX) perform better than the original value factorization
+methods VDN and QMIX, which indicates the ﬂexibility of the
+proposed method. Besides, the proposed method can remove
+the value decomposition module for more general tasks, such as
+mixed cooperative and competitive tasks.
+Parameters (Q7): To explore the effect of different hyper-
+parameters on performance. We ﬁrst conduct ablations on fea-
+ture noise ratios in the 2c3s5z and MMM3 scenarios of SMAC.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:16:26 UTC from IEEE Xplore.  Restrictions apply. 
+
+DING et al.: ROBUST MULTI-AGENT COMMUNICATION WITH GRAPH INFORMATION BOTTLENECK OPTIMIZATION
+3105
+Fig. 6.
+Win rate with increasing feature noise ratio η.
+TABLE IX
+WIN RATE WITH DIFFERENT λ ON SMAC
+Fig. 7.
+Win rate of different variants with increasing feature noise ratio η.
+As shown in Fig. 6, with different feature noise ratios (η ∈
+{0.5, 1.0, 1.5}), MAGI consistently performs better than other
+GNN-based MACRL methods. Especially, as the η is large
+(η = 1.5), the performance of other methods is signiﬁcantly
+affected, while MAGI remains stable, which demonstrates that
+IB optimization of MAGI makes the communication learning
+more robust under adversarial attacks and noise perturbations.
+To evaluate the effect of different λ on the performance, we
+conduct ablations on different scenarios of SMAC under adver-
+sarial attacks and noise perturbations. As shown in Table IX,
+with different λ (λ ∈{0.05, 0.10, 0.15}), MAGI achieve the
+best performance with λ = 0.15 in MMM3 scenario and with
+λ = 0.10 in other scenarios. Thus, for the sake of consistency,
+we set the λ = 0.10 for all scenarios in SMAC.
+Besides, we evaluate the robustness and effectiveness of
+different variants with increasing feature noise ratio (η ∈
+{1.5, 2.0, 2.5}). As shown in Fig. 7, from the comparison results
+of the three variants, it can be seen that the performance of the
+MAGI-IB drops sharply with the increase of the feature noise
+ratio η. In contrast, the MAGI is excellent for stability. The effect
+of MAGI is the best, the variance of MAGI-IB is the largest, and
+meanwhile, the performance of MAGI-IB is the worst.
+Generality (Q8): Adversarial attacks can be generally cat-
+egorized as modifying features and modifying edges. There-
+fore, in the previous experiment, we selected two adversarial
+attacks (GN+PGD) to generate perturbations at the same time for
+TABLE X
+WIN RATE WITH DIFFERENT ADVERSARIAL ATTACKS ON MMM3
+TABLE XI
+FIXED HYPER-PARAMETERS OF MAGI FOR ALL ENVIRONMENTS
+experiments: Adding Gaussian noise (modifying features) and
+PGD [29] (modifying edges). Furthermore, we utilize two other
+complicated adversarial attacks (IG-JSMA [28] and GUA [30])
+for experiments to verify the generality of the proposed method,
+and the results are shown in Table X. We utilize IG-JSMA [28]
+to add adversarial perturbations on both the agent features and
+edges. We leverage GUA [30] to change edges by ﬂipping the
+connections between the anchor agents. Please refer to [28],
+[29], [30] for more details. As shown in Table X, MAGI al-
+ways achieves the best performance compared with other base-
+line methods under various adversarial attack methods, which
+demonstrates the generality of the proposed method.
+D. Details of Model Hyper-Parameters
+In this section, we provide the details about our experiment
+settings for the convenience of reproducibility. Table XI de-
+scribes the ﬁxed hyper-parameters of all the experiment bench-
+marks.
+V. CONCLUSION
+In this paper, we introduce the graph information bottle-
+neck optimization into the GNN-based MACRL method. The
+proposed method achieves robust and efﬁcient communication
+learning by two information-theoretic regularizers, which mini-
+mizes the MI between the communication message and the agent
+features and simultaneously maximizes the MI between the
+message representation and the action selection. Experimental
+results in various multi-agent scenarios demonstrate that the
+proposed method signiﬁcantly outperforms other baselines and
+can be ﬂexibly fused with existing value factorization methods
+to promote action coordination.
+To the best knowledge, this work is the ﬁrst attempt at learning
+robust communication via graph information bottleneck opti-
+mization in the MACRL domain. We believe it is a promising
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:16:26 UTC from IEEE Xplore.  Restrictions apply. 
+
+3106
+IEEE TRANSACTIONS ON PATTERN ANALYSIS AND MACHINE INTELLIGENCE, VOL. 46, NO. 5, MAY 2024
+way to establish efﬁcient communication of large-scale multi-
+agent systems under adversarial attacks and noise perturbations.
+In the future, it is worthwhile to apply the proposed method to
+real-world large-scale multi-agent systems. It is important to
+acknowledge that our current method is speciﬁcally designed
+for discrete action and fully cooperative scenarios. It is not ap-
+plicabletocontinuousactionenvironmentsormixedcompetitive
+cooperative scenarios. However, our future work aims to develop
+a more versatile and robust communication model that can be
+adapted to a broader range of scenarios.
+REFERENCES
+[1] H. Li, Q. Zhang, and D. Zhao, “Deep reinforcement learning-based auto-
+matic exploration for navigation in unknown environment,” IEEE Trans.
+Neural Netw. Learn. Syst., vol. 31, no. 6, pp. 2064–2076, Jun. 2020.
+[2] N. Wang, Y. Gao, H. Zhao, and C. K. Ahn, “Reinforcement learning-based
+optimal tracking control of an unknown unmanned surface vehicle,” IEEE
+Trans. Neural Netw. Learn. Syst., vol. 32, no. 7, pp. 3034–3045, Jul. 2021.
+[3] C. Sun, W. Liu, and L. Dong, “Reinforcement learning with task decom-
+position for cooperative multiagent systems,” IEEE Trans. Neural Netw.
+Learn. Syst., vol. 32, no. 5, pp. 2054–2065, May 2021.
+[4] T. T. Nguyen, N. D. Nguyen, and S. Nahavandi, “Deep reinforcement
+learning for multiagent systems: A review of challenges, solutions, and ap-
+plications,” IEEE Trans. Cybern., vol. 50, no. 9, pp. 3826–3839, Sep. 2020.
+[5] W. Du and S. Ding, “A survey on multi-agent deep reinforcement learning:
+From the perspective of challenges and applications,” Artif. Intell. Rev.,
+vol. 54, no. 5, pp. 3215–3238, 2021.
+[6] K. Son, D. Kim, W. J. Kang, D. Hostallero, and Y. Yi, “Learning to
+factorize with transformation for cooperative multi-agent reinforcement
+learning,” in Proc. 36th Int. Conf. Mach. Learn., Long Beach, CA, USA,
+2019, pp. 5887–5896.
+[7] P. Sunehag et al., “Value-decomposition networks for cooperative multi-
+agent learning,” in Proc. 19th Int. Conf. Auton. Agents Multiagent Syst.,
+Auckland, New Zealand, 2020, pp. 2085–2087.
+[8] T. Rashid, M. Samvelyan, C. Schroeder, G. Farquhar, J. Foerster, and
+S. Whiteson, “QMIX: Monotonic value function factorisation for deep
+multi-agent reinforcement learning,” in Proc. 35th Int. Conf. Mach. Learn.,
+Stockholm, Sweden, 2018, pp. 4295–4304.
+[9] J. Wang, Z. Ren, T. Liu, Y. Yu, and C. Zhang, “QPLEX: Duplex dueling
+multi-agent Q-learning,” in Proc. 7th Int. Conf. Learn. Representations,
+2019, pp. 1–27.
+[10] S. Sukhbaatar and R. Fergus, “Learning multiagent communication with
+backpropagation,” in Proc. 30th Adv. Neural Inf. Process. Syst., Barcelona,
+Spain, 2016, pp. 2244–2252.
+[11] T. Wang, J. Wang, C. Zheng, and C. Zhang, “Learning nearly decom-
+posable value functions via communication minimization,” 2019, arXiv:
+1910.05366.
+[12] C. Guan et al., “Efﬁcient multi-agent communication via self-supervised
+information aggregation,” in Proc. 36th Adv. Neural Inf. Process. Syst.,
+2022, pp. 1020–1033.
+[13] J. Jiang and Z. Lu, “Learning attentional communication for multi-agent
+cooperation,” in Proc. 32nd Adv. Neural Inf. Process. Syst., Montreal,
+Canada, 2018, pp. 7254–7264.
+[14] R. Wang, X. He, R. Yu, W. Qiu, B. An, and Z. Rabinovich, “Learning efﬁ-
+cient multi-agent communication: An information bottleneck approach,”
+in Proc. 37th Int. Conf. Mach. Learn., 2020, pp. 9908–9918.
+[15] Y. Niu, R. Paleja, and M. C. Gombolay, “Multi-agent graph-attention
+communication and teaming,” in Proc. 20th Int. Conf. Auton. Agents
+Multiagent Syst., London, U.K., 2021, pp. 964–973.
+[16] A. Das et al., “TarMAC: Targeted multi-agent communication,” in
+Proc. 36th Int. Conf. Mach. Learn., Long Beach, CA, USA, 2019,
+pp. 1538–1546.
+[17] W. Zhou, D. Chen, J. Yan, Z. Li, H. Yin, and W. Ge, “Multi-agent
+reinforcement learning for cooperative lane changing of connected and
+autonomous vehicles in mixed trafﬁc,” Auton. Intell. Syst., vol. 2, no. 5,
+pp. 1–11, 2022.
+[18] N.TishbyandN.Zaslavsky,“Deeplearningandtheinformationbottleneck
+principle,” in Proc. IEEE Inf. Theory Workshop, 2015, pp. 1–5.
+[19] T. Wu, H. Ren, P. Li, and J. Leskovec, “Graph information bottleneck,” in
+Proc. 34th Adv. Neural Inf. Process. Syst., 2020, pp. 20437–20448.
+[20] M. Samvelyan et al., “The StarCraft multi-agent challenge,” in Proc.
+18th Int. Conf. Auton. Agents Multiagent Syst., Montreal, Canada, 2019,
+pp. 2186–2188.
+[21] L. Zheng, J. Yang, H. Cai, M. Zhou, W. Zhang, and Y. Jun, “MAgent:
+A many-agent reinforcement learning platform for artiﬁcial collective
+intelligence,” in Proc. 32nd AAAI Conf. Artif. Intell., 2018, pp. 8222–8223.
+[22] J. Jiang, C. Dun, and Z. Lu, “Graph convolutional reinforcement learning
+for multi-agent cooperation,” in Proc. 6th Int. Conf. Learn. Representa-
+tions, 2018, pp. 1–10.
+[23] T. Wang, R. Liao, J. Ba, and S. Fidler, “NerveNet: Learning structured
+policy with graph neural networks,” in Proc. 6th Int. Conf. Learn. Repre-
+sentations, Vancouver, Canada, 2018, pp. 1–26.
+[24] H. Ryu, H. Shin, and J. Park, “Multi-agent actor-critic with hierarchical
+graph attention network,” in Proc. 34th AAAI Conf. Artif. Intell., New York,
+USA, 2020, pp. 7236–7243.
+[25] Y. Liu, W. Wang, Y. Hu, J. Hao, X. Chen, and Y. Gao, “Multi-agent game
+abstraction via graph attention neural network,” in Proc. 34th AAAI Conf.
+Artif. Intell., New York, USA, 2020, pp. 7211–7218.
+[26] M. Zhang, X. Wang, M. Zhu, X. Shi, Z. Zhang, and J. Zhou, “Robust
+heterogeneous graph neural networks against adversarial attacks,” in Proc.
+36th AAAI Conf. Artif. Intell., 2022, pp. 4363–4370.
+[27] J. Ma, S. Ding, and Q. Mei, “Towards more practical adversarial attacks
+on graph neural networks,” 2020, arXiv: 2006.05057.
+[28] H. Wu, C. Wang, Y. Tyshetskiy, A. Docherty, K. Lu, and L. Zhu, “Adver-
+sarial examples for graph data: Deep insights into attack and defense,” in
+Proc. 28th Int. Joint Conf. Artif. Intell., 2019, pp. 4816–4823.
+[29] K. Xu et al., “Topology attack and defense for graph neural networks: An
+optimization perspective,” 2019, arXiv: 1906.04214.
+[30] X.Zang,Y.Xie,J.Chen,andB.Yuan,“Graphuniversaladversarialattacks:
+A few bad actors ruin graph learning models,” in Proc. 30th Int. Joint Conf.
+Artif. Intell., 2021, pp. 1–7.
+[31] H. Zhang et al., “Robust deep reinforcement learning against adversarial
+perturbations on state observations,” in Proc. 34th Adv. Neural Inf. Process.
+Syst., Vancouver, Canada, 2020, pp. 21024–21037.
+[32] T. James, W. Tsunhsuan, M. Sivabalan, R. Mengye, and U. Raquel,
+“Adversarial attacks on multi-agent communication,” in Proc. IEEE/CVF
+18th Int. Conf. Comput. Vis., Montreal, Canada, 2021, pp. 7768–7777.
+[33] M. Rupert, B. Jan, and P. Amanda, “Gaussian process based message
+ﬁltering for robust multi-agent cooperation in the presence of adversarial
+communication,” 2020, arXiv: 2012.00508.
+[34] W. Xue, W. Qiu, B. An, Z. Rabinovich, S. Obraztsova, and C. Yeo, “Mis-
+spoke or mis-lead: Achieving robustness in multi-agent communicative
+reinforcement learning,” 2021, arXiv:2108.03803.
+[35] Y. Sun et al., “Certiﬁably robust policy learning against adversarial multi-
+agent communication,” in Proc. 11th Int. Conf. Learn. Representations,
+2022, pp. 1–30.
+[36] P. Veliˇckovi´c, G. Cucurull, and A. Casanova, “Graph attention networks,”
+in Proc. 6th Int. Conf. Learn. Representations, Vancouver, Canada, 2018,
+pp. 1–12.
+Shifei Ding (Member, IEEE) received the PhD degree
+from the Shandong University of Science and Tech-
+nology, Qingdao, China, in 2004, and the postdoctoral
+degree from the Key Laboratory of Intelligent Infor-
+mationProcessing(IIP),InstituteofComputingTech-
+nology (ICT), Chinese Academy of Sciences (CAS),
+Beijing, China, in 2006. He is a professor and PhD
+supervisor with the China University of Mining and
+Technology. His research interests include intelligent
+information processing, pattern recognition, machine
+learning, data mining, and granular computing.
+Wei Du received the BS degree from Shandong Uni-
+versity, Jinan, China, in 2016, and the MS degree
+from the China University of Mining and Technology,
+Xuzhou, China, in 2020. He is currently working
+toward the PhD degree with the China University of
+Mining and Technology, his supervisor is Prof. Shifei
+Ding. His research interests include machine learning
+and reinforcement learning.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:16:26 UTC from IEEE Xplore.  Restrictions apply. 
+
+DING et al.: ROBUST MULTI-AGENT COMMUNICATION WITH GRAPH INFORMATION BOTTLENECK OPTIMIZATION
+3107
+Ling Ding received the BS and MS degrees from
+the Asia Paciﬁc University of Technology and Inno-
+vation, Kuala Lumpur, Malaysia, in 2017 and 2019,
+respectively. She is currently working toward the PhD
+degree with Tianjin University, her supervisor is Dr.
+Di Jin. Her research interests include deep learning,
+graph machine learning, clustering, etc.
+Jian Zhang received the PhD degree from the
+ChinaUniversity of Mining and Technology,Xuzhou,
+China, in 2019. He is a lecturer with the China
+University of Mining and Technology. His research
+interests include deep learning, structure design and
+optimization of neuralnetworks,and image synthesis.
+Lili Guo (Member, IEEE) received the PhD degree
+from Tianjin University, Tianjin, China, in 2020. She
+is a lecturer with the China University of Mining
+and Technology. Her research interests include deep
+learning, multimodal emotional computing, etc.
+Bo An (Member, IEEE) received the PhD degree
+in computer science from the University of Mas-
+sachusetts, Amherst, MA, USA, in 2010. He is an
+associate professor with Nanyang Technological Uni-
+versity and chairman of the president’s Committee.
+His research interests include artiﬁcial intelligence,
+multi-agent systems, reinforcement learning, game
+theory, and optimization.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:16:26 UTC from IEEE Xplore.  Restrictions apply. 

@@ -1,0 +1,4176 @@
+Journal of Machine Learning Research 24 (2023) 1-40
+Submitted 3/23; Revised 11/23; Published 11/23
+Decentralized Robust V-learning for Solving Markov Games
+with Model Uncertainty
+Shaocong Ma
+s.ma@utah.edu
+Department of Electrical and Computer Engineering
+University of Utah
+Salt Lake City, UT 84112, USA
+Ziyi Chen
+zc286@cornell.edu
+Department of Electrical and Computer Engineering
+University of Utah
+Salt Lake City, UT 84112, USA
+Shaofeng Zou
+szou3@buffalo.edu
+Department of Electrical Engineering
+University at Buﬀalo, The State University of New York
+Buﬀalo, NY 14260, USA
+Yi Zhou
+yi.zhou@utah.edu
+Department of Electrical and Computer Engineering
+University of Utah
+Salt Lake City, UT 84112, USA
+Editor: Martha White
+Abstract
+The Markov game is a popular reinforcement learning framework for modeling competitive
+players in a dynamic environment. However, most of the existing works on Markov games
+focus on computing a certain equilibrium following uncertain interactions among the play-
+ers but ignore the uncertainty of the environment model, which is ubiquitous in practical
+scenarios. In this work, we develop a theoretical solution to Markov games with environ-
+ment model uncertainty. Speciﬁcally, we propose a new and tractable notion of robust
+correlated equilibria for Markov games with environment model uncertainty. In particular,
+we prove that the robust correlated equilibrium has a simple modiﬁcation structure, and
+its characterization of equilibria critically depends on the environment model uncertainty.
+Moreover, we propose the ﬁrst fully-decentralized stochastic algorithm for computing such
+the robust correlated equilibrium. Our analysis proves that the algorithm achieves the poly-
+nomial episode complexity e
+O(SA2H5ϵ−2) for computing an approximate robust correlated
+equilibrium with ϵ accuracy.
+Keywords:
+robust Markov games, model uncertainty, robust correlated equilibrium,
+reinforcement learning
+1. Introduction
+The Markov game is a general and popular reinforcement learning framework for modeling
+multiple players competing with each other in a dynamic environment (Littman, 1994). In a
+c⃝2023 Shaocong Ma, Ziyi Chen, Shaofeng Zou, and Yi Zhou.
+License: CC-BY 4.0, see https://creativecommons.org/licenses/by/4.0/. Attribution requirements are provided
+at http://jmlr.org/papers/v24/23-0310.html.
+
+Ma, Chen, Zou and Zhou
+Markov game, players interact with each other through a Markov decision process, and each
+player aims to improve its own decision-making to compete for more rewards. In particular,
+many important real-life applications ﬁt into this framework, including multi-player games
+such as decentralized multi-agent robotic control (Brambilla et al., 2013) and distributed
+autonomous driving (Shalev-Shwartz et al., 2016).
+One of the popular goals of Markov games is to achieve the Nash equilibrium (NE)
+among the players, that is, an optimal product policy so that no player can improve its
+gain by deviating from its own policy alone. The NE has been shown to exist for general
+Markov games (Filar and Vrieze, 2012). However, it turns out that ﬁnding NE of a Markov
+game is generally a PPAD-complete problem that is still unknown if it could be solved in
+polynomial time (Deng et al., 2021; Jin et al., 2022b), except for some special Markov games
+with either zero-sum rewards (Bai and Jin, 2020; Jin et al., 2018) or potential structures
+(Leonardos et al., 2021; Zhang et al., 2021).
+Besides Nash equilibria and its hardness,
+researchers have found multiple theoretically-tractable notions. For example, the correlated
+equilibrium (CE) (Aumann, 1974) (see Deﬁnition 4) and the coarse correlated equilibrium
+(CCE) (Moulin and Vial, 1978), which are similar to the NE but allows dependency among
+the players’ policies, have been shown to have polynomial-complexity algorithms (Blum
+and Mansour, 2007). Also, the extensive-form correlated equilibrium (EFCE) is proposed
+in extensive-form games (Von Stengel and Forges, 2008), which is also the solution to the
+PPAD-complete problem of ﬁnding Nash equilibria in multi-player games with inperfect
+information. And the Stackelberg equilibrium is also proposed as a substituion for the NE
+due to its sample eﬃciency (Bai et al., 2021). Particularly, in recent years, the CE has
+attracted much attentions due to its polynomial computation complexity (Jin et al., 2022a;
+Liu et al., 2021; Li et al., 2021).
+Although Markov games and these polynomially-eﬃcient notions have been extensively
+investigated, this standard framework only considers the competition among the players
+but ignores the environment model uncertainty, which is a critical factor that often reduces
+players’ gains and must be considered in theoretical analysis and practical applications. For
+example, many applications such as multi-UAV systems (Chen et al., 2023) naturally involve
+uncertain environments due to real-world noises, sensor errors, or dynamic changes. As an-
+other example, policies trained in a simulated environment often suﬀers from signiﬁcant per-
+formance degradation when implemented in the real environment, due to model mismatch;
+therefore, it is much more preferred to train a robust agent in the simulated environment,
+especially in autonomous vehicle controls (Allamaa et al., 2022). In all these scenarios, it is
+much desired to learn an optimal robust policy against such model uncertainty. To address
+model uncertainty, numerous robust reinforcement learning approaches have been developed
+and extensively studied in the single-agent case (Wang and Zou, 2021; Li et al., 2022b,a;
+Neufeld and Sester, 2022). However, model uncertainty is still underexplored in the general
+case with multiple competing agents, where only two works (Kardeş et al., 2011; Zhang
+et al., 2020) exist to our knowledge. Speciﬁcally, Kardeş et al. (2011) applied the robust
+Markov game with model uncertainty to the application of queueing control. Zhang et al.
+(2020) proposed provably convergent Q-learning and actor-critic type algorithms to compute
+a certain robust variant of NE of robust Markov games. However, computing robust NE of
+general Markov games with model uncertainty is in general a PPAD-complete problem and
+therefore it remains open if any polynomial-time algorithms exist. Motivated by existing
+2
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+studies proposing new notions that can be found in polynomial complexity, we notice that
+the robust version of correlated equilibria has not been studied. This motivates the two
+major goals of this work: (i) to propose a theoretically generalized robust equilibrium
+notion and study its fundamental properties; and (ii) to construct a fully decentralized,
+provably-convergent and polynomial-complexity algorithm for computing such the robust
+equilibrium.
+1.1
+Our Contributions
+In this work, we study episodic Markov games in an uncertain environment, that is, the
+environment transition kernel in every time step is queried from an underlying uncertainty
+set. To ﬁnd a robust equlibrium policy of such Markov games with model uncertainty,within
+polynomial time, we make the following technical contributions.
+• We propose a new theoretically-tractable notion of robust correlated equilibrium (CE)
+for Markov games with model uncertainty (see Deﬁnition 6).
+Speciﬁcally, the robust
+CE generalizes the standard CE in that it is deﬁned based on a robust value function
+(see eq. (2)), which corresponds to the worst-case value function achieved under model
+uncertainty.
+• We study the fundamental properties of robust CE. Speciﬁcally, we show that robust CE
+can be equivalently deﬁned using either stochastic modiﬁcations or deterministic mod-
+iﬁcations (see Proposition 7). This indicates that robust CE inherits the modiﬁcation
+structure from the standard CE. Similar to the non-robust case, if a policy is a robust
+NE, then it must be a robust CE (see Proposition 8, item 1). Moreover, through an
+illustrative example (see Proposition 8, item 2), we prove that the characterization of
+equilibria of robust CE critically depends on the uncertainty set, that is, there exists
+some uncertainty sets for the same state and action spaces such that the set of robust CE
+strictly includes the set of robust NE.
+• We develop a fully decentralized robust V-learning algorithm for ﬁnding robust CE of
+Markov games with model uncertainty. This algorithm is a generalization of the original
+V-learning algorithm (for solving standard Markov games) and adopts robust TD learning
+in its critic update. Under low-level of model uncertainty (that is, when the diameter of the
+uncertainty set D is not larger than a given threshold
+ϵ
+SH2 ), we prove that this algorithm
+achieves a polynomial episode complexity e
+O(SA2H5ϵ−2) for computing an approximate
+robust CE with ϵ accuracy. Under suﬃcient exploration with relatively high-level of model
+uncertainty (that is, when the diameter of the uncertainty set D is within the interval
+[
+ϵ
+SH2 , pmin
+H )), the complexity becomes e
+O(SA2H5p−2
+minϵ−2). This is the ﬁrst non-asymptotic
+convergence result for solving Markov games with model uncertainty.
+Moreover, our
+analysis of robust V-learning is substantially diﬀerent from that of the original V-learning.
+Please refer to the elaboration of technical novelty after Theorem 13 for more details.
+To brieﬂy elaborate, this is because the robust TD update enables tracking the desired
+robust value function at the cost of introducing uncertainty to the state transitions when
+unrolling the iterative updates. Therefore, we need to bound the model uncertainty via a
+stronger convergence metric, which leads to solving a linear system that involves an upper
+triangular Toeplitz matrix.
+3
+
+Ma, Chen, Zou and Zhou
+1.2
+Related Work
+Markov games: Markov games, also known as stochastic games, are standard formalism in
+multi-agent RL (Littman, 1994). The existence of NE for multi-player general-sum Markov
+games has been established in Fink (1964). Various algorithms have been designed to ﬁnd
+NE, such as Nash-Q learning (Hu and Wellman, 2003), FF-Q learning (Littman et al., 2001),
+and correlated-Q learning (Greenwald et al., 2003). The ﬁrst polynomial-time algorithm for
+ﬁnding NE is developed in Hansen et al. (2013), but works only for zero-sum games. Re-
+cent studies showed that ﬁnding NE of general-sum multi-player games is PPAD-complete
+(Daskalakis, 2013), so there are currently no polynomial-time algorithms for solving them
+(Deng et al., 2021; Jin et al., 2022b). Another notable goal in Markov games is to ﬁnd a
+weaker version of NE, such as the correlated equilibrium (CE) or coarse correlated equi-
+librium (CCE). Polynomial-time algorithms such as V-learning (Jin et al., 2022a; Mao and
+Başar, 2022; Song et al., 2021) and Nash value iteration (Liu et al., 2021) have been devel-
+oped for computing these notions.
+Robust reinforcement learning:
+Single-agent robust reinforcement learning has been
+widely explored (Nilim and Ghaoui, 2003; Nilim and El Ghaoui, 2005; Wiesemann et al.,
+2013; Satia and Lave Jr, 1973), which assume the environment transition kernel belongs to
+a given uncertainty set. Under a speciﬁc uncertainty model, Roy et al. (2017) and Wang
+and Zou (2021) developed model-free online robust Q-learning algorithms to solve the ro-
+bust reinforcement learning problem. For robust multi-agent reinforcement learning, value
+iteration-based algorithm has been developed in Kardeş et al. (2011) but with no explicit
+analytical form. For cooperative multi-agent reinforcement learning with model uncertainty,
+Huang et al. (2021) proposed a robust policy iteration algorithm to maximize the gain of
+the whole group. For non-cooperative Markov games with model uncertainty, Zhang et al.
+(2020) introduced robust Q-learning and actor-critic algorithms with asymptotic conver-
+gence guarantees of ﬁnding robust NE. To the best of our knowledge, there is no existing
+polynomial-time algorithm for solving Markov games with model uncertainty.
+Existence of Nash equilibria: The existence of Nash equilibria for the discounted stochas-
+tic games is provided by Fink (1964), which also implies the existence of correlated equilibria
+and coarse correlated equilibria. Though the existence of robust Nash equilibria doesn’t hold
+in general, it is ensured under some mild regularity assumptions (Perchet, 2014, 2020; Kardeş
+et al., 2011).
+2. Preliminaries of Markov Games
+An episodic m-player Markov game is speciﬁed by the tuple (H, S, A, P, {r(j)}m
+j=1), where H
+is the length of each episode, S and A :=×
+m
+j=1 A(j) correspond to the state space and joint
+action space, respectively, and they are assumed to be ﬁnite. Moreover, r(j) : S × A →[0, 1]
+denotes the reward function of the j-th player and P := {Ph}H
+h=1 corresponds to the collection
+of transition kernels at time steps h = 1, ..., H. At every time step h, the players observe a
+global state sh ∈S of the environment. Then, they take a joint action ah = [a(1)
+h , . . . , a(m)
+h
+]
+following a joint stochastic policy πh(·|s1:h, a1:(h−1)), which corresponds to a distribution on
+the joint action space A that depends on the past states s1:h := {st}h
+t=1 and past actions
+a1:(h−1) := {at}h−1
+t=1 . After that, the global state transfers to a new state sh+1 following the
+4
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+state transition kernel P(·|sh, ah), and each player j receives a local reward r(j)
+h (sh, ah) from
+the environment.
+In the above Markov game, each player j collects its own rewards over the episodes. In
+particular, we deﬁne π := {πh}H
+h=1 as the collection of joint policies over the time steps (they
+may be correlated; that is, policies in diﬀerent time steps could be dependent). Then we
+can deﬁne the following value function for the j-th player at state s and time step h under
+the policy π.
+(Value Function):
+v(j)
+π,h(s) := E
+h H
+X
+ℓ=h
+r(j)
+ℓ(sℓ, aℓ)
+sh = s, π, P
+i
+,
+(1)
+which corresponds to the expected cumulative reward received by player j starting from state
+s at time step h under joint policy π. The goal of the player j is to optimize its own policy
+π(j) := {π(j)
+h }H
+h=1 in order to maximize its associated value function. However, since every
+player’s value function is also aﬀected by the other players’ policies and actions, the players
+must compete with each other to gain more rewards until they reach a certain equilibrium.
+Here, we introduce two popular equilibrium notions that will be discussed throughout the
+paper.
+Deﬁnition 1 (Nash Equilibrium (NE)) A joint policy π is called an NE if the following
+two conditions are met: (i) for any time step h, the joint policy πh is a product of independent
+policies, that is, πh = π(1)
+h × . . . × π(m)
+h
+; (ii) For any player j with any associated policy eπ(j),
+it holds that v(j)
+π,1(s) ≥v(j)
+eπ(j)×π(\j),1(s) for all states s ∈S. Here, π(\j) denotes the joint policy
+of all the other players excluding the player j, and ‘×’ means that eπ(j) is independent from
+π(\j).
+In the existing literature, it has been shown that computing NE is in general a PPAD-
+complete problem (Deng et al., 2021; Jin et al., 2022b; Daskalakis, 2013), for which it is
+still unknown if it is possible to develop polynomial-time algorithms. This has motivated re-
+searchers to propose a surrogate correlated equilibrium (CE) notion (Aumann, 1974). Before
+introducing the formal deﬁnition of CE, we ﬁrst deﬁne the following stochastic modiﬁcation
+operator.
+Deﬁnition 2 (Stochastic Modiﬁcation) At any time step h, denote a(j)
+h
+as player j’s
+action induced by joint policy πh. Given the past states and actions s1:h, a1:(h−1), a stochastic
+modiﬁcation φ(j)
+h
+associated with player j randomly maps a(j)
+h
+to another action ea(j)
+h , that is,
+ea(j)
+h
+∼φ(j)
+h (·|s1:h, a1:h−1, a(j)
+h ).
+Moreover, we denote φ(j)
+h ◦πh as the joint policy modiﬁed by φ(j)
+h , that is, πh ﬁrst generates
+a joint action ah := [a(j)
+h , a(\j)
+h
+], and then φ(j)
+h
+maps a(j)
+h
+to another ea(j)
+h .
+Remark 3 If φ(j)
+h
+places probability 1 on a single action, we say that it is a deterministic
+modiﬁcation.
+Throughout, we denote φ(j) := {φ(j)
+h }H
+h=1 and φ(j) ◦π := {φ(j)
+h ◦πh}H
+h=1 as the collections
+of stochastic modiﬁcations and modiﬁed policies over the episode, respectively. We are now
+ready to introduce the deﬁnition of correlated equilibrium (CE).
+5
+
+Ma, Chen, Zou and Zhou
+Deﬁnition 4 (Correlated Equilibrium (CE)) A joint policy π is called a CE if for any
+player j and any stochastic modiﬁcation φ(j), it holds that v(j)
+π,1(s) ≥v(j)
+φ(j)◦π,1(s) for all states
+s ∈S.
+Intuitively, at CE, no player can improve its value function by modifying its own action
+induced by the joint CE policy. Compare to NE policies, CE policies do not require joint
+independence among all the players.
+In fact, it has been shown that any NE policy is
+guaranteed to be a CE policy (Jin et al., 2022a; Liu et al., 2021; Song et al., 2021), and
+hence CE is a weaker equilibrium notion than NE. Moreover, CE can be reformulated as
+linear programming and hence is tractable.
+3. Markov Games with Model Uncertainty
+In this section, we study episodic general-sum Markov games with uncertainty in the en-
+vironment transition kernel. We aim to deﬁne a tractable notion of correlated equilibrium
+under such model uncertainty and study its fundamental properties.
+3.1
+Robust Correlated Equilibrium
+We adopt the same episodic Markov game settings as described in Section 2, but consider
+an uncertain transition kernel. Speciﬁcally, at every time step h and for every state-action
+pair (s, a), the environment transition kernel ePh(·|s, a) is uncertain and belongs to a general
+uncertainty set Ph(s, a). Below we list some popular examples of uncertainty sets.
+Example 1 (KL divergence) The uncertainty set under KL divergence dKL is deﬁned as
+Ph(s, a) :=
+ePh(·|s, a): dKL
+ Ph(·|s, a), ePh(·|s, a)
+
+≤ρ
+	
+,
+where dKL
+ P, eP
+
+:= P
+s∈S eP(s) ln
+eP(s)
+P(s) and Ph(·|s, a) denotes a ﬁxed transition kernel.
+Example 2 (R-contamination model) The uncertainty set of R-contamination model is
+Ph(s, a) :=
+
+(1 −R)Ph(·|s, a) + Rq : q ∈∆|S|	
+,
+where Ph(·|s, a) is a ﬁxed transition kernel.
+In the above examples, Ph(·|s, a) can be understood as the original stationary transition
+kernel, and the parameters ρ > 0 and R > 0 characterize the level of uncertainty. In a
+Markov game with model uncertainty, the state transitions are determined by uncertain
+transition kernels queried from the uncertainty sets. Therefore, it is possible that a certain
+transition kernel in the uncertainty set can lead to frequent low-reward state transitions,
+which are unacceptable to the players. Hence, under model uncertainty, each player aims to
+learn a robust optimal policy that maximizes its expected accumulated reward in the worst
+case. Motivated by this intuition, we deﬁne the following robust value function for the j-th
+player at state s and time step h under joint policy π. For simplicity of notation, we denote
+P := N
+h,s,a Ph(s, a) as the product of uncertainty sets.
+(Robust Value Function):
+V (j)
+π,h(s) := inf
+eP∈P
+E
+h H
+X
+ℓ=h
+r(j)
+ℓ(sℓ, aℓ)
+sh = s, π, eP
+i
+.
+(2)
+6
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+Intuitively, the robust value function characterizes the minimum expected total reward one
+can obtain over all possible transition kernels in the uncertainty set. We note that the above
+robust value function is deﬁned for every single player in the Markov game. In particular, the
+worst-case (adversarial) transition kernels associated with the players’ robust value functions
+are generally diﬀerent from each other. To deal with model uncertainty, the players aim to
+achieve a certain equilibrium in terms of the robust value function. Speciﬁcally, we deﬁne
+the following robust Nash equilibrium (NE).
+Deﬁnition 5 (Robust NE) A joint policy π is called robust NE if (i) for all h, πh is a
+product policy; (ii) for any player j with any policy eπ(j), we have V (j)
+π,1 (s) ≥V (j)
+eπ(j)×π(\j),1(s)
+for all s ∈S.
+It can be seen that robust NE is similar to the NE deﬁned in Deﬁnition 1, with the main
+diﬀerence being that robust NE is deﬁned based on the robust value function. However,
+robust NE is generally more diﬃcult to compute than NE. For example, NE is known to be
+tractable in zero-sum Markov games. As a comparison, in a zero-sum Markov game with
+model uncertainty, the environment model uncertainty can be viewed as a third adversarial
+player that competes with both players and breaks the zero-sum structure.
+Therefore,
+solving robust NE is PPAD-hard in general, and this further motivates us to deﬁne the
+following tractable surrogate notion of robust correlated equlibrium (CE).
+Deﬁnition 6 (Robust CE) A joint policy π is called a robust CE if for any player j and
+any stochastic modiﬁcation φ(j), it holds that V (j)
+π,1 (s) ≥V (j)
+φ(j)◦π,1(s) for all states s ∈S.
+Although robust CE is a straightforward generalization of the standard CE deﬁned in
+Deﬁnition 4, it incorporates model uncertainty into the nature of correlated equilibrium and
+turns out to have more complex structures than the standard CE as we elaborate in the
+next subsection.
+3.2
+Properties of Robust Correlated Equilibrium
+Stochastic modiﬁcation is the key element to deﬁne CE. In particular, it has been shown
+that the standard CE deﬁned by stochastic modiﬁcation is equivalent to that deﬁned by
+deterministic modiﬁcation. Our next result shows that robust CE inherits this property and
+we will leverage this property to build our convergence analysis later.
+Proposition 7 In a Markov game with model uncertainty, for any robust CE π and any
+player j, there exists a deterministic modiﬁcation φ(j) such that V (j)
+π,1 (s) = V (j)
+φ(j)◦π,1(s) for
+all s ∈S.
+Our next result shows that for robust CE, its characterization of equilibrium can be
+diﬀerent from that of robust NE and critically depends on the uncertainty set.
+Proposition 8 Robust CE and robust NE have the following relations.
+1. In any robust Markov game, the set of robust CE includes the set of robust NE, or
+equivalently, any robust NE is a robust CE.
+7
+
+Ma, Chen, Zou and Zhou
+2. There exists a robust CE (in some Markov games) which is not a robust NE.
+Remark 9 From Proposition 8 Item 1, the existence of robust CE is directly implied by the
+existence of robust NE, which is ensured under some mild regularity assumptions (Perchet,
+2014, 2020; Kardeş et al., 2011).
+Based on the example given in Proposition 8 Item 2, we further illuminate the inﬂuence
+the uncertainty set on the set of robust CE. We consider the two-player coordination game
+described in Figure 1 in which there are ﬁve states S = {si}4
+i=0 and each player has two
+actions A = {a(1)
+i }1
+i=0 × {a(2)
+i }1
+i=0. Its transition probability {Ph}h=1,2is parameterized by
+p. Let π1 be the joint policy taken at the step h = 1 and π2 be the joint policy taken at
+the step h = 2. The transition Ph,p is described in the proof of Proposition 8 Item 2. We
+consider the following three types of uncertainty sets:
+1. Ph ⊂{Ph,p : p ∈[0, 10
+29)}. In this case, the unique robust NE policy is given as π1(a =
+[0, 0]|s = s4) = 1 and π2 can be arbitrary (since the action taken at h = 2 does not
+change the state). Moreover, this robust NE is also the unique robust CE.
+2. Ph ⊂{Ph,p : p ∈(10
+29, 1
+2)}. In this case, there are two robust NE, i.e., π1(a = [0, 1]|s =
+s4) = 1 and π1(a = [1, 0]|s = s4) = 1 (π2 can be arbitrary). Moreover, any convex
+combination of these two policies is a robust CE. Therefore, the set of robust NE is a
+strict subset of the robust CE.
+3. Let Ph be the union of the uncertainty sets in cases (1) and (2). Then, the robust NE
+and robust CE are the same as those of case (1).
+When training the RL agent, the model mismatch problem is usually unavoidable. In
+this example, such problem could be described as the training environment has a large model
+shift (that is, the training environment has p larger than 10
+29 while the target environment
+has the parameter p less than 10
+29). In this case, we always need to learn the robust policy
+over a suﬃciently large uncertainty set such that the it includes the target environment to
+ensure it achieves the robust NE. When the environment becomes more complicated, solving
+a robust NE could be costly, which motivates us to ﬁnd a more eﬃcient robust equilibrium
+(such as the robust CE) that could be solved in polynomial time.
+In the next proposition, we consider the special case of a single player. When there is
+only a single player (m = 1), we can prove that every robust CE policy achieves the optimal
+robust value function, by noticing that for any given policies π, µ over the action space A
+there always exists a stochastic modiﬁcation φ such that φ ◦π(a) = µ(a) for all a ∈A.
+Therefore, the robust V-learning algorithm can be applied to single-agent reinforcement
+learning to address model uncertainty. We obtain the following proposition.
+Proposition 10 Let π be the policy such that v(1)
+π,1(s) ≥v(1)
+φ◦π,1(s) for any stochastic modi-
+ﬁcation φ and all states s ∈S, then v(1)
+π,1(s) ≥v(1)
+µ,1(s) for any policy µ and all states s ∈S.
+4. Decentralized Robust V-Learning
+In this section, we develop a fully decentralized algorithm for ﬁnding robust CE of Markov
+games with model uncertainty. Our algorithm is inspired by the V-learning algorithm for
+solving standard Markov games (Jin et al., 2022a), and adopts some techniques from the
+8
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+robust control in MDPs (Wang and Zou, 2021; Nilim and Ghaoui, 2003) to address model
+uncertainty.
+4.1
+Algorithm Design
+We let every player j keep a value table V (j)
+h
+∈R|S| for each time step h, and denote
+{V (j)
+k,h}H
+h=1 as the value tables held by player j in the k-th episode. The main steps of our
+algorithm consist of a critic step and an actor step. In the critic step, we aim to learn
+the robust state value function associated with the current policy. To do so, we apply the
+following robust TD-learning type updates with every state-action transition sample (s, a, s′)
+to update the players’ value tables.
+eV (j)
+k,h(s) = (1 −αt)eV (j)
+k−1,h(s) + αt
+
+r(j)
+h
++ σPh(s,a)(V (j)
+k−1,h+1) + βt
+
+,
+(3)
+V (j)
+k,h(s) = min
+
+H + 1 −h, eV (j)
+k,h(s)
+	
+,
+(4)
+where the ﬁrst update performs a robust TD type update and the second update performs
+a simple upper truncation. Here, αt > 0 is a learning rate parameter where t := Nk,h(s)
+denotes that state s has been visited at step h for t times at the beginning of the k-th episode,
+and the value function mapping σPh(s,a)(·) is deﬁned via the following linear program for
+any value table V .
+σPh(s,a)(V ) :=
+inf
+ePh(·|s,a)∈Ph(s,a)
+⟨ePh(·|s, a), V (·)⟩.
+(5)
+Intuitively, the above mapping corresponds to the worst-case expected state value of the
+next state. In particular, when there is no model uncertainty and the transition kernel is
+Ph(·|s, a), it reduces to the expected state value at the next state, that is, Es′∼Ph(·|s,a)[V (s′)].
+Moreover, this linear program can be numerically solved for several important classes of
+uncertainty sets, as we elaborate below.
+Example 3 (KL divergence) Consider the uncertainty set Ph(s, a) deﬁned under the KL
+divergence in Example 1. Then, the linear program (5) reduces to the following optimization
+problem, as proved in Theorem 1 of Hu and Hong (2013).
+min
+α≥0 α ln Es′∼Ph(·|s,a)
+
+eV (s′)/α
++ αη.
+(6)
+In practice, we can query some samples to approximate the expectation involved in the
+above one-dimensional problem and solve it to obtain a sample-based estimator bσPh(s,a)(V ).
+Example 4 (R-contamination model) Consider the uncertainty set Ph(s, a) deﬁned by
+the R-contamination model in Example 2. Then, the linear program (5) can be approximated
+by the sample-based estimator bσPh(s,a)(V ) = R maxs∈S V (s) + (1 −R)V (s′) (Wang and Zou,
+2021).
+In the actor step, we leverage the adversarial bandit algorithm developed in Jin et al.
+(2022a) to update the current policy. To brieﬂy explain, in step h of episode k, every player
+9
+
+Ma, Chen, Zou and Zhou
+j takes an action a(j)
+h
+∼π(j)
+k,h(·|sh) and observes an adversarial loss 1 −
+r(j)
+h +bσPh(sh,ah)(V (j)
+k,h+1)
+H
+,
+both of which are then fed into the adversarial bandit algorithm to produce the policy
+π(j)
+k+1,h(·|sh). The speciﬁc updates of this algorithm are shown in Algorithm 3 in Appendix
+E. In particular, Jin et al. (2022a) proved that it achieves a regret bound in the order of
+e
+O(B
+p
+H/t) (see Lemma 17 in the appendix).
+The entire decentralized robust V-learning algorithm is summarized in Algorithm 1 be-
+low, where we use the estimator bσPh(s,a) instead of σPh(s,a) in the critic update. For a speciﬁc
+uncertainty model, this estimator can be solved with arbitrary accuracy; for example, for
+KL divergence model, it suﬃces to solve eq. (6) with knowing its centroid P and the radius
+ρ. After obtaining all the policies {πk,h}k,h, the ﬁnal non-Markov output policy ˆπ is deﬁned
+by randomly selecting an episode k at each step h and taking an action ah ∼πk,h (see
+Algorithm 2 for more details).
+Algorithm 1: Decentralized Robust V-Learning (j-th player)
+Initialize: Set eV (j)
+1,h (s) = V (j)
+1,h (s) = H+1−h, π1,h(a|s) =
+1
+|A|, N(j)
+1,h(s) = 0 for all
+s, a, h
+for episode k = 1, . . . , K do
+Observe initial state s1, V (j)
+k,H+1(s) = 0 for all s
+for step h = 1, . . . , H do
+Take action a(j)
+h
+∼π(j)
+k,h(·|sh)
+Transfer to next state sh+1 ∼ePh(·|sh, ah) with ePh ∈Ph(sh, ah)
+Let eV (j)
+k+1,h ←eV (j)
+k,h, V (j)
+k+1,h ←V (j)
+k,h, π(j)
+k+1,h ←π(j)
+k,h
+Receive reward r(j)
+h
+and set t := N(j)
+k+1,h(sh) ←N(j)
+k,h(sh) + 1
+eV (j)
+k+1,h(sh) =(1 −αt)eV (j)
+k,h(sh) + αt
+
+r(j)
+h
++ bσPh(sh,ah)(V (j)
+k,h+1) + β(j)
+t
+
+(7)
+V (j)
+k+1,h(sh) = min{H + 1 −h, eV (j)
+k+1,h(sh)}
+(8)
+π(j)
+k+1,h(·|sh)=ADV_BANDIT
+
+t, ah, 1−
+r(j)
+h +bσPh(sh,ah)(V (j)
+k,h+1)
+H
+, π(j)
+k,h(·|sh)
+
+(9)
+end
+end
+Output: Joint policy ˆπ deﬁned by Algorithm 2
+Here the hyperparameters αt and β(j)
+t
+are the learning rates given in (3). In practice, their
+values could be tuned using grid-search. We also provide a theoretical setting in Theorem
+12 and Theorem 13 to ensure the polynomial-time sample complexity. After obtaining all
+πk,h by calling Algorithm 3 in Algorithm 1, we deﬁne the ﬁnal output policy ˆπk := ˆπk,1 as
+Algorithm 2 below by following Algorithm 3 of Jin et al. (2022a). To facilitate the technical
+proof in Lemma 22 and Lemma 24, we use a slightly more general notation here as the
+10
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+policy ˆπk,h for all k ∈[K] and h ∈[H]; when setting h = 1, Algorithm 2 exactly matches
+Algorithm 3 of Jin et al. (2022a).
+Algorithm 2: Implement output policy ˆπk,h. (Algorithm 3 from Jin et al. (2022a))
+Input: Time step h, episode k, states sh:H, policies {πk′,h:H}k
+k′=1 obtained from
+Algorithm 1.
+for step h′ = h, h + 1, . . . , H do
+Set t ←Nk,h′(sh′) and let {ki
+h′(sh′)}t
+i=1 (k1
+h′(sh′) < k2
+h′(sh′) < . . . < kt
+h′(sh′) < k)
+be the episodes where state sh′ is visited at h′-th step, i.e., ski
+h′(sh′),h = sh′.
+Randomly select i ∈[t] with prob. αi
+t (deﬁned in (23)) and set k ←ki
+h′(sh′).
+ah′ ∼πk,h′(·|sh′).
+end
+Output: Joint actions ah:H.
+4.2
+Convergence and Complexity Analysis
+For any joint policy π, we measure its optimality gap toward achieving exact robust CE
+as follows, where we deﬁne V (j)
+φ∗◦π,1(s) := maxφ(j) V (j)
+φ(j)◦π,1(s) as player j’s value function
+associated with the policy π modiﬁed by player j’s best-response modiﬁcation φ∗.
+(Optimality gap):
+max
+j∈[J] max
+s∈S
+
+V (j)
+φ∗◦π,1(s) −V (j)
+π,1 (s)
+
+≥0.
+(10)
+In particular, policy π is a robust CE if the gap vanishes.
+We also need the following
+deﬁnitions to characterize the impact of model uncertainty on Algorithm 1’s convergence
+rate.
+Deﬁnition 11 Regarding the uncertainty sets {Ph(s, a)}h,s,a, the value function mapping
+σPh(s,a) and state exploration probability, we deﬁne the following quantities.
+• Uncertainty diameter: D := maxh,s,a,a′ maxP∈Ph(s,a),eP∈Ph(s,a′) ∥P(·) −eP(·)∥∞.
+• Estimation error: e := suph,s,a,V
+σPh(s,a)(V ) −bσPh(s,a)(V )
+, where the supremum is taken
+over all bounded value tables that satisfy 0 ≤V (s) ≤H + 1 for all s.
+• State exploration: pmin := mins,h,k P(sk,h = s), which denotes the minimum probability of
+visiting an arbitrary state s at any step h of any episode k.
+The uncertainty diameter D deﬁned above characterizes the diameter of the uncertainty
+set Ph. That is, a larger D means that the transition kernel Ph can change over a wider range
+and therefore induces larger uncertainty. For example, for the uncertainty set deﬁned by
+the R-contamination model in Example 3.2, the uncertainty diameter is analytically given
+by D = R max
+
+maxs′ Ph(s′|s, a), 1 −mins′ Ph(s′|s, a)
+	
+, which monotonically increases with
+regard to the uncertainty set parameter R. When the uncertainty level is suﬃciently small,
+we can simply bound the error caused by model uncertainty with a non-asymptotic error
+term 5DSH2. This bound also holds for any value of D but the robust V-learning algorithm
+may not achieve ϵ error when D is larger than
+ϵ
+SH2 . Our ﬁrst theorem characterizes this
+situation.
+11
+
+Ma, Chen, Zou and Zhou
+Theorem 12 Let S := |S| and A := max1≤j≤m |A(j)| correspond to the size of the state
+space and action space, respectively. Choose β(j)
+t , αt and αi
+t according to eqs. (21)-(23).
+The output policy ˆπ produced by Algorithm 1 satisﬁes the following convergence rate with
+probability at least 1 −cδ for some constant c > 0. For any D ≥0, we have the bound
+max
+j∈[J] max
+s∈S
+ V (j)
+φ∗◦ˆπ,1(s) −V (j)
+ˆπ,1 (s)
+
+≤5DSH2 + O
+
+H
+
+A
+r
+H3S
+K
+ln mKHSA2
+δ
++ e
+
+.
+Further, if the uncertainty diameter D ≤
+ϵ
+SH2 and the approximation error e = O( ϵ
+H ), then
+the ϵ-accuracy is guaranteed with K = e
+O(SA2H5ϵ−2) episodes.
+In many situations, the uncertainty level cannot be guaranteed to be suﬃciently small to
+the level O(
+ϵ
+SH2 ). In this case, we show that if the policy can maintain suﬃcient exploration
+during training, then the requirement on the diameter can be relatively relieved; more
+explicitly, if there is suﬃcient exploration pmin >
+ϵ
+SH , the requirement on D of achieving
+polynomial complexity will be increased from
+ϵ
+SH2 to pmin
+H .
+Theorem 13 Let S := |S| and A := max1≤j≤m |A(j)| correspond to the size of the state
+space and action space, respectively. Choose β(j)
+t , αt and αi
+t according to eqs. (21)-(23).
+The output policy ˆπ produced by Algorithm 1 satisﬁes the following convergence rate with
+probability at least 1 −cδ for some constant c > 0. For any D and pmin satisfying
+ϵ
+SH2 ≤
+D < pmin
+H , we have the bound
+max
+j∈[J] max
+s∈S
+ V (j)
+φ∗◦ˆπ,1(s) −V (j)
+ˆπ,1 (s)
+
+≤O
+
+H
+pmin −DH
+
+A
+r
+H3S
+K
+ln mKHSA2
+δ
++ e
+
+.
+Further, if the state exploration pmin >
+ϵ
+SH and the approximation error e = O(ϵpmin
+H ), then
+the ϵ-accuracy is guaranteed with K = e
+O(SA2H5p−2
+minϵ−2) episodes.
+Theorem 12 and Theorem 13 characterize the convergence rate and episode complexity
+of decentralized robust V-learning.
+When the state exploration pmin is decreasing, the
+non-asymptotic bound will increase; also, we need to require a stronger restriction on the
+uncertainty diameter D (since the bound holds only for D <
+pmin
+H ).
+We note that the
+optimality gap adopted in the above theorem takes the maximum over all the states and
+hence is stronger than that used in the original V-learning (Jin et al., 2022b). This is because
+we need to develop new techniques to address the state transition uncertainty caused by the
+environment model uncertainty. As a result, the environment model uncertainty diameter
+D should not be too large compared to the state exploration probability pmin and the target
+accuracy ϵ.
+Technical novelty of Theorem 12 and Theorem 13. Our analysis leverages the following
+technical developments to address model uncertainty and establish the convergence rate.
+• To address model uncertainty, our decentralized robust V-learning algorithm adopts the
+worst-case expected value function estimator bσPh(s,a)(V ) in the critic update, as opposed
+to the exact value V (s) used in the standard V-learning. Such a nonlinear operator allows
+us to track the robust value function in the analysis. In particular, we developed various
+12
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+important properties of this operator in Lemma 19, including boundedness, monotonicity,
+etc., which are crucial to establish the key Lemmas 20, 21, 22 and 24 that lead to the
+desired convergence rate result.
+• The proof of the original V-learning algorithm (Jin et al., 2022a) tracks the upper bound
+of the optimality gap δk,h := Vk,h(sk,h)−V k,h(sk,h) at a single state and builds a recursion
+on it. This approach cannot be applied to our case as this gap turns into an uncertainty
+form σPh(s,a)(Vk,h+1) −σPh(s,a)(V k,h+1), which inevitably involves all possible states. To
+address this issue, we decompose this term as σPh(s,a)(Vk,h+1)−σPh(s,a)(V k,h+1) = δk,h+1+
+σPh(s,a)(Vk,h+1) −σPh(s,a)(V k,h+1) −δk,h+1 to link it to the desired term δk,h+1 (see eq.
+(14)).
+Consequently, we need to solve a more challenging recursion that we build in
+Lemma 26.
+• The decomposition mentioned in the previous bullet point involves an error term
+σPh(s,a)(Vk,h+1) −σPh(s,a)(V k,h+1) −δk,h+1 that critically depends on the level of un-
+certainty.
+For example, this error term vanishes when there is no model uncertainty.
+We develop an upper bound of this error term in Lemma 25 by leveraging the uncer-
+tainty diameter (Deﬁnition 11) and introducing a stronger convergence metric ∆(j)
+k,h :=
+P
+s∈S
+ V (j)
+k,h(s) −V (j)
+k,h(s)
+
+compared to δk,h.
+• To derive the desired convergence rate, we build a recursion on the convergence metric
+{PK
+k=1 ∆(j)
+k,h}h∈[H] in Lemma 27. The key challenge in solving this recursion is to rewrite
+it as a vectorized linear system that involves an upper triangular Toeplitz matrix, whose
+spectrum can be characterized analytically and used to derive the ﬁnal result.
+5. Conclusion
+In this work, we proposed a new and tractable notion of robust correlated equilibrium for
+Markov games with environment model uncertainty. We showed that the robust correlated
+equilibrium has a simple modiﬁcation structure, and its characterization of equilibrium crit-
+ically depends on the environment model uncertainty.
+Moreover, we proposed the ﬁrst
+fully-decentralized robust V-learning algorithm for computing such robust correlated equi-
+librium and established a polynomial sample complexity for computing an approximate
+robust correlated equilibrium. We believe this work provides an initial solution to competi-
+tive multi-agent reinforcement learning in uncertain environment, and an interesting future
+direction is to explore if it is possible to establish convergence of the algorithm under relaxed
+requirements on the uncertainty diameter.
+Acknowledgments
+S. Ma and Y. Zhou’s work are supported by the National Science Foundation under Grants
+CCF-2106216, DMS-2134223, ECCS-2237830 (CAREER).
+S. Zou’s work is supported by the National Science Foundation under Grants CCF-
+2106560, CCF-2007783.
+This material is based upon work supported under the AI Research Institutes program
+by National Science Foundation and the Institute of Education Sciences, U.S. Department of
+13
+
+Ma, Chen, Zou and Zhou
+Education through Award # 2229873 - National AI Institute for Exceptional Education. Any
+opinions, ﬁndings and conclusions or recommendations expressed in this material are those
+of the author(s) and do not necessarily reﬂect the views of the National Science Foundation,
+the Institute of Education Sciences, or the U.S. Department of Education.
+14
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+Appendix
+Table of Contents
+A
+Proof Sketch of Theorem 12 and Theorem 13
+15
+B
+Proof of Proposition 7
+17
+C
+Proof of Proposition 8
+19
+D
+Proof of Proposition 10
+20
+E
+Policies in Algorithm 1
+21
+F
+Proof of Theorem 12
+21
+G
+Proof of Theorem 13
+25
+H
+Supporting Lemmas
+27
+H.1 Lemmas on Robust Correlated equilibrium . . . . . . . . . . . . . . . . . .
+32
+H.2 Key Lemmas to Handle Uncertainty
+. . . . . . . . . . . . . . . . . . . . .
+34
+Appendix A. Proof Sketch of Theorem 12 and Theorem 13
+Before giving the detailed proof for Theorem 12 and Theorem 13, we provide a sketch of
+proof with highlighting the technical novelty and the main diﬀerences from the standard
+convergence analysis of V-learning (Jin et al., 2022a) for solving the non-robust CE of
+Markov games.
+• Instead of directly bounding V (j)
+φ∗◦ˆπk,h,h(s) −V (j)
+ˆπk,h,h(s), we follow the proof steps of V-
+learning (Jin et al., 2022a) to start with the gap between the optimistic and pessimistic
+estimation
+δ(j)
+k,h := V (j)
+k,h(sk,h) −V (j)
+k,h(sk,h),
+where sk,h is the state visited at k-th episode and h-th step. Since the update rule
+of robust V-learning algorithm depends on the worst-case expected value function
+estimator bσPh(s,a)(V ) in the critic update, as opposed to the exact value V (s) used
+in the standard V-learning.
+These optimistic and pessimistic estimations are not
+as straightforward as the original proof and require us to develop various important
+properties of this operator in Lemma 19, including boundedness, monotonicity, etc.
+These properties will be used to lead the desired pessimistic and optimistic estimations
+V (j)
+ˆπk,h,h(s) ≥V (j)
+k,h(s) (Lemma 22) and V (j)
+k,h(s) ≥V (j)
+φ∗◦ˆπk,h,h(s) (Lemma 24).
+15
+
+Ma, Chen, Zou and Zhou
+• With following the same steps as the proof of V-learing (Jin et al., 2022a), we obtain
+the following recursion:
+K
+X
+k=1
+δ(j)
+k,h ≤
+
+1 + 1
+H
+
+K
+X
+k′=1
+
+σPh(sk,h,ak′,h)(V (j)
+k′,h+1) −σPh(sk,h,ak′,h)(V (j)
+k′,h+1)
+
+−
+
+1 + 1
+H
+
+K
+X
+k′=1
+
+V (j)
+k′,h+1(sk′,h+1) −V (j)
+k′,h+1(sk′,h+1)
+
++
+
+1 + 1
+H
+
+K
+X
+k′=1
+δ(j)
+k,h+1 + Θ
+
+Aj
+s
+H3SK ln
+mKHSA2
+j
+δ
+
++ 4Ke.
+For the non-robust V-learing (Jin et al., 2022a), the ﬁrst two terms are directly canceled
+while we have to consider the inﬂuence of operator σPh(s,a), which is one of the main
+diﬀerences in analyzing the robust V-learning.
+• We developed Lemma 25 as one our of technical contributions to upper bound this
+diﬀerence term
+σPh(sk,h,ak′,h)(V (j)
+k′,h+1) −σPh(sk,h,ak′,h)(V (j)
+k′,h+1) −V (j)
+k′,h+1(sk′,h+1) + V (j)
+k′,h+1(sk′,h+1).
+This lemma shows the operator σPh(s,a) has Lipschitzness in L1-norm with a high
+probability, which performs as the bridge between the robustness and non-robustness
+convergence analysis. After applying Lemma 25, we will be able to obtain the following
+bound (17):
+K
+X
+k=1
+δ(j)
+k,h ≤D
+
+1 + 1
+H
+ H−h
+X
+i=0
+
+1 + 1
+H
+i K
+X
+k=1
+X
+s∈S
+
+V (j)
+k,h+1+i(s) −V (j)
+k,h+1+i(s)
+
++2H
+h
+1 + 1
+H
+r
+32KH2 ln 2mKHSA
+δ
++ Θ
+
+Aj
+s
+H3SK ln
+mKHSA2
+j
+δ
+
++ 4Ke
+i
+.
+• We note that the ﬁrst term in the above bound
+D
+
+1 + 1
+H
+ H−h
+X
+i=0
+
+1 + 1
+H
+i K
+X
+k=1
+X
+s∈S
+
+V (j)
+k,h+1+i(s) −V (j)
+k,h+1+i(s)
+
+will not appear in the non-robust V-learning since it characterizes the inﬂuence of di-
+ameter of uncertainty set on the convergence error of robust V-learning. For non-robust
+V-learning, the diameter of uncertainty set is 0, so this term will simply disappear.
+We propose two approaches to handle this error term and they will lead to diﬀerent
+conditions on obtaining a polynomial-time complexity.
+◦Theorem 12. In Theorem 12, we bound the tracked value functions by their
+upper bound to obtain the following characterization of the error term:
+D
+
+1 + 1
+H
+ H
+X
+i=1
+
+1 + 1
+H
+i−1 K
+X
+k=1
+X
+s∈S
+
+V (j)
+k,1+i(s) −V (j)
+k,1+i(s)
+
+16
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+≤5DSKH2.
+It implies that if the uncertainty set is suﬃciently small (that is, the diameter of
+uncertainty set D is less than the threshold
+ϵ
+5SKH2 ), we could always control the
+error term caused by the model uncertainty by ϵ.
+◦Theorem 13. In many cases, we do not expect the uncertainty set to be too
+small. So we developed Theorem 13 by considering the expectation of this error
+term. With taking expectation, Equation (17) will be simpliﬁed to Equation (19)
+pmin
+K
+X
+k=1
+∆(j)
+k,h ≤D
+H−h
+X
+i=0
+(1 + 1
+H )i+1
+K
+X
+k=1
+∆(j)
+k,h+1+i + Uj,
+where pmin characterizes the exploration ability of the whole learning process.
+To solve this recursion, we developed Lemma 27 to characterize the solution of a
+upper triangular Toeplitz system, which is also a new technique in convergence
+analysis and will be potentially applied to other algorithms. To satisfy the con-
+dition of Lemma 27, we need to require the diameter of uncertainty set to be
+ϵ
+SH2 ≤D <
+pmin
+H .
+This condition indicates that for learning a robust CE of
+general-sum multi-agent Markov games, we cannot let the uncertainty set to be
+arbitrarily large.
+Appendix B. Proof of Proposition 7
+First, we re-state Proposition 7 here.
+Proposition 14 In a Markov game with model uncertainty, any robust CE policy π can be
+achieved by deterministic modiﬁcations, i.e., for any player j there exists a deterministic
+modiﬁcation φ(j) such that V (j)
+π,1 (s) = V (j)
+φ(j)◦π,1(s).
+Proof
+We will prove this proposition for a more general setting where each reward r(j)
+h
+=
+r(j)
+h (s1:h, a1:h) relies on all the past and current states s1:h := {sh′}h
+h′=1 and actions a1:h :=
+{ah′}h
+h′=1. Then the conclusion directly applies to the special case of interest where r(j)
+h
+=
+r(j)
+h (sh, ah).
+We will ﬁnd φ(j) by applying mathematical induction to the horizon H.
+When H = 1, the MDP does not involve transition kernel, so
+V (j)
+φ(j)◦π,1(s) =
+X
+a1
+(φ(j)
+1
+◦π1)(a1|s)r(j)
+1 (s, a1)
+(i)
+=
+X
+a1,ea(j)
+1
+φ(j)
+1 (a(j)
+1 |s, ea(j)
+1 )π1([ea(j)
+1 , a(\j)
+1
+]|s)r(j)
+1 (s, a1)
+=
+X
+ea(j)
+1
+ X
+a(j)
+1
+φ(j)
+1 (a(j)
+1 |s, ea(j)
+1 )
+X
+a(\j)
+1
+π1([ea(j)
+1 , a(\j)
+1
+]|s)r(j)
+1 (s, a1)
+
+17
+
+Ma, Chen, Zou and Zhou
+(ii)
+≤
+X
+ea(j)
+1
+
+max
+a(j)
+1
+X
+a(\j)
+1
+π1([ea(j)
+1 , a(\j)
+1
+]|s)r(j)
+1 (s, a1)
+
+,
+where (i) uses the following formula that directly follows from the deﬁnition of stochas-
+tic modiﬁcation φ(j), and (ii) becomes “=” using the deterministic modiﬁcation such that
+φ(j)
+1 (a(j)
+1 |s, ea(j)
+1 ) := 1 for a certain a(j)
+1
+∈arg maxa(j)
+1
+P
+a(\j)
+1
+π1([ea(j)
+1 , a(\j)
+1
+]|s))r(j)
+1 (s, a1).
+(φ(j)
+h ◦πh)
+ ah|s1:h, a1:h−1
+
+=
+X
+ea(j)
+h
+φ(j)
+h (a(j)
+h |s1:h, a1:h−1, ea(j)
+h )πh([ea(j)
+h , a(\j)
+h
+]|s1:h, a1:h−1).
+(11)
+This proves the existence of the optimal deterministic solution φ(j) for H = 1. Suppose it
+also exists for horizon H −1. Then it suﬃces to prove the existence of φ(j) for H as follows.
+V (j)
+φ(j)◦π,1(s) :
+= inf
+P∈P E
+h H
+X
+h=1
+r(j)
+h (s1:h, a1:h)
+s1 = s, φ(j) ◦π, P
+i
+=
+inf
+P1:H−2∈P1:H−2
+ 
+E
+h H−1
+X
+h=1
+r(j)
+h (s1:h, a1:h)
+s1 = s, {φ(j)
+h ◦πh}H−1
+h=1 , P1:H−2
+i
++
+inf
+PH−1∈PH−1 E
+h
+r(j)
+H (s1:H, a1:H)
+s1 = s, φ(j) ◦π, P1:H−1
+i!
+=
+inf
+P1:H−2∈P1:H−2
+ 
+E
+h H−1
+X
+h=1
+r(j)
+h (s1:h, a1:h)
+s1 = s, {φ(j)
+h ◦πh}H−1
+h=1 , P1:H−2
+i
++
+X
+s1:H−1,a1:H−1
+Pr(s1:H−1, a1:H−1|s1 = s, {φ(j)
+h ◦πh}H−1
+h=1 , P1:H−2)
+inf
+PH−1(·|sH−1,aH−1)
+∈PH−1(sH−1,aH−1)
+X
+sH
+PH−1(sH|sH−1, aH−1)
+X
+aH
+(φ(j)
+H ◦πH)(aH|s1:H, a1:H−1)r(j)
+H (s1:H, a1:H)
+!
+(i)
+=
+inf
+P1:H−2∈P1:H−2
+ 
+E
+h H−1
+X
+h=1
+r(j)
+h (s1:h, a1:h)
+s1 = s, {φ(j)
+h ◦πh}H−1
+h=1 , P1:H−2
+i
++
+X
+s1:H−1,a1:H−1
+Pr(s1:H−1, a1:H−1|s1 = s, {φ(j)
+h ◦πh}H−1
+h=1 , P1:H−2)
+inf
+PH−1(·|sH−1,aH−1)
+∈PH−1(sH−1,aH−1)
+X
+sH
+PH−1(sH|sH−1, aH−1)
+X
+aH,ea(j)
+H
+φ(j)
+H (a(j)
+H |s1:H, a1:H−1, ea(j)
+H )πH([ea(j)
+H , a(\j)
+H ]|s1:H, a1:H−1)r(j)
+H (s1:H, a1:H)
+!
+=
+inf
+P1:H−2∈P1:H−2
+ 
+E
+h H−1
+X
+h=1
+r(j)
+h (s1:h, a1:h)
+s1 = s, {φ(j)
+h ◦πh}H−1
+h=1 , P1:H−2
+i
+18
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
++
+X
+s1:H−1,a1:H−1
+Pr(s1:H−1, a1:H−1|s1 = s, {φ(j)
+h ◦πh}H−1
+h=1 , P1:H−2)
+inf
+PH−1(·|sH−1,aH−1)
+∈PH−1(sH−1,aH−1)
+X
+sH,ea(j)
+H
+PH−1(sH|sH−1, aH−1)
+X
+a(j)
+H
+φ(j)
+H (a(j)
+H |s1:H, a1:H−1, ea(j)
+H )
+X
+a(\j)
+H
+πH([ea(j)
+H , a(\j)
+H ]|s1:H, a1:H−1)r(j)
+H (s1:H, a1:H)
+!
+(ii)
+≤
+inf
+P1:H−2∈P1:H−2
+ 
+E
+h H−1
+X
+h=1
+r(j)
+h (s1:h, a1:h)
+s1 = s, {φ(j)
+h ◦πh}H−1
+h=1 , P1:H−2
+i
++
+X
+s1:H−1,a1:H−1
+Pr(s1:H−1, a1:H−1|s1 = s, {φ(j)
+h ◦πh}H−1
+h=1 , P1:H−2)
+inf
+PH−1(·|sH−1,aH−1)
+∈PH−1(sH−1,aH−1)
+X
+sH,ea(j)
+H
+PH−1(sH|sH−1, aH−1) max
+a(j)
+H
+X
+a(\j)
+H
+πH([ea(j)
+H , a(\j)
+H ]|s1:H, a1:H−1)r(j)
+H (s1:H, a1:H)
+!
+(iii)
+=
+inf
+P1:H−2∈P1:H−2 E
+h H−2
+X
+h=1
+r(j)
+h (s1:h, a1:h) + er(j)
+H−1(s1:H−1, a1:H−1)
+s1 = s, {φ(j)
+h ◦πh}H−1
+h=1 , P1:H−2
+i
+,
+(12)
+where we denote P1:h := {Ph′}h
+h′=1 and P1:h := {Ph′}h
+h′=1, (i) uses eq. (11), (ii) becomes
+“=” using the deterministic modiﬁcation φ(j)
+H such that φ(j)
+H (a(j)
+H |s1:H, a1:H−1, ea(j)
+H ) := 1 for
+a certain
+a(j)
+H
+∈arg maxa(j)
+H
+P
+a(\j)
+H
+πH([ea(j)
+H , a(\j)
+H ]|s1:H, a1:H−1)r(j)
+H (s1:H, a1:H), and (iii) denotes the
+following surrogate reward at step H −1,
+er(j)
+H−1(s1:H−1, a1:H−1)
+= r(j)
+H−1(s1:H−1, a1:H−1) +
+inf
+PH−1(·|sH−1,aH−1)
+∈PH−1(sH−1,aH−1)
+X
+sH,ea(j)
+H
+PH−1(sH|sH−1, aH−1)
+max
+a(j)
+H
+X
+a(\j)
+H
+πH([ea(j)
+H , a(\j)
+H ]|s1:H, a1:H−1)r(j)
+H (s1:H, a1:H).
+(13)
+Note that eq. (12) can be seen as the value function with horizon H −1, so there are deter-
+ministic modiﬁcations φ(j)∗
+h
+for h ∈[H −1] that maximize eq. (12), which along with φ(j)
+H
+above forms the deterministic modiﬁcation φ(j) := {φ(j)
+h }h∈[H] that maximizes V (j)
+φ(j)◦π,1(s).
+This completes the proof.
+Appendix C. Proof of Proposition 8
+Proposition 15 Robust CE and robust NE have the following relations.
+1. In any robust Markov game, the set of robust CE includes the set of robust NE, or
+equivalently, any robust NE is a robust CE.
+19
+
+Ma, Chen, Zou and Zhou
+2. There exists a robust CE (in some Markov games) which is not a robust NE.
+Figure 1: Transition kernel at h = 1
+Proof First, we will prove item 1 that the set of ro-
+bust CE always includes the set of robust NE. This
+part of proof is directly taken from Proposition 9
+(Jin et al., 2022a) with changing the V-function to
+the robust V-function. Let π = π1 × π2 × · · · × πm
+be a robust Nash equilibrium; then
+max
+φi V (i)
+(φi◦πi)×π(\i)(s)
+(i)
+= max
+π′
+i
+V (i)
+π′
+i×π(\i)(s)
+(ii)
+≤V (i)
+π (s),
+where (i) is because that π is a product policy and (ii) applies the deﬁnition of robust Nash
+equilibrium (see Deﬁnition 1). It implies that π is also a robust CE by Deﬁnition 4.
+Next, we prove item 2. It suﬃces to give an example of a Markov game setting and
+a robust CE policy π that is not NE. Consider a two-player coordination game in which
+there are ﬁve states S = {si}4
+i=0 and each player has two actions A = {a(1)
+i }1
+i=0 × {a(2)
+i }1
+i=0.
+At time step h = 1, Figure 1 depicts the transition kernel P1,p parameterized by a param-
+eter p ∈[0, 1
+2). At time step h = 2, we set the transition kernel P2,p(s|s, a) = 1 for all
+s and a, i.e., players stay in their current state no matter what actions are taken. The
+rewards of both players are set as r(s0, a) = [0.5, 0.5], r(s1, a) = [0, 1], r(s2, a) = [1, 0],
+r(s3, a) = [0.95, 0.95], and r(s4, a) = [0, 0] for any action a ∈A. The initial state is ﬁxed to
+be s = s4. We consider the uncertainty set Ph = {Ph,p : p ∈(10
+29, 1
+2)} where there are two
+robust NE, i.e., π1(a = [0, 1]|s = s4) = 1 and π1(a = [1, 0]|s = s4) = 1 (π2 can be arbitrary).
+Moreover, any convex combination of these two policies is a robust CE but not robust NE.
+Appendix D. Proof of Proposition 10
+Proposition 16 Let π be the policy such that v(1)
+π,1(s) ≥v(1)
+φ◦π,1(s) for any stochastic modi-
+ﬁcation φ and all states s ∈S, then v(1)
+π,1(s) ≥v(1)
+µ,1(s) for any policy µ and all states s ∈S.
+Proof It suﬃces to prove that for the single-agent case, all stochastic modiﬁcations of a
+policy form the space of all policies. Let Π be all distributions over A and π ∈Π is given
+with π(a) > 0 for all a ∈A. We will prove that
+{φ ◦π : φ is a stochastic modiﬁcation} = Π.
+For any µ ∈Π, we can construct the desired φ as follows: deﬁne φ(·|b) = µ for all b ∈A.
+Then we will show that φ ◦π is same µ.
+φ ◦π(a) =
+X
+b∈A
+π(b)φ(a|b)
+=
+X
+b∈A
+π(b)µ(a) = µ(a).
+20
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+This implies that Π = {φ ◦π : φ is a stochastic modiﬁcation}. It concludes that enumer-
+ating all stochastic modiﬁcations of a given policy is equivalent to enumerating all policies.
+Appendix E. Policies in Algorithm 1
+In this section, we will elaborate how is πk,h in Algorithm 1 obtained from the adversarial
+bandit algorithm.
+Obtaining πk,h:
+In Algorithm 1, to output robust equilibrium (robust CE), we adopt
+V-learning algorithm (Jin et al., 2022a) for single-agent adversarial bandit to update the
+current policy. To elaborate, we denote the i-th iteration of this algorithm as πi+1(·) ←
+ADV_BANDIT(bi, ℓi(·)), where the player takes action bi ∈B following its own policy πi(·)
+obtained from its previous iteration and observes the noisy bandit-feedback ℓi(bi) with the
+loss function ℓi selected by the adversary.
+The procedure of implementing ADV_BANDIT
+algorithm for multiple iterations is shown in Algorithm 6 of Jin et al. (2022a) and we
+extracted the i-th iteration as shown in the following Algorithm 3.
+Algorithm 3: Adversarial bandit algorithm (ADV_BANDIT)
+Input: Iteration index i, action eb and the corresponding bandit-feedback ℓ(eb), the
+previous policy πi.
+for each action b ∈B do
+ˆℓi(eb|b) ←πi(b)ℓ(eb)
+πi(eb)+γi
+ˆℓi(b′|b) ←0, ∀b′ ∈B/{eb}
+eπ(·|b) ∝exp
+
+−ηi
+wi
+Pi
+j=1 wj ˆℓj(·|b)
+
+, where ˆℓj is obtained from the j-th iteration
+of ADV_BANDIT algorithm
+end
+Output: πi+1 obtained by solving the linear equation πi+1(·) = P
+b∈B πi+1(b)eπ(·|b)
+It has been proved by Corollary 25 of (Jin et al., 2022b) that Algorithm 3 has the
+following convergence rate.
+Lemma 17 Implement Algorithm 3 for iterations i = 1, . . . , t with hyperparameter choices
+wt =
+αt
+Qt
+i=2(1−αi) (αi is deﬁned in eq. (23)), γt = ηt =
+p
+(H ln B)/t. Then for any δ ∈(0, 1),
+with probability at least 1 −δ, we have
+min
+φ
+t
+X
+i=1
+αi
+t
+
+⟨πi(·), li(·)⟩−⟨(φ ◦πi)(·), li(·)⟩
+
+≤10B
+r
+H ln(B2/δ)
+t
+,
+where φ ◦πi can be deﬁned by reducing the deﬁnition of stochastic modiﬁcation in Deﬁnition
+2 to single-agent policy πi.
+Appendix F. Proof of Theorem 12
+Theorem 12 Let S := |S| and A := max1≤j≤m |A(j)| correspond to the size of the state
+space and action space, respectively. Choose β(j)
+t , αt and αi
+t according to eqs. (21)-(23).
+21
+
+Ma, Chen, Zou and Zhou
+The output policy ˆπ produced by Algorithm 1 satisﬁes the following convergence rate with
+probability at least 1 −cδ for some constant c > 0. For any D ≥0, we have the bound
+max
+j∈[J] max
+s∈S
+ V (j)
+φ∗◦ˆπ,1(s) −V (j)
+ˆπ,1 (s)
+
+≤5DSH2 + O
+
+H
+
+A
+r
+H3S
+K
+ln mKHSA2
+δ
++ e
+
+.
+Further, if the uncertainty diameter D ≤
+ϵ
+SH2 and the approximation error e = O( ϵ
+H ), then
+the ϵ-accuracy is guaranteed with K = e
+O(SA2H5ϵ−2) episodes.
+Proof Note that V (j)
+k,h(s) (deﬁned by eqs. (7) & (8)) and V (j)
+k,h(s) (deﬁned by eqs. (27) &
+(28)) are respectively the upper bound and the lower bound of V (j)
+ˆπk,h,h(s) (Since V (j)
+k,h(s) ≥
+V (j)
+φ∗◦ˆπk,h,h(s) ≥V (j)
+ˆπk,h,h(s) ≥V (j)
+k,h(s) based on Lemmas 22 & 24). Denote the gap between
+the upper bound and the lower bound as follows
+δ(j)
+k,h := V (j)
+k,h(sk,h) −V (j)
+k,h(sk,h) ≥0.
+Let sk,h, ak,h respectively be the state and action at the h-th step in the k-th episode. Let
+{ki
+k,h}1≤i≤nk,h (k1
+k,h < k2
+k,h < . . . < knk,h
+k,h < k) be the set of episodes in which the state sk,h
+is visited at the h-th step. nk,h := Nk,h(sk,h) is the number of such visits.
+Then we unroll the update rule for both V (j)
+k,h(sk,h) and V (j)
+k,h(sk,h) along k as follows.
+δ(j)
+k,h
+(i)
+≤eV (j)
+k,h(sk,h) −
+e
+V (j)
+k,h(sk,h)
+(ii)
+= α0
+nk,h(H −h + 1)
++
+nk,h
+X
+i=1
+αi
+nk,h
+
+bσPh(sk,h,aki
+k,h,h)(V (j)
+ki
+k,h,h+1) −bσPh(sk,h,aki
+k,h,h)(V (j)
+ki
+k,h,h+1) + 2β(j)
+i
+
+(iii)
+≤
+nk,h
+X
+i=1
+αi
+nk,h
+
+σPh(sk,h,aki
+k,h,h)(V (j)
+ki
+k,h,h+1) −σPh(sk,h,aki
+k,h,h)(V (j)
+ki
+k,h,h+1)
+
++ 2
+nk,h
+X
+i=1
+αi
+nk,hβ(j)
+i
++ 2e
+nk,h
+X
+i=1
+αi
+nk,h
+(iv)
+≤
+nk,h
+X
+i=1
+αi
+nk,h
+
+σPh(sk,h,aki
+k,h,h)(V (j)
+ki
+k,h,h+1) −σPh(sk,h,aki
+k,h,h)(V (j)
+ki
+k,h,h+1)
+
++ Θ
+
+Aj
+s
+H3
+nk,h
+ln
+mKHSA2
+j
+δ
+
++ 4e,
+where (i) uses eqs. (8) & (28), (ii) unrolls the update rules (7) & (27), (iii) uses eq. (29)
+and α0
+t = 0 (eq. (23)), and (iv) uses eqs. (24) & (26). By summing over k, we obtain the
+following recursion:
+K
+X
+k=1
+δ(j)
+k,h ≤
+K
+X
+k=1
+nk,h
+X
+i=1
+αi
+nk,h
+
+σPh(sk,h,aki
+k,h,h)(V (j)
+ki
+k,h,h+1) −σPh(sk,h,aki
+k,h,h)(V (j)
+ki
+k,h,h+1)
+
+22
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
++
+K
+X
+k=1
+Θ
+
+Aj
+s
+H3
+nk,h
+ln
+mKHSA2
+j
+δ
+
++ 4Ke
+(i)
+≤
+K
+X
+k′=1
+
+σPh(sk,h,ak′,h)(V (j)
+k′,h+1) −σPh(sk,h,ak′,h)(V (j)
+k′,h+1)
+
+∞
+X
+i=nk′
+h +1
+α
+nk′
+h
+i
++
+K
+X
+k=1
+Θ
+
+Aj
+s
+H3
+nk,h
+ln
+mKHSA2
+j
+δ
+
++ 4Ke
+(ii)
+≤
+
+1 + 1
+H
+
+K
+X
+k′=1
+
+σPh(sk,h,ak′,h)(V (j)
+k′,h+1) −σPh(sk,h,ak′,h)(V (j)
+k′,h+1)
+
++
+X
+s
+NK+1,h(s)
+X
+n=1
+Θ
+
+Aj
+s
+H3
+n ln
+mKHSA2
+j
+δ
+
++ 4Ke
+(iii)
+≤
+
+1 + 1
+H
+
+K
+X
+k′=1
+
+σPh(sk,h,ak′,h)(V (j)
+k′,h+1) −σPh(sk,h,ak′,h)(V (j)
+k′,h+1)
+
++ S · 1
+S
+X
+s
+Θ
+
+Aj
+s
+H3NK+1,h(s) ln
+mKHSA2
+j
+δ
+
++ 4Ke
+(iv)
+≤
+
+1 + 1
+H
+
+K
+X
+k′=1
+
+σPh(sk,h,ak′,h)(V (j)
+k′,h+1) −σPh(sk,h,ak′,h)(V (j)
+k′,h+1)
+
+−
+
+1 + 1
+H
+
+K
+X
+k′=1
+
+V (j)
+k′,h+1(sk′,h+1) −V (j)
+k′,h+1(sk′,h+1)
+
++
+
+1 + 1
+H
+
+K
+X
+k′=1
+
+V (j)
+k′,h+1(sk′,h+1) −V (j)
+k′,h+1(sk′,h+1)
+
+(14)
++ SΘ
+
+Aj
+v
+u
+u
+tH3 1
+S
+X
+s
+NK+1,h(s) ln
+mKHSA2
+j
+δ
+
++ 4Ke
+(v)
+=
+
+1 + 1
+H
+
+K
+X
+k′=1
+
+σPh(sk,h,ak′,h)(V (j)
+k′,h+1) −σPh(sk,h,ak′,h)(V (j)
+k′,h+1)
+
+−
+
+1 + 1
+H
+
+K
+X
+k′=1
+
+V (j)
+k′,h+1(sk′,h+1) −V (j)
+k′,h+1(sk′,h+1)
+
++
+
+1 + 1
+H
+
+K
+X
+k′=1
+δ(j)
+k,h+1 + Θ
+
+Aj
+s
+H3SK ln
+mKHSA2
+j
+δ
+
++ 4Ke
+where (i) changes the order of summation by following Jin et al. (2018) and Jin et al. (2022a),
+(ii) uses eq. (25) and pigeonhole argument, (iii) uses PNK+1,h(s)
+n=1
+p
+1/n = Θ
+ NK+1,h(s)
+
+,
+(iv) applies Jensen’s inequality to the convex function √·, and (v) is by the deﬁnition of
+23
+
+Ma, Chen, Zou and Zhou
+δk,h+1. Now we apply Lemma 25 to the ﬁrst two terms above on the right-hand side,
+K
+X
+k′=1
+
+σPh(sk,h,ak′,h)(V (j)
+k′,h+1) −σPh(sk,h,ak′,h)(V (j)
+k′,h+1)
+
+−
+K
+X
+k′=1
+
+V (j)
+k′,h+1(sk′,h+1) −V (j)
+k′,h+1(sk′,h+1)
+
+.
+(15)
+Then we obtain the recursion
+K
+X
+k=1
+δ(j)
+k,h ≤D
+
+1 + 1
+H
+ K
+X
+k=1
+X
+s∈S
+
+V (j)
+k,h+1(s) −V (j)
+k,h+1(s)
+
++
+
+1 + 1
+H
+r
+32KH2 ln 2mKHSA
+δ
++
+
+1 + 1
+H
+ K
+X
+k=1
+δ(j)
+k,h+1 + Θ
+
+Aj
+s
+H3SK ln
+mKHSA2
+j
+δ
+
++ 4Ke.
+(16)
+We apply Lemma 26 to solve this recursive relation by setting
+ah =
+K
+X
+k=1
+δ(j)
+k,h, bh =
+K
+X
+k=1
+X
+s∈S
+
+V (j)
+k,h(s) −V (j)
+k,h(s)
+
+, C1 = 1 + 1
+H , C2 = D
+
+1 + 1
+H
+
+,
+C3 =
+
+1 + 1
+H
+r
+32KH2 ln 2mKHSA
+δ
++ Θ
+
+Aj
+s
+H3SK ln
+mKHSA2
+j
+δ
+
++ 4Ke.
+Then we obtain
+K
+X
+k=1
+δ(j)
+k,h ≤D
+
+1 + 1
+H
+ H−h
+X
+i=0
+
+1 + 1
+H
+i K
+X
+k=1
+X
+s∈S
+
+V (j)
+k,h+1+i(s) −V (j)
+k,h+1+i(s)
+
+(17)
++2H
+h
+1 + 1
+H
+r
+32KH2 ln 2mKHSA
+δ
++ Θ
+
+Aj
+s
+H3SK ln
+mKHSA2
+j
+δ
+
++ 4Ke
+i
+,
+where we also apply (1 + 1
+H )H−h+1 < 3. The ﬁrst term of the recursion eq. (17),
+D
+
+1 + 1
+H
+ H−h
+X
+i=0
+
+1 + 1
+H
+i K
+X
+k=1
+X
+s∈S
+
+V (j)
+k,h+1+i(s) −V (j)
+k,h+1+i(s)
+
+measures the inﬂuence of diameter of uncertainty set on the convergence error of robust
+V-learning. In Theorem 12, we aim to build the upper bound with dependencies on the
+uncertainty diameter D without introducing other conditions. To do so, we can estimate
+this term with a universal upper bound; that is, for h = 1,
+D
+
+1 + 1
+H
+ H
+X
+i=1
+
+1 + 1
+H
+i−1 K
+X
+k=1
+X
+s∈S
+
+V (j)
+k,1+i(s) −V (j)
+k,1+i(s)
+
+≤D
+
+1 + 1
+H
+ H−1
+X
+i=0
+
+1 + 1
+H
+i K
+X
+k=1
+X
+s∈S
+
+H −i
+
+24
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+=DSK
+H−1
+X
+i=0
+
+1 + 1
+H
+i
+(H −i)
+≤5DSKH2.
+Then eq. (17) can be bounded by
+K
+X
+k=1
+δ(j)
+k,1 ≤2H
+h
+1 + 1
+H
+r
+32KH2 ln 2mKHSA
+δ
++ Θ
+
+Aj
+s
+H3SK ln
+mKHSA2
+j
+δ
+
++ 4Ke
+i
+(18)
++ 5DSKH2.
+The derived upper bound of optimality gap based on this inequality becomes
+max
+j∈[m][V (j)
+φ∗◦ˆπ,1(s1) −V (j)
+ˆπ,1 (s1)]
+≤5DSH2 + 2H
+h
+2
+r
+32H2
+K
+ln 2mKHSA
+δ
++ Θ
+
+A
+r
+H3S
+K
+ln mKHSA2
+δ
+
++ 4e
+i
+,
+where s1 is the initial state. Since the initial state can be any state over S due to the
+initialization, we obtain the desired bound. If D ≤
+ϵ
+SH2 and the estimation error e is suﬃ-
+ciently small, then this bound implies the number of episodes for achieving ϵ-approximation
+of robust correlated equilibrium is K = e
+O(SA2H5ϵ−2).
+Appendix G. Proof of Theorem 13
+Deﬁnition 18 Let sk,h be the state visited at h-th step k-th episode. The density of sk,h is
+universally bounded below by pmin; that is
+pmin =
+inf
+s∈S,k∈N,h∈[H] P(sk,h = s).
+Theorem 13 Let S := |S| and A := max1≤j≤m |A(j)| correspond to the size of the state
+space and action space, respectively. Choose β(j)
+t , αt and αi
+t according to eqs. (21)-(23).
+The output policy ˆπ produced by Algorithm 1 satisﬁes the following convergence rate with
+probability at least 1 −cδ for some constant c > 0. For any D and pmin satisfying
+ϵ
+SH2 ≤
+D < pmin
+H , we have the bound
+max
+j∈[J] max
+s∈S
+ V (j)
+φ∗◦ˆπ,1(s) −V (j)
+ˆπ,1 (s)
+
+≤O
+
+H
+pmin −DH
+
+A
+r
+H3S
+K
+ln mKHSA2
+δ
++ e
+
+.
+Further, if the state exploration pmin >
+ϵ
+SH and the approximation error e = O(ϵpmin
+H ), then
+the ϵ-accuracy is guaranteed with K = e
+O(SA2H5p−2
+minϵ−2) episodes.
+25
+
+Ma, Chen, Zou and Zhou
+Proof We follow the same steps of Theorem 12 to obtain eq. (17):
+K
+X
+k=1
+δ(j)
+k,h ≤D
+
+1 + 1
+H
+ H−h
+X
+i=0
+
+1 + 1
+H
+i K
+X
+k=1
+X
+s∈S
+
+V (j)
+k,h+1+i(s) −V (j)
+k,h+1+i(s)
+
++2H
+h
+1 + 1
+H
+r
+32KH2 ln 2mKHSA
+δ
++ Θ
+
+Aj
+s
+H3SK ln
+mKHSA2
+j
+δ
+
++ 4Ke
+i
+.
+In Theorem 13, we need to consider the case where D cannot be suﬃciently small but we
+still expect to obtain the ϵ-accuracy. To do so, we need to introduce the state exploration
+parameter pmin (Deﬁnition 18). For convenience, we deﬁne
+∆(j)
+k,h :=
+X
+s∈S
+
+V (j)
+k,h(s) −V (j)
+k,h(s)
+
+and
+Uj := 4H
+h
+1 + 1
+H
+r
+32KH2 ln 2mKHSA
+δ
++ Θ
+
+Aj
+s
+H3SK ln
+mKHSA2
+j
+δ
+
++ 4Ke
+i
+.
+Then we can have the following compact form of eq. (17):
+K
+X
+k=1
+δ(j)
+k,h ≤D
+H−h
+X
+i=0
+(1 + 1
+H )i+1
+K
+X
+k=1
+∆(j)
+k,h+1+i + Uj.
+We take expectation on both sides and obtain
+K
+X
+k=1
+X
+s∈S
+P(sk,h = s)
+
+V (j)
+k,h(s) −V (j)
+k,h(s)
+
+≤D
+H−h
+X
+i=0
+(1 + 1
+H )i+1
+K
+X
+k=1
+∆(j)
+k,h+1+i + Uj.
+The left-hand side can be further lower bounded by the deﬁnition of pmin. We have
+pmin
+K
+X
+k=1
+∆(j)
+k,h ≤D
+H−h
+X
+i=0
+(1 + 1
+H )i+1
+K
+X
+k=1
+∆(j)
+k,h+1+i + Uj.
+(19)
+Now we assume pmin > 0. Then this recursion can be solved by applying Lemma 27 with
+setting
+ah =
+K
+X
+k=1
+∆(j)
+k,h, C1 = Uj
+pmin
+, and C2 =
+D
+pmin
+.
+Due to the requirement given in Lemma 27, we require C2 :=
+D
+pmin <
+1
+H .
+Under this
+condition, we obtain the following upper bound:
+max
+h∈[H]
+K
+X
+k=1
+∆(j)
+k,h ≤
+Uj
+pmin −HD.
+(20)
+26
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+Lastly, we bound the optimality gap at the step h. In expectation with respect choosing k,
+we have
+max
+j∈[m] max
+s∈S [V (j)
+φ∗◦ˆπ,1(s) −V (j)
+ˆπ,1 (s)]
+≤max
+j∈[m]
+X
+s∈S
+[V (j)
+φ∗◦ˆπ,1(s) −V (j)
+ˆπ,1 (s)]
+(i)
+≤max
+j∈[m]
+1
+K
+K
+X
+k=1
+X
+s∈S
+[V (j)
+φ∗◦ˆπk,1,1(s) −V (j)
+ˆπk,1,1(s)]
+(ii)
+≤max
+j∈[m]
+1
+K
+K
+X
+k=1
+X
+s∈S
+
+V (j)
+k,1 (s) −V (j)
+k,1(s)
+
+(iii)
+= max
+j∈[m]
+1
+K
+K
+X
+k=1
+∆(j)
+k,1
+(iv)
+≤
+3H
+pmin −HD
+h
+2
+r
+32H2
+K
+ln 2mKHSA
+δ
++ Θ
+
+A
+r
+H3S
+K
+ln mKHSA2
+δ
+
++ 4e
+i
+where (i) uses the deﬁnitions of ˆπ and ˆπk,h given by Algorithms 2, (ii) uses Lemmas 22 &
+24 and sampling rule of k given in Algorithm 2, (iii) is by the deﬁnition of ∆(j)
+k,h, and (iv)
+uses eq. (20) and A := max1≤j≤m Aj. It completes the proof.
+When evaluating the sample complexity, we require the estimation error to satisfy e ≤
+pmin−HD
+24H
+ϵ. Then the last term is bounded by ϵ/2. Then we let
+1
+pmin −HD
+r
+H5SA2 ln mKHSA2
+δ
+/K ≤1
+2ϵ.
+It solves the number of episodes for achieving ϵ-approximation of robust correlated equilib-
+rium is K = e
+O(SA2H5p−2
+minϵ−2).
+Appendix H. Supporting Lemmas
+Hyperparameter choices
+Throughout this subsection, we use the following hyperpa-
+rameter choices
+β(j)
+t
+:= cAj
+s
+H3
+t ln
+mKHSA2
+j
+δ
++ e,
+(21)
+αt := H + 1
+H + t ,
+(22)
+α0
+t = 0,
+αi
+t = αi
+tY
+j=i+1
+(1 −αj)(i ≥1)
+(23)
+27
+
+Ma, Chen, Zou and Zhou
+where c > 0 is an absolute constant. It can be seen that the above hyperparameters satisfy
+the following conditions. (Eq. (24) is obvious and eqs. (25) & (26) are proved in Lemma 10
+of Jin et al. (2022a).)
+t
+X
+i=1
+αi
+t = 1
+(24)
+∞
+X
+t=i
+αi
+t = 1 + 1
+H
+(25)
+t
+X
+i=1
+αi
+tβ(j)
+i
+= Θ
+
+Aj
+s
+H3
+t ln
+mKHSA2
+j
+δ
+
++ e
+(26)
+Pessimistic estimation of V function:
+To facilitate the proof, we also provide a pes-
+simistic estimator of V functions denoted as V (j)
+k,h, which is constructed by the following
+update rules with initial values
+e
+V (j)
+1,h (s) =
+e
+V (j)
+k,H+1(s) = 0 for all s, h, k, j
+e
+V (j)
+k+1,h(sh) ←(1 −αt)
+e
+V (j)
+k,h(sh) + αt
+
+r(j)
+h
++ bσPh(sh,ah)(V (j)
+k,h+1) −β(j)
+t
+
+;
+(27)
+V (j)
+k+1,h(sh) ←max{0,
+e
+V (j)
+k+1,h(sh)}.
+(28)
+The above update rules are similar to those for optimistic estimation in eqs. (7) & (8), with
+the major diﬀerence that +β(j)
+t
+> 0 in eq. (7) yields optimism (i.e. V (j)
+k,h(s) ≥V (j)
+φ∗◦ˆπk,h,h(s) ≥
+V (j)
+ˆπk,h,h(s) as shown by Lemma 24) while −β(j)
+t
+< 0 in eq.
+(27) yields pessimism (i.e.
+V (j)
+k,h(s) ≤V (j)
+ˆπk,h,h(s) as shown by Lemma 22)
+Lemma 19 The operator σPh(s,a) deﬁned in eq. (5) has the following properties:
+1. Boundedness: infs′ V (s′) ≤σPh(s,a)(V ) ≤sups′ V (s′).
+2. Monotonicity: σPh(s,a)(V ′) ≤σPh(s,a)(V ) for any V-tables V, V ′ such that V ′(s) ≤
+V (s), ∀s.
+3. Estimation bound: The estimator bσPh(s,a) has the following bounds for any V function
+V .
+σPh(s,a)(V ) −e ≤bσPh(s,a)(V ) ≤σPh(s,a)(V ) + e.
+(29)
+Proof Proof of boundedness: The upper bound σPh(s,a)(V ) ≤sups′ V (s′) can be directly
+proved based on eq. (5) as follows.
+σPh(s,a)(V ) =
+inf
+ePh(·|s,a)∈Ph(s,a)
+X
+s′∈S
+ePh(s′|s, a)V (s′)
+≤
+inf
+ePh(·|s,a)∈Ph(s,a)
+X
+s′∈S
+ePh(s′|s, a) sup
+s′′∈S
+V (s′′)
+28
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+(i)
+= sup
+s′′∈S
+V (s′′),
+where (i) uses P
+s′∈S ePh(s′|s, a) = 1.
+The proof logic for the lower bound infs′ V (s′) ≤
+σPh(s,a)(V ) is similar.
+Proof of monotonicity: Suppose p ∈Ph(s, a) achieves the inﬁmum in σPh(s,a)(V )
+deﬁned by eq. (5), i.e.
+σPh(s,a)(V ) =
+X
+s′∈S
+p(s′)V (s′).
+(30)
+Then the monotonicity can be proved as follows.
+σPh(s,a)(V ) −σPh(s,a)(V ′)
+=
+X
+s′∈S
+p(s′)V (s′) −
+inf
+ePh(·|s,a)∈Ph(s,a)
+X
+s′∈S
+ePh(s′|s, a)V ′(s′)
+(i)
+≥
+X
+s′∈S
+p(s′)V (s′) −
+X
+s′∈S
+p(s′)V ′(s′)
+(ii)
+≥0,
+(31)
+where (i) will be used later and (ii) uses p(s′) ≥0 and V (s′) ≥V ′(s′) for all s′ ∈S.
+Proof of estimation bound: e := suph,s,a,V
+σPh(s,a)(V )−bσPh(s,a)(V )
+ deﬁned by Def-
+inition 11 directly implies eq. (29).
+Lemma 20 For any player j and all s ∈S, the V-table eV (j)
+k,h and
+e
+V (j)
+k,h tracked by Algorithm
+1 at the h-th step in the k-th episode satisfying eV (j)
+k,h(s) ≥0 and
+e
+V (j)
+k,h(s) ≤H + 1 −h.
+Proof We will only prove
+e
+V (j)
+k,h(s) ≤H +1−h since the proof logic for eV (j)
+k,h(s) ≥0 is similar.
+For k = 1, the initial value
+e
+V (j)
+1,h (s) := 0 ≤H + 1 −h. Then we assume
+e
+V (j)
+k,h(s) ≤H + 1 −h
+for a certain ﬁxed k ≥1 and we prove
+e
+V (j)
+k+1,h(s) ≤H + 1 −h as follows.
+e
+V (j)
+k+1,h(sh)
+(i)
+= (1 −αt)
+e
+V (j)
+k,h(sh) + αt
+ r(j)
+h (sh, ah) + bσPh(sh,ah)(V (j)
+k,h+1) −β(j)
+t
+
+(ii)
+≤(1 −αt)(H + 1 −h) + αt
+ 1 + σPh(sh,ah)(V (j)
+k,h+1) −β(j)
+t +e
+
+(iii)
+≤H + 1 −h,
+where (i) uses the update rules (27) & (28), (ii) uses
+e
+V (j)
+k,h(s) ≤H + 1 −h and eq. (29), and
+(iii) uses β(j)
+t
+≥e based on eq. (21) and the following inequality based on item 1 of Lemma
+19. This concludes the proof.
+σPh(sh,ah)(V (j)
+k,h+1) ≤max
+s
+V (j)
+k,h+1(s) ≤max
+s
+
+max
+ 0,
+e
+V (j)
+k,h+1(s)
+
+≤H −h.
+The following lemma says that the tracked upper conﬁdence bound V (j)
+k,h(s) is always larger
+than the lower conﬁdence bound V (j)
+k,h(s).
+29
+
+Ma, Chen, Zou and Zhou
+Lemma 21 For any player j and all s ∈S, the V-tables V (j)
+k,h(s) and V (j)
+k,h(s) tracked by
+Algorithm 1 at the h-th step in the k-th episode satisfy the following inequality
+V (j)
+k,h(s) ≥V (j)
+k,h(s).
+(32)
+Proof It suﬃces to show eV (j)
+k,h(s) ≥
+e
+V (j)
+k,h(s) since it implies eq. (32) as follows
+V (j)
+k,h(s) −V (j)
+k,h(s)
+(i)
+= min{H + 1 −h, eV (j)
+k,h(sh)} −max{0,
+e
+V (j)
+k,h(sh)}
+(ii)
+= min{H + 1 −h, max[0, eV (j)
+k,h(sh)]} −min{H + 1 −h, max[0,
+e
+V (j)
+k,h(sh)]}
+(iii)
+≥0,
+(33)
+where (i) uses eqs. (8) and (28), (ii) uses Lemma 20, and (iii) uses eV (j)
+k,h(s) ≥
+e
+V (j)
+k,h(s).
+Then we prove eV (j)
+k,h(s) ≥
+e
+V (j)
+k,h(s) via induction with regards to k. For k = 1, eV (j)
+1,h (s) =
+H + 1 −h ≥
+e
+V (j)
+1,h (s) = 0 due to initialization. Suppose eV (j)
+k,h(s) ≥
+e
+V (j)
+k,h(s) and thus eq. (32)
+holds for a certain ﬁxed k. Then we aim to prove eV (j)
+k+1,h(s) ≥
+e
+V (j)
+k+1,h(s) (i.e., eq. (32) also
+holds for k + 1). It suﬃces to consider the case where s is the state visited at the h-th step
+in the k-th episode, that is, s = sk,h. Otherwise, eV (j)
+k+1,h(s) = eV (j)
+k,h(s) ≥
+e
+V (j)
+k,h(s) =
+e
+V (j)
+k+1,h(s).
+When s = sk,h, the update rules (7) & (27) imply that
+eV (j)
+k+1,h(s) −
+e
+V (j)
+k+1,h(s)
+=(1 −αt)
+
+eV (j)
+k,h(s) −
+e
+V (j)
+k,h(s)
+
++ αt
+
+bσPh(s,a)(V (j)
+k,h+1) −bσPh(s,a)(V (j)
+k,h+1)
+
++ 2αtβ(j)
+t
+(i)
+≥αt
+
+σPh(s,a)(V (j)
+k,h+1) −σPh(s,a)(V (j)
+k,h+1)−2e + 2β(j)
+t
+ (ii)
+≥0
+(34)
+where (i) uses eV (j)
+k,h(s) ≥
+e
+V (j)
+k,h(s) and eq. (29), and (ii) uses V (j)
+k,h+1 ≥V (j)
+k,h+1, the monotonic-
+ity of σPh(s,a) (see item 2 of Lemma 19) and β(j)
+t
+≥e (see eq. (21)). This concludes the
+proof.
+Lemma 22 The V-tables V (j)
+ˆπk,h,h and V (j)
+k,h satisfy the following inequality with probability
+at least 1 −δ for all players j ∈[m], episodes k ∈[K], time steps h ∈[H] and states s ∈S
+and any δ ∈(0, 1
+2),
+V (j)
+ˆπk,h,h(s) ≥V (j)
+k,h(s).
+Proof It suﬃces to prove V (j)
+ˆπk,h,h(s) ≥
+e
+V (j)
+k,h(s); it implies V (j)
+ˆπk,h,h(s) ≥V (j)
+k,h(s) because
+V (j)
+ˆπk,h,h(s) ≥0
+30
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+by its deﬁnition (2) (note that r(j)
+ℓ(sℓ, aℓ) ≥0) and
+V (j)
+k,h(s) := max{0,
+e
+V (j)
+k,h(sh)}.
+Now we start to prove V (j)
+ˆπk,h,h(s) ≥
+e
+V (j)
+k,h(s) by induction with respect to h backward. When
+h = H +1, the proof is trivial as V (j)
+π,H+1(s) =
+e
+V (j)
+0,H+1(s) = 0 for any policy π. Then suppose
+V (j)
+ˆπk,h+1,h+1(s) ≥
+e
+V (j)
+k,h+1(s) holds so V (j)
+ˆπk,h+1,h+1(s) ≥V (j)
+k,h+1(s) for a certain ﬁxed h, and we
+will prove that V (j)
+ˆπk,h,h(s) ≥
+e
+V (j)
+k,h(s). Let {ki}1≤i≤t (k1 < k2 < . . . < kt < k) be the set of
+episodes where the state s is visited at the h-th step. Then we unroll the update rule (27)
+of
+e
+V (j)
+k,h(s) as follows with respect to the episode k.
+e
+V (j)
+k,h(s) =
+t
+X
+i=1
+αi
+t
+h
+r(j)
+h (s, aki,h) + bσPh(s,aki,h)(V (j)
+ki,h+1) −β(j)
+i
+i
+(i)
+≤
+t
+X
+i=1
+αi
+t
+h
+r(j)
+h (s, aki,h) + σPh(s,aki,h)(V (j)
+ki,h+1) + e −β(j)
+i
+i
+,
+(35)
+where (i) uses eq. (29). Let
+Xi := αi
+t
+h
+r(j)
+h (s, aki,h) + σPh(sh,aki,h)(V (j)
+ki,h+1)
+i
+.
+Then Xi always has the following bound since V (j)
+ki,h+1 = max{0,
+e
+V (j)
+ki,h+1(sh)} ≤H −h based
+on Lemma 20.
+0 ≤Xi ≤αi
+t(H + 1 −h).
+Then by using Azuma’s inequality and applying union bound to all j ∈[m], i ∈[t] ⊂[K], h ∈
+[H], s ∈S, we have the following bound with probability at least 1 −δ.
+t
+X
+i=1
+Xi −E
+h
+t
+X
+i=1
+Xi
+i
+≤
+v
+u
+u
+t1
+2
+
+ln 2mKHS
+δ
+
+t
+X
+i=1
+(αi
+t)2(H + 1 −h)2
+(i)
+≤
+r
+H3
+t ln 2mKHS
+δ
+, (36)
+where (i) uses Pt
+i=1(αi
+t)2 ≤2H
+t in Lemma 10 of Jin et al. (2022a). Therefore, with probability
+at least 1 −δ, the following inequality holds for all j, k, h, s.
+e
+V (j)
+k,h(s)
+(i)
+≤
+t
+X
+i=1
+Xi
+(ii)
+≤
+t
+X
+i=1
+αi
+tEπki,h
+h
+r(j)
+h (s, aki,h)+σPh(sh,aki,h)(V (j)
+ki,h+1)
+i
++
+r
+H3
+t ln 2mKHS
+δ
+−
+t
+X
+i=1
+αi
+t(β(j)
+i
+−e)
+(iii)
+≤
+t
+X
+i=1
+αi
+tEπki,h
+h
+r(j)
+h (s, aki,h) + σPh(sh,aki,h)(V (j)
+ˆπki,h+1,h+1)
+i
+31
+
+Ma, Chen, Zou and Zhou
+(iv)
+= V (j)
+ˆπk,h,h(s),
+where (i) uses eq.
+(35), (ii) uses eq.
+(36), (iii) uses eq.
+(26) and the assumption that
+V (j)
+ˆπki,h+1(s) ≥V (j)
+ki,h+1(s) holds for ℓ= ki ≤k −1, and (iv) uses the robust Bellman equation
+and the deﬁnition of ˆπk,h given by Algorithm 2.
+H.1
+Lemmas on Robust Correlated equilibrium
+The following lemma follows Lemma 15 of (Jin et al., 2022a), with the bandit input changed
+from (ah, H−rh−Vh+1(sh+1)
+H
+) to (ah,
+H−rh−bσPh(sh,ah)(Vh+1)
+H
+).
+Lemma 23 Let πk+1,h be the policy given by the ADV_BANDIT_UPDATE algorithm at
+the h-th step of the k-th episode. Then the following bound holds for all j ∈[m], k ∈[K],
+h ∈[H] and s ∈S with probability at least 1 −δ under Lemma 17.
+max
+φ(j)
+t
+X
+i=1
+αi
+t
+h
+Ea∼φ(j)◦(πki,h)[r(j)
+h (s, a) + σPh(s,a)(V (j)
+ki,h+1)]
+i
+≤
+t
+X
+i=1
+αi
+t
+h
+Ea∼πki,h[r(j)
+h (s, a) + σPh(s,a)(V (j)
+ki,h+1)]
+i
++ 10Aj
+s
+H3
+t ln
+mKHSA2
+j
+δ
+,
+(37)
+Proof By applying Lemma 17 to the loss function li(a) =
+H−rh(s,a)−σPh(s,a)(Vh+1)
+H
+for any s,
+we obtain that the following bound holds for all k ∈[K], h ∈[H] and s ∈S with probability
+1 −δ (we replace δ in the bound in Lemma 17 with
+δ
+KHS by applying union bound to all
+k ∈[K], h ∈[H] and s ∈S), which is equivalent to the above bound and thus concludes
+the proof.
+max
+φ(j)
+t
+X
+i=1
+αi
+tEa∼πki,h
+hH −r(j)
+h (s, a) −σPh(s,a)(V (j)
+ki,h+1)
+H
+i
+≤max
+φ(j)
+t
+X
+i=1
+αi
+tEa∼φ(j)◦πki,h
+hH −r(j)
+h (s, a) −σPh(s,a)(V (j)
+ki,h+1)
+H
+i
++ 10Aj
+s
+H
+t ln
+mKHSA2
+j
+δ
+.
+Lemma 24 For the j-th player, the V-tables V (j)
+φ∗◦ˆπk,h,h(s) := maxφ(j) V (j)
+φ(j)◦ˆπk,h,h(s) and
+V (j)
+k,h(s) at h-th step in the k-th episode, satisfy the following inequality with probability at
+least 1 −2δ for any δ ∈(0, 1
+2)
+V (j)
+k,h(s) ≥V (j)
+φ∗◦ˆπk,h,h(s)
+for all s ∈S.
+32
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+Proof It suﬃces to prove eV (j)
+k,h(s) ≥V (j)
+φ∗◦ˆπk,h,h(s); it implies V (j)
+k,h(s) ≥V (j)
+φ∗◦ˆπk,h,h(s), since
+V (j)
+k,h(sh) = min{H + 1 −h, eV (j)
+k,h(sh)}
+due to eq. (8), and
+V (j)
+φ∗◦ˆπk,h,h(s) := max
+φ(j) V (j)
+φ(j)◦ˆπk,h,h(s) ≤H + 1 −h
+since r(j)
+h
+≤1 for all j, h. Let {ki}1≤i≤t (k1 < k2 < . . . < kt < k) be the set of episodes
+where the state s is visited at the h-th step. Then we unroll the update rule (7) of eV (j)
+k,h(s)
+with respect to the episode k as follows.
+eV (j)
+k,h(s) = α0
+t (H −h + 1) +
+t
+X
+i=1
+αi
+t
+h
+r(j)
+h (s, aki,h) + bσPh(s,aki,h)(V (j)
+ki,h+1) + β(j)
+i
+i
+≥
+t
+X
+i=1
+αi
+t
+h
+r(j)
+h (s, aki,h) + σPh(s,aki,h)(V (j)
+ki,h+1) + β(j)
+i −e
+i
+.
+where the above ≥uses α0
+t = 0 (see eq. (23)) and eq. (29). Substituting (36) which holds
+with probability at least 1 −δ into the above inequality, we obtain that the following bound
+holds for all j, k, h, s with probability at least 1 −δ,
+eV (j)
+k,h(s) ≥
+t
+X
+i=1
+αi
+tEπki
+h
+
+r(j)
+h (s, aki,h) + σPh(s,aki,h)(V (j)
+ki,h+1)
+
++
+t
+X
+i=1
+αi
+t(β(j)
+i −e) −
+r
+H3
+t ln 2mKHS
+δ
+.
+(38)
+By substituting eq. (37) into eq. (38), we obtain the following bound which holds for all
+j, k, h, s with probability at least 1 −2δ (since eq. (37) holds with probability at least 1 −δ
+and so does eq. (38)).
+eV (j)
+k,h(s) ≥max
+φ(j)
+t
+X
+i=1
+αi
+tEφ(j)◦πki,h
+h
+r(j)
+h (s, aki,h) + σPh(s,aki,h)(V (j)
+ki,h+1)
+i
++
+t
+X
+i=1
+αi
+t(β(j)
+i −e) −
+r
+H3
+t ln 2mKHS
+δ
+−10Aj
+s
+H3
+t ln
+mKHSA2
+j
+δ
+(i)
+≥max
+φ(j)
+h
+t
+X
+i=1
+αi
+tEa∼φ(j)
+h ◦πki,h
+
+r(j)
+h (s, a) + σPh(s,a)(V (j)
+ki,h+1)
+
+(39)
+where (i) holds using eq. (26).
+Then we can apply induction to h backward to prove eV (j)
+k,h(s) ≥V (j)
+φ∗◦ˆπki,h.
+For the
+base case h = H + 1, it can be easily seen that eV (j)
+k,H+1(s) = V (j)
+φ∗◦ˆπk,H+1(s) = 0 based on
+Algorithm 1 and the deﬁnition of V (j)
+π,h given by eq. (2). Suppose eV (j)
+k,h+1(s) ≥V (j)
+φ∗◦ˆπk,h+1(s)
+33
+
+Ma, Chen, Zou and Zhou
+for a certain ﬁxed h and all j, k, s, so V (j)
+k,h+1(s) ≥V (j)
+φ∗◦ˆπk,h+1(s). Then eq. (39) further
+implies the following inequality, which concludes the proof. (Note that the whole induction
+builds on eq. (39) which holds for all k, h, j, s with probability at least 1 −2δ.)
+eV (j)
+k,h(s) ≥max
+φ(j)
+h
+t
+X
+i=1
+αi
+tEa∼φ(j)
+h ◦πki,h
+h
+r(j)
+h (s, a) + σPh(s,a)(V (j)
+φ∗◦ˆπki,h+1,h+1)
+i
+≥V (j)
+φ∗◦ˆπki,h,h,
+where the second ≤uses the following inequality obtained via the same proof logic as Lemma
+13 of Jin et al. (2022a) (see the beginning of page 19 of Jin et al. (2022a)).
+V (j)
+φ∗◦ˆπk,h,h(s) := max
+φ(j) V (j)
+φ(j)◦ˆπk,h,h(s)
+(i)
+= max
+φ(j)
+h
+max
+φ(j)
+(h+1):H
+Ea∼φ(j)
+h ◦[ˆπk,h]h
+
+r(j)
+h (s, a) + σPh(s,a)
+ V (j)
+φ(j)
+(h+1):H◦ˆπk,h+1,h+1
+
+(ii)
+= max
+φ(j)
+h
+max
+φ(j)
+(h+1):H
+t
+X
+i=1
+αi
+tEa∼φ(j)
+h ◦πki,h
+
+r(j)
+h (s, a) + σPh(s,a)
+ V (j)
+φ(j)
+(h+1):H◦ˆπki,h+1,h+1
+
+(iii)
+≤max
+φ(j)
+h
+t
+X
+i=1
+αi
+tEa∼φ(j)
+h ◦πki,h
+
+r(j)
+h (s, a)
++
+max
+φ(j)
+(h+1):H
+inf
+ePh(·|s,a)∈Ph(s,a)
+X
+s′
+ePh(s′|s, a)V (j)
+φ(j)
+(h+1):H◦ˆπki,h+1,h+1(s′)
+
+≤max
+φ(j)
+h
+t
+X
+i=1
+αi
+tEa∼φ(j)
+h ◦πki,h
+
+r(j)
+h (s, a)
++
+inf
+ePh(·|s,a)∈Ph(s,a)
+X
+s′
+ePh(s′|s, a) max
+φ(j)
+(h+1):H
+V (j)
+φ(j)
+(h+1):H◦ˆπki,h+1,h+1(s′)
+
+(iv)
+= max
+φ(j)
+h
+t
+X
+i=1
+αi
+tEa∼φ(j)
+h ◦πki,h
+
+r(j)
+h (s, a) + σPh(s,a)
+ V (j)
+φ∗◦ˆπki,h+1,h+1
+
+,
+where (i) uses robust Bellman equation and denotes [ˆπk,h]h as the marginal distribution of
+ah based on policy ˆπk,h deﬁned by Algorithm 2, (ii) uses the deﬁnition of ˆπk,h given by
+Algorithm 2, (iii) and (iv) use the deﬁnition of σPh(s,a) given by eq. (5).
+H.2
+Key Lemmas to Handle Uncertainty
+Lemma 25 With the probability at least 1 −δ,
+K
+X
+k′=1
+
+σPh(sk,h,ak′,h)(V (j)
+k′,h+1) −σPh(sk,h,ak′,h)(V (j)
+k′,h+1)
+
+−
+K
+X
+k′=1
+
+V (j)
+k′,h+1(sk′,h+1) −V (j)
+k′,h+1(sk′,h+1)
+
+34
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+≤D
+K
+X
+k=1
+X
+s∈S
+
+V (j)
+k,h+1(s) −V (j)
+k,h+1(s)
+
++
+r
+32KH2 ln 2mKHSA
+δ
+.
+(40)
+Proof For the k′-th episode, let
+σPh(sk,h,ak′,h)(V (j)
+k′,h+1) =
+X
+s
+pk′,h(s)V (j)
+k′,h+1(s) = pT
+k′,hV (j)
+k′,h+1,
+i.e., the minimum is achieved at pT
+k′,h. Then
+K
+X
+k′=1
+
+σPh(sk,h,ak′,h)(V (j)
+k′,h+1) −σPh(sk,h,ak′,h)(V (j)
+k′,h+1)
+
+−
+K
+X
+k′=1
+
+V (j)
+k′,h+1(sk′,h+1) −V (j)
+k′,h+1(sk′,h+1)
+
+≤
+K
+X
+k′=1
+pT
+k′,h
+
+V (j)
+k′,h+1 −V (j)
+k′,h+1
+
+−
+K
+X
+k′=1
+
+V (j)
+k′,h+1(sk′,h+1) −V (j)
+k′,h+1(sk′,h+1)
+
+≤
+K
+X
+k′=1
+pT
+k′,h
+
+V (j)
+k′,h+1 −V (j)
+k′,h+1
+
+−
+K
+X
+k′=1
+E
+
+V (j)
+k′,h+1(sk′,h+1) −V (j)
+k′,h+1(sk′,h+1)
+sk′,h, ak′,h
+
+|
+{z
+}
+(A)
++
+K
+X
+k′=1
+E
+
+V (j)
+k′,h+1(sk′,h+1)−V (j)
+k′,h+1(sk′,h+1)
+sk′,h, ak′,h
+
+−
+K
+X
+k′=1
+
+V (j)
+k′,h+1(sk′,h+1)−V (j)
+k′,h+1(sk′,h+1)
+
+|
+{z
+}
+(B)
+.
+Then we will bound terms (A) and (B), respectively. For term (A), we deﬁne p′
+k,h(s) :=
+Ph(sk,h+1 = s|sk,h, ak,h) for some distribution sampled from the uncertainty set Ph(sk,h, ak,h).
+Then we obtain
+K
+X
+k′=1
+pT
+k′,h
+
+V (j)
+k′,h+1 −V (j)
+k′,h+1
+
+−
+K
+X
+k′=1
+E
+
+V (j)
+k,h+1(sk′,h+1) −V (j)
+k′,h+1(sk′,h+1)
+sk′,h, ak′,h
+
+(i)
+=
+K
+X
+k′=1
+pT
+k′,h
+
+V (j)
+k′,h+1 −V (j)
+k′,h+1
+
+−
+K
+X
+k′=1
+p′T
+k′,h
+
+V (j)
+k′,h+1 −V (j)
+k′,h+1
+
+(ii)
+=
+K
+X
+k′=1
+(pk′,h −p′
+k′,h)T 
+V (j)
+k′,h+1 −V (j)
+k′,h+1
+
+(iii)
+≤max
+s∈S |pk′,h(s) −p′
+k,h(s)|
+K
+X
+k′=1
+X
+s∈S
+
+V (j)
+k′,h+1(s) −V (j)
+k′,h+1(s)
+
+(iv)
+≤D
+K
+X
+k=1
+X
+s∈S
+
+V (j)
+k,h+1(s) −V (j)
+k,h+1(s)
+
+,
+35
+
+Ma, Chen, Zou and Zhou
+where (i) expands the conditional expectation, (ii) combines the same term together, (iii)
+applies the Hölder’s inequality ⟨u, v⟩≤∥u∥∞∥v∥1, and (iv) uses e := suph,s,a,V
+σPh(s,a)(V )−
+bσPh(s,a)(V )
+ deﬁned by Deﬁnition 11.
+Now we turn to bound term (B). Let
+Yk′ =E
+
+V (j)
+k′,h+1(sk′,h+1)−V (j)
+k′,h+1(sk′,h+1)
+sk′,h, ak′,h
+
+−
+
+V (j)
+k′,h+1(sk′,h+1)−V (j)
+k′,h+1(sk′,h+1)
+
+.
+Then Pk
+k′=1 Yk′ forms a martingale with |Yk′| ≤4H. By Azuma-Hoeﬀding inequality, with
+a probability at least 1 −δ, for any episode k, any (sk′,h+1, ak′,h) ∈S × A, any agent j, and
+any step h ∈[H],
+K
+X
+k′=1
+Yk′ ≤
+r
+32KH2 ln 2mKHSA
+δ
+.
+Combining the bounds of (A) and (B), we obtain the upper bound of eq. (15):
+K
+X
+k′=1
+
+σPh(sk,h,ak′,h)(V (j)
+k′,h+1)−σPh(sk,h,ak′,h)(V (j)
+k′,h+1)
+
+≤D
+K
+X
+k=1
+X
+s∈S
+
+V (j)
+k,h+1(s) −V (j)
+k,h+1(s)
+
++
+r
+32KH2 ln 2mKHSA
+δ
+.
+This lemma gives a more general version of recursion used in Jin et al. (2022a). When
+setting bh ≡0 and iterating to h = 1, this result is reduced to Jin et al. (2022a).
+Lemma 26 Suppose the sequence {ah, bh}h∈[H+1] satisﬁes the following recursion:
+aH+1 = bH+1 = 0,
+ah ≤C1ah+1 + C2bh+1 + C3.
+Then for any h ∈[H],
+ah ≤C2
+H−h
+X
+i=0
+Ci
+1bh+1+i +
+CH−h+1
+1
+−1
+C1 −1
+
+C3.
+Proof We prove it by induction with respect to h backward. For h = H, the statement
+obviously holds. Then assuming the statement holds for h+1 (for some h < H), we consider
+the upper bound of ah:
+ah
+(i)
+≤C1ah+1 + C2bh+1 + C3
+(ii)
+≤C1
+h
+C2
+H−h−1
+X
+i=0
+Ci
+1bh+2+i +
+CH−h
+1
+−1
+C1 −1
+
+C3
+i
++ C2bh+1 + C3
+(iii)
+= C2
+h H−h−1
+X
+i=0
+Ci+1
+1
+bh+2+i + bh+1
+i
++
+h
+C1
+CH−h
+1
+−1
+C1 −1
+
++ 1
+i
+C3
+36
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+= C2
+H−h
+X
+i=0
+Ci
+1bh+1+i +
+CH−h+1
+1
+−1
+C1 −1
+
+C3,
+where (i) uses the recursion, (ii) applies the induction hypothesis, and (iii) rearranges the
+order of each term. It completes the proof.
+Lemma 27 Suppose the sequence {ah, bh}h∈[H+1] satisﬁes the following recursion:
+aH+1 = 0,
+ah ≤C1 + C2
+H−h
+X
+i=0
+
+1 + 1
+H
+i+1
+ah+1+i.
+If C2 < 1/H, then
+max
+h
+ah ≤
+C1
+1 −HC2
+.
+Proof We re-write the recursion in matrix form. Here inequality holds for entry-wise.
+
+
+a1
+a2
+...
+aH
+
+≤C11H + C2
+
+
+0
+
+1 + 1
+H
+
+
+1 + 1
+H
+2
+. . .
+
+1 + 1
+H
+H−1
+0
+0
+
+1 + 1
+H
+
+. . .
+
+1 + 1
+H
+H−2
+0
+0
+0
+. . .
+
+1 + 1
+H
+H−3
+...
+...
+...
+...
+...
+0
+0
+0
+. . .
+0
+
+
+
+
+a1
+a2
+...
+aH
+
+.
+Denote the upper triangular Toeplitz matrix by T. Then we take ∥· ∥∞on both sides and
+obtain
+max
+h
+ah ≤C1 + C2 ∥T∥∞max
+h
+ah
+≤C1 + C2
+H−1
+X
+h′=1
+
+1 + 1
+H
+h′
+max
+h
+ah
+≤C1 + C2H
+h
+1 + 1
+H
+H
+−1
+i
+max
+h
+ah
+≤C1 + HC2 max
+h
+ah.
+When C2 < 1/H, it solves the upper bound of maxh ah as
+max
+h
+ah ≤
+C1
+1 −HC2
+.
+37
+
+Ma, Chen, Zou and Zhou
+References
+Jean Pierre Allamaa, Panagiotis Patrinos, Herman Van der Auweraer, and Tong Duy
+Son.
+Sim2real
+for
+autonomous
+vehicle
+control
+using
+executable
+digital
+twin.
+IFAC-PapersOnLine, 55(24):385–391, 2022.
+Robert J Aumann.
+Subjectivity and correlation in randomized strategies.
+Journal of
+Mathematical Economics, 1(1):67–96, 1974.
+Yu Bai and Chi Jin. Provable self-play algorithms for competitive reinforcement learning.
+In ICML, pages 551–560. PMLR, 2020.
+Yu Bai, Chi Jin, Huan Wang, and Caiming Xiong. Sample-eﬃcient learning of Stackelberg
+equilibria in general-sum games. NeurIPS, 34:25799–25811, 2021.
+Avrim Blum and Yishay Mansour. From external to internal regret. Journal of Machine
+Learning Research, 8(6), 2007.
+Manuele Brambilla, Eliseo Ferrante, Mauro Birattari, and Marco Dorigo. Swarm robotics:
+a review from the swarm engineering perspective. Swarm Intelligence, 7(1):1–41, 2013.
+Shutong Chen, Guanjun Liu, Ziyuan Zhou, Kaiwen Zhang, and Jiacun Wang.
+Robust
+multi-agent reinforcement learning method based on adversarial domain randomization
+for real-world dual-uav cooperation. IEEE Transactions on Intelligent Vehicles, 2023.
+Constantinos Daskalakis. On the complexity of approximating a nash equilibrium. ACM
+Transactions on Algorithms (TALG), 9(3):1–35, 2013.
+Xiaotie Deng, Yuhao Li, David Henry Mguni, Jun Wang, and Yaodong Yang.
+On the
+complexity of computing Markov perfect equilibrium in general-sum stochastic games.
+arXiv preprint arXiv:2109.01795, 2021.
+Jerzy Filar and Koos Vrieze. Competitive Markov Decision Processes. Springer Science &
+Business Media, 2012.
+Arlington M Fink. Equilibrium in a stochastic n-person game. Journal of Science of the
+Hiroshima University, Series AI (mathematics), 28(1):89–93, 1964.
+Amy Greenwald, Keith Hall, Roberto Serrano, et al.
+Correlated Q-learning.
+In ICML,
+volume 3, pages 242–249, 2003.
+Thomas Dueholm Hansen, Peter Bro Miltersen, and Uri Zwick. Strategy iteration is strongly
+polynomial for 2-player turn-based stochastic games with a constant discount factor.
+Journal of the ACM (JACM), 60(1):1–16, 2013.
+Junling Hu and Michael P Wellman. Nash Q-learning for general-sum stochastic games.
+Journal of Machine Learning Research, 4(Nov):1039–1069, 2003.
+Zhaolin Hu and L JeﬀHong. Kullback-leibler divergence constrained distributionally robust
+optimization. Optimization Online, pages 1695–1724, 2013.
+38
+
+Decentralized Robust V-learning for Solving Markov Games with Model Uncertainty
+Feng Huang, Ming Cao, and Long Wang. Optimal control of robust team stochastic games.
+arXiv preprint arXiv:2105.07405, 2021.
+Chi Jin, Zeyuan Allen-Zhu, Sebastien Bubeck, and Michael I Jordan. Is Q-learning provably
+eﬃcient? NeurIPS, 31, 2018.
+Chi Jin, Qinghua Liu, Yuanhao Wang, and Tiancheng Yu. V-learning–a simple, eﬃcient,
+decentralized algorithm for multiagent rl. In ICLR 2022 Workshop on Gamiﬁcation and
+Multiagent Solutions, 2022a.
+Yujia Jin, Vidya Muthukumar, and Aaron Sidford.
+The complexity of inﬁnite-horizon
+general-sum stochastic games. arXiv preprint arXiv:2204.04186, 2022b.
+Erim Kardeş, Fernando Ordóñez, and Randolph W Hall. Discounted robust stochastic games
+and an application to queueing control. Operations Research, 59(2):365–382, 2011.
+Stefanos Leonardos, Will Overman, Ioannis Panageas, and Georgios Piliouras.
+Global
+convergence of multi-agent policy gradient in Markov potential games. arXiv preprint
+arXiv:2106.01969, 2021.
+Jialian Li, Tongzheng Ren, Dong Yan, Hang Su, and Jun Zhu.
+Policy learning for ro-
+bust Markov decision process with a mismatched generative model.
+arXiv preprint
+arXiv:2203.06587, 2022a.
+Tianjiao Li, Ziwei Guan, Shaofeng Zou, Tengyu Xu, Yingbin Liang, and Guanghui Lan.
+Faster algorithm and sharper analysis for constrained Markov decision process. arXiv
+preprint arXiv:2110.10351, 2021.
+Yan Li, Tuo Zhao, and Guanghui Lan. First-order policy optimization for robust Markov
+decision process. arXiv preprint arXiv:2209.10579, 2022b.
+Michael L Littman. Markov games as a framework for multi-agent reinforcement learning.
+In Machine learning proceedings 1994, pages 157–163. Elsevier, 1994.
+Michael L Littman et al. Friend-or-foe Q-learning in general-sum games. In ICML, volume 1,
+pages 322–328, 2001.
+Qinghua Liu, Tiancheng Yu, Yu Bai, and Chi Jin. A sharp analysis of model-based rein-
+forcement learning with self-play. In ICML, pages 7001–7010. PMLR, 2021.
+Weichao Mao and Tamer Başar. Provably eﬃcient reinforcement learning in decentralized
+general-sum Markov games. Dynamic Games and Applications, pages 1–22, 2022.
+Hervé Moulin and J-P Vial. Strategically zero-sum games: the class of games whose com-
+pletely mixed equilibria cannot be improved upon. International Journal of Game Theory,
+7(3):201–221, 1978.
+Ariel Neufeld and Julian Sester. Robust Q-learning algorithm for Markov decision processes
+under wasserstein uncertainty. arXiv preprint arXiv:2210.00898, 2022.
+39
+
+Ma, Chen, Zou and Zhou
+Arnab Nilim and Laurent El Ghaoui. Robust control of Markov decision processes with
+uncertain transition matrices. Operations Research, 53(5):780–798, 2005.
+Arnab Nilim and Laurent Ghaoui. Robustness in Markov decision problems with uncertain
+transition matrices. NeurIPS, 16, 2003.
+Vianney Perchet. A note on robust nash equilibria with uncertainties. RAIRO-Operations
+Research-Recherche Opérationnelle, 48(3):365–371, 2014.
+Vianney Perchet. Finding robust nash equilibria. In Algorithmic Learning Theory, pages
+725–751. PMLR, 2020.
+Aurko Roy, Huan Xu, and Sebastian Pokutta. Reinforcement learning under model mis-
+match. NeurIPS, 30, 2017.
+Jay K Satia and Roy E Lave Jr. Markovian decision processes with uncertain transition
+probabilities. Operations Research, 21(3):728–740, 1973.
+Shai Shalev-Shwartz, Shaked Shammah, and Amnon Shashua. Safe, multi-agent, reinforce-
+ment learning for autonomous driving. arXiv preprint arXiv:1610.03295, 2016.
+Ziang Song, Song Mei, and Yu Bai. When can we learn general-sum Markov games with a
+large number of players sample-eﬃciently? arXiv preprint arXiv:2110.04184, 2021.
+Bernhard Von Stengel and Françoise Forges. Extensive-form correlated equilibrium: Deﬁ-
+nition and computational complexity. Mathematics of Operations Research, 33(4):1002–
+1022, 2008.
+Yue Wang and Shaofeng Zou. Online robust reinforcement learning with model uncertainty.
+NeurIPS, 34:7193–7206, 2021.
+Wolfram Wiesemann, Daniel Kuhn, and Berç Rustem. Robust Markov decision processes.
+Mathematics of Operations Research, 38(1):153–183, 2013.
+Kaiqing Zhang, Tao Sun, Yunzhe Tao, Sahika Genc, Sunil Mallya, and Tamer Basar. Robust
+multi-agent reinforcement learning with model uncertainty.
+NeurIPS, 33:10571–10583,
+2020.
+Runyu Zhang, Zhaolin Ren, and Na Li. Gradient play in multi-agent Markov stochastic
+games: Stationary points and convergence. arXiv preprint arXiv:2106.00198, 2021.
+40

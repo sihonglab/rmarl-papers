@@ -1,0 +1,647 @@
+Measuring the Robustness of Multi-Agent Reinforcement
+Learning Systems under Partial Agent Failure
+Zoltán Barta
+Department of Artificial Intelligence
+ELTE Eötvös Loránd University
+Budapest, Hungary
+dguqkf@inf.elte.hu
+Balázs Nagy
+Department of Artificial Intelligence
+ELTE Eötvös Loránd University
+Budapest, Hungary
+nagybalazs@inf.elte.hu
+László Gulyás
+Department of Artificial Intelligence
+ELTE Eötvös Loránd University
+Budapest, Hungary
+lgulyas@inf.elte.hu
+Abstract
+Robust multi-robot behaviour hinges on more than network archi-
+tecture: it critically depends on what the task punishes. The MAPPO
+algorithm has been analyzed on two canonical benchmarks that
+share a navigation objective but differ in their reward shaping.
+In Navigation, where collisions incur penalties, performance col-
+lapses once a critical fraction of agents is faulty, even under mild
+sensor noise. In Sampling, where collisions are ignored, the pol-
+icy withstands swarm-wide degradation until the magnitude of
+observation noise exceeds the radius of the hotspot, after which the
+reward plummets uniformly for every agent ratio. The results indi-
+cate that the algorithm exhibits some robustness to certain types
+of perturbations, primarily due to the generalization properties of
+the neural networks, but this robustness is strongly shaped by the
+structure of the reward function. Three design lessons emerge: (i)
+reward shaping decides which disturbance axis is fatal; (ii) every
+task has a tolerance window where moderate degradation is harm-
+less; (iii) failures are dominated by a handful of topologically central
+“hub” robots, so identifying and shielding these critical agents offers
+high leverage. Taken together, our findings chart a path towards
+resilient real-world deployments: combine collision-aware rewards
+with targeted protection of influence-maximising agents.
+CCS Concepts
+• Computing methodologies →Multi-agent reinforcement
+learning; Cooperation and coordination; Multi-agent systems;
+Simulation evaluation.
+Keywords
+MARL, Robustness, MAPPO, Continuous Control, TorchRL
+ACM Reference Format:
+Zoltán Barta, Balázs Nagy, and László Gulyás. 2025. Measuring the Ro-
+bustness of Multi-Agent Reinforcement Learning Systems under Partial
+Agent Failure. In Intelligent Robotics FAIR 2025 (IntRob ’25), June 23–24, 2025,
+Budapest, Hungary. ACM, New York, NY, USA, 6 pages. https://doi.org/10.
+1145/3759355.3759373
+1
+Introduction
+Multi-agent systems have become a critical component in many
+modern robotic applications, enabling teams of autonomous agents
+This work is licensed under a Creative Commons Attribution 4.0 International License.
+IntRob ’25, Budapest, Hungary
+© 2025 Copyright held by the owner/author(s).
+ACM ISBN 979-8-4007-1589-1/25/06
+https://doi.org/10.1145/3759355.3759373
+to cooperatively solve tasks that are beyond the capabilities of a sin-
+gle agent [10]. These systems are increasingly deployed in dynamic
+and unpredictable environments, where partial agent failures—such
+as sensor degradation, actuator malfunctions, or communication
+loss—are inevitable.
+While multi-agent reinforcement learning (MARL) has demon-
+strated impressive success in training coordinated behaviors [14],
+most existing studies assume ideal operational conditions. However,
+the real world is far from perfect, and understanding how MARL
+policies perform when individual agents experience mild faults is
+essential for building robust and reliable robotic systems [12].
+This work focuses on analyzing the robustness of a MARL al-
+gorithm under scenarios where one or more agents suffer partial
+impairments. Controlled fault injection mechanisms are applied
+during the evaluation phase, simulating realistic degradations in
+perception capabilities. The goal is to assess how well Multi-Agent
+Proximal Policy Optimization (MAPPO) [15] can maintain coopera-
+tive performance when some teammates are affected by varying
+levels of observation noise. Both the severity of the noise and the
+proportion of agents affected are considered.
+The contributions of the paper are as follows:
+• A systematic fault injection framework is introduced tailored
+for multi-agent reinforcement learning environments.
+• The state-of-the-art MAPPO algorithm is benchmarked un-
+der varying degrees of agent impairments.
+• Empirical insights are provided with respect to the resilience
+of MAPPO and directions for enhancing robustness against
+partial failures are suggested.
+2
+Related Work
+A growing body of research probes the fragility of cooperative
+multi-agent reinforcement learning under intentionally crafted
+disturbances. Most existing studies focus on targeted, gradient-based
+attacks that perturb the local state of agents so as to maximise team-
+level disruption. Comprehensive test suites [8] systematically inject
+adversarial perturbations into observation and reward channels,
+while other works [9, 17] demonstrate that corrupting only a few
+strategically chosen agents can trigger group-wide failure.
+Agent drop-outs and communication losses are modelled in some
+approaches [16], while others [6] crafts Gaussian noise with pre-
+defined distribution profiles to mimic sensor drift. Although earlier
+studies [5, 11] acknowledge stochastic disturbances, their coverage
+of noise types and magnitudes remains limited.
+The understanding of worst-case, attacker-driven scenarios is
+advanced, but how naturally occurring sensor noise and partial
+58
+
+IntRob ’25, June 23–24, 2025, Budapest, Hungary
+Zoltán Barta, Balázs Nagy, and László Gulyás
+agent failures interact with task-level reward design is largely un-
+addressed. This paper addresses this question.
+3
+Methodology
+To investigate the robustness of multi-agent systems with a high
+number of agents, an evaluation pipeline was designed that intro-
+duces perturbations only during the evaluation phase.
+3.1
+Training Phase
+Agents are trained under standard procedures in a stable, noise-free
+environment. This setup ensures that learning is based solely on
+clean observations, allowing agents to develop optimal policies
+without external disturbances.
+To monitor learning progress, periodic evaluation points are
+introduced throughout the training phase. Each evaluation consists
+of multiple episodes to capture reliable performance metrics. These
+evaluations are carried out both in the original, unperturbed en-
+vironment and in settings where observation noise is introduced,
+enabling the assessment of robustness alongside baseline perfor-
+mance.
+In addition, training is repeated across several independent runs.
+This approach improves the reliability of the findings by averaging
+out variability and ensuring that reported results reflect consistent
+learning behavior rather than random fluctuations [1].
+3.2
+Evaluation Phase with Perturbations
+During the evaluation phase, noisy evaluation environments are
+included alongside the standard unperturbed setting. In these en-
+vironments, agents are exposed to disturbances not encountered
+during training, simulating conditions such as partial failures or
+sensor degradation.
+For each noisy evaluation scenario:
+• A subset of agents is selected, representing a certain percent-
+age of the total population to be affected by perturbations.
+• Gaussian noise is introduced to the observations, received
+by the selected agents (see Equation 1). Different noise levels
+are applied to simulate varying severity of faults.
+3.3
+Perturbation Setup
+The noise applied to the perturbed observations is sampled from a
+zero-mean normal distribution with configurable standard devia-
+tion:
+˜𝑜𝑖= 𝑜𝑖+ N (0, 𝜎2),
+(1)
+where ˜𝑜𝑖is the noisy observation for agent 𝑖, 𝑜𝑖is the original
+observation, and 𝜎controls the noise intensity.
+During the experiments 𝜎and the percentage of agents subjected
+to noise (e.g., 10%, 30%, 50%) is varied.
+3.4
+Performance Measurement
+Since the focus is on cooperative multi-agent tasks, system perfor-
+mance is measured based on global reward (i.e., a shared common
+goal). Average global reward obtained under clean and noisy eval-
+uation scenarios are compared, quantifying the impact of partial
+agent failures.
+4
+Experiments
+To empirically evaluate the robustness against partial agent fail-
+ures of the investigated algorithm, a series of experiments were
+conducted on two cooperative multi-agent tasks under varying
+levels of noise and agent impairments. The key components of the
+experimental setup are detailed in the following sections.
+4.1
+Algorithm and Training Framework
+The Multi-Agent Proximal Policy Optimization algorithm is utilised
+as the learning backbone for all experiments. MAPPO is a widely
+used, actor-critic-based policy optimization method tailored for
+cooperative multi-agent settings, extending the original PPO algo-
+rithm to multi-agent scenarios.
+Agents are trained under a Centralized Training with Decentral-
+ized Execution (CTDE) framework [2], where policies are condi-
+tioned only on local observations during execution but benefit from
+centralized information during training. This setup enables efficient
+training while ensuring that policies can operate independently in
+deployment.
+The implementation is based on TorchRL [4], leveraging its built-
+in support for multi-agent communication, vectorized environ-
+ments, and scalable policy optimization.
+4.2
+Environments and Tasks
+The evaluation tasks are selected from the Vectorized Multi-Agent
+Simulator [3], a lightweight and fast physics-based simulator de-
+signed for multi-agent learning research. Two cooperative tasks
+were selected that rely on a common reward structure:
+Navigation. Each agent is assigned a randomly generated goal
+location within an unbounded continuous two-dimensional space
+(see Figure 1, top row). Agents must navigate towards their re-
+spective targets while avoiding collisions with other agents. The
+action space is continuous, allowing fine-grained control over move-
+ment. Agents have access to their relative position to their goal and
+proximity-based collision sensors. The success of the task depends
+on all agents reaching their targets safely. As a baseline, a heuristic
+solution, provided by the environment, is employed with a minimal
+adaptation that incorporates lidar sensor feedback. This improves
+collision avoidance by adjusting the straight-line goal direction
+away from nearby obstacles.
+Sampling. Agents are deployed in a workspace shaped by a mul-
+timodal Gaussian density field (see Figure 1, bottom row). Their
+objective is to explore the environment and collect samples dis-
+tributed across the discretized grid. Each sample is retrieved when
+an agent visits its corresponding cell. Rewards are either shared
+among all agents or assigned individually, depending on the reward
+setting. Agents receive local observations, including nearby sample
+values. They can also detect teammates using lidar sensors. The task
+encourages spatial coverage, coordination, and efficient exploration
+of high-density regions. In this scenario, a heuristic baseline was
+developed that guides agents directly towards regions of highest
+sampling value while actively avoiding collisions.
+Both tasks operate in continuous action and observation spaces
+under full observability. They require non-trivial coordination among
+59
+
+Measuring the Robustness of Multi-Agent Reinforcement Learning Systems under Partial Agent Failure
+IntRob ’25, June 23–24, 2025, Budapest, Hungary
+Figure 1: Navigation task (top row): starting configuration
+(left), and completed state (right). Each agent is assigned a
+randomly generated goal, marked with a unique color, and
+must navigate to that target without colliding with others.
+The task is considered complete once all agents have reached
+their designated goals. Sampling task (bottom row): starting
+configuration (left), and completed state (right). Agents are
+required to navigate to designated hotspots and perform
+sampling actions until either all the ‘cells’ of a hotspot have
+been collected or the episode terminates.
+agents and exhibit a high sensitivity to impairments, making them
+well-suited for evaluating the robustness of MARL algorithms.
+4.3
+Hyperparameter Configurations
+Training was conducted with multiple hyperparameter configura-
+tions to ensure the results are not sensitive to specific settings. The
+final set of hyperparameters is summarized in Table 1.
+4.4
+Evaluation
+The evaluation protocol applied follows the standard proposed by
+Gorsane et al. [7]. Each point on a learning curve (see Figure 2)
+corresponds to the episode-mean reward averaged across a batch of
+evaluation episodes, with the shaded band denoting the associated
+standard deviation. For each task, five fully independent training
+runs were conducted that differed only in their random seeds but
+shared the hyperparameter settings (see Table 1). During each run,
+the agent team was trained exclusively in a clean, unperturbed
+environment. At regular intervals training was paused and the
+policy was evaluated under all perturbation configurations using
+independent evaluation episodes. The full grid of these perturbation
+settings is visualized in Figures 3 and 5.
+5
+Results
+Both experiments hinge on waypoint navigation, yet the governing
+failure axis flips with the reward design. In the Navigation task,
+where collisions cause a penalty, performance is bounded by the
+fraction of faulty agents: a handful of impaired robots is tolerable,
+but widespread failure is devastating even under mild noise. In
+Table 1: Hyperparameter and environment setup
+Hyperparameter
+Navigation Task
+Sampling Task
+Batch size
+50 000
+20 000
+Minibatch size
+4096
+4096
+Optimization epochs
+15
+10
+Discount factor
+0.99
+0.9
+Entropy coefficient
+1e-4
+7e-4
+Epsilon clip
+0.14
+0.25
+GAE Lambda
+0.9
+0.8
+Actor network architecture
+MLP
+MLP
+Actor network size
+[128,128]
+[256,256]
+Actor network activation
+Tanh
+Tanh
+Critic network architecture
+MLP
+MLP
+Critic network size
+[128,128]
+[256,256]
+Critic network activation
+Tanh
+Tanh
+Parameter sharing
+Yes
+Yes
+Parallel workers
+50
+10
+Seed range
+[0..5]
+[0..5]
+Code-level optimizations
+Optimizer
+Adam
+Adam
+Learning rate
+1e-3
+1e-4
+Evaluation protocol
+Total training steps
+5 000 000
+Evaluation interval
+100 000
+Evaluation episodes
+32
+Absolute metric
+320, Mean
+Local aggregation method
+Mean
+Global aggregation methods
+Mean
+Metrics
+Episodic return
+MARL framework
+TorchRL (v0.7)
+Environment settings
+Number of agents
+10
+10
+World size
+infinite
+2
+Agent radius
+0.05
+0.025
+Number of lidars
+12
+-
+Collision penalty
+-1
+-
+Lidar range
+0.1
+0.2
+Number of goals
+-
+5
+Grid spacing
+-
+3
+Max steps
+1000
+1000
+the collision-tolerant Sampling task, the decisive variable is noise
+magnitude: Once the sensor error exceeds the radius of the hotspot,
+the reward collapses almost identically for one or for all robots.
+Thus, whether robustness is ratio-bound or noise-bound is dictated
+less by the disturbance itself than by what the reward function
+punishes.
+Figures 3 and 5 provide a visual summary of the results. They
+depict the grid of various combinations of noise level (𝜎, in %) and
+affected agents (%). Each disk aggregates information about the final
+50% of evaluation checkpoints. The color encodes mean return,
+while the size reflects the variability across episodes. Brighter, more
+saturated colours indicate stronger performance, whereas darker
+shades denote poorer outcomes. The size of the disks grow linearly
+with the standard deviation of return, highlighting conditions with
+greater performance instability. (0.0, 0%) corresponds to the clean,
+unperturbed baseline.
+60
+
+IntRob ’25, June 23–24, 2025, Budapest, Hungary
+Zoltán Barta, Balázs Nagy, and László Gulyás
+Figure 2: Sample efficiency learning curve (on the Naviga-
+tion task, 10 agents), depicting an unperturbed and several
+perturbed environments. The handpicked perturbed curves
+showcase performance degradation for parameter combina-
+tions diagonally traversing the experiment grid. The perfor-
+mance of a simple heuristic solution is also displayed as a
+baseline. Every data point represents the mean of several in-
+dependent evaluation episodes. Each curve is averaged over
+multiple independent training runs. The mean is shown with
+a solid (stronger) color, while the standard deviation is indi-
+cated by a lighter shade.
+Figure 3: Performance under partial agent failures in the
+Navigation task. Each disk displays the mean return over
+the final 50% of evaluation phases, with the radius indicating
+the corresponding standard deviation. The x-axis and y-axis
+represent the standard deviation of the injected observation
+noise and the proportion of affected agents, respectively. The
+bottom-left cell reflects the performance under fully unper-
+turbed conditions.
+5.1
+Navigation Task
+Overall trend. Performance is far more sensitive to how many
+agents are degraded than to how strongly they are degraded. When
+≤30% of the team is affected, MAPPO retains at least 70% of
+its clean–evaluation reward even at the largest noise level tested
+(𝜎= 4.0). Conversely, once at least half of the agents are impaired,
+the global reward declines almost linearly with the number of faulty
+teammates, reaching a relative change of −144% when every agent
+is disturbed, as shown on Figure 4.
+Sparse faults (≤20% faulty). A small minority of bad actors is
+almost fully absorbed by the team. Even under the harshest noise
+(𝜎= 4.0) the swarm retains over half of its baseline reward: 𝑅≈72
+with 0% faulty and 𝑅≈49 with 10% faulty. The reward remains
+comfortably positive throughout the 𝜎range and the standard
+deviation remains small (disk diameter ≲2), indicating that healthy
+neighbors quickly correct the path of a stray agent and collisions
+are rare.
+Partial faults (30–60% faulty). Once roughly one third of the
+robots go astray the cracks begin to show. At 𝜎= 0 the team
+still manages modest forward progress (𝑅= 41 at 30% faulty) but
+the mean crosses zero near the 40–50% mark and turns negative
+thereafter (e.g. 𝑅= −47 at 50% faulty, 𝜎= 4.0). Vertical slices are
+almost parallel: lifting the noise by four standard deviations costs
+no more than ∼20 points, whereas adding 10% extra faulty agents
+wipes out ∼20–25 points. Disk sizes roughly double in this band
+(∼3–4), reflecting run-to-run differences where a lucky spawn still
+avoids pile-ups, but an unlucky one triggers multi-agent gridlock.
+Systemic faults (≥70% faulty). When the majority of the
+swarm is impaired, collective behaviour collapses almost linearly
+with each additional bad actor, regardless of 𝜎. Returns are already
+negative with zero sensor noise (𝑅=−54 at 70%, 𝑅=−96 at 100%)
+and sink to 𝑅≈−119 to −141 at 𝜎= 4.0. Vertical gaps shrink to ≲20
+points—once coordination is lost, extra jitter can do little further
+damage. These rows feature the largest disks (∼5–6.4), illustrating
+that which specific robots exactly are faulty strongly will influence
+whether the team merely slows down or disintegrates into traffic
+jams.
+Variance. As the proportion of affected agents increases along
+the Y-axis, the variance of aggregated system returns also grows
+markedly. This trend is especially visible from 50% upwards, where
+the standard deviation of the return can exceed 8.7, particularly in
+the high-noise range. This suggests that the behavior of the system
+becomes increasingly unpredictable not just as more agents are
+perturbed, but depending on which specific agents are impaired. For
+instance, even when the noise magnitude is kept constant, runs
+with the same noise level and agent impairment ratio can differ by
+more than 40% in return, depending on the agents involved.
+This highlights that, despite a homogeneous agent design, cer-
+tain agents play disproportionately critical roles—particularly those
+located within the core of agent clusters (in this particular scenario).
+When such central agents exhibit faulty or noisy behavior, their
+suboptimal actions cascade through the group by coordination
+breakdowns, resulting in substantial reward loss. Thus, the robust-
+ness of the system is not only a function of the number of perturbed
+61
+
+Measuring the Robustness of Multi-Agent Reinforcement Learning Systems under Partial Agent Failure
+IntRob ’25, June 23–24, 2025, Budapest, Hungary
+agents, but also of their positional and relational importance within
+the team.
+Figure 4: Degradation of performance in the Navigation task
+versus the main parameters. The values are relative to un-
+perturbed performance, marked at 100% on the vertical axis.
+Key takeaway. For decentralised navigation, MAPPO is robust
+to high-amplitude perception noise on a small subset of robots, yet
+it scales poorly with the number of impaired teammates. Future
+robustness work should therefore prioritise fault-isolation mech-
+anisms that prevent error propagation when several agents fail
+simultaneously.
+5.2
+Sampling Task
+Overall trend. In the sampling task the global return is gov-
+erned first and foremost by the noise magnitude and only secondar-
+ily by the fraction of perturbed agents. In every column of Figure 5
+the reward stays high—above 𝑅≳420—so long as the noise re-
+mains below 𝜎≈0.6. It declines steadily afterwards as the noise
+increases. By 𝜎= 2.2 the mean reward has slipped to the approx-
+imately 375 and it bottoms out around 𝑅≈190–205 at 𝜎= 4.0.
+Horizontal sweeps (changing the share of faulty robots) move the
+curves by at most ∼10–15 points—an order of magnitude less than
+the vertical drop—confirming that performance is noise-bound, not
+ratio-bound.
+Low-noise range (𝜎≤0.6). The bottom three rows form an
+almost perfectly flat plateau between 𝑅≈420 and 450 regardless
+of whether 0% or 100% of the swarm is corrupted, as shown on
+Figures 5 and 6. Because the agents only need to stay inside a single
+high-value patch and collisions are never penalised, such mild jitter
+does not displace them far enough to matter.
+Moderate-noise range (0.8 ≤𝜎≤1.6). Here the average return
+drifts down to the 400–425 corridor, yet it remains robust. Even
+at 𝜎= 1.6 a fully corrupted team still captures roughly 92% of the
+clean baseline. Several columns bend upward—e.g. at 𝜎= 1.0 the
+reward climbs from 𝑅=431 with 0% faulty agents to 𝑅=435 with
+30%—because noisy outer-ring “scouts” vacate low-yield positions
+and allow healthy peers to pack the hotspot more densely.
+High-noise range (1.8 ≤𝜎≤3.0). Once the expected error
+approaches the hotspot radius, performance erodes quickly. The
+mean falls approximately from 398 at 𝜎= 1.8 to 349 by 𝜎= 3.0. A
+drop of ∼15–20 points for every 0.4 increase in 𝜎. Yet the horizontal
+gradient is still shallow: at 𝜎= 2.6 the worst case (0% faulty) scores
+𝑅= 414, the best case (100% faulty) 𝑅= 344—a spread under 7%.
+Figure 5: Performance under partial agent failures in the
+Sampling task. Each disk displays the mean return over the
+final 50% of evaluation phases, with the radius indicating
+the corresponding standard deviation. The x-axis and y-axis
+represent the standard deviation of the injected observation
+noise and the proportion of affected agents, respectively. The
+bottom-left cell reflects the performance under fully unper-
+turbed conditions.
+Beyond a certain displacement threshold, the magnitude of the
+noise, not the head-count of noisy agents, is what dominates.
+Extreme-noise range (𝜎≥3.2). When sensor drift reliably ex-
+ceeds the hotspot diameter, returns collapse almost synchronously
+across all ratios: 𝑅≈260 at 𝜎= 3.4, 𝑅≈220 at 𝜎= 3.8, and 𝑅≈195
+at 𝜎= 4.0. The differences between columns are now negligible
+(≲5%), indicating a uniform and consistently poor failure mode.
+Variance. Return dispersion is largest while the noise is still
+small. For 𝜎≲0.6 the standard deviation reaches ∼20–24: tiny
+perturbations may either leave every robot comfortably inside the
+hotspot or push a few outside it. So outcomes diverge sharply from
+seed to seed. As the noise grows, the spread contracts rather than
+widens. Beyond 𝜎≳2.4 the sensors drift so far that the whole swarm
+is forced out of the high-value region in nearly every run, shrinking
+the standard-deviation band to ∼2–8. Small noise therefore yields
+heterogeneous outcomes, whereas large noise produces a highly
+consistent—and consistently poor—result.
+Key takeaway. For this collision-tolerant sampling task, robust-
+ness hinges on where noisy observations place the swarm relative
+to the hotspot, not on how many robots are noisy. As long as the
+62
+
+IntRob ’25, June 23–24, 2025, Budapest, Hungary
+Zoltán Barta, Balázs Nagy, and László Gulyás
+error radius is smaller than the hotspot, even a fully corrupted team
+performs near-optimally. Once that threshold is crossed, rewards
+plummet almost in lock-step across every agent ratio.
+Figure 6: Degradation of performance in the Sampling task
+versus the main parameters. The values are relative to un-
+perturbed performance, marked at 100% on the vertical axis.
+6
+Conclusion
+Core finding. Robustness of MAPPO is task–dependent. In Nav-
+igation, reward collapses when many robots fail, whereas in Sam-
+pling it collapses when observation noise becomes large, no matter
+how many robots are affected. This flip is driven by the reward
+design—collision penalties in Navigation amplify inter-agent inter-
+ference, while their absence in Sampling lets the policy tolerate
+even swarm-wide degradation until the noise displaces everyone
+from the hotspot.
+Why any robustness appears. Both policies share the same
+neural backbone, which absorbs light perturbations and degrades
+gracefully up to task-specific breakpoints. Beyond those points,
+however, neither network can compensate unaided, revealing the
+limit of “free” robustness obtained from standard training.
+Architectural implications. Reward shaping matters: what
+the task punishes determines which disturbance axis is fatal. Tol-
+erance windows exist: moderate degradation can be harmless
+if it stays within task-specific limits. Critical agents dominate
+failure: runs where centrally located ’hub’ robots are corrupt incur
+the highest losses. Shielding such agents, yields high leverage.
+Future directions. When an algorithm is intended for use in the
+physical world, its training environment should reflect real-world
+constraints—especially the need to avoid collisions. This argues for
+reward functions that explicitly penalise unsafe contacts. Such that
+the learned policy behaves more like the Navigation model and less
+like the collision-free Sampling variant.
+A promising next step is to identify “critical” agents: robots
+whose position or communication role means their failure rever-
+berates through the team. They may receive special attention, for
+example, by receiving redundant sensors or backup controllers. Ad-
+ditionally, studying the behavior of the system when only a certain
+percentage of agents receive degraded or noisy observations can
+offer insight into how partial perceptual corruption impacts global
+performance. By combining task-realistic penalties with targeted
+protection of such agents, future work can push MAPPO from
+the graceful-but-limited robustness of today toward the level of
+reliability demanded by real multi-robot deployments.
+Acknowledgments
+Access to the Komondor HPC facility, based in Hungary, was pro-
+vided by the Digital Government Development and Project Manage-
+ment Ltd., which is gratefully acknowledged. Large-scale language
+models were used to verify the grammar and style of the manu-
+script [13].
+References
+[1] Rishabh Agarwal, Max Schwarzer, Pablo Samuel Castro, Aaron Courville, and
+Marc G. Bellemare. 2022. Deep Reinforcement Learning at the Edge of the
+Statistical Precipice. arXiv:2108.13264 [cs.LG] https://arxiv.org/abs/2108.13264
+[2] Christopher Amato. 2024. An Introduction to Centralized Training for De-
+centralized Execution in Cooperative Multi-Agent Reinforcement Learning.
+arXiv:2409.03052 [cs.LG] https://arxiv.org/abs/2409.03052
+[3] Matteo Bettini, Ryan Kortvelesy, Jan Blumenkamp, and Amanda Prorok. 2022.
+VMAS: A Vectorized Multi-Agent Simulator for Collective Robot Learning.
+arXiv:2207.03530 [cs.RO] https://arxiv.org/abs/2207.03530
+[4] Albert Bou, Matteo Bettini, Sebastian Dittert, Vikash Kumar, Shagun Sodhani,
+Xiaomeng Yang, Gianni De Fabritiis, and Vincent Moens. 2023. TorchRL: A
+data-driven decision-making library for PyTorch. arXiv:2306.00577 [cs.LG] https:
+//arxiv.org/abs/2306.00577
+[5] Xinning Chen, Xuan Liu, Canhui Luo, and Jiangjin Yin. 2022. Robust multi-agent
+reinforcement learning for noisy environments. Peer-to-Peer Networking and
+Applications 15, 2 (March 2022), 1045–1056. doi:10.1007/s12083-021-01133-2
+[6] Wei Geng, Baidi Xiao, Rongpeng Li, Ning Wei, Dong Wang, and Zhifeng Zhao.
+2024. Noise Distribution Decomposition based Multi-Agent Distributional Rein-
+forcement Learning. arXiv:2312.07025 [cs.AI] https://arxiv.org/abs/2312.07025
+[7] Rihab Gorsane, Omayma Mahjoub, Ruan de Kock, Roland Dubb, Siddarth Singh,
+and Arnu Pretorius. 2022. Towards a Standardised Performance Evaluation
+Protocol for Cooperative MARL. arXiv:2209.10485 [cs.LG] https://arxiv.org/abs/
+2209.10485
+[8] Jun Guo, Yonghong Chen, Yihang Hao, Zixin Yin, Yin Yu, and Simin Li. 2022.
+Towards Comprehensive Testing on the Robustness of Cooperative Multi-agent
+Reinforcement Learning. arXiv:2204.07932 [cs.MA] https://arxiv.org/abs/2204.
+07932
+[9] Sihong He, Songyang Han, Sanbao Su, Shuo Han, Shaofeng Zou, and Fei Miao.
+2023.
+Robust Multi-Agent Reinforcement Learning with State Uncertainty.
+arXiv:2307.16212 [cs.LG] https://arxiv.org/abs/2307.16212
+[10] Maximilian Hüttenrauch, Adrian Šošić, and Gerhard Neumann. 2019. Deep
+Reinforcement Learning for Swarm Systems. arXiv:1807.06613 [cs.MA] https:
+//arxiv.org/abs/1807.06613
+[11] Ozsel Kilinc and Giovanni Montana. 2018. Multi-agent Deep Reinforcement
+Learning with Extremely Noisy Observations. arXiv:1812.00922 [cs.LG] https:
+//arxiv.org/abs/1812.00922
+[12] Janosch Moos, Kay Hansel, Hany Abdulsamad, Svenja Stark, Debora Clever, and
+Jan Peters. 2022. Robust Reinforcement Learning: A Review of Foundations
+and Recent Advances. Machine Learning and Knowledge Extraction 4, 1 (2022),
+276–315. doi:10.3390/make4010013
+[13] OpenAI. 2024. ChatGPT. https://chat.openai.com/ Large language model.
+[14] George Papadopoulos, Andreas Kontogiannis, Foteini Papadopoulou, Chaido
+Poulianou, Ioannis Koumentis, and George Vouros. 2025. An Extended Bench-
+marking of Multi-Agent Reinforcement Learning Algorithms in Complex Fully
+Cooperative Tasks. arXiv:2502.04773 [cs.LG] https://arxiv.org/abs/2502.04773
+[15] Chao Yu, Akash Velu, Eugene Vinitsky, Jiaxuan Gao, Yu Wang, Alexandre Bayen,
+and Yi Wu. 2022. The Surprising Effectiveness of PPO in Cooperative, Multi-Agent
+Games. arXiv:2103.01955 [cs.LG] https://arxiv.org/abs/2103.01955
+[16] Jian Zhao, Youpeng Zhao, Weixun Wang, Mingyu Yang, Xunhan Hu, Wen-
+gang Zhou, Jianye Hao, and Houqiang Li. 2022.
+Coach-assisted Multi-
+Agent Reinforcement Learning Framework for Unexpected Crashed Agents.
+arXiv:2203.08454 [cs.LG] https://arxiv.org/abs/2203.08454
+[17] Ziyuan Zhou and Guanjun Liu. 2023. Robustness Testing for Multi-Agent Rein-
+forcement Learning: State Perturbations on Critical Agents. IOS Press. doi:10.3233/
+faia230632
+63

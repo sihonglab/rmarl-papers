@@ -1,0 +1,1333 @@
+arXiv:2205.07229v2  [cs.LG]  31 May 2023
+RoMFAC: A robust mean-ﬁeld actor-critic reinforcement learning against
+adversarial perturbations on states
+Ziyuan Zhou1 , Guanjun Liu1∗,
+1Department of Computer Sciences, Tongji University, Shanghai 201804, China
+{ziyuanzhou, liuguanjun}@tongji.edu.cn,
+Abstract
+Multi-agent deep reinforcement learning makes op-
+timal decisions dependent on system states ob-
+served by agents, but any uncertainty on the obser-
+vations may mislead agents to take wrong actions.
+The Mean-Field Actor-Critic reinforcement learn-
+ing (MFAC) is well-known in the multi-agent ﬁeld
+since it can effectively handle a scalability problem.
+However, it is sensitive to state perturbations that
+can signiﬁcantly degrade the team rewards. This
+work proposes a Robust Mean-ﬁeld Actor-Critic re-
+inforcement learning (RoMFAC) that has two inno-
+vations: 1) a new objective function of training ac-
+tors, composed of a policy gradient function that is
+related to the expected cumulative discount reward
+on sampled clean states and an action loss func-
+tion that represents the difference between actions
+taken on clean and adversarial states; and 2) a repet-
+itive regularization of the action loss, ensuring the
+trained actors to obtain excellent performance. Fur-
+thermore, this work proposes a game model named
+a State-Adversarial Stochastic Game (SASG). De-
+spite the Nash equilibrium of SASG may not ex-
+ist, adversarial perturbations to states in the RoM-
+FAC are proven to be defensible based on SASG.
+Experimental results show that RoMFAC is robust
+against adversarial perturbations while maintaining
+its competitive performance in environments with-
+out perturbations.
+1
+Introduction
+Deep learning has achieved signiﬁcant success in lots of
+ﬁelds such as computer vision and natural language process-
+ing. However, deep neural networks are generally trained
+and tested by using independent and identically distributed
+data, and thus possibly make incorrect predictions when
+there are some small insigniﬁcant perturbations on samples
+[Goodfellow et al., 2014; Madry et al., 2018]. Deep learning
+∗Contact Author
+The expanded version of this article is published in IEEE Trans-
+actions on Neural Networks and Learning Systems, with a DOI of
+10.1109/TNNLS.2023.3278715.
+has been combined with reinforcement learning to train the
+control policy of an agent [Mnih et al., 2015]. Some studies
+have shown that agents trained by deep reinforcement learn-
+ing are also vulnerable to adversarial attacks, e.g., agents are
+likely to perform undesirable actions when their state space
+is perturbed [Ilahi et al., 2021]. In fact, agents can frequently
+receive perturbed state observations because of sensor errors
+or malicious attacks, which can cause serious issues in many
+applications like autonomous driving, unmanned aerial ve-
+hicles and robotics. Therefore, robust deep reinforcement
+learning is very important in the single-/multi-agent ﬁled.
+Many tasks require multiple agents to work together in
+a cooperative or competitive relationship rather than act-
+ing independently. The multi-agent reinforcement learning
+(MARL) is proposed to maximize team rewards.
+Many
+practical and effective MARL approaches have been pro-
+posed, such as policy-based methods including MAD-
+DPG [Lowe et al., 2017], MAAC [Iqbal and Sha, 2019] and
+G2ANet [Liu et al., 2020] and value-based methods includ-
+ing QMIX [Rashid et al., 2018], QPD [Yang et al., 2020] and
+QPLEX [Wang et al., 2020]. But they usually face a big chal-
+lenge: the poor scalability, which signiﬁcantly limits their ap-
+plications in the real world. Mean-ﬁled actor-critic method
+(MFAC) [Yang et al., 2018] applies the mean ﬁeld theory
+to MARL and thus successfully improves the scalability of
+MARL with a large number of agents. However, this paper
+ﬁnds that MFAC is also sensitive to state perturbations which
+reduce its safety.
+Although there has been some progress in studies on adver-
+sary attacks and defenses of single-agent reinforcement learn-
+ing algorithms, there are few related studies in the multi-agent
+ﬁeld. Compared with single-agent situations, multi-agent sit-
+uations face additional challenges: 1) the total number of
+perturbed agents is unknown; and 2) perturbations on some
+agents can inﬂuence others. Facing these challenges, we pro-
+pose a robust MFAC (RoMFAC) and our contributions are
+summarized as follows:
+• We propose a novel objective function of training ac-
+tors, which consists of a policy gradient function that
+is related to the expected cumulative discount reward
+on sampled clean states and an action loss function that
+represents the difference between actions taken on clean
+and adversarial states. We also design a repetitive regu-
+larization method for the action loss which ensures that
+
+the trained actors obtain a good performance not only on
+clean states but also on adversarial ones.
+• We deﬁne the state-adversarial stochastic game (SASG)
+by extending the objective function of RoMFAC to the
+stochastic game and study its basic properties which
+demonstrate that the proposed action loss function is
+convergent. Additionally, we prove that SASG dose not
+necessarily have the Nash equilibrium under the joint
+optimal adversarial perturbation but it can still defend
+against them. These theoretical results mean that our ob-
+jective function can potentially be applied to some other
+reinforcement learning methods besides MFAC.
+• We conduct experiments on two scenarios of MAgent
+[Zheng et al., 2018]. The experimental results show that
+our RoMFAC can well improve the robustness under
+white box attacks on states without degrading the per-
+formance on clean states.
+2
+Related Works
+Adversarial Attacks on Single-agent DRL.
+In classiﬁca-
+tion tasks, the methods for generating and defending against
+adversarial examples have been extensively studied.
+Ad-
+versarial attacks and defenses for deep reinforcement learn-
+ing have recently emerged.
+The adversarial attacks on
+DRL algorithms can be broadly divided into four categorizes
+[Ilahi et al., 2021]: the state space with adversarial pertur-
+bations, the reward function with adversarial perturbations,
+the action space with adversarial perturbations and the model
+space with adversarial perturbations. Huang et al. [2017] em-
+ploy FGSM [Goodfellow et al., 2014] to generate adversarial
+examples of input states, showing that adversarial attacks are
+also effective in the DRL policy network. To make the attack
+on DRL agents more stealthy and efﬁcient, Sun et al. [2020]
+introduce two adversarial attack techniques: the critical point
+attack and the antagonist attack. This paper is about state per-
+turbations.
+Robust Training for Single-agent DRL.
+Defense meth-
+ods against attacks are broadly classiﬁed into six categories
+[Ilahi et al., 2021]: adversarial training, defensive distilla-
+tion, robust learning, adversarial detection, benchmarking
+& watermarking and game theoretic approach.
+Zhang et
+al. [2020] propose state-adversarial Markov decision process
+(SA-MDP), which provides a theoretical foundation for ro-
+bust single-agent reinforcement learning. They develop the
+principle of policy regularization that can possibly be ap-
+plied to many DRL algorithms. Based on SA-MDP, an al-
+ternate training framework with learned adversaries was pro-
+posed [Zhang et al., 2021]. Oikarinen et al. [2020] propose
+the RADIAL-RL method, which can improve the robustness
+of DRL agents under the ℓp norm boundary against attacks,
+with lower computational complexity. This paper focuses on
+robust learning and expands the theoretical results and policy
+regularization in SA-MDP to multi-agent DRL.
+Adversarial Attacks and Defenses for Multi-agent DRL.
+Motivated by single-agent deep reinforcement learning
+[Mnih et al., 2015], multi-agent reinforcement learning has
+changed from the tabular method to the deep learning re-
+cently. However, there are few studies on adversarial attacks
+and robust training in multi-agent DRL. Lin et al. [2020]
+ﬁrst propose the method of adversarial examples generation
+in MARL, but do not provide a robust defense method. Li et
+al. [2019] propose the M3DDPG, which is an extension of
+MADDPG that makes policies of agents generalizing even if
+the opponent’s policies change. They also present a robust
+optimization method, which effectively solves the problem of
+high complexity of minmax calculation in continuous action
+space. However, they lack the defense against state perturba-
+tions that is exactly the purpose of our work.
+3
+Preliminary
+3.1
+Stochastic Game
+Stochastic game (SG) [Shapley, 1953] is a game with mul-
+tiple agents (or players) and states, deﬁned as a tuple
+
+S, A1, . . . , AN, R1, . . . , RN, p, γ
+
+where S is the state
+space, N is the number of agents, Aj is the action space of
+agent j, Rj : S × A1 × · · · × AN × S →R is the reward
+function of agent j, p : S × A1 × · · · × AN × S →[0, 1]
+is the state transition probability function which refers to the
+probability distributions of the next states under the current
+state and the joint action, and γ ∈[0, 1] is the discount fac-
+tor. The immediate reward Rj (s, a, s′) represents the reward
+obtained by agent j in state s′ after taking the joint action
+a
+∆=
+ a1, . . . , aN
+in state s.
+For an n-player stochastic game, there is at least one Nash
+equilibrium [Fink, 1964], which can be deﬁned as the joint
+policy π∗
+∆=
+ π1
+∗, . . . , πN
+∗
+
+such that ∀s ∈S:
+V j
+π∗(s) = V j  s, π1
+∗, . . . , πj
+∗, . . . , πN
+∗
+
+≥V j  s, π1
+∗, . . . , πj, . . . , πN
+∗
+
+(1)
+where π∗(·|s) = QN
+j=1 πj
+∗(·|s) is the probability distribution
+of the joint action a at state s under the Nash equilibrium and
+πj is an arbitrary valid policy of agent j. V j
+π∗(s) is the value
+function of agent j under state s and the Nash equilibrium at
+time t and calculated through expected cumulative discount
+reward of agent j:
+V j
+π∗(s) = Eπ∗,p
+ ∞
+X
+k=0
+γkRj
+t+k+1|st = s
+!
+(2)
+where Rj
+t denotes the reward of agent j at the time t. The
+action-value Qj
+π∗(s, a) is deﬁned as the expected cumulative
+discount reward of agent j given a state s and a joint action a
+of all agents under the Nash equilibrium:
+Qj
+π∗(s, a) = Eπ∗,p
+ ∞
+X
+k=0
+γkRj
+t+k+1|st = s, at = a
+!
+=
+X
+s′∈S
+p (s′|s, a)
+ Rj (s, a, s′) + γV j
+π∗(s′)
+
+.
+(3)
+According to Eqs. (2) and (3), the value function can also be
+formulated as
+V j
+π∗(s) = Ea∼π∗
+ Qj
+π∗(s, a)
+
+.
+(4)
+
+3.2
+Mean-Field Actor-Critic Reinforcement
+Learning
+Mean-ﬁeld
+actor-critic
+reinforcement learning
+(MFAC)
+[Yang et al., 2018] uses the mean-ﬁeld theory to transform
+the interaction of multiple agents into the interaction between
+two agents, which makes large-scale multi-agent reinforce-
+ment learning become possible. In MFAC, Qj (s, a) is de-
+composed into
+Qj(s, a) =
+1
+|N(j)|
+X
+k∈N(j)
+Qj(s, aj, ak)
+through local interactions, where N(j) is the set of neighbors
+of agent j. They prove that
+Qj (s, a) ≈Qj  s, aj, ¯aj
+where the mean action ¯aj of all neighbors of agent j can be
+represented as an empirical distribution of the actions taken
+by these neighbors and obtained by calculating the average of
+ak, while ak is sampled from policy πk which is calculated
+by a neural network via the previous average action ¯ak
+−of
+agent j’s neighbors:
+¯aj =
+1
+|N(j)|
+X
+k,ak∼πk(·|s,¯ak
+−)
+ak.
+Note that each ak is a one-hot coding. Then the policy πj is
+changed according to the current s and ¯aj.
+The mean ﬁeld Q-function at time t can be updated accord-
+ing to the following recursive form:
+Qφj  s, aj, ¯aj
+t+1=(1−α)Qφj s, aj, ¯aj
+t+α
+ Rj+γV j(s′)t
+
+(5)
+where α is the learning rate and φj is the parameters of the
+critic of agent j. The mean-ﬁled value function at time t can
+be calculated as
+V j (s′)t =
+X
+aj
+πθj
+ aj|s′, ¯aj
+tEa−j∼πθ−j
+ Qφj
+ s′, aj, ¯aj
+t
+
+(6)
+where θj is the parameters of the actor of agent j, a−j is the
+joint action of all agents expect agent j and πθ−j is the joint
+policy of all agents expect agent j.
+MFAC is an on-policy actor-critic method where the critic
+is trained by minimizing the loss function:
+Lcrt(φj) = (yj −Qφj(s, aj, ¯aj))2
+(7)
+and the actor πθj is trained by sampling policy gradients:
+∇θjJ (θj)
+∆= ∇θjVπθj (s)
+≈∇θj (log πθj(s)) Qφj
+−(s′, aj
+−, ¯aj
+−)|aj
+−=πθj
+−
+(s)
+(8)
+where φj
+−and θj
+−are parameters of target networks of
+agent j. [Konda and Tsitsiklis, 2000] provides a derivation
+of Eq. (8). During the training process, φj and θj are al-
+ternately updated until convergence is achieved. Since the
+observed states are perturbed, this paper proposes a new ob-
+jective function to train an actor so that it can defend against
+state perturbations.
+4
+Methodology
+4.1
+Robust Mean-Field Actor-Critic Method
+In this section, we introduce a novel framework for improving
+the robustness of MFAC on state perturbations. Our frame-
+work mainly contains the following innovative components:
+Action Loss Function
+In order to learn a robust policy, we propose a novel method
+to update the policy network. In the worst case, states of ev-
+ery agent are all attacked and thus we should optimize the
+expected cumulative discount reward corresponding to adver-
+sarial states. According to Eq. (6), the learning objective of
+our RoMFAC is to maximize the expected cumulative dis-
+count reward in the worst-case, i.e.,
+max
+θj V j (s)
+= max
+θj min
+ˆsj
+X
+aj
+πθj aj|ˆsj, ¯aj
+Ea−j∼πθ−j
+ Qφj s, aj, ¯aj
+(9)
+where ˆsj is the adversarial state of agent j calculated by
+Eq. (11) and the goal is to minimize the expected cumula-
+tive discount reward of agent j. Since critics are only used
+to guide the update of actors on which behaviors of agents
+depend, here we only consider the robustness of actors. The
+minimized part of Eq. (9) can be solved by maximizing the
+loss between actions taken on clean and adversarial states,
+and the loss is called action loss in this paper, i.e.,
+Lact
+ θj
+= max
+ˆsj∈Bj
+
+L
+ θj, ˆsj, zj
+|ˆsj = s + δj	
+(10)
+where s is the clean state, δj is the adversarial perturbation
+of agent j generated according to state s, and Bj is the set of
+adversarial states of agent j. We can label the action with the
+highest probability zj = arg max
+aj πθj  aj|s, ¯aj
+, because the
+actor of agent j outputs the probability distribution of actions.
+L is the cross-entropy loss function of actions taken on clean
+and adversarial states, i.e.,
+L
+ θj, ˆsj, zj
+= −
+X
+aj
+
+zj = aj
+log
+ πθj  aj|ˆsj, ¯aj
+where
+
+zj = aj
+is the Iverson bracket whose value is 1 if the
+statement zj = aj is true, and 0 otherwise.
+To solve the maximization problem, we use the PGD
+method [Madry et al., 2018] to generate the adversarial per-
+turbation δj for the policy network of agent j. The PGD uses
+multi-step gradient ascent:
+ˆsj
+u+1 = clip
+
+ˆsj
+u + βsgn
+
+∇ˆsj
+uL
+ θ, ˆsj
+u, zj
+|ˆsj
+0=s
+(11)
+where β is the step-size and ˆsj
+u represents the adversarial state
+in the u-th step initialized by s. The outer-loop learning ob-
+jective is to minimize the difference of actions taken on adver-
+sarial and clean states. The actor πθj is trained by minimizing
+−∇θjJ (θj) + µLact(θj)
+(12)
+where µ is a weight factor governing the trade-off between
+the two parts.
+
+Algorithm 1 RoMFAC
+1: Initialize Qφj, Qφj
+−, πθj, πθj
+−and ¯aj, ∀j ∈{1, . . . , N}
+2: for m = 1, 2, . . . , Mnorm + cMadv do
+3:
+For each agent j, sample action aj = πθj(s) and com-
+pute the new mean action ¯a = [¯a1, . . . , ¯aN];
+4:
+Take the joint action a = [a1, . . . , aN] and observe the
+reward R = [R1, . . . , RN] and the next state s′;
+5:
+Store ⟨s, a, R, s′, ¯a⟩in replay buffer D;
+6:
+for j = 1 to N do
+7:
+Sample
+a
+minibatch
+of
+K
+experiments
+⟨si, ai, Ri, s′i, ¯ai⟩|i=1,...,K from D;
+8:
+Set yj = Rj + γVφj
+−(s′);
+9:
+Update the critic based on Eq. (7);
+10:
+Generate adversarial perturbation δj and get adver-
+sarial state ˆsj
+i = si + δj based on Eq. (11);
+11:
+Compute the action loss Li
+act(θj, ˆsj
+i);
+12:
+Update the actor based on Eqs. (12) and (13);
+13:
+end for
+14:
+Update the parameters of the target networks for each
+agent j with learning rates τφ and τθ:
+φj
+−←τφφj + (1 −τφ)φj
+−
+θj
+−←τθθj + (1 −τθ)θj
+−
+15: end for
+Step 1:
+……
+P
+Loop 1
+Loop 2
+Loop c
+norm
+M
+rounds
+Step 2:
+adv
+cM
+rounds
+m
+…
+P
+m
+…
+adv
+M
+l
+M
+Z  
+l
+adv
+M
+M
+P
+P
+0
+Figure 1: Repetitive change of µ
+Repetitive Regularization of the Action Loss
+For the weight factor µ of the action loss, if it is too large,
+there may be vanishing and exploding gradient and thus the
+training is unstable. On the other hand, if it is too small,
+the action loss will not work.
+Regularizing the loss re-
+lated to adversarial perturbations is often used in many ro-
+bust single-agent reinforcement learning [Zhang et al., 2020;
+Zhang et al., 2021], but they usually use the grid search
+method to produce a ﬁxed value for the weight factor µ, and
+the perturbation bound ǫ gradually increases to a given value
+in the whole training process. Our experiments indicate that
+if the input data of a multi-agent environment is not high-
+dimensional image data, training results obtained by this way
+are not ideal.
+To solve this problem, we propose a repetitive regulariza-
+tion method for our action loss:
+Step 1: We train a network until it is stable with µ = 0;
+Step 2: We continually train it by c loops. In every loop,
+µ increases linearly from 0 to a given upper bound µ.
+During the whole training process, the perturbation bound
+ǫ is a ﬁxed value.
+In addition, c and µ are two hyper-
+parameters. Figure 1 shows the idea of our repetitive regular-
+Agent 1
+Agent M
+Agent N
+…
+Agent M+1
+adversary
+Environment
+
+
+1 |
+,
+t
+t
+t
+p s
+s
+
+a
+
+
+
+
+1
+1
+1
+~
+|
+S
+t
+t
+a
+a v
+s
+
+
+~
+|
+S
+N
+N
+t
+t
+a
+a s
+
+
+
+
+~
+|
+S
+M
+M
+M
+t
+t
+a
+a v
+s
+
+
+1
+1
+~
+|
+S
+
+
+M
+M
+t
+t
+a
+a s
+
+
+
+
+1
+1
+,
+t
+v
+s
+R
+,R
+t
+t
+s
+
+
+,
+N
+ts R
+
+
+1
+,
+
+M
+ts R
+
+
+
+
+,
+M
+M
+t
+v
+s
+R
+…
+…
+…
+…
+…
+Figure 2: The illustration of State-Adversarial Stochastic Game.
+ization method. In fact, µ can be calculated by the following
+formula for the m-th round:
+µ (m) = min{max{m −Mnorm, 0} mod Madv, ωMadv}
+ωMadv
+µ
+(13)
+where Mnorm is the number of training rounds in Step 1 and
+Madv is the number of training rounds in every loop. This
+repetitive change can make agents explore more new posi-
+tive behaviors while simultaneously increasing the robustness
+against adversarial states.
+Our RoMFAC is presented in Algorithm 1. In the next sec-
+tion, we demonstrate that minimizing the learning objective
+of Eq. (9) is convergent.
+4.2
+State-Adversarial Stochastic Game
+In this section, we deﬁne a class of games: SASG (state-
+adversarial stochastic game) to which the objective function
+in Section 4.1 is applied. SASG allows adversarial pertur-
+bations, and we prove that adversarial perturbations can be
+defended in theory.
+Deﬁnition 1 (SASG). An SASG can be deﬁned as a tuple
+
+S, A1, . . . , AN, B1, . . . , BM, R1, . . . , RN, p, γ
+
+. Bj is the
+set of adversarial states of agent j, and M is the number of
+attacked agents and M ≤N.
+We deﬁne the adversarial perturbation vj(s) of agent j as
+a deterministic function, that is, it is only dependent on the
+current state s and does not change over time, vj : S →Bj.
+As shown in Figure 2, vj(s) only perturbs the state of agent
+j, while the environment itself keeps unchanged. The value
+and action-value function of SASG are similar to SG:
+˜V j
+π◦v (s) = Eπ◦v
+ ∞
+X
+k=0
+γkRj
+t+k+1|st = s
+!
+,
+˜Qj
+π◦v (s, a) = Eπ◦v
+ ∞
+X
+k=0
+γkRj
+t+k+1|st = s, at = a
+!
+where v
+∆=
+ v1, · · · , vM
+denotes the joint adversarial
+perturbation and π ◦v denotes the joint policy under the
+joint adversarial perturbation: π ◦v
+∆= π (·|s, v(s)) =
+QM
+j=1 πj  ·|vj (s)
+ QN
+j=M+1 πj (·|s).
+The proofs of the following conclusions of SASG are put
+into Appendices A–D of our supplementary ﬁle.
+
+Theorem 1 (Bellman equations of ﬁxed π and v). Given the
+joint policy π : S →PD
+ A1 × · · · × AN
+and v : S →
+B1 × · · · × BM, we have
+˜V j
+π◦v(s) =
+X
+a∈A1×···×AN
+π (a|s, v(s))
+X
+s′∈S
+(p (s′|s, a)
+
+Rj (s, a, s′) + γ ˜V j
+π◦v(s′)
+
+,
+˜Qj
+π◦v (s) =
+X
+s′∈S
+p (s′|s, a)
+
+Rj (s, a, s′) + γ ˜V j
+π◦v (s′)
+
+.
+The goal of the joint optimal adversarial perturbation is to
+minimize expected cumulative discount reward of every at-
+tacked agent, and hence the value function and action-value
+function can be written as
+˜V j
+π◦v∗(s) = min ˜V j
+π◦(vj,v−j
+∗) (s) ,
+˜Qj
+π◦v∗(s, a) = min ˜Qj
+π◦(vj,v−j
+∗) (s, a)
+where v∗
+∆=
+ v1
+∗, · · · , vM
+∗
+
+is the joint optimal adversarial
+perturbation, vj is an arbitrary valid adversarial perturbation
+and v−j
+∗
+∆=
+
+v1
+∗, · · · , vj−1
+∗
+, vj+1
+∗
+, · · · , vM
+∗
+
+. Obviously, the
+minimized part of Eq. (9) is a special case of Theorem 1.
+Theorem 2 (Bellman contraction of agent j for the joint
+optimal adversarial perturbation). Deﬁne Bellman operator
+L j : R →R,
+
+L j ˜V j
+(s)= min
+vj(s)∈Bj
+X
+a∈A1×···×AN
+ π
+ a|s, vj(s), v−j
+∗
+(s)
+
+X
+s′∈S
+p (s′|s, a)
+
+Rj (s, a, s′) + γ ˜V j (s′)
+!
+.
+Then, the Bellman equation for the joint optimal adversarial
+perturbation v∗is ˜V j
+π◦v∗= L j ˜V j
+π◦v∗. Furthermore, L j is
+a contraction that converges to ˜V j
+π◦v∗.
+Theorem 2 indicates that L j converges to a unique ﬁxed
+point, that is, the joint optimal adversarial perturbation v∗(s)
+is unique.
+Consequently, the proposed action loss (i.e.,
+Eq. (10)) is convergent since there is a unique solution to ˆsj
+that leads to the worst case of Eq. (9).
+Theorem 3. Under the joint optimal adversarial perturba-
+tion v∗, the Nash equilibrium of SASG may not always exist.
+Theorem 4. Given the joint policy π, under the joint optimal
+adversarial perturbation v∗, we have
+max
+s∈S
+n
+˜V j
+π◦v−j
+∗
+(s) (s)−˜V j
+π◦v∗(s)
+o
+≤ζ max
+s∈S max
+ˆsj∈BjDTV
+ π
+ ·|s, ˆs−j
+, π
+ ·|s, ˆsj, ˆs−j
+(14)
+where DTV is the total variation, ˆs−j is a group of adversarial
+states of all attacked agents expect the agent j, i.e., ˆs−j =
+v−j
+∗
+(s), ˆsj is an arbitrary valid adversarial state of agent
+j, and ζ
+∆= 2
+
+1 +
+γ
+(1−γ)2
+
+max
+s,a,s′
+Rj (s, a, s′)
+ is a constant
+independent of πj.
+澵濨濨濕濗濟澔濙濢濙濡濝濙濧
+澻濣濚濣濦濫濕濦濘
+澵濨濨濕濗濟澔濙濡濤濨濭澔濛濦濝濘濧
+濉濢濕濖濠濙澔濨濣澔濕濨濨濕濗濟澔
+濙濢濙濡濝濙濧澔濕濗濗濩濦濕濨濙濠濭
+(a) MFAC in battle.
+澷濜濕濧濙
+澷濣濣濤濙濦濕濨濙澔濨濣澔
+濧濩濦濦濣濩濢濘澔濕濢濘澔濕濨濨濕濗濟
+濉濢濕濖濠濙澔濨濣澔濕濨濨濕濗濟澔澔
+濤濦濙濭澔濕濗濗濩濦濕濨濙濠濭
+濉濢濢濙濗濙濧濧濕濦濭澔濕濨濨濕濗濟濧
+(b) MFAC in pursuit.
+Figure 3: Illustration of representative behaviors of MFAC agents
+in battle and pursuit scenarios. The left sides of (a) and (b) are be-
+haviors of MFAC agents under clean states, and the right sides are
+behaviors under adversarial states.
+Theorem 4 indicates that when there are adversarial states,
+the intervention of the value function is small as long as the
+difference between action distributions is small. Therefore,
+we can train robust policies, even if there is possibly no Nash
+equilibrium under the joint optimal adversarial perturbation
+as shown in Theorem 3. These conclusions also mean that
+our robust method can be applied to some other multi-agent
+reinforcement learning.
+5
+Experiments
+We demonstrate the superiority of RoMFAC in improving
+model robustness against adversarial perturbations.
+5.1
+Environments
+We use two scenarios of MAgent [Zheng et al., 2018] which
+can support hundreds of agents for our experiments.
+Battle.
+This is a cooperative and competitive scenario in
+which two groups of agents, A and B, interact. Each group
+of agents works together as a team to eliminate all opponent
+agents. There are 128 agents in total and 64 ones in each
+group. We use the default reward settings: 0.005 per step,
+0.2, 5 for attacking or killing an opponent agent, −0.1 for at-
+tacking an empty grid, and −0.1 for being attacked or killed.
+Pursuit.
+This is a scenario of local cooperation. There are
+32 predators and 64 prey. Similarly, we use the default reward
+setting: the predator receives +1 for attacking the prey, while
+the prey receives −0.1 for being attacked.
+5.2
+Evaluation with Adversarial States
+Baselines and Ablations.
+In experiments, we compare
+RoMFAC with MFAC and SA-MFAC, where MFAC does not
+apply any robust strategies and SA-MFAC, like most robust
+
+Nos. of
+Battle
+Pursuit
+attacked
+Methods
+Wining
+Average
+Average
+Average
+agents
+rate
+kill
+total reward
+total reward
+MFAC
+0.66
+61.80±3.36
+294.21±19.13
+3674.04±498.83
+SA-MFAC
+0.52
+59.28±5.96
+294.53±28.88
+3036.41±427.37
+SA-MFAC3
+0.30
+57.20±5.28
+282.71±26.99
+3619.32±442.18
+RoMFAC1
+0.52
+59.76±5.20
+297.65±27.13
+3282.41±472.68
+0
+RoMFAC
+1.00
+63.98±0.14
+320.29±8.56
+3844.66±462.89
+MFAC
+0.48
+59.24±5.64
+279.73±29.46
+3012.28±377.84
+SA-MFAC
+0.42
+58.60±5.47
+287.78±29.59
+3031.31±454.87
+SA-MFAC3
+0.44
+57.52±5.42
+279.30±25.53
+3440.18±450.34
+RoMFAC1
+0.52
+60.34±4.38
+298.44±22.80
+3453.61±446.54
+8
+RoMFAC
+0.92
+63.40±1.99
+316.93±14.78
+3815.51±408.88
+MFAC
+0.24
+53.74±7.96
+250.48±43.43
+2356.47±369.75
+SA-MFAC
+0.36
+57.20±5.78
+276.58±29.36
+2930.68±369.41
+SA-MFAC3
+0.32
+56.90±5.49
+282.87±28.02
+3600.57±416.66
+RoMFAC1
+0.54
+60.58±4.67
+299.88±24.71
+3232.90±371.80
+16
+RoMFAC
+0.86
+62.94±2.77
+312.51±17.98
+3724.85±394.78
+MFAC
+0.00
+42.28±7.96
+185.45±42.56
+1088.57±373.91
+SA-MFAC
+0.34
+58.26±4.17
+281.67±26.94
+3015.21±450.06
+SA-MFAC3
+0.38
+57.92±4.62
+283.68±25.12
+3555.26±381.79
+RoMFAC1
+0.46
+59.24±5.49
+293.16±29.98
+3171.95±448.23
+32
+RoMFAC
+0.88
+63.40±1.69
+315.15±16.26
+3714.23±485.07
+MFAC
+0.00
+35.64±6.85
+152.25± 34.83
+979.07±321.50
+SA-MFAC
+0.30
+56.32±5.13
+273.99±27.81
+2866.90±437.40
+SA-MFAC3
+0.28
+57.10±5.07
+280.95±24.83
+3598.86±460.70
+RoMFAC1
+0.32
+57.28±5.59
+278.95±32.30
+3165.30±421.10
+48
+RoMFAC
+0.88
+63.04±2.88
+308.64±20.75
+3676.54±464.25
+MFAC
+0.00
+26.42±3.99
+102.08±19.29
+1000.10±388.11
+SA-MFAC
+0.24
+55.58±5.00
+265.56±22.69
+2856.36±486.67
+SA-MFAC3
+0.24
+56.20±5.13
+275.29±25.09
+3551.70±398.98
+RoMFAC1
+0.26
+56.40±5.72
+275.40±31.16
+3175.48±459.65
+64
+RoMFAC
+0.90
+63.20±2.38
+308.48±18.51
+3655.81±507.83
+Table 1: Performance comparisons among the proposed method and
+baselines. Bold scores represents the best performance.
+training, uses a ﬁxed weight factor µ and increased pertur-
+bation bound ǫ in the original training technique. In addi-
+tion, we apply our repetitive regularization technique to SA-
+MFAC, denoted as SA-MFAC3, that is, µ remains constant,
+but ǫ changes repetitively. We also consider one variant of
+RoMFAC for ablation studies, namely the µ of RoMFAC just
+uses linear increase one time in the training process in order
+to show the effectiveness of our repetitive regularization, de-
+noted as RoMFAC1.
+Training.
+In the battle scenario, we train ﬁve models in
+self-play. In the pursuit scenario, both predators and prey
+use the same algorithm during training process. In the two
+scenarios ﬁve models have almost the same hyper-parameters
+settings except the number of loops c. For MFAC, µ is al-
+ways 0 during the whole training process. For SA-MFAC and
+RoMFAC1, we execute one loop for ǫ and µ (i.e., c = 1), re-
+spectively. For SA-MFAC3 and RoMFAC, we execute three
+loops for ǫ and µ (i.e., c = 3), respectively. Settings of other
+hyper-parameters are put into Appendix E of our supplemen-
+tary ﬁle.
+Testing.
+For the convenience of comparison, we use advan-
+tageous actor critic as the opponent agents’ and prey’s poli-
+cies, and do not perturb their states. To evaluate the algo-
+rithm’s robustness, we utilize a 10-step PGD with ℓ∞norm
+perturbation budget ǫ = 0.075 to create adversarial perturba-
+tions and execute 50 rounds of testing with maximum time
+steps of 400.
+Results and Discussions
+As demonstrated in Figure 3, MFAC agents cannot collabo-
+rate normally when states are perturbed. In the battle sce-
+nario, the previously learned policies of collaboration that a
+group of agents collaboratively go forward and attack another
+group are destroyed. They begin attacking empty grids but
+0
+8
+16
+32
+48
+64
+Numbers of attacked agents
+0
+50
+100
+150
+200
+250
+300
+Average total reward
+MFAC
+SA-MFAC
+SA-MFAC3
+RoMFAC1
+RoMFAC
+(a) Battle.
+0
+8
+16
+32
+48
+64
+Numbers of attacked agents
+0
+1000
+2000
+3000
+4000
+Average total reward
+(b) Pursuit.
+Figure 4: Average total reward.
+are unable to accurately attack opponent agents. In the pur-
+suit scenario, the initially learned coordinated siege policy is
+destroyed, their movements are scattered, and they are unable
+to accurately attack prey.
+The experimental results are shown in Table 1. Figure 4
+presents the average total rewards of agents. It is seen that
+when the robust training is not carried out, the cooperative
+policies will be destroyed more seriously with more attacked
+agents. After a robust training, the performance of the model
+will slightly decrease as the number of attacked agents grows.
+In the battle scenario, a robust training will increase the per-
+formance not only on adversarial states but also on clean
+states. Our RoMFAC is the most effective. The winning rate
+and the number of opponent agents killed can also be used
+for performance evaluation. In the pursuit scenario, under
+clean states, the performance of SA-MFAC, SA-MFAC3 and
+RoMFAC1 approaches will decrease, whereas our RoMFAC
+method will improve the performance not only on adversarial
+states but also on clean states. In a word, the model trained
+by our RoMFAC has the better performance even in the envi-
+ronments without perturbations (i.e., the number of attacked
+agents is 0).
+Comparing RoMFAC1 and RoMFAC, we can see the sig-
+niﬁcance of our repetitive regularization. The average total
+rewards obtained by SA-MFAC3 are slightly better than SA-
+MFAC in the battle scenario, but they are obviously good in
+the pursuit scenario. Therefore, applying our repetitive regu-
+larization to SA-MFAC can also lead to a good result.
+
+6
+Conclusion and Future Work
+In this paper, we propose a robust training framework for the
+state-of-the-art reinforcement learning method MFAC. In our
+framework, the action loss function and the repetitive regu-
+larization of it play an important role in improving the ro-
+bustness of the trained model. Moreover, we present SASG
+to establish a theoretical foundation in multi-agent reinforce-
+ment learning with adversarial attacks and defenses, which
+shows that our proposed action loss function is convergent.
+Our work is inspired by SA-MDP [Zhang et al., 2020] that is
+a robust single-agent reinforcement learning with adversarial
+perturbations and a special case of SASG. In the future work,
+we intend to extend our method to other MARL approaches.
+References
+[Fink, 1964] A. M. Fink.
+Equilibrium in a stochastic n-
+person game.
+Hiroshima Mathematical Journal, 28(1),
+1964.
+[Goodfellow et al., 2014] Ian
+J.
+Goodfellow,
+Jonathon
+Shlens, and Christian Szegedy. Explaining and harnessing
+adversarial examples.
+arXiv preprint arXiv:1412.6572,
+2014.
+[Huang et al., 2017] Sandy Huang, Nicolas Papernot, Ian
+Goodfellow, Yan Duan, and Pieter Abbeel.
+Adversar-
+ial attacks on neural network policies.
+arXiv preprint
+arXiv:1702.02284, 2017.
+[Ilahi et al., 2021] Inaam Ilahi, Muhammad Usama, Ju-
+naid Qadir, Muhammad Umar Janjua, Ala Al-Fuqaha,
+Dinh Thai Huang, and Dusit Niyato. Challenges and coun-
+termeasures for adversarial attacks on deep reinforcement
+learning.
+IEEE Transactions on Artiﬁcial Intelligence,
+pages 1–1, 2021.
+[Iqbal and Sha, 2019] Shariq Iqbal and Fei Sha.
+Actor-
+attention-critic for multi-agent reinforcement learning. In
+International Conference on Machine Learning, pages
+2961–2970. PMLR, 2019.
+[Konda and Tsitsiklis, 2000] Vijay R. Konda and John N.
+Tsitsiklis. Actor-critic algorithms. In Advances in neural
+information processing systems, pages 1008–1014, 2000.
+[Li et al., 2019] Shihui Li, Yi Wu, Xinyue Cui, Honghua
+Dong, Fei Fang, and Stuart Russell. Robust multi-agent re-
+inforcement learning via minimax deep deterministic pol-
+icy gradient. In Proceedings of the AAAI Conference on
+Artiﬁcial Intelligence, volume 33, pages 4213–4220,2019.
+[Lin et al., 2020] Jieyu Lin, Kristina Dzeparoska, Sai Qian
+Zhang, Alberto Leon-Garcia, and Nicolas Papernot. On
+the robustness of cooperative multi-agent reinforcement
+learning. In 2020 IEEE Security and Privacy Workshops
+(SPW), pages 62–68. IEEE, 2020.
+[Liu et al., 2020] Yong Liu, Weixun Wang, Yujing Hu,
+Jianye Hao, Xingguo Chen, and Yang Gao. Multi-agent
+game abstraction via graph attention neural network. In
+Proceedings of the AAAI Conference on Artiﬁcial Intelli-
+gence, volume 34, pages 7211–7218, 2020.
+[Lowe et al., 2017] Ryan Lowe, Yi Wu, Aviv Tamar, Jean
+Harb, Pieter Abbeel, and Igor Mordatch.
+Multi-agent
+actor-critic for mixed cooperative-competitive environ-
+ments. In Proceedings of the 31st International Confer-
+ence on Neural Information Processing Systems, pages
+6382–6393, 2017.
+[Madry et al., 2018] Aleksander
+Madry,
+Aleksandar
+Makelov,
+Ludwig
+Schmidt,
+Dimitris
+Tsipras,
+and
+Adrian Vladu.
+Towards deep learning models resistant
+to adversarial attacks.
+In International Conference on
+Learning Representations, 2018.
+[Mnih et al., 2015] Volodymyr Mnih, Koray Kavukcuoglu,
+David Silver, Andrei A. Rusu, Joel Veness, Marc G. Belle-
+mare, Alex Graves, Martin Riedmiller, Andreas K. Fidje-
+land, Georg Ostrovski, et al. Human-level control through
+deep reinforcement learning. Nature, 518(7540):529–533,
+2015.
+[Oikarinen et al., 2020] Tuomas Oikarinen, Wang Zhang,
+Alexandre Megretski, Luca Daniel, and Tsui-Wei Weng.
+Robust deep reinforcement learning through adversarial
+loss. arXiv preprint arXiv:2008.01976, 2020.
+[Rashid et al., 2018] Tabish Rashid, Mikayel Samvelyan,
+Christian Schroeder, Gregory Farquhar, Jakob Foerster,
+and Shimon Whiteson. Qmix: Monotonic value function
+factorisation for deep multi-agent reinforcement learning.
+In International Conference on Machine Learning, pages
+4295–4304. PMLR, 2018.
+[Shapley, 1953] Lloyd S. Shapley.
+Stochastic games.
+Proceedings
+of
+the
+national
+academy
+of
+sciences,
+39(10):1095–1100, 1953.
+[Sun et al., 2020] Jianwen Sun, Tianwei Zhang, Xiaofei Xie,
+Lei Ma, Yan Zheng, Kangjie Chen, and Yang Liu. Stealthy
+and efﬁcient adversarial attacks against deep reinforce-
+ment learning. In Proceedings of the AAAI Conference on
+Artiﬁcial Intelligence, volume 34, pages 5883–5891,2020.
+[Wang et al., 2020] Jianhao Wang, Zhizhou Ren, Terry Liu,
+Yang Yu, and Chongjie Zhang. Qplex: Duplex dueling
+multi-agent q-learning. arXiv preprint arXiv:2008.01062,
+2020.
+[Yang et al., 2018] Yaodong Yang, Rui Luo, Minne Li, Ming
+Zhou, Weinan Zhang, and Jun Wang. Mean ﬁeld multi-
+agent reinforcement learning. In International Conference
+on Machine Learning, pages 5571–5580. PMLR, 2018.
+[Yang et al., 2020] Yaodong Yang, Jianye Hao, Guangy-
+ong Chen, Hongyao Tang, Yingfeng Chen, Yujing Hu,
+Changjie Fan, and Zhongyu Wei. Q-value path decompo-
+sition for deep multiagent reinforcement learning. In Inter-
+national Conference on Machine Learning, pages 10706–
+10715. PMLR, 2020.
+[Zhang et al., 2020] Huan Zhang, Hongge Chen, Chaowei
+Xiao, Bo Li, Mingyan Liu, Duane Boning, and Cho-Jui
+Hsieh.
+Robust deep reinforcement learning against ad-
+versarial perturbations on state observations. Advances in
+Neural Information Processing Systems, 33:21024–21037,
+2020.
+
+[Zhang et al., 2021] Huan Zhang, Hongge Chen, Duane
+Boning, and Cho-Jui Hsieh. Robust reinforcement learn-
+ing on state observations with learned optimal adversary.
+arXiv preprint arXiv:2101.08452, 2021.
+[Zheng et al., 2018] Lianmin Zheng, Jiacheng Yang, Han
+Cai, Ming Zhou, Weinan Zhang, Jun Wang, and Yong
+Yu. Magent: A many-agent reinforcement learning plat-
+form for artiﬁcial collective intelligence. In Proceedings of
+the AAAI Conference on Artiﬁcial Intelligence, volume 32,
+2018.

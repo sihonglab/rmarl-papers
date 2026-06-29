@@ -1,0 +1,2120 @@
+Tackling Uncertainties in Multi-Agent Reinforcement Learning
+through Integration of Agent Termination Dynamics
+Somnath Hazra
+IIT Kharagpur
+Kharagpur, India
+somnathhazra@kgpian.iitkgp.ac.in
+Pallab Dasgupta
+Synopsys
+Santa Clara, USA
+pallabd@synopsys.com
+Soumyajit Dey
+IIT Kharagpur
+Kharagpur, India
+soumya@cse.iitkgp.ac.in
+ABSTRACT
+Multi-Agent Reinforcement Learning (MARL) has gained signifi-
+cant traction for solving complex real-world tasks, but the inherent
+stochasticity and uncertainty in these environments pose substan-
+tial challenges to efficient and robust policy learning. While Dis-
+tributional Reinforcement Learning has been successfully applied
+in single-agent settings to address risk and uncertainty, its applica-
+tion in MARL is substantially limited. In this work, we propose a
+novel approach that integrates distributional learning with a safety-
+focused loss function to improve convergence in cooperative MARL
+tasks. Specifically, we introduce a Barrier Function based loss that
+leverages safety metrics, identified from inherent faults in the sys-
+tem, into the policy learning process. This additional loss term
+helps mitigate risks and encourages safer exploration during the
+early stages of training. We evaluate our method in the StarCraft II
+micromanagement benchmark, where our approach demonstrates
+improved convergence and outperforms state-of-the-art baselines
+in terms of both safety and task completion. Our results suggest
+that incorporating safety considerations can significantly enhance
+learning performance in complex, multi-agent environments.
+CCS CONCEPTS
+• Theory of computation →Multi-agent reinforcement learn-
+ing; Multi-agent learning.
+KEYWORDS
+Multi-Agent Reinforcement Learning, Distributional RL, Barrier
+Function
+ACM Reference Format:
+Somnath Hazra, Pallab Dasgupta, and Soumyajit Dey. 2025. Tackling Un-
+certainties in Multi-Agent Reinforcement Learning through Integration
+of Agent Termination Dynamics. In Proc. of the 24th International Confer-
+ence on Autonomous Agents and Multiagent Systems (AAMAS 2025), Detroit,
+Michigan, USA, May 19 – 23, 2025, IFAAMAS, 13 pages.
+1
+INTRODUCTION
+Multi-Agent Systems (MAS) remain a highly challenging domain,
+owing to the inherent stochasticity in the environment, and con-
+currently learning agents; resulting in uncertain reward outcomes.
+Therefore the contemporary Multi-Agent Reinforcement Learning
+(MARL) literature has shifted from point estimates derived from
+This work is licensed under a Creative Commons Attribution Inter-
+national 4.0 License.
+Proc. of the 24th International Conference on Autonomous Agents and Multiagent Systems
+(AAMAS 2025), Y. Vorobeychik, S. Das, A. Nowé (eds.), May 19 – 23, 2025, Detroit, Michigan,
+USA. © 2025 International Foundation for Autonomous Agents and Multiagent Systems
+(www.ifaamas.org).
+expected global rewards [26, 38] to distributional analysis over re-
+turns [5, 9] which provide a more informed understanding of the
+variability in future returns. However, the predicted distributions
+are prone to errors at the initial phases of training because the
+policy has not yet explored and trained enough to predict accurate
+distributions. In the context of MARL, the prediction errors become
+even more critical due to the collective uncertainty from multiple
+agents, where each agent’s decisions can drastically impact both
+individual and collective outcomes. Our focus lies specifically on
+cooperative MARL, where a team of agents collaborates to achieve
+a shared objective in a stochastic environment [2].
+Despite the effectiveness of the Centralized Training and Decen-
+tralized Execution (CTDE) paradigm [18] for cooperative MARL
+most CTDE-based algorithms maximize returns and overlook the
+uncertainty due to untrained parameters in the policy that captures
+the inherent stochasticity in MAS. Here agents must contend with
+not only uncertain rewards but also additional safety constraints
+resulting from the stochasticity. Our contribution is to identify the
+innate fault tolerant MARL formulation from the system such that
+the system does not go beyond a pre-defined safety boundary. For
+example, a team game cannot be won if players keep getting elim-
+inated. These safety objectives hold importance during the early
+phases of training since it is hard to estimate accurate distributions
+by a distributional model owing to exploration strategies and partial
+observability of the agents.
+Action / Return statistics
+...
+Fault formulation
+...
+Huber
+Quantile
+Loss
+Barrier
+Function
+Loss
+π
+Figure 1: Integration of the safety constraints along with loss
+functions calculated with respect to returns, helps reduce the
+uncertainity, especially during the initial phase of training.
+As an instance of such a situation, let us consider a battle scenario
+between two agent groups. The reward can be based on intermedi-
+ate strategies decided by the teams. But it is unsure whether their
+strategy will work, since any agent army does not know about the
+strategies planned by the other army. Moreover the agents may
+not be experts in carrying out their decided objective. However,
+one property that is overlooked, is that the battle cannot be won
+if there are not enough agents left to fight; i.e., there is an inher-
+ent fault tolerant formulation in the system. For example, in battle
+arXiv:2501.12061v1  [cs.LG]  21 Jan 2025
+
+simulations like StarCraft II, minimizing ally casualties can be as
+important as maximizing reward [28].
+Motivated by the gap in current research, our work addresses the
+uncertainties of the system via integration of safety considerations
+from the inherent faults in the MAS. While previous efforts have
+successfully combined Distributional RL with MARL to improve risk
+sensitivity [25, 35], these approaches largely focus on algorithmic
+modifications rather than optimizing the learning process by using
+the available information regarding the safety-critical objectives.
+Our contributions are summarized as follows:
+• We propose a novel loss function that incorporates safety
+constraints into the optimization process, derived from the
+safety boundary of the inherent faults in the system. By ex-
+plicitly accounting for safety alongside reward maximization,
+we aim to accelerate learning, tackle environmental uncer-
+tainties, and improve long-term policy performance in risk-
+sensitive environments. We also use the Dueling Networks
+[41] in our architecture to eliminate ineffective actions.
+• We also suggest an architectural improvement for the local
+policy network in the CTDE paradigm to utilize the return
+distribution for prioritizing the important components from
+the local observation.
+• We validated our approach on the StarCraft II micromanage-
+ment [28] and MetaDrive[17] benchmarks, demonstrating its
+efficacy compared to existing baselines and state-of-the-art
+distributional MARL algorithms.
+More specifically, our work contributes to bridging the gap be-
+tween theoretical advancements in Distributional MARL and prac-
+tical needs in real-world MARL environments, particularly those
+with critical safety concerns.
+2
+PRELIMINARIES
+This section outlines some of the preliminary concepts.
+2.1
+Decentralized POMDP
+The de facto standard for modeling cooperation in MARL is a De-
+centralized Partially Observable MDP or Dec-POMDP [23]. It is
+defined using the tuple M = ⟨N, S, U, Ω, 𝑃, O,𝑟,𝛾⟩, where N ≡
+{𝑎1,𝑎2, ...,𝑎𝑛} is a finite set of agents, and 𝑠∈S represents the
+global state of the system. At each time-step, the individual agents
+choose an action 𝑢𝑖∈U for 𝑖∈N based on observation 𝑜𝑖∈Ω,
+with probability O(𝑜𝑖|𝑠,𝑢𝑖). The joint action, u = [𝑢𝑖]𝑛
+𝑖=1, changes
+the state of the system from 𝑠to 𝑠′ ∼𝑃(·|𝑠, u); yielding a joint
+reward 𝑟(𝑠, u). 𝛾∈[0, 1) is the discount factor.
+Value functions provide an estimate of the reward that can be
+obtained given a state, or when taking an action from a state.
+Accordingly, the state value function for the system is given by,
+𝑉𝝅(𝑠) = E[Í∞
+𝑡=0 𝛾𝑡𝑟(𝑠𝑡, u𝑡)|𝑠0 = 𝑠, 𝝅]; and the state-action value
+function is given by, 𝑄𝝅(𝑠, u) = 𝑟(𝑠, u) + 𝛾E𝑠′𝑉𝝅(𝑠′). The for-
+mal objective of the co-operative system is to find a joint policy
+𝝅≡⟨𝜋1, ..., 𝜋𝑛⟩that maximizes the expected return given by:
+𝝅∗= arg max
+𝝅
+E(𝑠𝑡,u𝑡)∼(𝑃,𝝅)
+" ∞
+∑︁
+𝑡=0
+𝛾𝑡𝑟(𝑠𝑡, u𝑡)
+#
+(1)
+2.2
+Centralized Training and Decentralized
+Execution
+Multi-agent algorithms generally follow the Centralized Training
+Decentralized Execution (CTDE) paradigm [18]. Agents learn col-
+laboratively during training using feedback from the environment.
+This phase may involve information exchange with a central ap-
+proximation network. This phase is termed as the Central Training
+phase. The Central Value function accumulates the values of the
+individual policies 𝜋𝑖in a forward propagation determined by the
+Credit Assignment strategy [8] of the algorithm. The strategies build
+on the Individual Global Max (IGM) principle which states that lo-
+cally optimal actions maximize the global reward of the system
+given by the following equation [13].
+arg max
+u∈U𝑛𝑄𝝅(𝑠, u) =
+
+arg max
+𝑢𝑖∈U 𝑄𝜋𝑖(𝑜𝑖,𝑢𝑖)
+𝑛
+𝑖=1
+(2)
+During the Decentralized Execution phase, agents act indepen-
+dently based on local observations.
+2.3
+Distributional RL
+In single-agent RL, distributional RL aims to learn the complete dis-
+tribution over the returns, 𝑍(𝑠, u), instead of learning the expected
+return, 𝑄(𝑠, u). The distribution over the returns can be approxi-
+mated using a categorical distribution [5] or a quantile function
+[9]. We here use Implicit Quantile Network (IQN) [9], that models
+𝑍(𝑠, u) using an inverse cumulative distribution function (CDF),
+𝐹−1(𝑠, u|𝑤), 𝑤∈[0, 1]. IQN defines the distributional Bellman op-
+erator to update 𝑍(𝑠, u) using the Huber quatile regression loss,
+a distributional version of the temporal difference error. During
+execution, the action is chosen based on the largest expected re-
+turn, arg maxu E[𝑍(𝑠, u)]. The distributional analysis in MARL is
+based on the Distributional IGM (DIGM) principle, which states that,
+given individual state-action value distributions, [𝑍𝜋𝑖(𝑜𝑖,𝑢𝑖)]𝑛
+𝑖=1,
+the joint state-action value distribution, 𝑍𝝅(𝑠, u), is maximized if
+the following equation holds [35].
+arg max
+u∈U𝑛𝑍𝝅(𝑠, u) =
+
+arg max
+𝑢𝑖∈U 𝑍𝜋𝑖(𝑜𝑖,𝑢𝑖)
+𝑛
+𝑖=1
+(3)
+3
+RELATED WORK
+Efficiency and scalability have been central challenges in the MARL
+literature, particularly when estimating the global expected return
+(for using the reward, 𝑟as a reference during training) from local
+policies (in decentralized execution). Value factorization methods
+have been widely adopted to address this, adhere to the IGM princi-
+ple. Initial approaches like VDN [38] directly sum local value func-
+tions; while QMIX [26] uses a monotonic mixing function to ensure
+compatibility with the global return. QTRAN [32] introduced linear
+constraints to factorize the global return without the monotonicity
+assumption. Transformer-based architectures, such as Qatten [44],
+have also been explored in MARL. QPLEX [40] leverages the duel-
+ing network architecture [41] to improve learning generalization
+across actions, which we have used in a distributional setting in
+this work. Despite these advancements, the stochasticity inherent
+in multi-agent systems complicates the use of expected returns,
+often hindering training efficiency.
+
+In parallel, distributional RL has made significant strides in the
+single-agent domain, introducing algorithms such as C51 [5], im-
+plicit quantile networks (IQN) [9], and others [10, 27]. More recently,
+there have been increasing interest in unifying distributional RL
+with MARL to improve risk-sensitivity and robustness. Notable
+works include restructuring the IGM principle to a distributional
+Q-learning standpoint [29, 35]; or exploring the methods for ag-
+gregating reward distributions for each action, considering the
+sources of risk [22, 34]. Works such as RMIX [25] integrate risk-
+aware metrics like Conditional Value at Risk (CVaR) into the QMIX
+framework, while DFAC [35] introduces the Distributional IGM
+(DIGM) principle, extending value factorization methods like VDN
+and QMIX to the distributional setting. DIGM was further refined in
+subsequent work [37]. ResQ [30] builds upon DMIX by introducing
+residual Q-functions for more accurate return estimation, while
+other studies have explored risk-sensitive aggregation of reward
+distributions [22, 34], uncertainty-aware exploration strategies [21],
+and modelling uncertainties related to reward [14].
+Action shielding has been another widely explored venue in
+RL and MARL to prevent unsafe actions during training and ex-
+ecution. Alshiekh et al. [3] introduced a shielding mechanism to
+enforce safety constraints by overriding unsafe actions based on a
+safety specification. Building on this, Bharadwaj et al. [6] proposed
+minimum-cost shields for multi-agent systems to ensure safe coordi-
+nation. Factored shields curated on linear temporal logic properties
+[11] is another venue that has been explored for MARL. For en-
+vironments with nonlinear dynamics, model predictive shielding
+[4] provides an efficient approach to maintaining safety. Zhang
+et al. proposed a multi-agent version [47], where only a subset of
+agents, determined by a greedy algorithm, need to use a backup
+policy. While these methods focus on action-level intervention,
+our approach incorporates safety directly into the policy learning
+process via the barrier function, complementing action shielding
+techniques by prioritizing long-term safety considerations during
+training.
+Our work builds on these existing distributional MARL approaches
+by incorporating agent-specific information to enhance policy learn-
+ing; unlike previous studies that focus primarily on algorithmic
+adaptations of MARL to the distributional context. This enables
+more effective training in stochastic multi-agent environments.
+4
+METHODOLOGY
+The dynamic nature of MARL environments arises from multi-
+ple agents acting concurrently, often following independent local
+heuristics (policies). This interaction leads to inherent uncertainty
+in the outcomes (returns), especially during the initial phases of
+training. Although exploration strategies can help reduce the epis-
+temic uncertainty by utilizing the generalization capability of neural
+networks, it remains an integral part of multi-agent environments at
+the start of training [15, 20]. To address this challenge, we propose
+leveraging the safety implications available from the environment,
+e.g., agent deaths, to boost convergence during policy learning. We
+use a loss function based on Control Barrier Function (CBF) [24, 45],
+alongside the Huber quantile loss, for training the local policies. In
+the following sub-section we formally describe the Barrier Function
+loss used in this work.
+4.1
+The Barrier Function Loss
+Barrier Function is employed to ensure that the agents’ trajectories
+stay within a "safe" region of the state space. This barrier defines
+constraints that the policies must satisfy, ensuring that unsafe states
+are avoided during training. Formally, the barrier certificate is de-
+fined as follows [45].
+Definition 1. Barrier Certificate. A barrier certificate, 𝐵𝝅, for
+a policy, 𝝅is a function 𝐵𝝅: S →R, such that the following
+properties hold.
+(1) ∀𝑠∈S0, 𝐵𝝅(𝑠) ≤0
+(2) ∀𝑠∈Sunsafe, 𝐵𝝅(𝑠) > 0
+(3) ∀𝑠∈S, 𝐵𝝅(𝑠′) −𝐵𝝅(𝑠) ≤−𝜆𝐵𝐵𝝅(𝑠)
+where 𝑠′ ∼𝑃(·|𝑠, u), u ∼𝝅, and 0 < 𝜆𝐵< 1 is a hyper-parameter
+controlling the convergence rate.
+In our work, the barrier function is designed to capture the
+number of agent terminations as a function of the state over the
+course of a trajectory. Specifically, the barrier function is defined
+using the following equation.
+𝐵𝝅(𝑠) = (agents dead at 𝑠) + 𝛾𝐵𝐵𝝅(𝑠′)
+(4)
+where 𝑠′ ∼𝑃(·|𝑠, u), and 𝛾𝐵signifies the discount factor for the
+barrier function. Intuitively, it can be thought of as an estimation
+of vulnerability (opposite of agent health) of the collective group
+of agents. The formulation bears similarity with the definition of
+the value function 𝑉𝝅, as it includes the discounted future state
+estimate at 𝑠′ in the current estimate; since in an MDP the state
+𝑠′ ∼𝑃(·|𝑠, ·). Among the three conditions above, our policy should
+satisfy the third condition (which is the invariant property), i.e.,
+∀𝑠∈S, 𝐵𝝅(𝑠′) −𝐵𝝅(𝑠) ≤−𝜆𝐵𝐵𝝅(𝑠), ensuring that the barrier
+function consistently decreases along the trajectory [45].
+To enforce this condition, we integrate the following loss func-
+tion for policy optimization:
+L𝐵(𝝅) =
+1
+|S|
+∑︁
+𝑠,𝑠′∈S
+𝑠′∼𝑃(·|𝑠,u)
+max  𝐵𝝅(𝑠′) −(1 −𝜆𝐵)𝐵𝝅(𝑠), 0
+(5)
+where |S| represents the number of visited states over a trajectory.
+This loss function is derived from the number of agent deaths, which
+is a safety-critical metric. By focusing on this deterministic safety
+criterion, the method improves the accuracy of policy updates in
+unsafe scenarios.
+An alternative approach could be to calculate the barrier loss
+for each individual agent, and update the local policies 𝜋𝑖accord-
+ingly. But this approach has two notable drawbacks; • given the
+length of the trajectory, the impact of this loss at each state may be
+a insufficient to derive meaningful gradient updates, particularly
+when averaged across the trajectory, • in a cooperative environ-
+ment, it is unrealistic to attribute the responsibility of an agent’s
+termination solely to the corresponding local policy, as the outcome
+is influenced by the actions of all agents.
+Thus, our method leverages the global safety constraint across
+the trajectory, promoting stable and efficient convergence in MARL.
+
+Agent 1
+Agent 2
+Agent n
+...
+(ot
+1, ut-1
+1)
+(ot
+2, ut-1
+2)
+(ot
+n, ut-1
+n)
+MLP
+GRU
+MLP
+cos
+Φ
+(ot
+i, ut-1
+i)
+Z t
+i
+Q t
+i
+{ Q t
+1 , Q t
+2 , ... , Q t
+n }
+{ Z t
+1 , Z t
+2 , ... , Z t
+n }
+(Q t
+1, Z t
+1)
+(Q t
+2, Z t
+2)
+(Q t
+n, Z t
+n)
+Mean
+Shape
+(st, ut-1)
+Q t
+i
+V t
+i , A t
+i
+Z t
+mean
+Z t
+shape
+U[0, 1]
+Z t
++
+{ ut
+1 , ut
+2 , ... , ut
+n }
+a1
+a2
+an
+...
+arg max
+Environment
+B t
+Figure 2: The overall framework illustrating the training objective. The calculated errors are combined using gradient ma-
+nipulation and back-propagated through the central training model. References to the abbreviated notations from the text:
+𝑍𝑡
+𝑖= 𝑍𝜋𝑖(𝑜𝑡
+𝑖,𝑢𝑡
+𝑖), 𝑄𝑡
+𝑖= 𝑄𝜋𝑖(𝑜𝑡
+𝑖,𝑢𝑡
+𝑖), 𝑡is time, 𝐴𝑡
+𝑖= 𝐴𝜋𝑖(𝑜𝑡
+𝑖,𝑢𝑡
+𝑖), 𝑉𝑡
+𝑖= 𝑉𝜋𝑖(𝑜𝑡
+𝑖).
+4.2
+Optimization on Return
+After defining the safety objective through the CBF loss, we inte-
+grate it with the DRL objective to optimize the reward function. We
+use the Huber-quantile regression loss [9] for 𝑄𝝅, allowing us to
+model the stochastic return distribution effectively.
+In cooperative multi-agent systems, value factorization tech-
+niques assist CTDE. However, to account for the stochasticity of
+value functions, we require a distributional variant of value fac-
+torization that satisfies Distributional IGM [35]. The Mean-Shape
+decomposition [35, 36] addresses this by separating distribution 𝑍
+over global utilities into: 𝑍= E[𝑍] + (𝑍−E[𝑍]) = 𝑍mean + 𝑍shape.
+The mean term in the mean-shape decomposition E[𝑍], represents
+the expected value, while the shape term captures deviations from
+this expectation [19, 36]. This ensures compliance with DIGM while
+allowing effective factorization of stochastic utilities.
+For factorization, we adopt a distributional version of the QPLEX
+algorithm [40], using a dueling network architecture [41]. Following
+[37], the global action-value function 𝑄𝝅is factorized as follows.
+𝑄𝝅(𝑠, u) =
+𝑛
+∑︁
+𝑖=1
+𝑉𝜋𝑖(𝑜𝑖) +
+𝑛
+∑︁
+𝑖=1
+𝜆𝑖(𝑜𝑖,𝑢𝑖) · 𝐴𝜋𝑖(𝑜𝑖,𝑢𝑖)
++
+𝑛
+∑︁
+𝑖=1
+(𝑍𝜋𝑖(𝑜𝑖,𝑢𝑖) −𝑄𝜋𝑖(𝑜𝑖,𝑢𝑖))
+(6)
+Here 𝑉𝜋𝑖(𝑜𝑖) denotes the value function for agent 𝑖’s observation,
+𝐴𝜋𝑖(𝑜𝑖,𝑢𝑖) is the advantage function, and 𝑍𝜋𝑖(𝑜𝑖,𝑢𝑖) captures the
+distributional nature of local utilities. The overall architecture for
+obtaining the global distribution over returns and the CBF value
+from the environment is illustrated in Figure 2.
+4.3
+Overall Training Objective
+Now that we have obtained the formulations for calculating both
+the loss functions, we need to integrate them to calculate our over-
+all loss for the gradient descent. In the following formulation for
+calculating the overall loss, we consider the Huber quantile loss as
+L𝑄and the CBF loss as L𝐵. We combine the loss functions using
+gradient manipulation, where the gradient is calculated from the
+backpropagation of the individual loss function components, as
+studied in [46] for multi-task learning.
+The objective of gradient manipulation is to reduce the deviation
+of gradients due to the reward and barrier components. Let the
+gradient due to L𝐵be represented as 𝑔𝐵, and that due to the L𝑄
+as 𝑔𝑄. Let 𝜃be the angle between 𝑔𝐵and 𝑔𝑄. Since we work with
+gradient manipulation here, the gradients occasionally may need
+to be projected to a plane that is normal to the other gradient; we
+will explain this in more detail in the following paragraph. Let the
+projection of gradient of 𝑔𝐵on the normal plane of 𝑔𝑄be given by
+𝑔+
+𝐵; while the projection of gradient of 𝑔𝑄on the normal plane of
+𝑔𝐵be represented by 𝑔+
+𝑄.
+gQ
+gB
+g+
+Q
+g+
+B
+g2
+g1
+gQ
+gB
+g+
+B
+g+
+Q
+g2
+g1
+Figure 3: Analysis of gradient manipulation.
+Owing to optimization on two tasks, there may occasionally
+occur a conflict among the gradients 𝑔𝑄and 𝑔𝐵, i.e. 𝜃> 90◦. In
+those cases, it is essential to project the gradient vector onto the
+normal plane of the other vector for effective updates to the network
+[46]. For cases when 𝜃≤90◦, i.e., the gradients do not conflict,
+the gradient manipulation is not required. The overall gradient
+calculation, 𝑔, is thus given by the following equation.
+𝑔=
+(
+𝛽+
+𝑄· 𝑔+
+𝑄+ 𝛽+
+𝐵· 𝑔+
+𝐵,
+𝜃> 90◦
+= 𝑔1(let)
+𝛽𝑄· 𝑔𝑄+ 𝛽𝐵· 𝑔𝐵,
+𝜃≤90◦
+= 𝑔2(let)
+(7)
+𝑔+
+𝑄= 𝑔𝑄−
+𝑔𝑄· 𝑔𝐵
+||𝑔𝐵||2 𝑔𝐵
+𝑔+
+𝐵= 𝑔𝐵−
+𝑔𝐵· 𝑔𝑄
+||𝑔𝑄||2 𝑔𝑄
+(8)
+where 𝛽+
+𝑄, 𝛽+
+𝐵, 𝛽𝑄, 𝛽𝐵denote the weights of the gradients. With
+this strategy we can optimize on both the tasks more efficiently.
+
+As shown in Equation 7, we have two cases for the gradients cor-
+responding to the loss functions calculated: when the gradients
+conflict, i.e., 𝜃> 90◦; and when the gradients do not conflict, i.e.,
+𝜃≤90◦. The process is illustrated in Figure 3.
+1. When 𝜃> 90◦: We consider 𝛽+
+𝑄and 𝛽+
+𝐵are equal to 0.5. Then
+according to the given equations, we have the following.
+𝑔1 = 0.5 · 𝑔+
+𝑄+ 0.5 · 𝑔+
+𝐵
+= 0.5 ·
+
+𝑔𝑄−
+𝑔𝑄· 𝑔𝐵
+||𝑔𝐵||2 𝑔𝐵
+
++ 0.5 ·
+
+𝑔𝐵−
+𝑔𝐵· 𝑔𝑄
+||𝑔𝑄||2 𝑔𝑄
+
+𝑔2 = 0.5 · 𝑔𝑄+ 0.5 · 𝑔𝐵
+We know that, when 𝜃> 90◦, (𝑔𝑄· 𝑔𝐵) < 0 ⇒−(𝑔𝑄· 𝑔𝐵) > 0.
+Therefore, according to the above equations, 𝑔1 > 𝑔2. So when
+𝜃> 90◦, we use 𝑔1 as our gradient.
+2. When 𝜃≤90◦: We consider 𝛽𝑄and 𝛽𝐵are equal to 0.5. We
+know that, when 𝜃≤90◦, (𝑔𝑄· 𝑔𝐵) ≥0 ⇒−(𝑔𝑄· 𝑔𝐵) ≤0.
+Therefore, according to the above equations, 𝑔1 ≤𝑔2. So when
+𝜃≤90◦, we use 𝑔2 as our gradient.
+4.4
+The Local Policy Network
+MLP
+GRU
+MLP
+(ot-1
+i, ut-2
+i)
+Z t-1
+i
+MLP
+GRU
+MLP
+(ot
+i, ut-1
+i)
+Z t
+i
+Figure 4: The input layer weights of 𝜋𝑖generated using a
+hyper-network frm previous step’s return distribution.
+Now we focus on the architecture of the local policy, 𝜋𝑖. As illus-
+trated in Figure 2, we adopt IQN [9] for sampling distributions over
+local actions. To address partial observability in local observations,
+we use a recurrent neural network, as recommended by [12].
+The input layer of the local policy is designed using a hyper-
+network layer, as shown in Figure 4. Since 𝜋𝑖predicts a distribution
+over returns, representing future rewards, we leverage it to dy-
+namically predict weights for the input layer. The hyper-network
+thus allows for more adaptable weight generation based on the
+distributional information from future states. A ReLU activation
+is used to filter the non-negative weights motivated by two con-
+ditions: • negative influences on individual observation elements
+can propagate through subsequent layers, potentially distorting the
+representation of other elements, • given the inherent uncertainty
+in the return, an optimistic approach with non-negative weights is
+preferable. For clarity, Figure 4 omits the details of IQN, focusing
+instead on the structure of the hyper-network.
+5
+THEORETICAL ANALYSIS
+In this section we study theoretical guarantees on convergence
+using our approach and provide sample complexity advancements.
+Since we are not proposing a new methodology for value decompo-
+sition here, we therefore assume the convergence of the background
+value decomposition methodology used for MARL, studied in more
+detail here [39]. Additionally, we assume Policy Gradient as our
+optimization approach; and for proving convergence, we assume
+a parameterized policy 𝝅𝑚(with policy parameters 𝑚) in tabular
+setting with direct policy parameterization.
+Theorem 5.1. Consider a tabular setting for our policy with di-
+rect policy parameterization, with the number of policy parame-
+ters, 𝑚∈Δ(U)|S|. Let the step size for the NPG update be 𝛼=
+(1 −𝛾)1.5/
+√︁
+|S||U|𝑇, where 𝑇is the number of policy update epochs.
+Then, with confidence (1 −𝛿), and assuming convergence of the un-
+derlying TD update algorithm, we have the following.
+𝑉𝝅∗(𝑠0) −E[𝑉𝝅𝑚𝑇(𝑠0)] ≤Θ
+ √︄
+|S||U|
+(1 −𝛾)3𝑇
+!
+The proof for the above theorem is provided in the Supplemen-
+tary Material, Section C. In the following sub-section we formally
+define our safety criterion, and provide a probabilistic confidence
+bound on the safety violation for the defined safety criterion.
+5.1
+Safety Verification
+With the safety objective, we can verify the safety of the system by
+introducing a probabilistic verification method for the system. In
+(MA)RL, classical methods for safety verification the make binary
+decision about whether the system is safe or unsafe cannot be done,
+since the system dynamics or the knowledge about the unsafe
+states are not available. So we address the safety verification from
+a quantitative safety perspective; i.e., we determine the probability
+of obtaining an unsafe trajectory remaining within a safety target
+with some confidence. Here a safe trajectory means reaching the
+goal state with some agents still alive.
+Our barrier function, although calculated from agent termina-
+tions, is not a direct indicator of the terminations. However, we
+would like to express our constraint in terms of agent terminations.
+So let 𝑉𝐵
+𝝅(𝜏) be the sum of agent terminations over the trajec-
+tory, where 𝜏is a test trajectory sampled with the trained policy
+𝝅. Therefore, we can write our objective as a chance-constrained
+optimization program (CCP) [7] as: given a parameter 𝛽∈(0, 1),
+our objective is to compute 𝜀∈(0, 1) such that with confidence
+≥(1 −𝛽) our safety constraint is satisfied, i.e., 𝜏is safe, with prob-
+ability ≥(1 −𝜀). Mathematically, 𝜏is considered safe if 𝑉𝐵
+𝝅(𝜏) is
+below a given safety threshold 𝜔. Our objective can be formally
+restated as, with confidence at least, (1 −𝛽),
+𝑃(𝑉𝐵
+𝝅(𝜏) ≤𝜔) ≥(1 −𝜀)
+(9)
+Note that 𝜔can be considered equal to 0; but it may have some
+disadvantages. When it is evident that there may be casualties in
+the path to the goal state, taking 𝜔= 0 may harm the return since
+the policy will deviate from the optimal possible policy owing to
+the gradients from the barrier function loss. Thus 𝜔is kept to be
+some positive number dependent on the number of agents, 𝑛; e.g.,
+
+0
+40
+80
+120
+160
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+Test Battle Win Rate Mean
+5m_vs_6m
+0
+40
+80
+120
+160
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+0.8
+8m_vs_9m
+0
+40
+80
+120
+160
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+0.8
+10m_vs_11m
+0
+40
+80
+120
+160
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+so_many_baneling
+0
+40
+80
+120
+160
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate Mean
+3s_vs_4z
+0
+40
+80
+120
+160
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+3s_vs_5z
+0
+40
+80
+120
+160
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+MMM
+0
+40
+80
+120
+160
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+0.8
+MMM2
+ 
+RMIX
+DMIX
+QDIST
+CBF
+RESZ
+RISKQ
+DBF
+Figure 5: Comparison with the state-of-the-art algorithms using the StarCraft hard and super-hard scenarios. Our method is
+marked as DBF (Distributional MARL with a Barrier Function based on agent casualties).
+𝜔= (𝑛−1). Finally, from equations 1 and 9, we can rewrite our
+constrained optimization problem as follows.
+arg max
+𝝅
+E
+"∑︁
+𝑡∼𝜏
+𝛾𝑡𝑟(𝑠𝑡, u𝑡)
+#
+s.t.
+𝑃(𝑉𝐵
+𝝅(𝜏) ≤𝜔) ≥(1 −𝜀)
+We can solve the above CCP problem using a sampling approach
+in place of the probabilistic constraint, where we substitute the
+constraint with 𝑁i.i.d. sample constraints as: 𝑉𝐵
+𝝅(𝜏𝑖) ≤𝜔, ∀𝑖∈
+[1, 𝑁]1. The resulting solution may not be a good approximation of
+the CCP solution. So for improving the robustness of the solution,
+we remove some 𝑘samples from 𝑁[7, 31]. In other words, we can
+say that we are removing 𝑘out of 𝑁constraints from our original
+problem. The number of removed constraints has a direct impact
+on the safety probability (1 −𝜀). The sample-based optimization of
+the above problem can therefore be expressed as follows.
+arg max
+𝝅
+E
+"∑︁
+𝑡∼𝜏
+𝛾𝑡𝑟(𝑠𝑡, u𝑡)
+#
+s.t.
+𝑉𝐵
+𝝅(𝜏𝑖) ≤𝜔, ∀𝑖∈{1, ..., 𝑁} −A({1, ..., 𝑁})
+where A is some selection rule. Let 𝑃𝑁be the product of probabili-
+ties for 𝑁samples. Using the theorem below from [7, 31], we can
+establish the relation between 𝜀and the confidence parameter, 𝛽,
+given the values of 𝑁and 𝑘.
+Theorem 5.2 ([31]). Given a small confidence parameter 𝛽∈
+(0, 1), if 𝑁and 𝑘are such that,
+𝑘+ 𝑚−1
+𝑘
+ 𝑘+𝑚−1
+∑︁
+𝑖=0
+𝑁
+𝑖
+
+𝜀𝑖(1 −𝜀)𝑁−𝑖≤𝛽
+where m is the number of policy parameters, then 𝑃𝑁(𝑃(𝑉𝐵
+𝝅(𝜏𝑖) >
+𝜔) ≤𝜀) ≥(1 −𝛽).
+1Please note that here 𝑁represents 𝑁i.i.d. samples, which is different from N that
+represents the set of agents.
+Using the above theorem and from Equation 8 in [7] we know,
+𝑘≤𝜀𝑁−𝑚+ 1 −
+√︄
+2𝜀𝑁ln (𝜀𝑁)𝑚−1
+𝛽
+⇒(𝜀𝑁)𝑚−1
+𝛽
+≤𝑒(𝑘+𝑚−1−𝜀𝑁)2/(2𝜀𝑁)
+Let us consider (𝑘+ 𝑚−1 −𝜀𝑁)2/(2𝜀𝑁) = 𝜓. Therefore;
+𝜀≤
+
+𝑒ln 𝛽/(𝑚−1) × 𝑒𝜓/(𝑚−1)
+/𝑁
+This is an implicit inequality with 𝜀occurring on both sides. How-
+ever, we can deduce that, if we consider 𝑚to be finite quantity less
+than 𝑁, small value for 𝛽and 𝑘, the right hand side of the above
+equation will be very small. Thus 𝜀, which signifies the upper bound
+on the probability of unsafe trajectories, will be very small.
+6
+EMPIRICAL STUDIES
+In this section we present empirical evaluations of our method. The
+primary objective is not to introduce a novel constrained MARL
+approach but to evaluate the impact of incorporating agent casu-
+alties as an implicit constraint into the optimization process. The
+source code is available in GitHub. Our approach is compared with
+state-of-the-art Distributional MARL algorithms on the StarCraft
+II [28] and MetaDrive [17] benchmark environments.
+6.1
+StarCraft Battle Scenarios
+The StarCarft Multi-Agent Control scenarios include various battle
+scenarios where allies, controlled by our MARL algorithm, face
+enemy units controlled by built-in rules. The objective is to maxi-
+mize the win rate while minimizing ally casualties [28]. We used
+the PyMARL framework for our experimental setup and training
+our algorithms. The evaluation metric is the fraction of number of
+battles won during testing. We derived our barrier function based
+on the objective of ally casualties and integrate with the reward
+optimization algorithm to align with the task’s objectives. The ac-
+tion space for each of the agent is discrete, thus allowing us to
+
+0
+50
+100
+150
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate Mean
+2s3z
+0
+50
+100
+150
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+3s5z
+0
+50
+100
+150
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+3m
+0
+50
+100
+150
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1c3s5z
+ 
+VDN
+QMIX
+QTRAN
+QBF
+Figure 6: Comparison with the baselines using the StarCraft easy scenarios. Our method is marked as QBF (Q-function evaluation
+in MARL with a Barrier Function based on agent casualties).
+derive distributions over the returns corresponding to each action.
+We evaluated our approach on two fronts: • firstly we compared
+with the distributional MARL approaches on hard and super-hard
+scenarios; • secondly we compared with MARL approaches on
+easy scenarios. For the second case, we did not have distributions
+over the returns, and could not use them for our policy network as
+proposed in sub-section 4.4.
+DMIX
+RMIX
+QDIST
+CBF
+RESZ
+RISKQ
+DBF
+0
+5
+10
+15
+20
+25
+30
+35
+40
+Average Win Rate (in %)
+22.00
+9.00
+22.00
+15.00
+19.33
+24.50
+33.83
+14.67
+6.17
+15.67
+15.00
+18.17
+29.17
+11.83
+4.00
+11.67
+13.20
+10.33
+11.50
+26.00
+ 
+Win in [0.6, 1.0]
+Win in [0.8, 1.0]
+Win in [0.9, 1.0]
+Figure 7: Summary of the evaluations on the StarCraft hard
+and super-hard scenarios.
+For the first case, we used the following distributional MARL
+algorithms for comparison: • RMIX [25] uses CVaR with QMIX
+• DMIX [35] extending QMIX to the distributional setting • QDIST
+[33] separately analyses the risk measures from the return distribu-
+tions, based on source of error • CBF [24] integrates with DMIX
+an action correction strategy using a decentralized barrier function
+approximated using a separate network • RESQ [30] uses residual
+Q-functions • RISKQ [29] uses local risk sensitive action selection
+policies. Our algorithm, referred to as DBF (Distributional MARL
+with Barrier Function), integrates the barrier loss with DMIX. We
+used on-policy samples for calculating our barrier function loss [45].
+The results are shown in Figure 5. Our algorithm is marked as DBF,
+which is short for Distributional MARL with a Barrier Function
+based on agent casualties. Results 7 indicate DBF achieves a higher
+fraction of test wins across varying thresholds (≥0.6, ≥0.8, ≥0.9).
+From the results, it can be inferred that our approach improves the
+accuracy of the distributional MARL approaches for the hard and
+super-hard scenarios. The hard and super-hard scenarios generally
+contain uneven distribution of agents between the ally and enemy
+teams; with the enemy team generally containing more number
+of agents than the ally team. This makes winning battle tougher
+in these scenarios. We used 𝛾𝐵= 0.5 for our experiments. The
+hyper-parameters used for our experiments are summarized in the
+Supplementary Material, Section B.3.
+QMIX
+VDN
+QTRAN
+QBF
+40
+50
+60
+70
+80
+90
+Average Win Rate (in %)
+82.67
+71.67
+64.00
+86.67
+69.33
+59.00
+57.00
+78.67
+ 
+Win in [0.8, 1.0]
+Win in [0.9, 1.0]
+Figure 8: Summary of evaluations on
+StarCraft easy scenarios.
+We also compared
+our algorithm with
+traditional MRL ap-
+proaches: • VDN
+[38] which uses sum-
+mation of local re-
+turns • QMIX [26]
+uses monotonic fac-
+torization of value
+function • QTRAN
+[32] uses transform-
+ers for factorization.
+The traditional MARL
+approaches have been
+demonstrated to per-
+form well for the easy scenarios in StarCraft. The easy scenarios
+contain equal number of ally and enemy agents with similar types
+of agents for both groups. The action space is discrete here. We
+integrated our barrier function loss with the QMIX algorithm for
+evaluation here. The results are shown in figures 6 and 8. Our algo-
+rithm is marked as QBF, which stands for Q-function evaluation in
+MARL with a Barrier Function based on agent casualties. From the
+evaluations it is evident that integrating the barrier loss improves
+the performance of the baseline algorithm, albeit marginally. This
+experiment also highlights the importance of the hyper-network
+used in the local policy network, explained in Section 4.4.
+6.2
+MetaDrive Simulator
+MetaDrive [17] is a lightweight and realistic driving simulator
+featuring various multi-agent cooperative driving tasks with decen-
+tralized rewards. It presents the challenge of controlling multiple
+cars in some predefined scenarios. Since the simulator does not
+return any global state; for training certain algorithms, we used
+the collective observation vector as the global state. Each agent
+(vehicle) can execute discrete actions, with crashes or road exits
+resulting in termination. We did not allow respawn of vehicles for
+the terminated vehicles. Episodes were terminated when more than
+half the agents are eliminated during training or when any agent
+reached termination during evaluation. We used 10 agents for each
+environment for training.
+For our experiments, we used a global reward computed by sum-
+ming individual agent rewards to align with the POMDP structure.
+
+0
+20
+40
+60
+80
+100
+Steps (x20)
+0
+100
+200
+300
+Average Return
+MARLBottleneck
+0
+20
+40
+60
+80
+100
+Steps (x20)
+0
+50
+100
+Intersection
+0
+20
+40
+60
+80
+100
+Steps (x20)
+40
+20
+0
+20
+40
+Average Return
+ParkingLot
+0
+20
+40
+60
+80
+100
+Steps (x20)
+0
+200
+400
+600
+Tollgate
+ 
+DMIX
+QDIST
+RISKQ
+DBF
+Figure 9: Evaluation results on the Metadrive MARL environ-
+ments.
+Training spanned 2000 episodes with a replay buffer holding the
+most recent 1000 episodes. On-policy samples were used for barrier
+loss calculation. The trained policy was evaluated on 10 episodes
+at each evaluation step. As shown in Fig. 9, our approach demon-
+strated strong performance compared to baseline algorithms across
+scenarios. Key hyper-parameters include 𝛾= 0.99, 𝛾𝐵= 0.5, and
+the Adam optimizer. Additional experimental details are provided
+in the Supplementary Material, Section B.1.
+6.3
+Ablation Studies
+0
+40
+80
+120
+160
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+Test Battle Win Rate Mean
+5m_vs_6m
+0
+40
+80
+120
+160
+200
+Steps (x10e4)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+3s_vs_5z
+ 
+0.4
+0.5
+0.7
+0.9
+0.99
+Figure 10: Ablation Study on 𝛾𝐵tested on StarCraft.
+In our experiments, for the discount factor of barrier function,
+we had used 𝛾𝐵= 0.5. We had tested various values for the hyper-
+parameter on two StarCraft scenarios before using them in the
+rest of our evaluations. The hyper-parameter dictates the creadit
+assignment horizon length based on the fault metric, i.e., number
+of agent terminations. From the results in Figure 10, it is evident
+that the algorithm performs well for 𝛾𝐵= 0.5. The tested values for
+𝛾𝐵were 0.4, 0.5, 0.7, 0.9, 0.99.
+We also conducted an Ablation Study on adjustment of weights
+of the gradients, 𝛽𝑄and 𝛽𝐵on two StarCraft environments. The
+results are shown in Figure 11. Here we only show scores for 𝛽𝑄,
+and 𝛽𝐵= 1 −𝛽𝑄. The bars in the figure indicate the percentage of
+evaluations for which the win-rate was >=0.6, >=0.8, or >=0.9. From
+the results it is evident that setting equivalent weights for both
+the gradients, i.e., 𝛽𝑄= 𝛽𝐵= 0.5, results in better performance
+for most scenarios, rather than weighing more on any one of the
+gradients. We used this result for the rest of our evaluations.
+Q=0.25
+Q=0.50
+Q=0.75
+Q=1.00
+0
+10
+20
+30
+40
+50
+60
+70
+Average Win Rate (in %)
+52
+68
+62
+0
+38
+52
+50
+3s_vs_5z
+Q=0.25
+Q=0.50
+Q=0.75
+Q=1.00
+0
+20
+40
+60
+80
+86
+71
+85
+61
+44
+52
+45
+43
+so_many_baneling
+ 
+Win in [0.6, 1.0]
+Win in [0.8, 1.0]
+Win in [0.9, 1.0]
+Figure 11: Ablation Study on different values of 𝛽𝐵and 𝛽𝑄
+on StarCraft environments.
+7
+CONCLUSION
+In this paper, we proposed a novel approach to distributional multi-
+agent reinforcement learning (MARL) that integrates fault tolera-
+tion based on an agent safety boundary (based on intrinsic environ-
+ment dynamics) with effective reward optimization. By incorporat-
+ing a constraint-based formulation to model agent termination as a
+crucial learning signal, our method addresses the issue of unsafe
+actions leading to agent failures, thus improving the stability of
+MARL in environments where agent survivability is critical. We ex-
+tended our approach for both traditional MARL value factorization
+techniques and distributional MARL approaches since the safety
+constraint is not limited to the distributional analysis. We also sug-
+gested an improvement in the local policy network to utilize the
+predicted distributions over returns.
+The integration of these techniques using the PCGrad optimizer
+resulted in an effective hybrid loss formulation, combining the distri-
+butional Huber-quantile loss with our barrier function based safety
+loss. This allowed us to strike a balance between optimizing agent
+performance and ensuring system-wide safety. Our experimental
+results, particularly on complex environments such as StarCraft II
+micromanagement tasks, and MetaDrive multi-agent driving sce-
+narios, demonstrate that our approach performs comparatively well
+as compared with the state-of-the-art MARL methods in terms of
+both convergence and policy robustness. We also theoretically anal-
+ysed the convergence and safety verification of our approach. The
+approach can be further be integrated with other constrained MARL
+approaches to test its robustness in environments with extrinsic
+safety constraints.
+ACKNOWLEDGMENTS
+The authors acknowledge partial support from AI4CPS IIT Kharag-
+pur grant no TRP3RDTR001 and Ericsson India for this work.
+REFERENCES
+[1] Alekh Agarwal, Sham M Kakade, Jason D Lee, and Gaurav Mahajan. 2021. On the
+theory of policy gradient methods: Optimality, approximation, and distribution
+shift. Journal of Machine Learning Research 22, 98 (2021), 1–76.
+[2] Stefano V. Albrecht, Filippos Christianos, and Lukas Schäfer. 2024. Multi-Agent
+Reinforcement Learning: Foundations and Modern Approaches. MIT Press. https:
+//www.marl-book.com
+[3] Mohammed Alshiekh, Roderick Bloem, Rüdiger Ehlers, Bettina Könighofer, Scott
+Niekum, and Ufuk Topcu. 2018. Safe reinforcement learning via shielding. In
+Proceedings of the AAAI conference on artificial intelligence, Vol. 32.
+[4] Osbert Bastani. 2021. Safe reinforcement learning with nonlinear dynamics
+via model predictive shielding. In 2021 American control conference (ACC). IEEE,
+3488–3494.
+[5] Marc G Bellemare, Will Dabney, and Rémi Munos. 2017. A distributional perspec-
+tive on reinforcement learning. In International conference on machine learning.
+PMLR, 449–458.
+
+[6] Suda Bharadwaj, Roderik Bloem, Rayna Dimitrova, Bettina Konighofer, and Ufuk
+Topcu. 2019. Synthesis of minimum-cost shields for multi-agent systems. In 2019
+American Control Conference (ACC). IEEE, 1048–1055.
+[7] Marco C Campi and Simone Garatti. 2011. A sampling-and-discarding approach
+to chance-constrained optimization: feasibility and optimality. Journal of opti-
+mization theory and applications 148, 2 (2011), 257–280.
+[8] Yu-Han Chang, Tracey Ho, and Leslie Kaelbling. 2003. All learning is local:
+Multi-agent learning in global reward games. Advances in neural information
+processing systems 16 (2003).
+[9] Will Dabney, Georg Ostrovski, David Silver, and Rémi Munos. 2018. Implicit
+quantile networks for distributional reinforcement learning. In International
+conference on machine learning. PMLR, 1096–1105.
+[10] Will Dabney, Mark Rowland, Marc Bellemare, and Rémi Munos. 2018. Distri-
+butional reinforcement learning with quantile regression. In Proceedings of the
+AAAI conference on artificial intelligence, Vol. 32.
+[11] Ingy ElSayed-Aly, Suda Bharadwaj, Christopher Amato, Rüdiger Ehlers, Ufuk
+Topcu, and Lu Feng. 2021. Safe multi-agent reinforcement learning via shielding.
+arXiv preprint arXiv:2101.11196 (2021).
+[12] Matthew Hausknecht and Peter Stone. 2015. Deep recurrent q-learning for
+partially observable mdps. In 2015 aaai fall symposium series.
+[13] Wan Ju Kang David Earl Hostallero, Kyunghwan Son, Daewoo Kim, and Yung Yi
+Qtran. 2019. Learning to factorize with transformation for cooperative multi-
+agent reinforcement learning. In Proceedings of the 31st International Conference
+on Machine Learning, Proceedings of Machine Learning Research. PMLR.
+[14] Jifeng Hu, Yanchao Sun, Hechang Chen, Sili Huang, Yi Chang, Lichao Sun, et al.
+2022. Distributional reward estimation for effective multi-agent deep reinforce-
+ment learning. Advances in Neural Information Processing Systems 35 (2022),
+12619–12632.
+[15] Yiding Jiang, J Zico Kolter, and Roberta Raileanu. 2024. On the importance of
+exploration for generalization in reinforcement learning. Advances in Neural
+Information Processing Systems 36 (2024).
+[16] Sham Kakade and John Langford. 2002. Approximately optimal approximate
+reinforcement learning. In Proceedings of the Nineteenth International Conference
+on Machine Learning. 267–274.
+[17] Quanyi Li, Zhenghao Peng, Zhenghai Xue, Qihang Zhang, and Bolei Zhou. 2021.
+MetaDrive: Composing Diverse Driving Scenarios for Generalizable Reinforce-
+ment Learning. arXiv preprint arXiv:2109.12674 (2021).
+[18] Ryan Lowe, Yi I Wu, Aviv Tamar, Jean Harb, OpenAI Pieter Abbeel, and Igor
+Mordatch. 2017. Multi-agent actor-critic for mixed cooperative-competitive
+environments. Advances in neural information processing systems 30 (2017).
+[19] Clare Lyle, Marc G Bellemare, and Pablo Samuel Castro. 2019. A comparative
+analysis of expected and distributional reinforcement learning. In Proceedings of
+the AAAI Conference on Artificial Intelligence, Vol. 33. 4504–4511.
+[20] Borislav Mavrin, Hengshuai Yao, Linglong Kong, Kaiwen Wu, and Yaoliang
+Yu. 2019. Distributional reinforcement learning for efficient exploration. In
+International conference on machine learning. PMLR, 4424–4434.
+[21] Jihwan Oh, Joonkee Kim, Minchan Jeong, and Se-Young Yun. 2023. Toward risk-
+based optimistic exploration for cooperative multi-agent reinforcement learning.
+arXiv preprint arXiv:2303.01768 (2023).
+[22] Jihwan Oh, Joonkee Kim, and Se-Young Yun. 2022. Risk perspective exploration
+in distributional reinforcement learning. arXiv preprint arXiv:2206.14170 (2022).
+[23] Frans A Oliehoek, Matthijs TJ Spaan, and Nikos Vlassis. 2008. Optimal and
+approximate Q-value functions for decentralized POMDPs. Journal of Artificial
+Intelligence Research 32 (2008), 289–353.
+[24] Zengyi Qin, Kaiqing Zhang, Yuxiao Chen, Jingkai Chen, and Chuchu Fan. 2021.
+Learning safe multi-agent control with decentralized neural barrier certificates.
+arXiv preprint arXiv:2101.05436 (2021).
+[25] Wei Qiu, Xinrun Wang, Runsheng Yu, Xu He, Rundong Wang, Bo An, Svetlana
+Obraztsova, and Zinovi Rabinovich. 2020. RMIX: Risk-sensitive multi-agent
+reinforcement learning. (2020).
+[26] Tabish Rashid, Mikayel Samvelyan, Christian Schroeder De Witt, Gregory Far-
+quhar, Jakob Foerster, and Shimon Whiteson. 2020. Monotonic value function
+factorisation for deep multi-agent reinforcement learning. Journal of Machine
+Learning Research 21, 178 (2020), 1–51.
+[27] Mark Rowland, Robert Dadashi, Saurabh Kumar, Rémi Munos, Marc G Bellemare,
+and Will Dabney. 2019. Statistics and samples in distributional reinforcement
+learning. In International Conference on Machine Learning. PMLR, 5528–5536.
+[28] Mikayel Samvelyan, Tabish Rashid, Christian Schroeder De Witt, Gregory Far-
+quhar, Nantas Nardelli, Tim GJ Rudner, Chia-Man Hung, Philip HS Torr, Jakob
+Foerster, and Shimon Whiteson. 2019. The starcraft multi-agent challenge. arXiv
+preprint arXiv:1902.04043 (2019).
+[29] Siqi Shen, Chennan Ma, Chao Li, Weiquan Liu, Yongquan Fu, Songzhu Mei,
+Xinwang Liu, and Cheng Wang. 2024. RiskQ: risk-sensitive multi-agent reinforce-
+ment learning value factorization. Advances in Neural Information Processing
+Systems 36 (2024).
+[30] Siqi Shen, Mengwei Qiu, Jun Liu, Weiquan Liu, Yongquan Fu, Xinwang Liu,
+and Cheng Wang. 2022. Resq: A residual q function-based approach for multi-
+agent reinforcement learning value factorization. Advances in Neural Information
+Processing Systems 35 (2022), 5471–5483.
+[31] Arambam James Singh and Arvind Easwaran. 2024. PAS: Probably Approximate
+Safety Verification of Reinforcement Learning Policy Using Scenario Optimiza-
+tion. In Proceedings of the 23rd International Conference on Autonomous Agents
+and Multiagent Systems. 1745–1753.
+[32] Kyunghwan Son, Daewoo Kim, Wan Ju Kang, David Earl Hostallero, and Yung
+Yi. 2019. Qtran: Learning to factorize with transformation for cooperative multi-
+agent reinforcement learning. In International conference on machine learning.
+PMLR, 5887–5896.
+[33] Kyunghwan Son, Junsu Kim, Sungsoo Ahn, Roben D Delos Reyes, Yung Yi, and
+Jinwoo Shin. 2022. Disentangling sources of risk for distributional multi-agent
+reinforcement learning. In International Conference on Machine Learning. PMLR,
+20347–20368.
+[34] Kyunghwan Son, Junsu Kim, Yung Yi, and Jinwoo Shin. 2021. Disentangling
+sources of risk for distributional multi-agent reinforcement learning. (2021).
+[35] Wei-Fang Sun, Cheng-Kuang Lee, and Chun-Yi Lee. 2021. DFAC framework:
+Factorizing the value function via quantile mixture for multi-agent distributional
+q-learning. In International Conference on Machine Learning. PMLR, 9945–9954.
+[36] Wei-Fang Sun, Cheng-Kuang Lee, and Chun-Yi Lee. 2021. A Distributional Per-
+spective on Value Function Factorization Methods for Multi-Agent Reinforcement
+Learning.. In AAMAS. 1671–1673.
+[37] Wei-Fang Sun, Cheng-Kuang Lee, Simon See, and Chun-Yi Lee. 2023. A uni-
+fied framework for factorizing distributional value functions for multi-agent
+reinforcement learning. Journal of Machine Learning Research 24, 220 (2023),
+1–32.
+[38] Peter Sunehag, Guy Lever, Audrunas Gruslys, Wojciech Marian Czarnecki, Vini-
+cius Zambaldi, Max Jaderberg, Marc Lanctot, Nicolas Sonnerat, Joel Z Leibo, Karl
+Tuyls, et al. 2017. Value-decomposition networks for cooperative multi-agent
+learning. arXiv preprint arXiv:1706.05296 (2017).
+[39] Jianhao Wang, Zhizhou Ren, Beining Han, Jianing Ye, and Chongjie Zhang.
+2021. Towards understanding cooperative multi-agent q-learning with value
+factorization. Advances in Neural Information Processing Systems 34 (2021), 29142–
+29155.
+[40] Jianhao Wang, Zhizhou Ren, Terry Liu, Yang Yu, and Chongjie Zhang. 2020.
+Qplex: Duplex dueling multi-agent q-learning. arXiv preprint arXiv:2008.01062
+(2020).
+[41] Ziyu Wang, Tom Schaul, Matteo Hessel, Hado Hasselt, Marc Lanctot, and Nando
+Freitas. 2016. Dueling network architectures for deep reinforcement learning. In
+International conference on machine learning. PMLR, 1995–2003.
+[42] Tengyu Xu, Yingbin Liang, and Guanghui Lan. 2021. Crpo: A new approach
+for safe reinforcement learning with convergence guarantee. In International
+Conference on Machine Learning. PMLR, 11480–11491.
+[43] Tengyu Xu, Zhe Wang, and Yingbin Liang. 2020. Improving sample complexity
+bounds for (natural) actor-critic algorithms. Advances in Neural Information
+Processing Systems 33 (2020), 4358–4369.
+[44] Yaodong Yang, Jianye Hao, Ben Liao, Kun Shao, Guangyong Chen, Wulong
+Liu, and Hongyao Tang. 2020. Qatten: A general framework for cooperative
+multiagent reinforcement learning. arXiv preprint arXiv:2002.03939 (2020).
+[45] Yujie Yang, Yuxuan Jiang, Yichen Liu, Jianyu Chen, and Shengbo Eben Li. 2023.
+Model-free safe reinforcement learning through neural barrier certificate. IEEE
+Robotics and Automation Letters 8, 3 (2023), 1295–1302.
+[46] Tianhe Yu, Saurabh Kumar, Abhishek Gupta, Sergey Levine, Karol Hausman, and
+Chelsea Finn. 2020. Gradient surgery for multi-task learning. Advances in Neural
+Information Processing Systems 33 (2020), 5824–5836.
+[47] Wenbo Zhang, Osbert Bastani, and Vijay Kumar. 2019. Mamps: Safe multi-
+agent reinforcement learning via model predictive shielding. arXiv preprint
+arXiv:1910.12639 (2019).
+
+A
+ALGORITHM
+In Algorithm 1 below, we outline the steps taken for our policy up-
+date. Please note that the loss from the barrier function is calculated
+using on-policy samples.
+Algorithm 1 Policy optimization with barrier function constraint
+Input: Initial policy 𝝅with weights 𝑚0
+Output: Trained policy weights 𝑚out
+1: for 𝑡= 0, ...,𝑇−1 do
+2:
+Policy evaluation under 𝝅𝒎𝒕
+3:
+Sample trajectories from replay buffer
+4:
+# Policy update calculation
+5:
+Compute TD error from sampled trajectories
+6:
+Compute barrier function over the sampled trajectories
+7:
+if 𝑉𝐵
+𝜋𝑚𝑡> 𝜔then
+8:
+# Constraint violation
+9:
+Compute barrier function loss (Equation 5)
+10:
+end if
+11:
+# Gradient correction
+12:
+Compute PCGrad from the loss functions
+13:
+Update weights: 𝑚𝑡→𝑚𝑡+1
+𝑚𝑡+1 = 𝑚𝑡−𝛼· 𝑔1 (𝜃> 90◦) = 𝑚𝑡−𝛼· 𝑔2 (𝜃≤90◦)
+14: end for
+Return: Trained policy 𝝅𝑚out
+The output of the algorithm is the final policy. Although, for sim-
+plicity, we have used 𝝅to represent the collective policy for all the
+agents combined, we actually obtain local policies for decentralized
+evaluation of the agents.
+B
+EMPIRICAL DETAILS
+B.1
+The StarCraft System
+The StarCraft system [28] consists of scenarios that presents the
+challenge to control multiple cooperative (ally) agents to defeat a
+group of enemy agents, which are controlled using built-in game
+AI, in a war simulation. The goal of the ally agents is to win battles
+against the enemy units across multiple simulation episodes. Each
+episode ends when all the units of either one among the ally or
+enemy group dies, or a certain number of timesteps are reached, in
+which case the battle is considered as a loss for the ally units. There
+are various types of agents in the system which takes on different
+roles, and each scenario may include multiple types of units in both
+the ally and the enemy groups. We explain some components here
+as an overview, that are of importance to us.
+B.1.1
+Observation Space. SMAC provides a global observation
+which summarises the environment state including all the partic-
+ipating agents (allies and enemies). It also provides a local obser-
+vation which also includes the information about all the agents
+but from the local agent’s perspective whose observation is be-
+ing calculated. Since we use the QMIX algorithm as our backbone,
+we used both the global and local observations. Each information
+about other agents in the observation vector includes information
+about relative position of the agent from the current agent, rela-
+tive distance of the agent from the current agent, agent type, and
+some other information. This presents a possibility of analysing
+importance of each environmental entity for whiich we use the
+hyper-network. The agents may have different roles to play in the
+battle, depending on the type of agent. The observation space is
+continuous, the values are each dimension are real numbers.
+B.1.2
+Action Space. The action space is discrete, where each agent
+locally derives its action from their local policy 𝜋𝑖. The actions
+that can be taken by each agent include move actions, attack ac-
+tions, stop actions, etc. The attack actions should be directed at a
+certain agent. This calls for analysis on the distribution of return
+based on the actions taken, since the return from the action can be
+realistically captured by a distributional analysis.
+B.2
+The MetaDrive Environments
+MetaDrive [17] is a driving simulator with accurate physics sim-
+ulation that consists of multi-agent scenarios where the task is to
+control multiple cars in various traffic scenarios, such as Parking
+Lot, Tollgate, etc. For training our algorithms, in this work we gen-
+erate 10 agents for each environment. We used high-level scene
+information as our local observation, which encapsulates nearby ve-
+hicle information also. The environments do not separately provide
+any global information; hence we used stacked local observation as
+global state information. We used discrete action space for enabling
+distributional analysis. The action space consists of 25 discrete ac-
+tions, which is combination of steering and throttle inputs. The
+reward is a combination of a sparse reward for reaching the goal
+state, and a dense reward for local guidance. We combined the local
+rewards available to form the global reward in order to obey the
+POMDP structure. Although there is a cost function available for
+the scenarios, we calculated the barrier function based on agent
+terminations as explained before.
+B.3
+Hyper-parameters used
+Table 1: Hyper-parameters used for our experiments
+Hyper-parameter
+Value
+action selector
+epsilon greedy
+epsilon start
+1.0
+epsilon end
+0.05
+batch size
+8
+buffer size
+5000
+hidden dimension
+64
+RNN hidden dimension
+64
+mixer
+DMIX
+learning rate
+0.001
+TD 𝜆
+0.6
+optimizer
+Adam
+B.4
+Computing Hardware
+We conducted our experiments on a 8th generation Intel(R) Core(TM)
+i7-9700K CPU @ 3.60GHz processor with 66GB System memory.
+To boost training of the neural architectures, we used a NVIDIA
+TITAN RTX GPU with 24GB graphic memory.
+
+C
+PROOF OF THEOREM 5.1
+Before going into the details, we would like to clarify that for simplicity, we use 𝝅to refer to the collective policy, although we use
+decentralized policies for evaluation. The convergence of the underlying TD learning algorithm is studied in detail in this text [39]. Our
+algorithm bears resemblance with the policy learning algorithm studied by the authors of CRPO [42]. Along with TD error, they consider
+approximation errors in estimation of Q-value, which is a very realistic assumption for the multi-agent setup. Hence we refer to their analysis
+for our derivation in this text. We start with the performance difference lemma, that we use for expressing the performance bound over the
+policy improvement process.
+Lemma C.1 (Performance Difference Lemma [16]). For any two policies 𝜋and 𝜋′ and any start state distribution, 𝜌,
+𝑉𝜋(𝑠0) −𝑉𝜋′ (𝑠0) =
+1
+1 −𝛾E𝑠∼𝑑𝜌Eu∼𝜋[𝐴𝜋′ (𝑠, u)]
+(10)
+where 𝑉𝜋(𝑠0) denotes the accumulated reward over the trajectory with 𝑠0 sampled from 𝜌, and 𝑑𝜌denotes the state-action visitation distribution
+under policy 𝝅.
+As in CRPO [42], any of the policy optimization updates can be used for our setup. Since the specifics of the MARL setup are not required
+here, to simplify, this section can be better understood by looking at our setup from the point of view of a single global tabular policy
+learning, 𝝅. As is generally done in MARL algorithms, we consider direct policy parameterization with parameters 𝑚∈Δ(U)|S| in a tabular
+setting [1]. Let 𝛼represent the learning rate for policy gradient approach.
+Lemma C.2 (Performance Improvement Bound). For the iterates 𝝅𝑡in the tabular setting and for initial state distribution 𝜌, we have,
+𝑉𝑡+1(𝑠0) −𝑉𝑡(𝑠0) ≥1 −𝛾
+𝛼
+E𝑠∼𝜌
+ 
+𝛼
+1 −𝛾
+¯𝑉𝑡(𝑠) −
+𝛼
+1 −𝛾𝑉𝑡(𝑠) +
+𝛼
+1 −𝛾
+∑︁
+u∈U
+𝝅𝑡(𝑠)
+ ¯𝑄𝑡(𝑠, u) −𝑄𝑡(𝑠, u)
+
+!
+−
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡(𝑠)
+ ¯𝑄𝑡(𝑠, u) −𝑄𝑡(𝑠, u)
+ −
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡+1(𝑠)
+𝑄𝑡(𝑠, u) −¯𝑄𝑡(𝑠, u)
+
+where 𝝅𝑚𝑡= 𝝅𝑡, 𝑉𝝅𝑚𝑡= 𝑉𝑡, 𝑄𝝅𝑚𝑡= 𝑄𝑡, ¯𝑄𝑡(𝑠, u) is the approximated Q-function estimated using the policy 𝝅𝑚𝑡, and ¯𝑉𝑡(𝑠) = Í
+u∈U ¯𝑄𝑡(𝑠, u).
+Proof. From Lemma C.1, we know that,
+𝑉𝑡+1(𝑠0) −𝑉𝑡(𝑠0) =
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡+1𝐴𝑡(𝑠, u)
+=
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡+1𝑄𝑡(𝑠, u) −
+1
+1 −𝛾E𝑠∼𝑑𝜌𝑉𝑡(𝑠)
+=
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡+1 ¯𝑄𝑡(𝑠, u) +
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡+1
+ 𝑄𝑡(𝑠, u) −¯𝑄𝑡(𝑠, u) −
+1
+1 −𝛾E𝑠∼𝑑𝜌𝑉𝑡(𝑠)
+=
+1
+1 −𝛾E𝑠∼𝑑𝜌¯𝑉𝑡(𝑠, u) +
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡+1
+ 𝑄𝑡(𝑠, u) −¯𝑄𝑡(𝑠, u) −
+1
+1 −𝛾E𝑠∼𝑑𝜌𝑉𝑡(𝑠)
+=
+1
+1 −𝛾E𝑠∼𝑑𝜌¯𝑉𝑡(𝑠, u) +
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡+1
+ 𝑄𝑡(𝑠, u) −¯𝑄𝑡(𝑠, u) −
+1
+1 −𝛾E𝑠∼𝑑𝜌𝑉𝑡(𝑠)
+=
+1
+1 −𝛾E𝑠∼𝑑𝜌¯𝑉𝑡(𝑠, u) +
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡+1
+ 𝑄𝑡(𝑠, u) −¯𝑄𝑡(𝑠, u) −
+1
+1 −𝛾E𝑠∼𝑑𝜌𝑉𝑡(𝑠)
++
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡
+ ¯𝑄𝑡(𝑠, u) −𝑄𝑡(𝑠, u)
+ −
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡
+ ¯𝑄𝑡(𝑠, u) −𝑄𝑡(𝑠, u)
+
+≥1
+𝛼E𝑠∼𝑑𝜌
+ 
+𝛼
+1 −𝛾
+¯𝑉𝑡(𝑠, u) −
+𝛼
+1 −𝛾𝑉𝑡(𝑠) +
+𝛼
+1 −𝛾
+∑︁
+u∈U
+𝝅𝑡
+ ¯𝑄𝑡(𝑠, u) −𝑄𝑡(𝑠, u)
+
+!
+−
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡
+ ¯𝑄𝑡(𝑠, u) −𝑄𝑡(𝑠, u)
+ −
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡+1
+𝑄𝑡(𝑠, u) −¯𝑄𝑡(𝑠, u)
+
+≥1 −𝛾
+𝛼
+E𝑠∼𝑑𝜌
+ 
+𝛼
+1 −𝛾
+¯𝑉𝑡(𝑠, u) −
+𝛼
+1 −𝛾𝑉𝑡(𝑠) +
+𝛼
+1 −𝛾
+∑︁
+u∈U
+𝝅𝑡
+ ¯𝑄𝑡(𝑠, u) −𝑄𝑡(𝑠, u)
+
+!
+−
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡
+ ¯𝑄𝑡(𝑠, u) −𝑄𝑡(𝑠, u)
+ −
+1
+1 −𝛾E𝑠∼𝑑𝜌
+∑︁
+u∈U
+𝝅𝑡+1
+𝑄𝑡(𝑠, u) −¯𝑄𝑡(𝑠, u)
+
+This concludes our proof.
+□
+
+It is to be noted that since we are using a gradient manipulation step, the improvement bound at each step is multiplied by the constant
+used for weighing the gradients. However, since it is a constant, and here we are calculating the time-complexity for simplicity we have
+removed the weight from our calculation. Also, since 𝝅is not only a function of 𝑠, we refrain from using 𝝅(𝑠) throughout the text.
+Lemma C.3 (Upper Bound on the Optimality Gap). Consider the policy gradient updates in the tabular setting, we have,
+𝑉∗(𝑠0) −𝑉𝑡(𝑠0) ≤2𝛼𝑣2max|S||U|
+(1 −𝛾)3
++ 3(1 + 𝛼𝑣max)
+(1 −𝛾)2
+𝑄𝑡−¯𝑄𝑡
+2
+where 𝑉∗(𝑠0) = 𝑉𝝅∗(𝑠0), and the reward 𝑟∈[0, 𝑣max].
+Proof. From Lemma C.1, we can say that,
+𝑉∗(𝑠0) −𝑉𝑡(𝑠0) =
+1
+1 −𝛾E𝑠∼𝑑∗
+∑︁
+u∈U
+𝝅∗𝐴𝑡(𝑠, u)
+=
+1
+1 −𝛾E𝑠∼𝑑∗
+∑︁
+u∈U
+𝝅∗𝑄𝑡(𝑠, u) −
+1
+1 −𝛾E𝑠∼𝑑∗𝑉𝑡(𝑠)
+=
+1
+1 −𝛾E𝑠∼𝑑∗
+∑︁
+u∈U
+𝝅∗¯𝑄𝑡(𝑠, u) +
+1
+1 −𝛾E𝑠∼𝑑∗
+∑︁
+u∈U
+𝝅∗ 𝑄𝑡(𝑠, u) −¯𝑄𝑡(𝑠, u) −
+1
+1 −𝛾E𝑠∼𝑑∗𝑉𝑡(𝑠)
+≤1
+𝛼E𝑠∼𝑑∗
+ 
+𝛼
+1 −𝛾
+¯𝑉𝑡(𝑠, u) −
+𝛼
+1 −𝛾𝑉𝑡(𝑠) +
+𝛼
+1 −𝛾
+∑︁
+u∈U
+𝝅𝑡
+ ¯𝑄𝑡(𝑠, u) −𝑄𝑡(𝑠, u)
+
+!
++
+1
+1 −𝛾E𝑠∼𝑑∗
+∑︁
+u∈U
+𝝅∗ 𝑄𝑡(𝑠, u) −¯𝑄𝑡(𝑠, u)
+≤
+1
+1 −𝛾(𝑉𝑡+1(𝑠0) −𝑉𝑡(𝑠0))
++
+1
+(1 −𝛾)2 E𝑠∼𝑑∗
+∑︁
+u∈U
+𝝅𝑡+1
+𝑄𝑡(𝑠, u) −¯𝑄𝑡(𝑠, u)
+ +
+1
+(1 −𝛾)2 E𝑠∼𝑑∗
+∑︁
+u∈U
+𝝅𝑡
+𝑄𝑡(𝑠, u) −¯𝑄𝑡(𝑠, u)
+
++
+1
+1 −𝛾E𝑠∼𝑑∗
+∑︁
+u∈U
+𝝅∗ 𝑄𝑡(𝑠, u) −¯𝑄𝑡(𝑠, u)
+[from Lemma C.2]
+≤
+2𝑣max
+(1 −𝛾)2 ∥𝑚𝑡+1 −𝑚𝑡∥2 +
+3
+(1 −𝛾)2
+𝑄𝑡−¯𝑄𝑡
+2
+= 2𝛼𝑣max
+(1 −𝛾)2
+ ¯𝑄𝑡
+2 +
+3
+(1 −𝛾)2
+𝑄𝑡−¯𝑄𝑡
+2
+[from [43]]
+≤2𝛼𝑣max
+(1 −𝛾)3 ∥𝑄𝑡∥2 + 3(1 + 𝛼𝑣max)
+(1 −𝛾)2
+𝑄𝑡−¯𝑄𝑡
+2
+≤2𝛼𝑣2max|S||U|
+(1 −𝛾)3
++ 3(1 + 𝛼𝑣max)
+(1 −𝛾)2
+𝑄𝑡−¯𝑄𝑡
+2
+This concludes our proof.
+□
+The lemmas C.2 and C.3 proved above also hold true the barrier function that we had used for applying the loss due to the constraint.
+Owing to better convergence (proved by the authors in [24]) we have used the loss function based on the barrier function. For time complexity
+analysis, we assume a parallel convergence analysis for the constraint holds true, with our constraints scaling with the rewards to obey the
+limit. In general, TD error can also be used to learn the constraints here.
+Let 𝑇be the total number of training steps. Let us assume, with probability at least 1 −𝛿/𝑇we have,
+𝑄𝑡−¯𝑄𝑡
+2 ≤
+√︁
+(1 −𝛾)|S||U|/
+√
+𝑇.
+Given that, with probability 1 −𝛿we have Í
+𝑇
+𝑄𝑡−¯𝑄𝑡
+2 ≤
+√︁
+(1 −𝛾)|S||U|𝑇, we have the following with same confidence.
+𝛼
+∑︁
+𝑇
+
+(𝑉∗(𝑠0) −𝑉𝑡(𝑠0)) + (𝑉𝐵
+∗(𝑠0) −𝑉𝐵
+𝑡(𝑠0))
+
+≤2𝛼2𝑣2max|S||U|𝑇
+(1 −𝛾)3
++ 3𝛼(1 + 𝛼𝑣max)
+√︁
+|S||U|𝑇
+(1 −𝛾)1.5
+Let 𝛼= (1 −𝛾)1.5/
+√︁
+|S||U|𝑇. If we consider gradient update due to the reward and gradient update due to the constraint to be separate
+steps, from Lemma 9 in [42] we know that reward optimization runs for more than half of the time-steps. Therefore,
+𝑉∗(𝑠0) −𝑉𝑇(𝑠0) ≤
+2
+𝛼𝑇
+ 
+2𝛼2𝑣2max|S||U|𝑇
+(1 −𝛾)3
++ 3𝛼(1 + 𝛼𝑣max)
+√︁
+|S||U|𝑇
+(1 −𝛾)1.5
+!
+≤
+|S||U|
+(1 −𝛾)1.5√
+𝑇
+(4𝑣2
+max + 6 + 6𝑣max)
+Using the same equation, we can obtain the bound on the constraints; which also has the same bound.
+D
+ADDITIONAL EXPERIMENTAL RESULTS
+We performed additional analysis on the evaluations done using the StartCraft environments. Here the fraction of trajectories with test battle
+win rate above a certain fraction as indicated in the horizontal axis, highlighting its convergence. The results are shown in figures 12, 13.
+
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate ( )
+0.0
+0.2
+0.4
+0.6
+0.8
+Fraction of runs with score >
+5m_vs_6m
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate ( )
+0.0
+0.2
+0.4
+0.6
+0.8
+8m_vs_9m
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate ( )
+0.0
+0.2
+0.4
+0.6
+0.8
+10m_vs_11m
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate ( )
+0.0
+0.2
+0.4
+0.6
+0.8
+so_many_baneling
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate ( )
+0.0
+0.2
+0.4
+0.6
+Fraction of runs with score >
+3s_vs_4z
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate ( )
+0.0
+0.2
+0.4
+0.6
+3s_vs_5z
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate ( )
+0.0
+0.2
+0.4
+0.6
+0.8
+MMM
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate ( )
+0.0
+0.1
+0.2
+0.3
+MMM2
+ 
+RMIX
+DMIX
+QDIST
+CBF
+RESZ
+RISKQ
+DBF
+Figure 12: Analysis of win rate on the StarCraft hard and super-hard scenarios.
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate ( )
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Fraction of runs with score >
+2s3z
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate ( )
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+3s5z
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate ( )
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+3m
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Battle Win Rate ( )
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1c3s5z
+ 
+VDN
+QMIX
+QTRAN
+QBF
+Figure 13: Analysis of win rate on the StarCraft easy scenarios.

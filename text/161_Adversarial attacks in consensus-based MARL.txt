@@ -1,0 +1,979 @@
+Adversarial attacks in consensus-based multi-agent reinforcement
+learning
+Martin Figura, Krishna Chaitanya Kosaraju, and Vijay Gupta
+Abstract— Recently, many cooperative distributed multi-
+agent reinforcement learning (MARL) algorithms have been
+proposed in the literature. In this work, we study the effect
+of adversarial attacks on a network that employs a consensus-
+based MARL algorithm. We show that an adversarial agent
+can persuade all the other agents in the network to implement
+policies that optimize an objective that it desires. In this sense,
+the standard consensus-based MARL algorithms are fragile to
+attacks.
+I. INTRODUCTION
+Multi-agent reinforcement learning (MARL) is a branch
+of reinforcement learning (RL) [1], where multiple decision-
+makers learn a policy that is optimal in the context of
+competitive, cooperative, or mixed objectives [2], [3]. A
+recent success story of MARL in popular parlance include
+its performance in the video game Starcraft II by training
+an agent which outperforms the world’s best human players
+[4]. In this paper, we focus on MARL for cooperative agents.
+Potential applications in this stream have been proposed for
+long for diverse ﬁelds such as sensor networks [5], robotics
+[6], and trafﬁc control [7].
+Early formulations of MARL assumed that the agents
+share a common reward and focused on decentralized
+decision-making. The sample efﬁciency in the training of
+a multi-agent network in this setting is signiﬁcantly im-
+proved by establishing communication between agents [8].
+Nonetheless, the centralized reward is often infeasible due
+to overwhelming communication requirements and complex
+network topology, which motivated the development of co-
+operative distributed MARL with decentralized knowledge
+of rewards. In this setting, each agent has a local utility
+function and views only its own reward. The problem is still
+cooperative in the sense that the agents wish to maximize
+the sum of all utility functions. In this problem, the agents
+must communicate not only to improve the sample efﬁciency
+but also to become aware of the other agents’ performance.
+Only by propagating information over the entire network, the
+agents can achieve a common objective, e.g., to maximize
+team-average returns. The ability to learn a policy that
+maximizes the common objective in a partially observable
+environment can be facilitated by consensus algorithms as
+presented in [9], whereby the agent’s rewards (and possibly
+actions) remain unknown to the rest of the network and must
+not be directly communicated between agents to ensure their
+privacy.
+M. Figura, K. C. Kosaraju, and V. Gupta are with the Department of
+Electrical Engineering at the University of Notre Dame, Notre Dame, IN,
+46556 USA, {mfigura,kkosaraj,vgupta2}@nd.edu.
+Consensus algorithms are generally devised for distributed
+systems to ﬁnd agreement on signal values over networks
+[10]. These algorithms ﬁnd applications in many ﬁelds in-
+cluding sensor networks [11], coordination of vehicles [12],
+or even blockchain [13]. In practice, consensus algorithms
+must be robust to faults that arise from relatively frequent
+occurrences of interrupted communication links or corrupted
+signals [14]. Therefore, the convergence of resilient con-
+sensus algorithms was rigorously studied under different
+considerations for the nature of adversarial attacks [15],
+graph topology [16], [17], or frequency of communication
+[18]. These research efforts naturally complement studies of
+the inﬂuence of adversarial attacks on network performance.
+A simple yet powerful result from the analysis of linear
+consensus [11] states that the topology of a consensus matrix
+determines the limiting value for the consensus updates. In
+the presence of a single malicious agent, which does not
+apply consensus updates, the limiting value coincides with
+the adversary’s value.
+In the consensus MARL algorithm in [9, Algorithm 2],
+every agent estimates the team-average reward and value
+function using linear approximations and exchanges param-
+eters with other agents through a consensus protocol. Inter-
+estingly, this scheme guarantees the asymptotic convergence
+to the team-average optimal policy even with simultaneous
+actor, critic, and consensus updates over time-varying com-
+munication graphs. Furthermore, the algorithm retains the
+convergence property even with sparse data transmission for
+strongly connected graphs [19].
+In this paper, we study the effects of adversarial attacks
+on the consensus MARL algorithm [9, Algorithm 2] with
+discounted rewards in the objective function. The attacks
+we consider are different from the commonly studied data
+poisoning attacks in ML or RL, which seek to understand
+if changing the data or rewards by an external agent can
+degrade the performance of RL algorithms [20]. Here, we
+consider a MARL setting where a participating agent itself is
+malicious. Speciﬁcally, we ask whether a single adversarial
+agent can either prevent convergence of the algorithm, or
+even worse, lead the other agents to optimize a utility
+function that it chooses. We show that the answer to this
+question is in the afﬁrmative by designing a suitable attack
+and analyzing the convergence of the algorithm under it.
+Speciﬁcally, we take under the scope networks with a
+single malicious agent, i.e., with an adversary that can com-
+promise the consensus and critic updates and transmits the
+same signal values to its neighbors. We show that when the
+malicious agent greedily attempts to maximize its own well-
+arXiv:2103.06967v1  [eess.SY]  11 Mar 2021
+
+deﬁned objective function, all other agents in the network end
+up maximizing the adversary’s objective function as well. We
+provide a proof of asymptotic convergence analogous to [9].
+Our study motivates the development of resilient consensus
+MARL algorithms.
+The paper is structured as follows. We provide a back-
+ground of the networked Markov decision process along with
+the agents’ objectives in Section 2. In Section 3, we state
+all assumptions in a compact form, present the consensus
+MARL algorithm, and provide the convergence analysis.
+Section 4 is dedicated to numerical simulations.
+Notation: We let 1 denote the vector of ones. The
+operator ⊗represents the Kronecker product. The cardinality
+of a set C is denoted by |C|.
+II. BACKGROUND
+A. Networked Markov decision process
+We consider a networked Markov decision process (MDP)
+given as a tuple (S, {Ai}i∈N , P, {Ri}i∈N , G), where N =
+{1, . . . , N}, S is a set of states, P is a set of transitional
+probabilities, γ ∈[0, 1) is a discount factor, G represents a
+graph, and Ai and Ri are a set of actions and rewards of
+agent i, respectively. The graph G = (N, E) is deﬁned by a
+set of vertices N associated with the agents in the network
+and a set of edges E ⊆N × N. The global state and action
+are denoted by s and a, respectively, s′ denotes the state
+at the next time step, and the superscript i denotes a signal
+of agent i. We let ri(s, a, s′) : S × A × S →Ri ⊂R
+denote the individual reward of subsystem i, p(s′|s, a) :
+S × S × A →P ⊂R the joint transitional probability, and
+πi(ai|s) : S × Ai →(0, 1) the policy of subsystem i. The
+overall network policy can be written as a stacked vector of
+individual policies, π(a|s) = [π1(a1|s)T , . . . , πN(aN|s)T ]T .
+In case we need to explicitly specify a signal value at time t,
+we use subscript t, i.e., ri
+t+1(st, at, st+1). An important
+consideration in this work is that agent i, i ∈N, receives the
+private reward ri
+t+1 along with the observation of the global
+state st and action at at each step in training.
+We let π(a|s; θ) = [π1(a1|s; θ1)T , . . . , πN(aN|s; θN)T ]T
+denote the network policy parameterized by θ, where
+πi(ai|s; θi) is a parameterized policy of agent i. Further, we
+distinguish between reward signals by making the following
+deﬁnitions:
+1) average individual reward at (s, a):
+ˆri(s, a) =
+X
+s′
+p(s′|s, a)ri(s, a, s′)
+2) average
+individual
+reward
+under
+global
+policy
+π(a|s; θ):
+ˆri
+θ(s) =
+X
+a
+π(a|s; θ)ˆri(s, a)
+3) average individual reward at all state-action pairs
+(s, a) ∈S × A:
+ˆRi = [ˆri(s, a), s ∈S, a ∈A]T ∈R|S|·|A|
+4) average individual reward under global policy π(a|s; θ)
+at all states s ∈S:
+ˆRi
+θ = [ˆri
+θ(s), s ∈S]T ∈R|S|.
+We
+also
+deﬁne
+team-average
+rewards
+r(s, a, s′)
+=
+1
+N
+PN
+i=1 ri(s, a, s′), ˆr(s, a) =
+1
+N
+PN
+i=1 ˆri(s, a), ˆrθ(s) =
+1
+N
+PN
+i=1 ˆri
+θ(s),
+ˆRθ
+=
+1
+N
+PN
+i=1 ˆRi
+θ
+∈
+R|S|, and
+ˆR
+=
+1
+N
+PN
+i=1 ˆRi. Furthermore, we deﬁne the estimated network
+reward function at (s, a) as ¯r(s, a; λ), where λ are the
+function parameters.
+B. Objective
+We let N + and N −denote the set of cooperative agents
+and adversaries, respectively, and note that N = N + ∪N −.
+The objective of agents i ∈N + is to maximize a team-
+average objective function given as
+max
+θ
+J+(θ) = max
+θ
+E
+ ∞
+X
+t=0
+1
+N
+N
+X
+i=1
+γtri
+t+1|s0 = s
+
+.
+(1)
+The cooperative agents are unaware of the presence of an
+adversarial agent that seeks to maximize a different objective
+function. We deﬁne the objective function for i ∈N −as
+max
+θ
+J−(θ) = max
+θ
+E
+ ∞
+X
+t=0
+γtri
+t+1|s0 = s
+
+.
+(2)
+It is important to note that the adversarial agent can com-
+promise the rewards ri
+t+1, i ∈N −, to incentivize its
+malicious behavior. Furthermore, once the agents establish
+communication the adversary can spread false information
+about the performance of the entire network embedded in
+the compromised rewards ri
+t+1. This may eventually lead
+to incentivizing a bad behavior in the cooperative agents
+as well, regardless of whether the maximized objective is
+(1) or (2). In Section III, we show that the entire network
+maximizes the adversarial agents’ objective in (2) when
+the adversarial agent ignores signals transmitted by the
+cooperative agents.
+III. MULTI-AGENT ACTOR-CRITIC ALGORITHM UNDER
+ADVERSARIAL ATTACKS
+In this section, we present assumptions on the network and
+signals, deﬁne the consensus MARL algorithm, state main
+theorems concerning the convergence of the actor and critic,
+and prove that the adversarial agent persuades the remaining
+agents in the network to maximize its individual objective
+in (2) despite their initial agreement to maximize the team
+objective in (1).
+We formally deﬁne true action-value functions of the
+cooperative agents and the adversary under policy π(a|s)
+in the respective order as follows
+Qi
+π(s, a) = Eπ
+ ∞
+X
+t=0
+1
+N γt X
+k∈N
+rk
+t+1
+
+, i ∈N +
+Qi
+π(s, a) = Eπ
+ ∞
+X
+t=0
+γtri
+t+1
+
+, i ∈N −
+
+where j ∈N −. Further, we deﬁne the true state value
+functions as
+V i
+π(s) =
+X
+a
+π(a|s)Qi
+π(s, a),
+i ∈N.
+We will approximate V i
+π(s) using a parameterized state-value
+function V (s; vi).
+Remark. It is required that all agents use the same basis
+functions (or neural networks) so that their parameter values
+vi can eventually converge to a consensus value. This limita-
+tion can be overcome by considering gossip-based algorithms
+[21]. However, the convergence analysis for gossip-based
+algorithms is rather challenging.
+A. Assumptions
+In this subsection, we state assumptions needed for the
+convergence of the consensus MARL algorithm which we
+introduce later in the next section. The assumptions are
+similar to [9].
+Assumption 1. The policy πi(ai|s; θi) > 0 for any i ∈N,
+θi ∈Θi, s ∈S, ai ∈Ai. Also, πi(ai|s; θi) is continuously
+differentiable with respect to θi. For any θ ∈Θ, we let
+Pθ(st+1|st) = P
+at∈A P(st+1|st, at)π(a|s; θ) denote the
+transition matrix of the Markov chain {st}t≥0 induced by
+policy π(a|s; θ). The Markov chain {st}t≥0 is irreducible
+and aperiodic under any π(a|s; θ).
+Assumption 2. The update of the policy parameter θi
+t
+includes a local projection operator, Γi : Rmi →Rmi, that
+projects any θi
+t onto a compact set Θi. Also, we assume that
+Θ = ΠN
+i Θi is large enough to include at least one local
+minimum of J(θ).
+Assumption 3. The instantaneous reward ri
+t+1(st, at, st+1)
+is uniformly bounded for any i ∈N and t ≥0.
+Assumption
+4.
+The
+sequence
+of
+random
+matrices
+{Ct}t≥0 ⊆RN×N ⊆RN×N satisﬁes
+1) Ct is row stochastic, i.e., Ct1 = 1, and ct(i, j) = 1
+for i = j ∈N −. There exists a constant η ∈(0, 1)
+such that, for any ct(i, j) > 0, we have ct(i, j) ≥η.
+2) Ct
+respects
+the
+communication
+graph
+Gt,
+i.e.,
+ct(i, j) = 0 if (i, j) /∈Et.
+3) The spectral norm of E[CT
+t (I −11T /N)Ct] belongs
+to [0, 1).
+4) Given the σ-algebra generated by the random variables
+before time t, Ct is conditionally independent of ri
+t+1
+for any i ∈N.
+Assumption 5. For each agent i, the state-value function
+and the team reward function are both parameterized by
+linear functions, i.e., V (s; v) = vT ϕ(s) and ¯r(s, a; λ) =
+λT f(s, a), where ϕ(s) = [ϕ1(s), . . . , ϕL(s)] ∈RL and
+f(s, a) = [f1(s, a), . . . , fM(s, a)] ∈RM are the features
+associated with s and (s, a), respectively. The feature vectors
+ϕ(s) and f(s, a) are uniformly bounded for any s ∈S,
+a ∈A. Furthermore, let the feature matrix Φ ∈R|S|×L have
+[ϕl(s), s ∈S]T as its l-th column for any l ∈[L], and the
+feature matrix F ∈R|S|·|A|×M have [fm(s, a), s ∈S, a ∈
+A]T as its m-th column for any m ∈[M]. Both Φ and F
+have full column rank.
+Assumption 6. The step sizes αv,t and αθ,t
+satisfy P
+t αv,t = ∞, P
+t αθ,t = ∞, P
+t α2
+v,t +α2
+θ,t < ∞,
+αθ,t = o(αv,t), and limt→∞αv,t+1α−1
+v,t = 1.
+Assumption 7. The set N −contains exactly one element,
+i.e., there is one malicious agent with a well-deﬁned objective
+speciﬁed in (2).
+We note that Assumption 4.3 is satisﬁed when the com-
+munication graph G is connected in the mean. To simplify
+the convergence analysis in Section III.C, we assume that
+there is only one adversary that is learning using compro-
+mised rewards and does not perform consensus updates. The
+latter leads to unbalanced consensus updates in the entire
+network. We note that more general adversarial attacks are
+possible, e.g., there may be multiple adversarial agents in
+the network that may perform arbitrary parameter updates.
+Nonetheless, the narrow scope of attacks presented in this
+work is sufﬁcient to demonstrate the fragility of the vanilla
+consensus MARL algorithm.
+B. MARL algorithm
+In this subsection, we introduce the consensus MARL
+algorithm. We let ∆i denote an estimated network TD error
+estimated by agent i. We noted earlier in Section III that
+every agent maintains parameters vi which describe the
+network value function approximation V (s, vi). Further, we
+recall that the rewards ri(s, a, s′) remain private but the
+agents are allowed to estimate the network reward function.
+Intuitively, estimating the network reward function is a nec-
+essary step since the agents try to maximize the team-average
+objective in (1). We let dθ(s) denote a stationary distribution
+of the Markov chain {st}t≥0 under policy π(a|s; θ). If the
+rewards were mutually observable among the agents, they
+would minimize the weighted mean square error
+arg min
+λ
+X
+s∈S,a∈A
+dθ(s)π(a|s; θ)
+
+¯r(s, a; λ) −ˆr(s, a)
+2. (3)
+The optimization problem in (3) can be recast into a dis-
+tributed optimization problem, which has the same stationary
+points, given as follows
+arg min
+λ
+1
+N
+N
+X
+i=1
+X
+s∈S,a∈A
+dθ(s)π(a|s; θ)
+
+¯r −ˆri2.
+(4)
+since
+1
+N
+P
+i
+ ¯r(s, a; λ) −ˆri(s, a)
+
+= ¯r(s, a; λ) −ˆr(s, a).
+Hence, the agents can individually perform gradient steps
+to update the parameters λi based on their true rewards
+ri(s, a, s′). By communicating via a consensus protocol,
+they further gain information about the encoded rewards of
+the other agents. The estimation and communication of the
+network reward function parameters λi and network value
+function parameters vi provide the agents with the ability
+to update their policy to beneﬁt the team. The consensus
+actor-critic algorithm, a version of [9, Algorithm 2] with
+
+Algorithm 1: Consensus MARL algorithm
+Initialize parameters θi
+0, λi
+0, ˜λi
+0, vi
+0, ˜vi
+0, ∀i ∈N;
+Initialize s0, {αv,t}t≥0, {αθ,t}t≥0, t ←0;
+Repeat until convergence
+for i ∈N do
+Observe state st+1, action at, and reward ri
+t+1;
+Update
+˜λi
+t ←λi
+t + αv,t
+ ri
+t+1 −¯rt+1(λi
+t)
+
+∇λ¯rt+1(λi
+t);
+δi
+t ←ri
+t+1 + γV (st+1; vi
+t) −V (st; vi
+t);
+∆i
+t ←¯rt+1(λi
+t) + γV (st+1; vi
+t) −V (st; vi
+t);
+Update critic ˜vi
+t ←vi
+t + αv,tδi
+t∇vV (st; vi
+t);
+Update actor θi
+t+1 ←θi
+t + αθ,t∆i
+tψi
+t;
+Send ˜λi
+t, ˜vi
+t to the neighbors over Gt;
+Take action ai
+t+1 ∼πi(ai
+t+1|st+1; θi
+t+1);
+end
+for i ∈N do
+Consensus step
+λi
+t+1 = P
+j∈N ct(i, j)˜λj
+t,
+vi
+t+1 = P
+j ct(i, j)˜vj
+t ;
+end
+Update iteration counter t ←t + 1
+discounted returns is given in Algorithm 1. We note that the
+algorithm is the same for all agents but the adversary omits
+the consensus step. Furthermore, the action taken by the full
+network at can be assumed unobservable if the estimated
+rewards are independent of the actions, i.e., ¯r(s, a; λi) =
+¯r(s; λi). In the following subsection, we provide the conver-
+gence analysis for Algorithm 1.
+Remark. The scope of this work can be easily extended
+to [9, Algorithm 1], where agents approximate state-action
+value function parameters. For such an algorithm, the global
+action at must be observable by all agents in the network.
+C. Convergence analysis
+In this subsection, we proceed with the convergence anal-
+ysis. First, we show that the critic V (s; vi) and network
+reward function ¯r(s, a; λi) converge to a ﬁxed point for all
+i ∈N while the policy π(a|s; θ) remains ﬁxed. Then, we
+prove the full convergence of the actor updates that occur
+on a slower timescale. We write the stationary distribution
+of Markov chain dθ(s) for all states s ∈S as a matrix
+Ds
+θ = diag[dθ(s), s ∈S]. Similarly, we write the distribution
+of all state-action pairs (s, a) as a matrix Ds,a
+θ
+= diag[dθ(s)·
+π(a|s; θ), s ∈S, a ∈A]. For brevity, we use shorthands
+ϕt = ϕ(st) and ft = f(st, at). Finally, we deﬁne the
+consensus value ⟨zt⟩= 1
+N
+P
+i zi
+t and the disagreement vector
+z⊥,t = zt −1 ⊗⟨zt⟩.
+Theorem 1. Under assumptions 1 and 3-7, for any policy
+π(a|s; θ), with the updates of {vi
+t} in Algorithm 1, we have
+limt vi
+t = vθ and limt λi
+t = λθ for i ∈N almost surely.
+Furthermore, vθ and λθ are the unique solutions to
+F T Ds,a
+θ ( ˆRj −Fλθ) = 0
+(5)
+ΦT Ds
+θ
+  ˆRj
+θ + γPθΦvθ −Φvθ
+
+= 0,
+(6)
+where j ∈N −.
+Proof. We let zt
+= [(z1
+t )T , . . . , (zN
+t )T ]T
+∈R(M+L)N,
+where zi
+t
+=
+[(λi
+t)T , (vi
+t)T ]T . Furthermore, we deﬁne
+bt
+=
+rt+1 ⊗
+
+f T
+t
+φT
+t
+T
+and At
+=
+I ⊗A′
+t, where
+A′
+t
+
+−ftf T
+t
+0
+0
+φt(γφt+1 −φt)T
+
+. We let Fz
+t = {z0, Yτ, τ ≤
+t} denote a ﬁltration where Yτ = {sτ, aτ, rτ, Cτ−1} is a
+collection of random variables. The iterations of Algorithm 1
+can be written in a compact form as follows
+zt+1 = (Ct ⊗I)
+ zt + αv,t(Atzt + bt)
+
+= (Ct ⊗I)
+
+zt + αv,t
+ h(zt, Yt) + Mt+1
+
+where h(zt, Yt) = E(Atzt + bt|Fz
+t ) and Mt = Atzt + bt −
+E(Atzt +bt|Fz
+t ). To prove Theorem 1, we need to show that
+1) Lemma 1: the parameters λt and vt remain bounded
+for all t ≥0,
+2) Lemma 2: the adversary’s parameters asymptotically
+converge, i.e., λj
+t →λθ and vj
+t →vθ, j ∈N −,
+3) Lemma 3: the agents’ parameters asymptotically con-
+verge to the consensus value ⟨λt⟩and ⟨vt⟩.
+We take advantage of the rich convergence analysis in [9] to
+prove the lemmas.
+Lemma 1. Under assumptions 1 and 3-6, the sequence {zt}
+satisﬁes supt ||zt|| < ∞almost surely.
+Proof. The proof is given in [9, Appendix C]. The only
+difference in our work is that in the absence of the consensus
+step the updates of zi
+t, i ∈N, asymptotically follow the ODE
+˙zi
+t = ¯A′
+tzi
+t + ¯bi
+t where
+¯A′
+t =
+−F T Ds,a
+θ F
+0
+0
+ΦT Ds
+θ(γPθ −I)Φ
+
+(7)
+¯bi
+t =
+
+(F T Ds,a
+θ
+ˆRi)T
+(ΦT Ds
+θ ˆRi
+θ)T T .
+(8)
+The discount factor satisﬁes γ ∈[0, 1) and the stochastic
+matrix Pθ has positive eigenvalues that are less than or
+equal to 1. Therefore, the matrix ΦT Ds,a
+θ (γPθ −I)Φ has
+eigenvalues with strictly negative real parts, which implies
+that the ODE ˙zi
+t = ¯A′
+tzi
+t + ¯bi
+t has an asymptotically stable
+equilibrium. Hence, supt ||zt|| < ∞almost surely.
+Lemma 2. Under assumptions 1, 3, and 5-7, limt→∞zj
+t =
+zθ, j ∈N −, almost surely. Furthermore, zθ = [λT
+θ , vT
+θ ]T is
+a unique solution to (5) and (6).
+Proof. We recall that the adversarial agent does not per-
+form the consensus step. Using the ﬁndings in Lemma
+1, we can immediately conclude that ˙zj
+t
+=
+¯A′
+tzj
+t + ¯bj
+t
+is the limiting ODE, with A′
+t given in (7) and ¯bj
+t
+=
+
+(F T Ds,a
+θ
+ˆRj)T
+(ΦT Ds
+θ ˆRj
+θ)T T . The ODE has a unique
+asymptotically stable equilibrium zθ = [λT
+θ , vT
+θ ]T that sat-
+isﬁes (5) and (6).
+Lemma 3 (Appendix B.4, Step 1 in [9]). Under assump-
+tions 1 and 3-7, the disagreement vector z⊥,t satisﬁes
+limt→∞z⊥,t = 0 almost surely.
+
+To complete the proof of Theorem 1, we recall that
+• limt→∞(zj
+t −zθ) = 0 for j ∈N −a.s. (Lemma 2)
+• limt→∞(zi
+t −⟨zt⟩) = 0 for i ∈N a.s. (Lemma 3).
+Therefore, limt→∞(⟨zt⟩−zθ) = 0 almost surely where zθ =
+[λT
+θ , vT
+θ ]T satisﬁes (5) and (6).
+Having proved the critic and network reward convergence
+under a ﬁxed policy π(a|s; θ), we proceed to make a state-
+ment about the convergence of the actor updates on the
+slower timescale.
+Theorem 2. [9, Theorem 4.10] Under assumptions 1-7, the
+policy parameter θi
+t converges almost surely to a point in the
+set of asymptotically stable equilibria of
+˙θi = ˆΓi
+Est∼dθ,at∼πθ(∆t,θ · ψi
+t,θ)
+
+for
+i ∈N,
+(9)
+where Est∼dθ,at∼πθ(∆t,θ · ψi
+t,θ) = Est∼dθ,at∼πθ
+
+(f T
+t λθ +
+γϕt+1vθ −ϕtvθ)∇θi log πi(ai
+t|st; θi)
+
+.
+We note that the policy π(a|s; θ) converges to an equilib-
+rium where the estimated network TD error ∆t,θ is equal to
+zero. Since ∆t,θ is a function of the parameterized network
+reward function ¯r(s, a; λ) and value function V (s; v), the
+policy π(a|s; θ) does not converge to the true optimal policy.
+The error between π(a|s; θ) and the true optimal policy
+that maximizes (2) can be reduced by selecting appropriate
+models for ¯r(s, a; λ) and V (s; v).
+In the next section, we present an example in which a
+group of agents employs Algorithm 1 to learn an optimal
+policy and is subject to a malicious attack from a single
+adversarial agent.
+IV. NUMERICAL SIMULATIONS
+In this section, we assess the performance of Algorithm 1
+through numerical simulations using nonlinear function ap-
+proximation. We also compare our results against the de-
+0
+50
+100
+150
+200
+−5
+−4
+−3
+−2
+−1
+0 1e3
+true rewards (ad)
+true rewards (ad-free)
+Estimated rewards (ad)
+Estimated rewards (ad-free)
+Fig. 1.
+Cumulative team-average rewards per episode for the adversary-
+free and attacked network. The comparison shows that the former performs
+signiﬁcantly better
+Fig. 2.
+Final network states in a simulation with no adversary (left) and
+with an adversary (right) after training for 200 episodes. Blue, yellow, and
+brown cells correspond to the cooperative agents’, adversary’s, and desired
+positions, respectively. All agents reach their desired positions when the
+network is adversary-free, whereas only the adversary ﬁnds its desired
+position when it attacks the network.
+centralized actor-critic algorithm in [9]. The code for these
+experiments can be found in [22].
+We consider a network of agents N
+= {1, 2, 3, 4, 5}
+in a grid-world of dimension (6 × 6). The position of
+agent i is described by the tuple (xi, yi) ∈Si, where
+Si = [0, . . . , 5]2. We note that the tuples (0, 0) and (5 , 5)
+correspond to the top-left and bottom-right corners of the
+grid, respectively. The state of the grid-world is given as
+s = [(xi, yi), i ∈N] ∈S where S = S1 × . . . × S5. The
+cardinality of S is |S| = 365 (≈60.5 million states). Agent i,
+i ∈N, takes actions from the set Ai = {0 : Left, 1 :
+Right, 2 : Up, 3 : Down, 4 : Stay}. If an action is to
+bring the agent to an infeasible state, then the agent remains
+in the same state. The set of actions of the network is given
+as A = A1 × . . . × A5, whose cardinality is |A| = 55.
+The goal of each cooperative agent, i ∈N + = {2, 3, 4, 5},
+is to maximize the objective in (1), whereas the adversary
+i ∈N −= {1} attempts to maximize (2). The rewards of
+agent i, i ∈N, are given as follows
+ri(si) = −|xi −xi
+des| −|yi −yi
+des| −qi,
+where qi denotes the number of neighboring agents that
+agent i collides at the current time step. For simplicity, we
+consider that the communication graph G is fully connected
+and the consensus matrix C in the adversary-free scenario
+has elements c(i, j) = 1/5 for i ∈N +, j ∈N.
+In both scenarios, we trained the agents for 200 episodes.
+Final states of a simulation of the grid-world after training are
+shown in Fig. 2. The agents’ positions in the grid-world were
+randomly initialized in each training episode that was set to
+terminate after 1000 steps or when the agents have reached
+their desired positions. The actor πi(ai|s, θi), critic V (s, vi),
+and global reward functions ¯r(s, λi) were approximated
+using artiﬁcial neural networks with two hidden layers. In
+Fig. 1, we compare the true cumulative team-average returns
+and cumulative estimated rewards obtained by the network
+in each episode. The estimated reward function converged
+in both scenarios but the convergence rate was slower in
+the presence of the adversary. The accumulated rewards per
+
+0
+100
+200
+−5
+−4
+−3
+−2
+−1
+0 1e3
+Agent-1
+ad
+ad-free
+0
+100
+200
+−5
+−4
+−3
+−2
+−1
+0 1e3
+Agent-2
+ad
+ad-free
+0
+100
+200
+−5
+−4
+−3
+−2
+−1
+0 1e3
+Agent-3
+ad
+ad-free
+0
+100
+200
+−5
+−4
+−3
+−2
+−1
+0 1e3
+Agent-4
+ad
+ad-free
+0
+100
+200
+−5
+−4
+−3
+−2
+−1
+0 1e3
+Agent-5
+ad
+ad-free
+Fig. 3.
+True cumulative rewards per episode obtained by each agent in the network. Blue and red color depict the performance of adversary-free network
+and the attacked network, respectively. The adversary quickly learns an optimal policy because it acts greedily with respect to the rest of the network.
+episode of each agent are depicted in Fig. 3. We can see
+that all agents learn a near-optimal policy when there is
+no adversary in the network. The adversary indeed harms
+the network, i.e., it learns a near-optimal policy but the
+remaining agents in the network perform poorly compared
+to the adversary-free scenario.
+V. CONCLUSION AND FUTURE WORK
+In this paper, we showed that the general consensus
+MARL algorithm originally proposed in [9] is not robust
+to adversarial attacks. We studied a well-deﬁned malicious
+attack whereby a single adversarial agent attempts to com-
+promise the objective function of a network of agents. We
+showed in the analysis that the network policy upon conver-
+gence locally maximizes the adversary’s objective function
+under this speciﬁc malicious attack. Our work naturally
+raises the question of whether we can develop consensus-
+based MARL algorithms that are resilient to general ad-
+versarial attacks. Such attacks may include compromised
+rewards, arbitrary parameter updates, and arbitrary changes
+in the policy. There are many results on resilient consensus
+algorithms in the literature but it is unclear if the theoretical
+analysis can carry over to RL algorithms. The unique chal-
+lenge for resilient consensus MARL is to provide robustness
+for the functions jointly estimated by the network of agents
+while the rewards remain private.
+REFERENCES
+[1] R. S. Sutton, A. G. Barto, et al., Introduction to reinforcement
+learning, vol. 135. MIT press Cambridge, 1998.
+[2] K. Zhang, Z. Yang, and T. Bas¸ar, “Multi-agent reinforcement learning:
+A selective overview of theories and algorithms,” 2019.
+[3] L. Busoniu, R. Babuska, and B. De Schutter, “A comprehensive survey
+of multiagent reinforcement learning,” IEEE Transactions on Systems,
+Man, And Cybernetics-Part C: Applications and Reviews, 38 (2), 2008,
+2008.
+[4] O. Vinyals, I. Babuschkin, W. M. Czarnecki, M. Mathieu, A. Dudzik,
+J. Chung, D. H. Choi, R. Powell, T. Ewalds, P. Georgiev, et al.,
+“Grandmaster level in starcraft ii using multi-agent reinforcement
+learning,” Nature, vol. 575, no. 7782, pp. 350–354, 2019.
+[5] J. Cortes, S. Martinez, T. Karatas, and F. Bullo, “Coverage control
+for mobile sensing networks,” IEEE Transactions on robotics and
+Automation, vol. 20, no. 2, pp. 243–255, 2004.
+[6] E. Yang and D. Gu, “Multiagent reinforcement learning for multi-robot
+systems: A survey,” tech. rep., tech. rep, 2004.
+[7] L. Kuyer, S. Whiteson, B. Bakker, and N. Vlassis, “Multiagent
+reinforcement learning for urban trafﬁc control using coordination
+graphs,” in Joint European Conference on Machine Learning and
+Knowledge Discovery in Databases, pp. 656–671, Springer, 2008.
+[8] J. Foerster, I. A. Assael, N. De Freitas, and S. Whiteson, “Learning
+to communicate with deep multi-agent reinforcement learning,” in
+Advances in neural information processing systems, pp. 2137–2145,
+2016.
+[9] K. Zhang, Z. Yang, H. Liu, T. Zhang, and T. Bas¸ar, “Fully decentral-
+ized multi-agent reinforcement learning with networked agents,” arXiv
+preprint arXiv:1802.08757, 2018.
+[10] R. Olfati-Saber, J. A. Fax, and R. M. Murray, “Consensus and
+cooperation in networked multi-agent systems,” Proceedings of the
+IEEE, vol. 95, no. 1, pp. 215–233, 2007.
+[11] R. Olfati-Saber and J. S. Shamma, “Consensus ﬁlters for sensor
+networks and distributed sensor fusion,” in Proceedings of the 44th
+IEEE Conference on Decision and Control, pp. 6698–6703, IEEE,
+2005.
+[12] W. Ren, R. W. Beard, and E. M. Atkins, “Information consensus in
+multivehicle cooperative control,” IEEE Control systems magazine,
+vol. 27, no. 2, pp. 71–82, 2007.
+[13] D. Mingxiao, M. Xiaofeng, Z. Zhe, W. Xiangwei, and C. Qijun,
+“A review on consensus algorithm of blockchain,” in 2017 IEEE
+International Conference on Systems, Man, and Cybernetics (SMC),
+pp. 2567–2572, IEEE, 2017.
+[14] M. J. Fischer, “The consensus problem in unreliable distributed
+systems (a brief survey),” in International conference on fundamentals
+of computation theory, pp. 127–140, Springer, 1983.
+[15] H. J. LeBlanc, H. Zhang, X. Koutsoukos, and S. Sundaram, “Resilient
+asymptotic consensus in robust networks,” IEEE Journal on Selected
+Areas in Communications, vol. 31, no. 4, pp. 766–781, 2013.
+[16] D. Saldana, A. Prorok, S. Sundaram, M. F. Campos, and V. Kumar,
+“Resilient consensus for time-varying networks of dynamic agents,” in
+2017 American control conference (ACC), pp. 252–258, IEEE, 2017.
+[17] S. Sundaram and C. N. Hadjicostis, “Finite-time distributed consensus
+in graphs with time-invariant topologies,” in 2007 American Control
+Conference, pp. 711–716, IEEE, 2007.
+[18] D. Ding, Z. Wang, D. W. Ho, and G. Wei, “Observer-based event-
+triggering consensus control for multiagent systems with lossy sensors
+and cyber-attacks,” IEEE transactions on cybernetics, vol. 47, no. 8,
+pp. 1936–1947, 2016.
+[19] Y. Lin, K. Zhang, Z. Yang, Z. Wang, T. Bas¸ar, R. Sandhu, and
+J. Liu, “A communication-efﬁcient multi-agent actor-critic algorithm
+for distributed reinforcement learning,” in 2019 IEEE 58th Conference
+on Decision and Control (CDC), pp. 5562–5567, IEEE, 2019.
+[20] Y. Ma, X. Zhang, W. Sun, and J. Zhu, “Policy poisoning in batch re-
+inforcement learning and control,” in Advances in Neural Information
+Processing Systems, pp. 14570–14580, 2019.
+[21] A. Mathkar and V. S. Borkar, “Distributed reinforcement learning
+via gossip,” IEEE Transactions on Automatic Control, vol. 62, no. 3,
+pp. 1465–1470, 2016.
+[22] K. C. Kosaraju, M. Figura, and V. Gupta, “Adversarial - multi-agent
+reinforcement learning (adv-marl).” https://github.com/asokraju/adv-
+marl, 2020.

@@ -1,0 +1,1836 @@
+IEEE TRANSACTIONS ON SYSTEMS, MAN, AND CYBERNETICS: SYSTEMS, VOL. 54, NO. 12, DECEMBER 2024
+7633
+Adversarial Attacks on Multiagent Deep
+Reinforcement Learning Models in Continuous
+Action Space
+Ziyuan Zhou
+, Graduate Student Member, IEEE, Guanjun Liu
+, Senior Member, IEEE,
+Weiran Guo
+, Graduate Student Member, IEEE, and MengChu Zhou
+, Fellow, IEEE
+Abstract—Multiagent deep reinforcement learning (MADRL)
+has been recently applied in many ﬁelds, including industry 5.0,
+but it is sensitive to adversarial attacks. Although adversarial
+attacks can be detrimental, they are crucial for testing and
+assisting in enhancing the robustness of models. Existing attacks
+on MADRL-based models are not sufﬁcient since these attacks
+involve ﬁxed perturbed agents, without taking into account cases
+where perturbed agents change. In this article, we present a
+novel adversarial attack framework. In this framework, we
+deﬁne critical agents that change over time, i.e., when they are
+perturbed a little, the whole multiagent system is perturbed
+greatly. Then, we identify critical agents through their worst-
+case joint actions. In this identifying process, we use gradient
+information, differential evolution, and SARSA to deal with the
+challenge caused by changes in the perturbed agents and to
+compute the worst-case joint actions. After identifying them,
+we use the target attack method to perturb them. We apply
+our method to attack the models trained by two state-of-the-
+art MADRL algorithms under three environments, including
+two industry-related ones. The experimental results demonstrate
+our method has a stronger perturbing ability than the existing
+methods.
+Index
+Terms—Adversarial
+attacks,
+continuous
+action
+space, industry 5.0, multiagent deep reinforcement learning
+(MADRL).
+I. INTRODUCTION
+I
+NDUSTRY 5.0 involves the interaction between humans
+and machines [1], [2], [3], [4], [5], [6], where multiagent
+Manuscript received 6 June 2024; accepted 27 August 2024. Date of
+publication 19 September 2024; date of current version 20 November 2024.
+This work was supported in part by the National Nature Science Foundation
+of China under Grant 62172299 and Grant 62032019; in part by the
+Shanghai Science and Technology Committee under Grant 22511105500;
+in part by the Fundamental Research Funds for the Central Universities
+under Grant 2023-4-YB-05; in part by the Space Optoelectronic Measurement
+and Perception Lab., Beijing Institute of Control Engineering under Grant
+LabSOMP-2023-03; and in part by the International Exchange Program for
+Graduate Students, Tongji University under Grant 2023020041. This article
+was recommended by Associate Editor Y. Lin. (Corresponding authors:
+Guanjun Liu; MengChu Zhou.)
+Ziyuan
+Zhou,
+Guanjun
+Liu,
+and
+Weiran
+Guo
+are
+with
+the
+Department of Computer Science, Tongji University, Shanghai 201804,
+China
+(e-mail:
+ziyuanzhou@tongji.edu.cn;
+liuguanjun@tongji.edu.cn;
+gwr00519@tongji.edu.cn).
+MengChu Zhou is with the Macao Institute of Systems Engineering
+and Collaborative Laboratory for Intelligent Science and Systems, Macau
+University of Science and Technology, Macau, China, and also with the
+Discrete Event Systems Laboratory and the Helen and John C. Hartmann
+Department of Electrical and Computer Engineering, New Jersey Institute of
+Technology, Newark, NJ 07102 USA (e-mail: mengchu@gmail.com).
+Color versions of one or more ﬁgures in this article are available at
+https://doi.org/10.1109/TSMC.2024.3454118.
+Digital Object Identiﬁer 10.1109/TSMC.2024.3454118
+deep reinforcement learning (MADRL) has found extensive
+applications, including automatic vehicles [7], [8], [9], [10],
+robotics [11], [12], [13], [14] and intelligent education [15].
+MADRL faces the challenges of nonstationary and partial
+observability. A centralized training and decentralized execu-
+tion (CTDE) framework [16], [17], [18], [19] can effectively
+address these challenges by leveraging the advantages of cen-
+tralized training during a training phase, allowing individual
+agents to make decisions based on their local observations
+and individual information during an execution phase. Classic
+algorithms of CTDE-based MADRL in continuous action
+space include multiagent deep deterministic policy gradient
+(MADDPG) [18] and factored multiagent centralized policy
+gradient (FACMAC) [11].
+However, recent studies have shown that the models trained
+using MADRL are sensitive to the perturbation in agent
+states [20], [21], [22], [23], [24]. These perturbations, stem-
+ming from sensor errors or deliberate malicious attacks, can
+result in severe consequences. Importantly, perturbations in the
+states of certain agents have the potential not only to misguide
+individual decisions but also to disrupt the cooperative policies
+in a team. Attacks on MADRL-trained models are harmful,
+but they are crucial to validate the reliability of industrial
+applications in the face of unforeseen perturbations. Therefore,
+it is necessary to design adversarial attacks for generating
+perturbation observations that may signiﬁcantly impact team
+collaboration. Intuitively, heightened levels of stealth and dis-
+ruption in an attack correspond to more conducive to assisting
+in improving the robustness of the model. As a result, we aim
+to design an attack framework that has signiﬁcant damage to
+the model while perturbing agents as few as possible.
+There are some related studies for adversarial attacks
+on single-agent deep reinforcement learning (SADRL) mod-
+els [25], [26], [27], [28], [29], [30], [31], which do not
+consider which agents should be selected as victims. In the
+context of adversarial attacks on MADRL models, it has been
+demonstrated that the adversary can be effectively modeled
+as a stochastic game (SG). The existence of the optimal
+adversary is established in [23]. However, they assume that
+the victim agent set is ﬁxed. It cannot be modeled as SG when
+such a set changes. Guo et al. [20], [22], [24] only focus on
+the case of ﬁxed victims. As a primary focus of our work,
+the initial challenge we aim to address is the selection of
+critical agents designated as victims. The secondary challenge
+involves formulating guidance on the worst-case joint actions
+where the victim set remains uncertain. The efﬁcacy of an
+2168-2216 c⃝2024 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+7634
+IEEE TRANSACTIONS ON SYSTEMS, MAN, AND CYBERNETICS: SYSTEMS, VOL. 54, NO. 12, DECEMBER 2024
+attack is based on the evaluation of joint actions’ impact on
+the value function of one state. However, the joint action-value
+function or centralized critic network is unknown during the
+decentralized process in CTDE. Moreover, it is trained based
+on the assumption that all agents take their optimal actions.
+During the attack process, it is necessary to evaluate the subop-
+timal behaviors of agents, and the original estimation may not
+be accurate for such suboptimal behaviors. Consequently, the
+third challenge we confront is how to devise a methodology to
+assess the inﬂuence of actions on the team policy throughout
+a testing process.
+Drawing from the aforementioned challenges, based on
+our prior work [32], we introduce a novel framework for
+adversarial attacks on the models trained by MADRL in
+continuous action space (AMCA). The contributions of this
+work intends to make are as follows.
+1) AMCA is introduced and consists of two steps. The
+ﬁrst step employs either gradient information (GI) or
+differential evolution (DE) to identify critical agents.
+It aims to determine the worst-case joint actions for
+them, thus minimizing the cumulative reward of the
+collaborative team. The second step executes a targeted
+attack, generating perturbations based on a novel loss
+function as the optimization objective.
+2) A SARSA-based methodology for the learning of the
+joint action-value function (SJAV) is introduced in the
+framework of MADRL. The function represents the rela-
+tionship between individual actions and the cumulative
+rewards. It is employed as the objective function in the
+ﬁrst step of AMCA. The convergence of SJAV is proved.
+3) AMCA is applied to the models trained by MADRL
+given two environments related to industry and a general
+one. The experimental results demonstrate that AMCA
+has a stronger perturbing ability compared to others.
+The subsequent sections of this article are as follows.
+Section II presents the related work of adversarial attacks
+on SADRL and MADRL. We recall the basic concepts and
+methods in Section III and introduce the AMCA framework
+in Section IV. Then, we use AMCA to attack models trained
+by MADRL to test their robustness in Section V. Section VI
+summarizes this work and suggestions for future work.
+II. RELATED WORK
+A. Adversarial Attacks on SADRL Models
+In the context of adversarial attacks on SADRL models, the
+studies [25] and [26] utilize gradient-based adversary attacks
+like deep neural network (DNN) to generate adversarial-state
+perturbations. However, they only mislead an agent to do
+a wrong action and may not lead to the minimal expected
+reward. In [27], the adversary is modeled as a Markov decision
+process (MDP), and DRL is employed to address it, which
+can work well in low-dimension state space. To extend this
+method to high-dimension one, the work [28] proposes a
+two-step attack framework consisting of a director component
+for advising the worst-case action and an actor component
+for generating perturbations based on the guidance of the
+director. These studies do not consider which agents should be
+selected as victims which is important in adversarial attacks
+on MADRL models.
+B. Adversarial Attacks on MADRL Models
+In the ﬁeld of adversarial attacks on MADRL models,
+Lin et al. [22] used a two-step framework like [28] to generate
+adversarial observations, where an agent is selected as a
+victim during the training process. When the victim changes,
+the model has to retrain. Studies [20], [23], [33] model the
+adversarial attacks as an SG and use MADRL to solve it, but
+they view all agents as victims. In this work, we propose an
+adversarial attack framework to ﬁnd deﬁciencies in MADRL
+models by generating perturbation with a high impact on the
+team while interfering with the minimum number of agents.
+Building upon our previous work [32], where we introduced
+a framework known as robustness testing based on critical
+agents (RTCAs) for MADRL in discrete action space, this
+work extends the framework to the case of continuous one.
+Some differences exist between RTCA and AMCA: 1) a novel
+GI-based worst-case joint action selection method is proposed
+in Section IV-A1, which is a feature absent in the original
+RTCA framework; 2) convergence of the SARSA-based joint
+action-value function and time complexity of AMCA are
+analyzed in Sections IV-B and IV-C, respectively, which is
+not given in our prior work; 3) an innovative loss function
+for target attacks in the context of continuous action space is
+presented and diverse methods to optimize it are presented in
+Section IV-C, which differ from our prior work; and 4) the
+experiment is conducted in environments in continuous action
+space, including two industry-related and a general one, while
+the discrete action space ones are explored in RTCA.
+III. BASIC CONCEPTS AND METHODS
+This section introduces decentralized partially observable
+MDPes (Dec-POMDPs), two classical MADRL in continuous
+action space, state-adversarial SGs (SASGs), and agent state
+adversarial Dec-POMDPs (SADPs). The following provides
+descriptions of important concepts.
+1) The worst-case joint action is the incorrect action to
+reduce the discounted cumulative reward of the team.
+2) Adversarial perturbation is used to make agents take
+worst-case joint actions.
+3) The clean observation is created based on the current
+state of the environment.
+4) Adversarial observation refers to an observation that
+is obtained by modifying a clean observation through
+adversarial perturbation.
+5) The goal of the adversary is to generate the adversarial
+perturbation via adversarial attacks, which are used to
+test the robustness of models.
+6) The victim refers to the agent whose observation is
+perturbed by the adversary.
+7) Critical agents, at any given time step, are those whose
+actions have the most signiﬁcant impact on the team.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+ZHOU et al.: ADVERSARIAL ATTACKS ON MADRL MODELS IN CONTINUOUS ACTION SPACE
+7635
+A. Dec-POMDPs
+A Dec-POMDP is formally denoted as a tuple
+
+S, {Ai}i∈N , {Oi}i∈N , N, Z, p, r, γ
+
+where N represents the set of agents, with N ≜|N| denoting
+the total number of agents. Each agent is identiﬁed as i ∈
+N ≜1, . . . , N. The state set is denoted as S, with s ∈S
+representing the environmental state. The action of agent i is
+denoted by ai ∈Ai, where Ai corresponds to the action space
+of agent i. The observation oi ∈Oi is determined based on
+the observation function Z(s, a), deﬁned as Z(s, a):S × A1 ×
+· · ·×AN →O1×· · ·×ON, capturing the observation of agent
+i. The observation space of agent i is represented by Oi. The
+immediate reward is denoted by r, with r1 = · · · = rN = r
+applying uniformly to each agent. The reward function for all
+agents is represented as R(s, a, s′):S×A1×· · ·×AN×S →R.
+The transition probability, denoted as p : S×A1×· · ·×AN →
+(S), characterizes the dynamics based on the joint action a.
+The discount factor over time is represented by γ ∈[0, 1].
+B. MADRL in Continuous Action Space
+Solving Dec-POMDPs is proven to be NEXP-complete,
+primarily attributed to the inherent combinatorial complexities
+in their resolution [34]. Contextually, CTDE emerges as
+a promising learning paradigm for tackling Dec-POMDPs.
+Within CTDE, a centralized controller is used to assess the
+team cooperation policy during the training phase, according to
+the environmental state. During the execution phase, individual
+agents act based on their respective observations.
+A classical approach to address Dec-POMDPs leverages
+Q-function factorization, exempliﬁed by methodologies in [16]
+and [17]. This factorization adheres to the individualized goal
+maximization (IGM) condition [35], i.e.,
+arg max
+a
+Qjt(τ, a) =
+⎛
+⎜⎜⎝
+arg max
+a1 Q1
+τ 1, a1
+· · ·
+arg max
+aN QN
+τ N, aN
+⎞
+⎟⎟⎠
+(1)
+where
+τ
+∈
+T 1 × · · · × T N
+represents
+the
+joint
+action-observation histories and T i denotes the set of action-
+observation histories for agent i. The joint action-value
+function, denoted by Qjt:T 1×· · ·×T N ×A1×· · ·×AN →R,
+is used for evaluating the team cooperation policy.
+The methods in [16] and [17] aim to establish additivity and
+monotonicity as follows, serving as two sufﬁcient conditions
+for IGM in discrete action space:
+Qjt(τ, a) =
+N
+
+i=1
+Qi
+τ i, ai
+(2)
+∂Qjt(τ, a)
+∂Qi
+τ i, ai ≥0, 0 ≤i < N.
+(3)
+In the case of continuous action space, MADDPG [18]
+and FACMAC [11] are two classical methods based on
+CTDE. The former extends deep deterministic policy gradient
+(DDPG) [36] to the multiagent setting, while the latter focuses
+on a centralized critic with a factored representation for more
+effective agent coordination.
+MADDPG [18] adopts a decentralized execution approach,
+where each agent interacts with the environment based on
+its own observations and policy. However, during training,
+the learning process is centralized, meaning that the agents
+share experiences and information to improve their policies
+collaboratively. The policy gradient is as follows:
+∇θiJ
+
+μi
+= ED
+
+∇θiπi
+τ i
+∇πiQi(τ, a)|ai=πi(τ i)
+
+(4)
+where θi is the parameter of the actor of agent i, πi ∈
+i : Oi →Ai is the policy of agent i, i is the policy space
+of agent i, and D is the replay buffer. Each agent is equipped
+with an individual critic responsible for evaluating the value
+of its actions. Identifying critical agents and determining their
+worst-case joint actions by utilizing a single critic may ﬁnd
+critical agents speciﬁc to that agent rather than addressing the
+entire team collaboratively.
+FACMAC [11] is a pioneering method for incorporating
+the IGM condition within a multiagent actor–critic framework.
+FACMAC employs either VDN or QMIX as the centralized
+critic. The policy gradient formulation is as follows:
+∇θiJ
+
+πi
+= ED
+
+∇θiπi
+τ i
+∇πiQπ
+jt (τ, a)|ai=πi(τ i)
+
+(5)
+where π ∈1 × · · · × N :O1 × · · · × ON →A1 × · · · × AN
+is the joint policy.
+C. SASG
+An SASG [23] is formally deﬁned as a tuple
+
+S, {Ai}i∈N , {Bi}i∈M, {ri}i∈N , M, N, p, γ
+
+where Bi represents the set of adversarial states speciﬁc to
+agent i, M ⊆N is the set of victim agents, and M = |M|
+denotes the number of victims.
+Assuming that the adversarial perturbation vi(s) for agent
+i is deterministic (vi : S →Bi), the value and action-value
+functions of SASG are deﬁned as follows:
+Vi
+π◦v(s) = Eπ◦v,p
+ ∞
+
+k=0
+γ kri
+t+k+1|st = s
+
+(6)
+Qi
+π◦v(s, a) = Eπ◦v,p
+ ∞
+
+k=0
+γ kri
+t+k+1|st = s, at = a
+
+(7)
+where v ≜(vi, . . . , vM) denotes the joint adversarial per-
+turbation and π ◦v denotes the joint policy under the joint
+adversarial perturbation.
+The joint optimal adversarial perturbation aims to minimize
+the expected cumulative discount reward for each victim agent.
+Therefore, the value function and action-value one are
+Vi
+π◦v∗(s) = min
+vi Vi
+π◦
+
+vi,v−i
+∗
+(s)
+(8)
+Qi
+π◦v∗(s, a) = min
+vi Qi
+π◦
+
+vi,v−i
+∗
+(s, a)
+(9)
+where v∗≜(v1
+∗, . . . , vM
+∗) represents the joint optimal adver-
+sarial perturbation, vi denotes an arbitrary valid adversarial
+perturbation, and v−i
+∗≜(v1
+∗, . . . , vi−1
+∗
+, vi+1
+∗
+, . . . , vM
+∗).
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+7636
+IEEE TRANSACTIONS ON SYSTEMS, MAN, AND CYBERNETICS: SYSTEMS, VOL. 54, NO. 12, DECEMBER 2024
+The properties of SASG, such as the existence and con-
+traction of the joint optimal adversarial perturbation, are
+discussed in [23]. It is highlighted that the problem of solving
+the joint optimal adversarial perturbation can be modeled
+as an SG well-addressed by MADRL. Consequently, stud-
+ies [22], [33], [37] have solved this problem via MADRL.
+However, during the training process, victim agents are
+assumed to be ﬁxed. If the set of victims changes, retraining
+is required for MADRL models. Addressing this limitation is
+the focus of our work.
+D. SADP
+An SADP is formally deﬁned as a tuple
+
+S, {Ai}i∈N , {Oi}i∈N , {Bi}i∈M, N, M, Z, r, p, γ
+
+.
+Similar to SASG setting, the value function and action-value
+function of the adversary are expressed as follows:
+Vi
+πi◦vi∗
+
+τ i
+= min
+vi Vi
+πi◦vi
+
+τ i
+(10)
+Qi
+πi◦vi∗
+
+τ i, ai
+= min
+vi Qi
+πi◦vi
+
+τ i, ai
+.
+(11)
+It is evident that we can leverage CTDE-based MADRL to
+solve the optimal joint policy. However, it is crucial to note
+that the victim agents are known with certainty, including the
+number of victims M and their respective indexes. As the value
+of M changes, the SADP undergoes variations, necessitating
+the retraining of the adversary agent through CTDE-based
+MADRL. In this study, we introduce a novel adversarial
+attack framework to solve SADP, denoted as AMCA. This
+framework has the capability to select critical agents from
+the set N as the victim set M, offering insights into the
+worst-case joint actions of the victims. Subsequently, AMCA
+facilitates the generation of adversarial observations targeted
+at the identiﬁed victim agents. Notably, our AMCA framework
+operates without needing any pretraining, enabling it to adapt
+a variable set of victims M.
+IV. ADVERSARIAL ATTACKS ON MADRL-BASED
+MODELS IN CONTINUOUS ACTION SPACE
+A. Selection of Critical Agents and Worst-Case Joint Actions
+The joint action-value function Qjt is nondifferentiable for
+discrete action space, which is unsuitable for continuous ones.
+Therefore, we propose a novel approach for critical agent
+selection and the worst-case joint action determination based
+on the GI of Qjt.
+1) GI-Based Method: In this section, we consider the
+scenario where the adversary has the capability to get the
+information of Qjt. The centralized critic of MADDPG is for
+one agent instead of the team, so this method is unsuitable for
+MADDPG in this assumption.
+The adversary seeks to destroy the team cooperation policy
+with the aim of minimizing the accumulated expected reward
+of the team, i.e., Qjt in FACMAC. The adversary aims to
+minimize the following function:
+vg(τ) = arg
+min
+M,{ai
+i∈M}
+Qjt
+
+τ, aM, a−M
+(12)
+Algorithm 1: GI-Based Algorithm
+Input: Objective function Qjt, the joint
+action-observation histories τ, the joint policy of
+agents π, the value Qjt(τ, a), the step of PGD U1
+Output: The victim set M and the joint action aM
+1 for u = 1, 2, . . . , U1 do
+2
+Generate the worst-case joint actions ˆa based on
+Eq. (13);
+3 Initialize: M ←∅, Qmin ←Qjt(τ, a) and all
+combinations indices
+ci ←list(itertools.combinations(range(0, N), M)
+4 for i ∈ci do
+5
+Select element aM from ˆa according to index i;
+6
+Compute the joint action-value function
+Qjt ←
+
+τ, aM, a−M
+;
+7
+if Qjt < Qmin then
+8
+Qmin ←Qjt;
+9
+aM ←aci;
+10 return
+
+aM, a−M
+where aM is the victim agent’s joint action and a−M is
+the normal ones. As shown in the context of classiﬁcation
+tasks [38], [39], [40], [41], they generate the perturbation
+based on the gradient of DNN. We use the GI to generate the
+worst-case joint actions of all agents by adding the actions’
+perturbations. We employ PGD [41], which utilizes the U1-
+step iterative process of gradient descent as follows:
+ˆau+1 = clip
+
+ˆau −αsgn∇ˆauQjt
+
+τ, ˆau
+
+|ˆa0=a
+(13)
+where the clip is to constrain the range of perturbation,
+ensuring that the action after adding perturbation still falls
+within the valid range.
+When we get the worst-case joint action ˆa, we select
+the critical agent via the combinatorial optimization problem
+of selecting M elements from a set of agents N with the
+objective (12). The whole process is shown in Algorithm 1
+2) DE-Based Method: We propose a methodology leverag-
+ing DE to discern critical agents and determine the worst-case
+joint actions within MADRL. This approach aims to point
+out the victim agents and their corresponding actions that
+signiﬁcantly inﬂuence the overall team performance.
+The objective of the adversary is the same as the GI-based
+method, i.e., (12). The DE algorithm, a global optimization
+technique [42], [43], [44], employs a population-based evo-
+lutionary concept to explore optimal solutions on a global
+scale, making it a widely utilized method for tackling complex
+combinatorial optimization challenges. A group of candidate
+solutions is retained in DE, and each is represented as a
+vector within a multidimensional search space. The algorithm
+generates new candidate solutions in each iteration by per-
+turbing the existing vectors and integrating them through a
+basic arithmetic operator. Subsequently, an objective function
+is employed to assess the ﬁtness of these candidates, and the
+individuals with superior performance are chosen to make up
+the succeeding generation of the population.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+ZHOU et al.: ADVERSARIAL ATTACKS ON MADRL MODELS IN CONTINUOUS ACTION SPACE
+7637
+Algorithm 2: DE-Based Algorithm
+Input: Objective function Qjt, scaling factor F = 0.5,
+population size of 400, a maximum of T
+iterations, crossover rate CR, histories τ, joint
+policy of agents π, value Qjt(τ, a).
+Output: Optimal solution Dbest ∈D ≜{M, {ˆai}i∈M}
+1 Generate a population D comprising |D| randomly
+initialized solutions and assess their ﬁtness based on Qjt;
+2 for t = 1, 2, . . . , T1 do
+3
+for each solution xj ∈D do
+4
+Sample three distinct solutions, denoted as Dd1,
+Dd2, and Dd3, randomly chosen from the
+population D;
+5
+Create the mutant vector Dj based on (14);
+6
+Produce the trial vector yj by executing binary
+crossover between xj and Dj with a crossover rate
+of CR;
+7
+Produce the joint action of victim agent aM
+y
+and
+aM
+D
+using yj and Dj;
+8
+Assess ﬁtness of yj;
+9
+if Qjt(τ, aM
+y , a−M) < Qjt(τ, aM
+D , a−M) then
+10
+Update the population D by replacing Dj with
+yj;
+11 Choose and return the best solution, Dbest, identiﬁed
+from the population D;
+In this study, we represent the index of critical agent i and
+its corresponding worst-case joint action aii∈M as a candidate
+solution. The joint action of victim agents aM is included
+in each candidate solution, and a tuple of 2M elements that
+include candidate solutions is formed. aM is not predeﬁned
+but obtained through DE. It dynamically changes. Therefore,
+it can meet the requirements of real-time attacks. Following
+the same conﬁguration as in [45], we initiate the algorithm
+by generating a population D comprising some candidate
+solutions. An additional candidate solution is produced in each
+iteration via DE
+Dj(g + 1) = Dd1(g) + F
+
+Dd2(g) −Dd3(g)
+
+d1 ̸= d2 ̸= d3
+(14)
+where the element Dj within the candidate solution comprises
+three randomly selected elements, employing a scaling param-
+eter F set to 0.5 and g denotes the current generation index.
+The indices of the randomly chosen elements are denoted as
+d1, d2, and d3. The procedure is delineated in Algorithm 2,
+Through this approach, we select the agents that are most
+signiﬁcant in inﬂuencing the team’s overall performance and
+point out the actions that are prone to inducing failure or
+suboptimal results. The advantages of our methods are as
+follows.
+1) Both GI-based and DE-based methods are more ﬂexible
+than those in [20] and [22], which assume the ﬁxed
+victims. Once the victim set is changed, the latter must
+retrain a DRL model. Note that, the number of victims
+M can change at any time in our setting.
+Algorithm 3: SJAV
+1 Initialize ˜Qθ
+jt and replay buffer R;
+2 for t = 1, 2, . . . , T2 do
+3
+Acquire the state s and the observations of each
+agent [o1, . . . , oN];
+4
+Apply the ϵ-greedy joint action a as per
+[Q1(τ 1, a1), · · · , QN(τ N, aN)], leading to the next
+state s′ and observations [o′1, . . . , o′N];
+5
+Add < s, a, r, s′ > to the set R;
+6
+if |R| ≥BS then
+7
+Randomly select BS transitions from the replay
+buffer < sk, ak, rk, s′k >k=1,2,...,BS;
+8
+Optimize θ by minimizing (15);
+2) Employing DE for computing the indices of critical
+agents and their worst-case joint actions has another
+merit: less information is required. Understanding the
+inputs and outputs of the joint action-value function is
+sufﬁcient. Its internal structure is not required.
+B. SARSA-Based Joint Action-Value Function
+In Section IV-A, we assume the adversary possesses
+knowledge of the joint action-value function. However, like
+MADDPG, the centralized critic is unsuitable for evaluating
+the impact of individual actions on team cooperation. Qjt of
+FACMAC in CTDE assumes that all agents make their optimal
+actions. Thus, when the agents do not take the optimal actions,
+it may cause the joint action-value function to inadequately
+evaluate the team reward. Moreover, this component is not
+deployed in the testing process based on CTDE, thus well
+avoiding the computation of Qjt. To address this issue, we
+incorporate the training of a joint action-value network based
+on SARSA [46] into the execution process.
+During the execution process, the joint policy π remains
+ﬁxed. So, we employ an ϵ-greedy strategy to explore various
+trajectories comprehensively, including not only good cases
+but also suboptimal ones. We establish ˜Qjt (i.e., the joint
+action-value function) as a neural network parameterized by
+θ. Its inputs consist of the global state s and the joint action
+a. The aim of learning ˜Qjt is to minimize the following loss
+function:
+Ljt(θ) =
+BS
+
+k=1
+
+Rk + γ ˜Qjt
+
+s′
+k, a′
+k
+
+−˜Qjt(sk, ak)
+
+(15)
+where BS denotes the batch size. The procedure is outlined in
+Algorithm 3.
+Theorem 1: If the ϵ-greedy policy satisﬁes the conditions
+of the greedy in the limit with inﬁnite exploration (GLIE),
+then the convergence of ˜Qjt is ensured.
+GLIE means that a learning algorithm gradually transitions
+to a purely greedy policy as the number of exploration steps
+approaches the inﬁnity. The proof of Theorem 1 is presented
+in the Appendix.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+7638
+IEEE TRANSACTIONS ON SYSTEMS, MAN, AND CYBERNETICS: SYSTEMS, VOL. 54, NO. 12, DECEMBER 2024
+Algorithm 4: AMCA
+1 Initialize the environment.
+2 for t = 1, 2, . . . , T3 do
+3
+Obtain the current state s and the observations
+
+o1, . . . , oN
+;
+4
+Compute the victim index and worst-case action
+using Algorithms 1, 2, and 3;
+5
+Generate the adversarial state as per (17) or (18).
+6
+Execute an action based on the normal and victim
+agents’ observations;
+Fig. 1.
+Illustration of AMCA involves the following steps. First, the joint
+action-value function is learned using SARSA based on clean observations
+and actions sampled via the ϵ-greedy strategy. Next, critical agents and their
+worst actions are identiﬁed using GI-based or DE-based methods. Finally,
+perturbations are generated through targeted attack methods.
+C. Generation of Adversarial Observations
+Upon determining {ai}i∈M, our objective is to create an
+adversarial perturbation utilizing this information. This pertur-
+bation is designed to prompt the victim agent to execute the
+worst-case joint actions.
+Numerous targeted attack methods have been proposed in the
+context of classiﬁcation tasks, such as studies [38], [39], [40],
+and [41]. These methods typically involve introducing pertur-
+bations to input samples and manipulating the neural network
+output to align with a speciﬁc target label. In our scenario, we can
+utilize a comparable strategy to create adversarial perturbations
+by leveraging the policy of victim agents, leading them to make
+the targeted actions. This objective is pursued by minimizing
+the subsequent loss function
+Lsa
+
+θi, ˆoi
+= min
+ˆoi∈Bi
+
+(1 −β)
+
+πθi
+
+ai|ˆoi
+−ˆai2
+−β
+
+πθi
+
+ai|ˆoi
+−πθi
+
+zi|oi2
+(16)
+where zi represents the action taken by victim agent i based
+on the clean observation, θi denotes the parameters of the
+policy network for victim agent i, ˆai signiﬁes the target action
+for victim agent i, ˆoi represents the perturbed observation for
+agent i, and β is trad-off between both parts. This optimization
+Fig. 2.
+Illustration of CUME.
+objective aims to guide the victim agent toward an action
+closer to the target while deviating from its true action.
+Given the heightened complexity of generating perturbations
+in continuous action space compared to discrete ones, we
+employ either U2-step PGD [41] or SGLD [47] to tackle this
+optimization problem. The formulations for both methods are
+presented separately
+ˆoi
+u+1 = clip
+
+ˆoi
+u −αsgn
+
+∇ˆoiuLsa
+
+θi, ˆoi
+u, ˆai
+|ˆoi
+0=oi
+(17)
+ˆoi
+u+1 = clip
+
+ˆoi
+u −α
+
+∇ˆoiuLsa
+
+θi, ˆoi
+u, ˆai
++ ηu
+
+|ˆoi
+0=oi (18)
+where α is the step size, u is u-step calculation of gradient, and
+η is the noise. AMCA is realized in Algorithm 4 and illustrated
+in Fig 1. Based on two critical agent selection methods (i.e.,
+GI and DE) and two target attack methods (i.e., PGD and
+SGLD), there are four AMCA variants, written as AMCA_GP,
+AMCA_GS, AMCA_DP, and AMCA_DS.
+Theorem 2: If the time complexity of the sampling action of
+each agent is w1 and computing the gradient of (15) is w2, the
+training time complexity of SJAV is O(T2Nw1 +(T2 −BS)w2)
+If the time complexity of computing one-step the gradient
+of (13) is w3, and computing ˜Qjt is w4, the time complexity
+of Algorithms 1 and 2 is W2 = O(U1w3 + ciw4) and W3 =
+O(T1|D|w4), respectively.
+If the time complexity of computing one-step the gradient
+of (17) and (18) is w5 and w6, respectively, four AMCA
+variants have the following run-time complexity:
+O(T3(W2 + U2w5)), O(T3(W2 + U2w6))
+O(T3(W3 + U2w5)), and O(T3(W3 + U2w6)).
+V. EXPERIMENTS
+A. Experiment Settings
+1) Environment Settings: We have conducted an extensive
+evaluation of our AMCA. The evaluation uses a collabora-
+tive multi-UAV environment (CMUE) [7], [8] and multiagent
+MuJoCo (MAMuJoCo) [11] to demonstrate its effectiveness
+via industry-related environments and multiagent particle envi-
+ronments (MPEs) [18] to demonstrate its generality as follows.
+CMUE: As illustrated in Fig. 2, this entails a cooperative
+transportation scenario involving two UAVs tasked with trans-
+porting an object to speciﬁed targets. The task imposes two
+constraints: the UAVs must maintain a minimum separation
+to avoid collisions, and simultaneously, they should not be
+excessively distant from each other to prevent the object
+from breaking away. The studies [7], [8] utilize images as
+inputs, employing a perception-control modularization. The
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+ZHOU et al.: ADVERSARIAL ATTACKS ON MADRL MODELS IN CONTINUOUS ACTION SPACE
+7639
+Fig. 3.
+Results of the visual representation attack on FACMAC-trained models. The x-axis denotes the number of victims, while the y-axis quantiﬁes the
+average reward.
+Fig. 4.
+Results of the visual representation attack on MADDPG-trained models. The x-axis denotes the number of victims, while the y-axis quantiﬁes the
+average reward.
+TABLE I
+RESULTS OF DIFFERENT POPULATION SIZES IN THE HUMANOID
+SCENARIO, WHERE WE TEST THE ROBUSTNESS OF FACMAC AGAINST
+AMCA_DP IN 100 EPISODES
+ﬁrst module employs DNN for object detection, while the
+second module uses MADRL for UAV navigation toward the
+target. Considering that adversarial attacks always use the GI
+of neural networks, we simplify it to use one module. Instead
+of images, we use GPS location and angle of yaw velocity
+as inputs. The action space and reward function are the same
+as [7] and [8].
+MAMuJoCo: It represents an extension of the single-agent
+robotic MuJoCo framework [48], wherein the singular robot
+body is partitioned into disjoint subgraphs. Each subgraph
+is then controlled by an individual agent. We use two-agent
+Humanoid and four-agent Ant in our experiments denoted
+as Humanoid and Ant scenarios, separately. Each agent’s
+observation is a 16-D vector in the Humanoid scenario and a
+7-D vector in the Ant scenario.
+MPE: We use two continuous predator-prey scenarios where
+there are three agents and one prey, and six agents and two
+prey denoted as 3a and 6a scenarios, separately. Each agent’s
+observation is represented by a 16-D vector for the 3a scenario
+and a 30-D vector for the 6a scenario.
+2) Benchmark Methods: MADDPG and FACMAC agents
+trained for two million steps are used as victims. We
+benchmark AMCA against the following methods.
+Random Noise (RN): Random perturbations (e.g., a uniform
+distribution noise) are added to the victim’s observation to
+disrupt their decision-making process.
+FGSM, PGD, and SGLD [38], [41], [47]: The adversary
+crafts adversarial perturbations based on gradients computed
+with respect to the victim’s policy network. These methods
+focus on disrupting individual policies without considering the
+impact on the team’s cumulative reward. Their objective is
+to induce the victim to take actions inconsistent with those
+derived from clean observations. For PGD and SGLD, we set
+the optimization steps to 20.
+ATLA [27]: The adversary is trained using proximal policy
+optimization (PPO) in [49] for the single-agent case. In the
+multiagent case, we employ multiagent PPO (MAPPO) [50] as
+adversaries. For MAPPO agents, the clean observation serves
+as the input, the adversarial observation as action, and the
+reward is the negative of the victimized team’s performance.
+All agents are victims during the training process.
+PAAD [28]: The adversary undergoes a two-step training
+process: ﬁrst, the worst-case joint action is advised, and then
+the adversarial observation is generated according to this
+action. In the single-agent scenario, the director is a PPO
+agent. MADRL directors are trained using the same method
+(MADDPG or FACMAC) as the victims, and all agents are
+victims during the training process.
+3) Perturbation Settings and Population Size: The pertur-
+bation is deﬁned as an ℓ∞norm with magnitudes set to
+0.1, 0.5, and 0.02 across the CMUE, MAMuJoCo, and MPE.
+Within the AMCA framework, the victim set is dynamically
+changed at each time step. Randomization is employed to alter
+the victim set in the benchmark methods to ensure fairness. A
+total of 100 episodes are conducted, and the evaluation metric
+involves the utilization of average team cumulative rewards to
+assess the efﬁcacy of the applied attack methods. Additionally,
+the evaluation metrics, such as the successful rate (SR), too
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+7640
+IEEE TRANSACTIONS ON SYSTEMS, MAN, AND CYBERNETICS: SYSTEMS, VOL. 54, NO. 12, DECEMBER 2024
+TABLE II
+VICTIMS ARE TRAINED BY FACMAC AND MADDPG IN CMUE. WE USE REWARD, SR, TFR, AND CR AS THE EVALUATION CRITERIA. ACHIEVING
+LOWER VALUES IN REWARD AND SR IS PREFERABLE, WHILE HIGHER VALUES IN TFR AND CR ARE DESIRABLE. BOLD SCORES HIGHLIGHT
+SUPERIOR PERTURBING ABILITY. HERE, M DENOTES THE NUMBER OF VICTIMS
+TABLE III
+VICTIMS ARE TRAINED BY FACMAC IN MAMUJOCO. WE USE REWARD
+AS THE EVALUATION CRITERIA. A LOWER REWARD INDICATES
+SUPERIOR PERTURBING ABILITY, WITH BOLD SCORES DENOTING THE
+OPTIMAL OUTCOMES. HERE, M SIGNIFIES THE NUMBER OF VICTIMS
+far rate (TFR), and collide rate (CR) for a comprehensive
+evaluation within the CMUE environment.
+The choice of population size is a hyperparameter inﬂu-
+encing the search process. Demonstrating Table I, we observe
+that a larger population provides a more extensive exploration
+of the solution space, enhancing the search coverage. This
+broader exploration, however, comes at the cost of increased
+computational demands. Conversely, a smaller population con-
+strains the search range and may be appropriate for scenarios
+with limited resources. It is essential to note that a smaller
+population does not guarantee the discovery of the optimal
+solution. Therefore, we set the population size as 400 in the
+TABLE IV
+VICTIMS ARE TRAINED BY FACMAC AND MADDPG IN MPE. WE USE
+REWARD AS THE EVALUATION CRITERIA. A LOWER REWARD INDICATES
+SUPERIOR PERTURBING ABILITY, WITH BOLD SCORES DENOTING THE
+OPTIMAL OUTCOMES. HERE, M SIGNIFIES THE NUMBER OF VICTIMS
+CMUE and MAMuJoCo environments and 200 in the MPE
+environment. The code is available at: https://github.com/zhou-
+ziyuan/RTCA.
+B. Results and Discussions
+The results of the experiments are detailed in Tables II–IV.
+For a more visual representation of the experimental ﬁndings,
+refer to Figs. 3 and 4, which contain cases where none of the
+agents perturbed. The attacks on MADDPG-based models are
+not conducted in the MAMuJoCo environment due to their
+suboptimal performance. The objective of IGM in MADRL
+is to address the issue of passive agents and promote fair
+and balanced contributions from each agent to the overall
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+ZHOU et al.: ADVERSARIAL ATTACKS ON MADRL MODELS IN CONTINUOUS ACTION SPACE
+7641
+team objectives. However, our experimental results indicate
+that strategically selecting critical agents as victims is superior
+overall performance to random selection. That is to say, the
+contributions of each agent to the team are different.
+As depicted in Fig. 3, AMCA outperforms other bench-
+marks in attacking FACMAC. FACMAC exhibits superior
+performance compared to MADDPG, particularly in complex
+scenarios, such as 3a and 6a. However, when subjected
+to perturbing employing RN and untargeted gradient-based
+methods, the victim agent may exhibit improved performance
+compared to the normal case, as observed in scenarios 3a,
+Humanoid, and Ant. This phenomenon can be attributed to
+the insufﬁcient quality of the policy trained by FACMAC,
+resulting in suboptimal GI for guiding decision making.
+Therefore, AMCA has the potential to assist in designing a
+more robust system than the others.
+As shown in Fig. 4, AMCA does not consistently exhibit
+superior performance, such as in the CUME environment with
+two victims. This observed deviation can be attributed to the
+MADDPG model being trained with a centralized critic, intro-
+ducing a difference between the distinct agents. Consequently,
+the SJAV may not effectively represent the action values
+of MADDPG compared to its performance with FACMAC.
+However, it is crucial to highlight that, across the majority of
+scenarios, AMCA demonstrates superior perturbing ability.
+Furthermore, it is evident from the results that the DE
+and PGD-based variants of AMCA consistently demonstrate
+superior performance compared to other methods. The efﬁcacy
+of DE, known for its global optimization approach, uses a
+one-step way to advise the critical agents along with their
+corresponding worst-case joint actions. On the other hand,
+the GI-based AMCA involves a two-step process, wherein the
+worst-case joint actions are generated upon the team’s overall
+performance. When employing combinatorial optimization for
+critical agent selection, it potentially leads to joint actions of
+victims and normal agents may not always depict the team’s
+worst-case situations. These are the advantages of DE and
+PGD-based strategies within the AMCA framework.
+The impact of RN attacks is very weak, with instances
+where it unexpectedly enhances the cumulative rewards of
+the victim. This observation suggests the presence of noise-
+induced positive effects on the decision-making process of
+MADRL. As a result, such methods may not be conducive to
+effectively identifying robustness faults in MADRL. Similarly,
+the ATLA method exhibits unsatisfactory results comparable to
+RN. This outcome is attributed to the exponential expansion of
+the joint observation space with the growing number of agents
+in multiagent tasks. Consequently, learning the relationship
+between clean observations and their respective joint actions
+(i.e., joint adversarial observations) becomes a challenging
+task for MAPPO agents. Moreover, when the agent’s policy
+is suboptimal, untargeted gradient-based methods like PGD
+and SGLD generate perturbations based on inaccurate GI.
+Consequently, such perturbations fail to mislead victims into
+making the worst-case joint actions. In summary, we conclude
+the following.
+1) RN, while slightly decreasing teamwork performance in
+some scenarios, sometimes even leads to better joint
+TABLE V
+ATTACKING RESULTS ON DEFENSE POLICIES. WE CONDUCT
+EXPERIMENTS UNDER SCENARIO 6A USING REWARD AS THE
+EVALUATION CRITERION. A LOWER REWARD INDICATES SUPERIOR
+PERTURBING ABILITY, WITH BOLD SCORES DENOTING THE OPTIMAL
+OUTCOMES. HERE, WE SET M AS 1
+actions. Due to its weak attack ability, it cannot be used
+to test the robustness of the model.
+2) FGSM, PGD, and SGLD do not consider teamwork
+during the attack process; they only result in suboptimal
+actions by individual agents. However, suboptimal indi-
+vidual action may not necessarily lead to team failure
+and, in some cases, can have positive impacts on team
+decision making. Consequently, this method exhibits
+limited perturbation capabilities.
+3) ATLA faces challenges due to its large action space,
+hindering the generation of adversarial observation.
+4) PAAD takes into account the impact of victims on the
+team; however, it requires certainty about the victim.
+When the victims change, it has to retrain the adver-
+saries.
+5) AMCA considers the impact of individual actions on the
+team and dynamically selects critical agents to attack,
+demonstrating stronger perturbation ability than existing
+methods. Furthermore, the dynamic victim agent selec-
+tion enhances the stealthiness of attack, thereby allowing
+engineers to test a model’s robustness better.
+C. Attacking Results on Defense Policies
+In order to evaluate AMCA’s performance in terms of
+attacking other models trained by robust methods, we choose
+FACMAC with robust training by ATLA [27] and PAAD [28]
+as the victims, which are written as FACMAC_ATLA and
+FACMAC_PAAD, respectively. However, when we conduct
+the experiments in CUME and MAMuJoCo, the performance
+of the model by adversarial training decreases signiﬁcantly
+on clean samples. For example, in the four Ant scenario, the
+model trained by FACMAC_PAAD only achieves a reward of
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+7642
+IEEE TRANSACTIONS ON SYSTEMS, MAN, AND CYBERNETICS: SYSTEMS, VOL. 54, NO. 12, DECEMBER 2024
+TABLE VI
+ABLATION STUDY ASSESSING THE ROBUSTNESS OF FACMAC THROUGH
+AN EXAMINATION OF ITS ACTION-VALUE FUNCTIONS
+−3000 without any attacks. There is no point in attacking a
+model that performs poorly on clean observations. Therefore,
+we conduct the experiments in MPE. The results are shown
+in Table V.
+The
+models
+trained
+by
+FACMAC_ATLA
+and
+FACMAC_PAAD perform worse than FACMAC without
+any perturbation. In attacks where critical agents are not
+considered, i.e., when agents are randomly selected for attack,
+the loss in model performance is not signiﬁcant compared to
+the case without perturbations. This indicates that the models
+trained by these two adversarial training methods are robust
+against state perturbations. However, they perform poorly
+under our attack framework. Furthermore, in scenario 3a,
+although the models trained by the aforementioned methods
+exhibit robustness to a certain extent, their performance
+is poor even given clean observations, even worse than
+the performance of FACMAC under the strongest attack.
+Therefore, the disadvantages of existing defensive methods
+can be summarized as follows.
+1) While the robustness can be improved, the performance
+of the model in the clean state is severely degraded.
+2) The importance of an agent in the training process is
+not considered, thus, making the defense against our
+framework ineffective.
+Considering the shortcomings, we plan to propose more
+general and robust training methods in our future work.
+D. Ablation Study
+We employ the mixing network within FACMAC to assess
+the inﬂuence of ˜Qjt. The results are presented in Table VI.
+Analysis of the experimental results reveals that, in the 3a sce-
+nario, employing ˜Qjt has superior perturbing ability compared
+to using the mixing network. Conversely, in the 6a scenario,
+the mixing network outperforms ˜Qjt. In Humanoid and Ant
+scenarios, their perturbing abilities are generally comparable,
+with ˜Qjt exhibiting superior perturbing ability when selecting
+two critical agents in the Ant scenario. As a result, the SJAV
+TABLE VII
+TRANSFERABILITY OF ˜Qjt. ROWS REPRESENT VICTIMS AND COLUMNS
+DENOTE THE LEARNED SJVA BASED ON EACH VICTIM
+TABLE VIII
+SCALABILITY OF AMCA
+function is effective in evaluating the impact of an agent’s
+action on team rewards.
+E. Transferability of ˜Qjt
+This section aims to evaluate the transferability of the
+function ˜Qjt. In this context, transferability is construed as the
+capacity of ˜Qjt, trained using data sampled by one MADRL
+paradigm, to effectively apply acquired knowledge to another
+MADRL paradigm and successfully have adversarial attacks
+based on it. The results delineated in Table VII reveal that
+˜Qjt, which is acquired through the policy sampling under
+FACMAC, is highly effective in attacking MADDPG models
+in most of the scenarios considered. Similarly, ˜Qjt trained
+using the trajectory of MADDPG also exhibits high rates of
+successful attack FACMAC models in the majority of cases.
+These ﬁndings have substantial implications for enhancing the
+practicality of adversarial attacks. In summary, the SJAV-based
+˜Qjt has favorable transferability attributes, making its consid-
+erable potential for application as limited-access adversarial
+attacks.
+F. Scalability of AMCA
+To
+ensure
+the
+covert
+nature
+of
+attacks,
+adversaries
+strategically target a minimal subset of critical agents,
+thereby inducing suboptimal overall system performance.
+Simultaneously, concentrating the attack on fewer victim
+agents enhances the challenge of detecting the malicious activ-
+ity. Our experimental design the number of victims to a mere
+one or two critical agent. For instance, within the 6a scenario,
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+ZHOU et al.: ADVERSARIAL ATTACKS ON MADRL MODELS IN CONTINUOUS ACTION SPACE
+7643
+TABLE IX
+CPU TIME, RUN TIME, AND MEMORY PROFILING. THE UNIT OF
+RUNTIME IS SECONDS AND THE UNIT OF MEMORY IS KB
+which has a total of six agents, the critical agents become
+unimportant when the entirety of the agent is perturbed (e.g.,
+with six victim agents). To showcase the scalability of AMCA,
+we undertake experiments within the 6a scenario, as delineated
+in Table VIII. As the victim count increases, the advantage
+derived from critical agents diminishes, yet AMCA has the
+best outcomes.
+G. Computational Resources
+In scenario 6a, we measure the CPU time, running time,
+and memory usage of the program when attacking one agent
+and six agents, respectively. We conduct ten episodes, each
+consisting of 25 time steps, to calculate these metrics. Table IX
+demonstrates that the number of victim agents does not sig-
+niﬁcantly affect resource consumption and runtime. Thus, our
+approach exhibits scalability despite resource constraints. DE
+and target attack steps involve multiple iterations, including
+DNN calculations and gradient computations, leading to longer
+execution times compared to the baseline. Regarding memory
+consumption, ATLA and PAAD need to load the DNN models
+of the adversary, and thus require more memory.
+VI. CONCLUSION
+This article has addressed the challenges of adversarial
+attacks on models trained by MADRL in continuous action
+space by presenting a novel framework called AMCA. The
+framework incorporates gradient-based methods and DE to
+identify critical agents, offering insights into worst-case joint
+actions. SJAV is introduced and its convergence is proved.
+The function learned by SJAV serves as an optimal objective
+for critical agent identiﬁcation. Furthermore, target attacks,
+PGD, and SGLD, are employed to generate perturbations for
+critical agents. Experimental results conducted across CUME,
+MAMuJoCo, and MPE demonstrate the efﬁcacy of AMCA in
+disrupting cooperation policies by attacking only one or two
+agents.
+Our future work intends to investigate the loss functions and
+optimization methods for target attacks in continuous action
+space. Another one is to develop adaptive defense algorithms
+against the AMCA to create more robust MADRL models.
+Additionally, considering the real-world applications, there are
+some challenges as follows.
+1)
+The attack method may cause signiﬁcant damage in
+practical scenarios, particularly in domains like UAVs
+and autonomous driving [55], [56]. Consequently, apply-
+ing noise directly to real-world settings to test the
+effectiveness of the attack method might not be feasible.
+2)
+Integrating noise obtained from simulation environ-
+ments into real sensor inputs poses a considerable
+challenge. In addressing these challenges, our future
+work aims to bridge the gap between simulation and
+real-world deployment to provide more attack methods
+for real-world scenarios, thus prompting the birth of
+more robust defense methods.
+For Challenge 1), we aim to optimize the targeted attack
+method such that, during real-world testing, the noise causes
+the agent to make suboptimal decisions without resulting
+in signiﬁcant harm. For Challenge 2), we plan to address
+the sim-to-real gap by leveraging meta-learning or domain
+randomization techniques, thereby generating noise that is
+more applicable to real-world environments.
+APPENDIX
+PROOF OF THEOREM 1
+To prove Theorem 1, we need the following lemma:
+Lemma 1 [51]: Assuming the form of a stochastic process
+t is given by t+1(x) = (1−αt(x))t(x)+αt(x)Ft(x), where
+the following conditions are satisﬁed, it converges to 0.
+1) 
+t αt(x) = ∞,
+2) 
+t α2
+t (x) < ∞,
+3) ∥E[Ft(x)]∥q ≤γ ∥t∥q,
+4) var(Ft(x)) ≤C(1 + ∥t∥2
+q).
+Then we prove Theorem 1 which is similar to [52], [53],
+[54, Th. 1].
+Proof of Theorem 1:
+Note
+˜Qt+1(s, a) = ˜Qt(s, a) + αt(s, a)
+
+rt + γ ˜Qt
+
+s′, a′
+−˜Qt(s, a)
+
+. (19)
+Because conditions 1) and 2) hold, let t(s, a) = ˜Qt(s, a)−
+˜Q∗(s, a). Then
+t+1 = (1 −αt(s, a))t(s, a)
++ αt(s, a)[rt + γ ˜Qt(s′, a′) −˜Q∗(s, a)].
+(20)
+We deﬁne that Ft(s, a) = r(s, a) + γ ˜Qt(s′, a′) −˜Q∗(s, a).
+Given the environment’s state transition probability distribu-
+tion, calculate the expectation as follows:
+E[Ft(s, a)] = r(s, a) + γ
+
+s′∈S
+p
+
+s′|s, a
+ ˜Qt
+
+s′, a′
+−˜Q∗(s, a). (21)
+Deﬁne the operator H as
+H ˜Qt(s, a) = r(s, a) + γ
+
+s′∈S
+p
+
+s′|s, a
+ ˜Qt
+
+s′, a′
+.
+(22)
+For the optimal action-value function ˜Q∗(s, a), according to
+the deﬁnition, it reaches a convergence point under iterations
+of the H iteration operator (otherwise, it would undergo further
+iterative optimization). This can be expressed as ˜Q∗(s, a) =
+H ˜Q∗(s, a) and E[Ft(s, a)] = H ˜Qt(s, a) −H ˜Q∗(s, a).
+Our greedy strategy satisﬁes the condition of greed in the
+limit with inﬁnite Exploration. As t →∞, exploration is
+no longer needed. At this point, the initially learned policy
+satisﬁes π(s) = arg maxa ˜Q(s, a), then
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+7644
+IEEE TRANSACTIONS ON SYSTEMS, MAN, AND CYBERNETICS: SYSTEMS, VOL. 54, NO. 12, DECEMBER 2024
+∥H ˜Q −H ˜Q′∥∞= max
+s∈S |(r(s, a) + γ
+
+s′∈S
+p
+
+s′|s, a
+
+Q
+
+s′, π(s′)
+
+−
+
+r(s, a) + γ
+
+s′∈S
+p(s′|s, a) ˜Q′(s′, π(s′))
+
+|
+= max
+s∈S |maxa′{(r(s, a) + γ
+
+s′∈S
+p
+
+s′|s, a
+
+Q
+
+s′a′
+}
+−max
+a′ {(r(s, a) + γ
+
+s′∈S
+p
+
+s′|s, a
+ ˜Q′
+s′, a′
+}|
+≤γ maxs∈S|
+
+s′∈S
+p
+
+s′|s, a
+
+˜Q(s′, a′) −˜Q′(s′, a′)
+
+|
+≤γ max
+s∈S
+
+s′∈S
+p
+
+s′|s, a
+
+max
+s′,a′ | ˜Q
+
+s′, a′
+−˜Q′
+s′, a′
+|
+= γ ∥˜Q −˜Q′∥∞.
+(23)
+Next, based on the deﬁnition of random variable methods,
+we can further deduce
+var[Ft(s, a)] = E
+
+(Ft(s, a) −E[Ft(s, a)])2
+= E
+
+r(s, a) + γ ˜Qt(s′, a′) −˜Q∗(s, a) −H ˜Qt(s, a) + H ˜Q∗(s, a)
+2
+= E
+
+r(s, a) + γ ˜Qt(s′, a′) −H ˜Qt(s, a)
+2
+= E
+⎡
+⎣
+
+r(s, a) + γ ˜Qt(s′, a′) −r(s, a) −γ
+
+s′∈S
+p(s′|s, a) ˜Qt(s′, a′)
+2⎤
+⎦
+= var
+
+r(s, a) + γ ˜Qt
+
+s′, a′
+.
+(24)
+When t →∞, π(s) = argmaxa∈A ˜Q(s, a), and thus we have
+var[Ft(s, a)] = var
+
+r(s, a) + γ argmaxa′∈A ˜Qt
+
+s′, a′
+. (25)
+Due to the reward function r(s, a) is bounded, there has a
+constant C such that var[Ft(s, a)] ≤C(1 + ∥t∥)2
+q.
+Based on Lemma 1, t is convergent to 0. As a result, ˜Q
+is convergent to ˜Q∗, i.e., Theorem 1 holds.
+■
+REFERENCES
+[1] F.-Y. Wang, J. Yang, X. Wang, J. Li, and Q.-L. Han, “Chat with chatGPT
+on industry 5.0: Learning and decision-making for intelligent industries,”
+IEEE/CAA J. Automatica Sinica, vol. 10, no. 4, pp. 831–834, Apr. 2023.
+[2] A.
+del
+Real
+Torres,
+D.
+S.
+Andreiana,
+L.
+Ojeda
+Roldán,
+A. Hernández Bustos, and L. E. A. Galicia, “A review of deep
+reinforcement learning approaches for smart manufacturing in industry
+4.0 and 5.0 framework,” Appl. Sci., vol. 12, no. 23, 2022, Art. no. 12377.
+[Online]. Available: https://www.mdpi.com/2076-3417/12/23/12377
+[3] C. Dong, M. Shaﬁq, M. M. A. Dabel, Y. Sun, and Z. Tian, “DNN
+inference acceleration for smart devices in industry 5.0 by decentralized
+deep reinforcement learning,” IEEE Trans. Consum. Electron., vol. 70,
+no. 1, pp. 1519–1530, Feb. 2024.
+[4] J. Luo, H. Shao, J. Lin, and B. Liu, “Meta-learning with elastic proto-
+typical network for fault transfer diagnosis of bearings under unstable
+speeds,” Rel. Eng. Sys. Saf., vol. 245, May 2024, Art. no. 110001.
+[Online]. Available: https://www.sciencedirect.com/science/article/pii/
+S0951832024000760
+[5] J. Zhang, P. Zu, P. Qiu, and M. Zhou, “A new learning automaton
+for selecting an arbitrary subset of actions,” IEEE Trans. Syst., Man,
+Cybern., Syst., vol. 54, no. 1, pp. 568–577, Jan. 2024.
+[6] Y. Xiao, H. Shao, J. Wang, S. Yan, and B. Liu, “Bayesian vari-
+ational transformer: A generalizable model for rotating machinery
+fault diagnosis,” Mech. Syst. Signal Process., vol. 207, Jan. 2024,
+Art. no. 110936. [Online]. Available: https://www.sciencedirect.com/
+science/article/pii/S0888327023008440
+[7] H. Shi, G. Liu, K. Zhang, Z. Zhou, and J. Wang, “MARL Sim2real
+transfer: Merging physical reality with digital virtuality in metaverse,”
+IEEE Trans. Syst., Man, Cybern., Syst., vol. 53, no. 4, pp. 2107–2117,
+Apr. 2023.
+[8] S. Chen, G. Liu, Z. Zhou, K. Zhang, and J. Wang, “Robust multi-
+agent reinforcement learning method based on adversarial domain
+Randomization for real-world dual-UAV cooperation,” IEEE Trans.
+Intell. Veh., vol. 9, no. 1, pp. 1615–1627, Jan. 2024.
+[9] Z. Zhang, Y. Sun, F. Huang, and F. Miao, “Safe and robust multi-agent
+reinforcement learning for connected autonomous vehicles under state
+perturbations,” 2023, arXiv:2309.11057.
+[10] F. Zhang, M. Zhou, and L. Qi, “Distributed and coordinated model
+predictive control for channel resource allocation in cooperative
+vehicle safety systems,” IEEE Internet Things J., vol. 11, no. 11,
+pp. 19328–19343, Jun. 2024.
+[11] B. Peng et al., “FACMAC: Factored multi-agent Centralised policy
+gradients,” in Advances in Neural Information Processing Systems,
+vol. 34, M. Ranzato, A. Beygelzimer, Y. Dauphin, P. Liang, and
+J. W. Vaughan, Eds., Red Hook, NY, USA: Curran Assoc., Inc., 2021,
+pp. 12208–12221. [Online]. Available: https://proceedings.neurips.cc/
+paper_ﬁles/paper/2021/ﬁle/65b9eea6e1cc6bb9f0cd2a47751a186f-Paper.
+pdf
+[12] W. Zhao, E.-A. Rantala, J. Pajarinen, and J. P. Queralta, “Less is more:
+Robust robot learning via partially observable multi-agent reinforcement
+learning,” 2023, arXiv:2309.1479.
+[13] Z. Pu, T. Zhang, X. Ai, T. Qiu, and J. Yi, “A deep reinforcement
+learning approach combined with model-based paradigms for multiagent
+formation control with collision avoidance,” IEEE Trans. Syst., Man,
+Cybern., Syst., vol. 53, no. 7, pp. 4189–4204, Jul. 2023.
+[14] L.
+Huang,
+M.
+Zhou,
+and
+K.
+Hao,
+“Non-dominated
+immune-
+endocrine short feedback algorithm for multi-robot maritime patrolling,”
+IEEE Trans. Intell. Transp. Syst., vol. 21, no. 1, pp. 362–373,
+Jan. 2020.
+[15] R. Hare and Y. Tang, “Hierarchical deep reinforcement learning with
+experience sharing for metaverse in education,” IEEE Trans. Syst., Man,
+Cybern., Syst., vol. 53, no. 4, pp. 2047–2055, Apr. 2023.
+[16] P. Sunehag et al., “Value-decomposition networks for cooperative multi-
+agent learning based on team reward,” in Proc. 17th Int. Conf. Auton.
+Agents MultiAgent Syst., 2018, pp. 2085–2087.
+[17] T. Rashid, M. Samvelyan, C. S. De Witt, G. Farquhar, J. Foerster, and
+S. Whiteson, “Monotonic value function factorisation for deep multi-
+agent reinforcement learning,” J. Mach. Learn. Res., vol. 21, no. 1,
+pp. 1–51, Jan. 2020.
+[18] R. Lowe, Y. Wu, A. Tamar, J. Harb, O. P. Abbeel, and I. Mordatch,
+“Multi-agent actor-critic for mixed cooperative-competitive environ-
+ments,” in Proc. 31st Int. Conf. Neural Inf. Process. Syst., 2017,
+pp. 6382–6393.
+[19] P. Dai, W. Yu, H. Wang, and S. Baldi, “Distributed actor–critic
+algorithms for multiagent reinforcement learning over directed graphs,”
+IEEE Trans. Neural Netw. Learn. Syst., vol. 34, no. 10, pp. 7210–7221,
+Oct. 2023.
+[20] J. Guo, Y. Chen, Y. Hao, Z. Yin, Y. Yu, and S. Li, “Towards
+comprehensive testing on the robustness of cooperative multi-agent
+reinforcement learning,” in Proc. IEEE/CVF Conf. Comput. Vis. Pattern
+Recognit. (CVPR) Workshops, Jun. 2022, pp. 115–122.
+[21] S. He, S. Han, S. Su, S. Han, S. Zou, and F. Miao, “Robust multi-agent
+reinforcement learning with state uncertainty,” in Proc. Trans. Mach.
+Learn. Res., 2023, pp. 1–50. [Online]. Available: https://openreview.net/
+forum?id=CqTkapZ6H9
+[22] J. Lin, K. Dzeparoska, S. Q. Zhang, A. Leon-Garcia, and N. Papernot,
+“On the robustness of cooperative multi-agent reinforcement learn-
+ing,” in Proc. IEEE Security Privacy Workshops (SPW), 2020,
+pp. 62–68.
+[23] Z. Zhou, G. Liu, and M. Zhou, “A robust mean-ﬁeld actor-critic
+reinforcement learning against adversarial perturbations on agent states,”
+IEEE Trans. Neural Netw. Learn. Syst., early access, Jun. 5, 2023,
+doi:10.1109/TNNLS.2023.3278715.
+[24] W. Guo, G. Liu, Z. Zhou, L. Wang, and J. Wang, “Enhancing the
+robustness of QMIX against state-adversarial attacks,” Neurocomputing,
+vol. 572, Mar. 2024, Art. no. 127191. [Online]. Available: https://www.
+sciencedirect.com/science/article/pii/S0925231223013140
+[25] S. Huang, N. Papernot, I. Goodfellow, Y. Duan, and P. Abbeel,
+“Adversarial
+attacks
+on
+neural
+network
+policies,”
+2017,
+arXiv:1702.02284.
+[26] H.
+Zhang
+et
+al.,
+“Robust
+deep
+reinforcement
+learning
+against
+adversarial
+perturbations
+on
+state
+observations,”
+in
+Advances
+in
+Neural Information
+Processing
+Systems,
+vol. 33, H.
+Larochelle,
+M. Ranzato, R. Hadsell, M. Balcan, and H. Lin, Eds., Red Hook,
+NY, USA: Curran Assoc., Inc., 2020, pp. 21024–21037. [Online].
+Available:
+https://proceedings.neurips.cc/paper_ﬁles/paper/2020/ﬁle/
+f0eb6568ea114ba6e293f903c34d7488-Paper.pdf
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+ZHOU et al.: ADVERSARIAL ATTACKS ON MADRL MODELS IN CONTINUOUS ACTION SPACE
+7645
+[27] H. Zhang, H. Chen, D. S. Boning, and C. Hsieh, “Robust reinforcement
+learning on state observations with learned optimal adversary,” in Proc.
+9th Int. Conf. Learn. Represent., 2021, pp. 1–16. [Online]. Available:
+https://openreview.net/forum?id=sCZbhBvqQaU
+[28] Y. Sun, R. Zheng, Y. Liang, and F. Huang, “Who is the strongest enemy?
+Towards optimal and efﬁcient evasion attacks in deep RL,” in Proc. 10th
+Int. Conf. Learn. Represent., 2022, pp. 1–40. [Online]. Available: https://
+openreview.net/forum?id=JM2kFbJvvI
+[29] T. Franzmeyer et al., “Illusory attacks: Information-theoretic detectabil-
+ity matters in adversarial attacks,” in Proc. 12th Int. Conf. Learn.
+Represent., 2024, pp. 1–20. [Online]. Available: https://openreview.net/
+forum?id=F5dhGCdyYh
+[30] X. Liu, S. Chakraborty, Y. Sun, and F. Huang, “Rethinking adversarial
+policies: A generalized attack formulation and provable defense in RL,”
+in Proc. 12th Int. Conf. Learn. Represent., 2024, pp. 1–26. [Online].
+Available: https://openreview.net/forum?id=pDCublKPmG
+[31] M. Yang, G. Liu, Z. Zhou, and J. Wang, “Probabilistic automata-
+based method for enhancing performance of deep reinforcement learning
+systems,” IEEE/CAA J. Automatica Sinica, submitted to publication,
+doi: 10.1109/JAS.2024.124818.
+[32] Z. Zhou and G. Liu, “Robustness testing for multi-agent reinforcement
+learning: State perturbations on critical agents,” in Proc. 26th Eur.
+Conf. Artif. Intell., vol. 372, 2023, pp. 3131–3139. [Online]. Available:
+https://doi.org/10.3233/FAIA230632
+[33] S. Han et al., “What is the solution for state-adversarial multi-agent rein-
+forcement learning?” in Proc. Trans. Mach. Learn. Res., 2024, pp. 1–37.
+[Online]. Available: https://openreview.net/forum?id=HyqSwNhM3x
+[34] D. S. Bernstein, R. Givan, N. Immerman, and S. Zilberstein, “The
+complexity of decentralized control of Markov decision processes,”
+Math. Oper. Res., vol. 27, no. 4, pp. 819–840, 2002.
+[35] K. Son, D. Kim, W. J. Kang, D. E. Hostallero, and Y. Yi, “QTRAN:
+Learning to Factorize with transformation for cooperative multi-agent
+reinforcement learning,” in Proc. 36th Int. Conf. Mach. Learn., vol. 97,
+Jun. 2019, pp. 5887–5896. [Online]. Available: https://proceedings.mlr.
+press/v97/son19a.html
+[36] T. P. Lillicrap et al., “Continuous control with deep reinforcement
+learning,” in Proc. 4th Int. Conf. Learn. Represent., 2016, pp. 1–10.
+[37] S. Li et al., “Attacking cooperative multi-agent reinforcement learning
+by adversarial minority inﬂuence,” 2023, arXiv:2302.03322.
+[38] I. J. Goodfellow, J. Shlens, and C. Szegedy, “Explaining and harnessing
+adversarial examples,” 2014, arXiv:1412.6572.
+[39] Y. Jiao, K. Yang, and D. Song, “Distributed Distributionally robust
+optimization
+with
+non-convex
+objectives,”
+in
+Continuous
+control
+with deep reinforcement learning, vol. 35, S. Koyejo, S. Mohamed,
+A. Agarwal, D. Belgrave, K. Cho, and A. Oh, Eds., Red Hook,
+NY,
+USA:
+Curran
+Assoc.,
+Inc.,
+2022,
+pp. 7987–7999.
+[Online].
+Available:
+https://proceedings.neurips.cc/paper_ﬁles/paper/2022/ﬁle/
+34899013589ef41aea4d7b2f0ef310c1-Paper-Conference.pdf
+[40] M. Li, C. Deng, T. Li, J. Yan, X. Gao, and H. Huang, “Towards
+transferable targeted attack,” in Proc. IEEE/CVF Conf. Comput.
+Vis.
+Pattern
+Recognit.,
+2020,
+pp. 638–646.
+[Online].
+Available:
+https://openaccess.thecvf.com/content_CVPR_2020/html/Li_Towards_
+Transferable_Targeted_Attack_CVPR_2020_paper.html
+[41] A. Madry, A. Makelov, L. Schmidt, D. Tsipras, and A. Vladu, “Towards
+deep learning models resistant to adversarial attacks,” in Proc. 6th Int.
+Conf. Learn. Represent., Vancouver, BC, Canada, May 2018, pp. 1–23.
+[Online]. Available: https://openreview.net/forum?id=rJzIBfZAb
+[42] R. Storn and K. Price, “Differential evolution—A simple and efﬁcient
+heuristic for global optimization over continuous spaces,” J. Global
+Optim., vol. 11, no. 4, pp. 341–359, Dec. 1997. [Online]. Available:
+https://doi.org/10.1023/A:1008202821328
+[43] Bilal, M. Pant, H. Zaheer, L. Garcia-Hernandez, and A. Abraham,
+“Differential evolution: A review of more than two decades of research,”
+Eng. Appl. Artif. Intell., vol. 90, Apr. 2020, Art. no. 103479. [Online].
+Available: https://www.sciencedirect.com/science/article/pii/S09521976
+2030004X
+[44] K. R. Opara and J. Arabas, “Differential evolution: A survey of
+theoretical analyses,” Swarm Evol. Comput., vol. 44, pp. 546–558,
+Feb. 2019. [Online]. Available: https://www.sciencedirect.com/science/
+article/pii/S2210650217304224
+[45] J. Su, D. V. Vargas, and K. Sakurai, “One pixel attack for fooling
+deep neural networks,” IEEE Trans. Evol. Comput., vol. 23, no. 5,
+pp. 828–841, Oct. 2019.
+[46] G. A. Rummery and M. Niranjan, “On-Line q-learning using connec-
+tionist systems,” Dept. Eng., Univ. Cambridge, Cambridge, U.K., Rep.
+TR-166, 1994.
+[47] M. Welling and Y. Teh, “Bayesian learning via stochastic gradient
+langevin dynamics,” in Proc. 28th Int. Conf. Mach. Learn., 2011,
+pp. 681–688.
+[48] E.
+Todorov,
+T.
+Erez,
+and
+Y.
+Tassa,
+“MuJoCo:
+A
+physics
+engine for model-based control,” in Proc. IEEE/RSJ Int. Conf.
+Intell.
+Robots
+Syst.,
+2012,
+pp. 5026–5033.
+[Online].
+Available:
+https://doi.org/10.1109/IROS.2012.6386109
+[49] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov,
+“Proximal policy optimization algorithms,” 2017, arXiv:1707.06347.
+[50] C. Yu et al., “The surprising effectiveness of PPO in cooperative multi-
+agent games,” in Advances in Neural Information Processing Systems,
+vol. 35, S. Koyejo, S. Mohamed, A. Agarwal, D. Belgrave, K. Cho,
+and A. Oh, Eds., Red Hook, NY, USA: Curran Assoc., Inc., 2022,
+pp. 24611–24624.
+[Online].
+Available:
+https://proceedings.neurips.
+cc/paper_ﬁles/paper/2022/ﬁle/9c1535a02f0ce079433344e14d910597-
+Paper-Datasets_and_Benchmarks.pdf
+[51] T. Jaakkola, M. I. Jordan, and S. P. Singh, “On the convergence of
+stochastic iterative dynamic programming algorithms,” Neural Comput.,
+vol. 6, no. 6, pp. 1185–1201, 1994, doi: 10.1162/neco.1994.6.6.1185.
+[52] S. Singh, T. Jaakkola, M. L. Littman, and C. Szepesvári, “Convergence
+results for single-step on-policy reinforcement-learning algorithms,”
+Mach. Learn., vol. 38, no. 3, pp. 287–308, Mar. 2000. [Online].
+Available: https://doi.org/10.1023/A:1007678930559
+[53] F. S. Melo, Convergence of Q-Learning: A Simple Proof, Inst. Syst.
+Robot., Instituto Superior Técnico, Lisboa, Portugal, 2001, pp. 1–4.
+[54] H. van Seijen, H. van Hasselt, S. Whiteson, and M. Wiering, “A
+theoretical and empirical analysis of expected SARSA,” in Proc. IEEE
+Symp. Adapt. Dyn. Program. Reinforcement Learn., 2009, pp. 177–184.
+[55] W. Duo et al., “Supremal and robust control against actuator jamming
+attacks in cyber-physical systems,” IEEE Trans. Intell. Veh., early access,
+Dec. 5, 2023. doi: 10.1109/TIV.2023.3339668.
+[56] W. Duo, M. Zhou, and A. Abusorrah, “A survey of cyber attacks on
+cyber physical systems: Recent advances and challenges,” IEEE/CAA J.
+Automatica Sinica, vol. 9, no. 5, pp. 784–800, May 2022.
+Ziyuan Zhou (Graduate Student Member, IEEE)
+received the B.S. degree from the China University
+of Mining and Technology, Xuzhou, China, in 2020.
+She is currently pursuing the Ph.D. degree in com-
+puter software and theory with the Department
+of Computer Science, Tongji University, Shanghai,
+China.
+She was a joint Ph.D. student with the Department
+of Electrical and Computer Engineering, New Jersey
+Institute of Technology, Newark, NJ, USA. Her
+research interests include reinforcement learning,
+multiagent systems, and adversarial attacks.
+Guanjun Liu (Senior Member, IEEE) received the
+Ph.D. degree in computer software and theory from
+Tongji University, Shanghai, China, in 2011.
+He was a Postdoctoral Research Fellow with the
+Singapore University of Technology and Design,
+Singapore, from 2011 to 2013, and a Postdoctoral
+Research Fellow with the Humboldt University of
+Berlin, Berlin, Germany, from 2013 to 2014, sup-
+ported by the Alexander von Humboldt Foundation.
+He is currently a Professor with the Department
+of Computer Science, Tongji University. He has
+authored over 160 papers and four books. His research interests include Petri
+net theory, model checking, machine learning, multiagent systems, cyber–
+physical systems, UAV, and credit card fraud detection.
+Dr. Liu served as a Guest Editor for some journals, including the IEEE
+TRANSACTIONS ON COMPUTATIONAL SOCIAL SYSTEMS, Mathematical
+Problems in Engineering, Drones, and Journal of Software (in Chinese),
+and also served as a program committee member for many international
+conferences. He is currently an Associate Editor of IEEE TRANSACTIONS
+ON COMPUTATIONAL SOCIAL SYSTEMS.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+7646
+IEEE TRANSACTIONS ON SYSTEMS, MAN, AND CYBERNETICS: SYSTEMS, VOL. 54, NO. 12, DECEMBER 2024
+Weiran Guo (Graduate Student Member, IEEE)
+received the B.S. degree in information security
+from Tongji University, Shanghai, China, in 2023,
+where she is currently pursuing the M.S. degree in
+computer software and theory with the Department
+of Computer Science.
+Her
+current
+research
+interests
+include
+reinforcement learning and multiagent systems.
+MengChu Zhou (Fellow, IEEE) received the B.S.
+degree in control engineering from the Nanjing
+University of Science and Technology, Nanjing,
+China, in 1983, the M.S. degree in automatic
+control from the Beijing Institute of Technology,
+Beijing, China, in 1986, and the Ph.D. degree in
+computer and systems engineering from Rensselaer
+Polytechnic Institute, Troy, NY, USA, in 1990.
+He joined New Jersey Institute of Technology,
+Newark, NJ, USA, in 1990, and has been a
+Distinguished Professor of Electrical and Computer
+Engineering since 2013. He has over 1200 publications, including 17 books,
+over 850 journal papers (over 650 in IEEE transactions), and 32 book chapters.
+He holds 31 patents and several pending ones. His recently co-authored books,
+include Learning Automata and their Applications to Intelligent Systems
+(IEEE Press/Wiley, Hoboken, NJ, 2024 with J. Zhang), Device-Edge-Cloud
+Continuum Paradigms, Architectures and Applications (Springer Nature, 2023
+with C. Savaglio, G. Fortino, and J. Ma), and Sustainable Manufacturing
+Systems: An Energy Perspective (IEEE Press/Wiley, Hoboken, Hoboken,
+NJ, 2022 with L. Li). His research interests are in intelligent automation,
+machine leaning, Petri nets, robotics, Internet of Things, big data, cloud/edge
+computing, transportation, and energy systems.
+Dr. Zhou is a recipient of Excellence in Research Prize and Medal from
+NJIT, Humboldt Research Award for U.S. Senior Scientists from Alexander
+von Humboldt Foundation, and the Franklin V. Taylor Memorial Award and
+the Norbert Wiener Award from IEEE SMC Society, the Computer-Integrated
+Manufacturing UNIVERSITY-LEAD Award from Society of Manufacturing
+Engineers, the Distinguished Service Award from IEEE Robotics and
+Automation Society, and the Edison Patent Award from the Research &
+Development Council of New Jersey. He has been among most highly cited
+scholars since 2012 and ranked top one in the ﬁeld of engineering worldwide
+in 2012 by Web of Science. He was ranked #99 among the 2023 Top
+1000 Scientists in Computer Science in the World, Research.com. He is a
+Life Member of Chinese Association for Science and Technology—USA
+and served as its President in 1999. He has led or participated in over 60
+research and education projects with total budget over $12M, funded by
+National Science Foundation, Department of Defense, NIST, New Jersey
+Science and Technology Commission, and industry. He served as an Editor-
+in-Chief of IEEE/CAA JOURNAL OF AUTOMATICA SINICA, an Associate
+Editor of IEEE TRANSACTIONS ON ROBOTICS AND AUTOMATION, IEEE
+TRANSACTIONS ON AUTOMATION SCIENCE AND ENGINEERING, and IEEE
+TRANSACTIONS ON INDUSTRIAL INFORMATICS, and an Editor of IEEE
+TRANSACTIONS ON AUTOMATION SCIENCE AND ENGINEERING. He served
+as a Guest-Editor for many journals, including IEEE INTERNET
+OF
+THINGS JOURNAL, IEEE TRANSACTIONS ON INDUSTRIAL ELECTRONICS,
+and IEEE TRANSACTIONS ON SEMICONDUCTOR MANUFACTURING. He
+is currently an Associate Editor of Research, IEEE TRANSACTIONS ON
+INTELLIGENT TRANSPORTATION SYSTEMS, IEEE INTERNET OF THINGS
+JOURNAL, and Frontiers of Information Technology & Electronic Engineering.
+He is a founding Chair/Co-chair of Technical Committee on AI-based Smart
+Manufacturing Systems and Technical Committee on Humanized Crowd
+Computing of IEEE Systems, Man, and Cybernetics Society, Technical
+Committee on Semiconductor Manufacturing Automation and Technical
+Committee on Digital Manufacturing and Human-Centered Automation of
+IEEE Robotics and Automation Society. He is also a member of IEEE TAB
+Periodicals Committee and Periodicals Review and Advisory Committee. He
+was the General Chair of IEEE Conf. on Automation Science and Engineering,
+Washington, DC, USA, August 23–26, 2008, the General Co-Chair of 2003
+IEEE International Conference on System, Man and Cybernetics, Washington,
+October 5–8, 2003 and 2019 IEEE International Conference on SMC,
+Bari, Italy, October 6–9, 2019, the Founding General Co-Chair of 2004
+IEEE Int. Conf. on Networking, Sensing and Control, Taipei, March 21–
+23, 2004, and the General Chair of 2006 IEEE Int. Conf. on Networking,
+Sensing and Control, Ft. Lauderdale, FL, USA. April 23–25, 2006. He
+was Program Chair of 2010 IEEE International Conference on Mechatronics
+and Automation, August 4–7, 2010, Xi’an, China, 1998 and 2001 IEEE
+International Conference on SMC and 1997 IEEE International Conference on
+Emerging Technologies and Factory Automation. He is Fellow of International
+Federation of Automatic Control, American Association for the Advancement
+of Science, Chinese Association of Automation, and National Academy of
+Inventors.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:19 UTC from IEEE Xplore.  Restrictions apply. 

@@ -1,0 +1,2080 @@
+Evaluating the Robustness of Deep Reinforcement Learning for
+Autonomous Policies in a Multi-Agent Urban Driving Environment
+Aizaz Sharif and Dusica Marijan
+Simula Research Laboratory, Oslo, Norway
+{aizaz, dusica}@simula.no
+Abstract—Background: Deep reinforcement learning is actively
+used for training autonomous car policies in a simulated driving
+environment. Due to the large availability of various reinforce-
+ment learning algorithms and the lack of their systematic com-
+parison across different driving scenarios, we are unsure of which
+ones are more effective for training autonomous car software
+in single-agent as well as multi-agent driving environments.
+Aims: A benchmarking framework for the comparison of deep
+reinforcement learning in a vision-based autonomous driving
+will open up the possibilities for training better autonomous
+car driving policies. Method: To address these challenges, we
+provide an open and reusable benchmarking framework for
+systematic evaluation and comparative analysis of deep rein-
+forcement learning algorithms for autonomous driving in a
+single- and multi-agent environment. Using the framework, we
+perform a comparative study of four discrete and two contin-
+uous action space deep reinforcement learning algorithms. We
+also propose a comprehensive multi-objective reward function
+designed for the evaluation of deep reinforcement learning-based
+autonomous driving agents. We run the experiments in a vision-
+only high-fidelity urban driving simulated environments. Results:
+The results indicate that only some of the deep reinforcement
+learning algorithms perform consistently better across single
+and multi-agent scenarios when trained in various multi-agent-
+only environment settings. For example, A3C- and TD3-based
+autonomous cars perform comparatively better in terms of more
+robust actions and minimal driving errors in both single and
+multi-agent scenarios. Conclusions: We conclude that different
+deep reinforcement learning algorithms exhibit different driving
+and testing performance in different scenarios, which underlines
+the need for their systematic comparative analysis. The bench-
+marking framework proposed in this paper facilitates such a
+comparison.
+Keywords—deep reinforcement learning; multi-agent systems;
+autonomous cars; autonomous driving; testing autonomous driving
+I. INTRODUCTION
+Autonomous cars (ACs) are complex decision-making sys-
+tems that are unfortunately prone to errors [1]. They commonly
+use machine/deep learning algorithms as part of decision-
+making software, which is known to be difficult to validate
+[2], [3]. Therefore, ACs need comprehensive training and
+evaluation in order to minimize risk to the public. For the
+same reason, autonomous driving (AD) research is nowadays
+performed within simulated driving environments (also used
+by the state-of-the-art industrial solutions like Tesla [4] and
+Comma ai [5]), as they provide flexibility for testing and
+validating AD without posing any danger to the real world.
+However, we observe three specific challenges in training and
+validating ACs in the existing simulation environments.
+First, while the majority of AD research is focused on using
+deep reinforcement learning (DRL) for training ACs in a simu-
+lated urban driving scenario [6] [7] [8] [9] [10], there is a lack
+of comparison among DRL algorithms for vision-based urban
+driving scenarios. Having such a benchmark of commonly
+used DRL algorithms can be useful for understanding why
+some algorithms perform worse than others in specific driving
+scenarios, which can lead to the improvements of the state-of-
+art DRL algorithms for AD.
+Second, the majority of existing research trains ACs as non-
+communicating and independent single intelligent agents [11]
+[12], therefore treating the ACs as a single-agent driving
+problem. However, in the near future AD will be a complex
+multi-agent problem [13]. By bringing more than one AC
+into a multi-agent environment we can evaluate how a non-
+stationary driving scenario affects AC’s control decisions when
+interacting with other ACs. Existing comparative analyses of
+RL algorithms for AD are still limited to single-agent driving
+environments [14] [15], and there is no systematic study
+performed yet on which DRL models work best for AD in
+a multi-agent environment.
+Third, a vast portion of existing research is actively focused
+on testing ACs trained on vision-based end-to-end systems.
+While designing a reward function is one of the key require-
+ments in learning an efficient and robust DRL driving agent,
+we lack evidence of a detailed multi-objective-based reward
+function that is utilized within independent multi-agent DRL
+algorithms. There is ongoing research on designing a better
+reward function [16] [17] which is highly required for better
+autonomous driving, but so far they are still focused on single-
+agent driving scenarios. Furthermore, in order to compare
+which DRL works the best in single and multi-agent-focused
+scenarios, their reward functions must also be defined in a
+comprehensive way in order to perform a fair comparison
+in terms of robustness. As DRL heavily relies on the design
+of the reward function for active exploration and learning, it
+is necessary to consider various objectives within a reward
+function in order to observe and evaluate which objectives are
+successfully achieved by each DRL-based AC agent within
+different driving settings. We, therefore, also lack studies on
+the performance of DRL algorithms that are trying to achieve
+multiple goals using the reward function.
+To address these three challenges, in this paper we provide
+an open and reusable end-to-end benchmarking framework
+for DRL algorithms in a complex urban multi-agent AD
+785
+2022 IEEE 22nd International Conference on Software Quality, Reliability and Security (QRS)
+2693-9177/22/$31.00 ©2022 IEEE
+DOI 10.1109/QRS57517.2022.00084
+2022 IEEE 22nd International Conference on Software Quality, Reliability and Security (QRS) | 978-1-6654-7704-8/22/$31.00 ©2022 IEEE | DOI: 10.1109/QRS57517.2022.00084
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:57 UTC from IEEE Xplore.  Restrictions apply. 
+
+environment. The framework enables us to bring competitive
+and independent driving agents in both discrete and continuous
+action space environments. We also propose a comprehensive
+multi-objective reward function designed for the evaluation of
+simulation-based learning of DRL AC agents. We validate the
+framework by performing a comprehensive comparative study
+of the robustness of DRL algorithms for urban driving policies
+in both single-agent and multi-agent AD scenarios.
+The key contributions in this paper are:
+1) We provide an end-to-end benchmarking framework for
+the systematic evaluation of DRL-based AC driving
+policies in complex vision-based urban driving environ-
+ments.
+2) We propose a multi-objective reward function designed
+for the evaluation of simulation-based learning of DRL
+AC agents.
+3) The framework supports training and validating AC’s
+driving policies in both single- and multi-agent driving
+scenarios.
+4) The framework enables evaluating the effectiveness of
+AC driving agents in different environment configura-
+tions.
+5) Using the framework, we perform a comprehensive
+comparative study of four discrete and two continuous
+action space DRL algorithms for AD in vision-only high
+fidelity urban driving simulated environments.
+6) Drawing from the study results, we suggest some re-
+search directions on improving the robustness of DRL
+algorithms for AD.
+7) The implementation of our benchmarking framework, as
+well as all experimental results, are open and reusable,
+which supports the reproducibility of research in the AD
+domain.
+II. RELATED WORK
+In AD research, there are only a few benchmarks for evalu-
+ating the performance of RL-based AD models. Vinitsky [15]
+proposes a benchmark for DRL in mixed-autonomy traffic.
+While the benchmark involves four scenarios: the figure eight
+network, the merge network, the grid, and the bottleneck, it
+evaluates a limited number of reinforcement learning (RL)
+algorithms (two gradient-based and two gradient-free). In
+addition, the proposed benchmark is specific to connected
+AD research. Stang [14] proposes another benchmark for RL
+algorithms in a simulated AD environment. As a limitation,
+this benchmark focuses on a simple lane-tracking task, and
+furthermore, evaluates only off-policy RL algorithms. In con-
+trast, our work evaluates both on-policy and off-policy algo-
+rithms and further allows for comparing the performance of
+DRL algorithms in a complex urban environment. As another
+limitation, both [15] and [14] only support DRL benchmarking
+for single-agent AD environments.
+Li [18] introduces a driving simulation framework called
+MetaDrive and performs a benchmarking of RL algorithms for
+AD. While the authors use five different driving scenarios, they
+only evaluate two RL algorithms (PPO and SAC). The work
+could also benefit from using realistic visual rendering as pro-
+vided by the CARLA framework in our work. Palanisamy [19]
+proposes a multi-agent urban driving framework in which one
+can train more than one AC. Using IMPALA, a connected AC
+policy is trained within the CARLA simulator. However, as a
+limitation, the work is restricted to connected AD problems
+only.
+Furthermore, there are frameworks proposed for training
+and testing autonomous vehicles. For example, F1TENTH
+framework [20] with three racing scenarios and baselines
+for testing and evaluating autonomous vehicles. However, the
+framework does not support dealing with ARL. Han [21]
+proposes an off-road simulated environment for AD with
+realistic off-road scenes, such as mountains, deserts, snowy
+fields, and highlands. While realistic environments are useful
+for evaluating the generalization abilities of AD models, the
+work is limited to single-agent AD environments.
+III. DEEP REINFORCEMENT LEARNING FOR
+AUTONOMOUS DRIVING
+Reinforcement learning is mainly modeled as a formulation
+of the Markov Decision Process (MDP), where the desired
+goal of the agents in a certain environment is to learn an op-
+timal policy. This goal is achieved by maximizing cumulative
+reward after interacting with an environment. The MDP model
+consists of M(S, A, P, R, γ), where S is a set of agent’s state
+and A is a set of discrete or continuous actions. R : S×A 7→R
+is a reward function value returned against every action A,
+whereas γ is the discount rate applied to the future reward
+values. Lastly, the MDP model consists of a P : S × A 7→S
+as the transition probability which describes the stochastic
+probability distribution of the next state s′ ϵ S given actions.
+Following the basics of the MDP model, the agent is dependent
+on the previous state only to make the next decision. Such a
+system obeys Markov property during RL control decisions.
+Reinforcement learning has achieved great results over the
+past few years due to the advancements in DRL. In DRL,
+the MDP model is solved by using deep neural networks to
+learn weight parameters θ over the time span of environment
+exploration. DRL models consist of a policy π which is
+responsible for taking an action given a state π(a|s) and
+a value function vπs for estimating maximum reward given
+the current policy s ϵ S. Traditional RL fails at solving
+high-dimensional state space problems and therefore deep
+neural networks enable the possibility of learning a function
+approximation over large input and action state spaces to solve
+complex problems. The policy and value functions in DRL
+are therefore learned using the defined deep net models to
+estimate future actions. In our work, the DRL algorithms we
+choose to benchmark are based on a model-free approach.
+In model-free RL, the policy π and value function vπs are
+learned directly by interacting with the environment without
+taking model dynamics and the transition probability function
+of every state space into consideration.
+Next, we provide a brief description of the DRL models
+we use for the training and validation of AD in a simulated
+786
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:57 UTC from IEEE Xplore.  Restrictions apply. 
+
+urban environment. These models are chosen on the basis of
+i) popularity in the DRL-based AD research community and
+ii) coverage of discrete as well as continuous action space (for
+multi-agent testing purposes).
+A. DRL Algorithms for Autonomous Driving
+1) Discrete Action Space:
+Proximal Policy Optimization (PPO):
+PPO [22] is a DRL algorithm, which also serves as one of
+the extensions to the policy gradient (PG) algorithms. Vanilla
+PG faces the problem of high gradient variance, and therefore
+PPO solves it by adding constraints like clipped surrogate
+objective and the KL penalty coefficient. Such improvements
+made PPO a very easy choice in the domain of DRL over the
+past few years.
+In terms of vision-based AD, the authors in [6] use PPO
+as an RL algorithm to train a driving policy using synthetic
+simulated RGB images. The trained policy is transferred to
+real-world testing experiments for analyzing the perception
+and control perspective of the AC. Another authors in [23]
+uses PPO for proposing a road detecting algorithm in an urban
+driving environment. They carry out experiments in a Udacity
+racing game simulator [24] as well as in a small OpenAI gym
+carracing-v0 environment [25].
+Asynchronous Advantage Actor-Critic (A3C):
+A3C [26] is a well-known gradient descent-based RL algo-
+rithm. Following the on-policy technique, it focuses on using
+two neural networks - actor and critic. An actor is respon-
+sible for making actions while the critic aims for learning a
+value function. A3C takes this approach by keeping a global
+critic model while making multiple actor models for parallel
+training.
+A3C has been used in [27] for training an AC policy in
+a virtual environment that can work in a real-world situation
+as well. By using synthetic images as an input, the policy
+learns to drive in an urban scenario using the proposed DRL
+method. Another work by the authors in [7] also uses A3C by
+combining RL with image semantic segmentation to train an
+AC driving policy. Using the TORCS [28] racing simulator,
+their goal is to lower the gap between virtual and real models
+while training an RL agent. A3C is also used in [29] where
+the authors created an end-to-end driving approach without
+detailed perception tasks on input images.
+Importance Weighted Actor-Learner Architecture (IM-
+PALA):
+IMPALA [30] uses an actor-critic technique, but with the
+twist of decoupling actors. Following a V-trace off-policy
+approach, IMPALA’s main objective is to scale up the DRL
+training capability by adding multiple independent actors.
+The actors, in this case, are meant to generate experience
+trajectories for the policy to learn, while the learner tries to
+optimize not only the policy but also the value function.
+An author in [19] proposes a multi-agent urban driving
+framework in which one can train more than one AC. Using
+IMPALA, the author performs training on connected AC
+policy within the CARLA simulator.
+Deep Q Networks (DQN):
+DQN [31] falls into the category of value-based methods,
+where the goal is to learn the policy function by going through
+the optimal action-value function. DQN uses off-policy and
+temporal differences (TD) to learn state-action pairs by col-
+lecting episodes as experience replay. Using the episodic data,
+samples from the replay memory are used in order to learn
+Q-values, as a neural network function approximation. DQN
+is one of the foundation models in the upbringing of DRL
+and there are many improved versions of DQN implemented
+by overcoming the existing flaws.
+DQN is used in [32] for training an AC in a Unity-based
+urban driving simulator. The authors use cameras and lasers as
+their input sensors for training the driving policies. Another
+work in [8] uses DQN for first training a driving agent in
+simulation to test its navigation capabilities in both simulated
+and real-world driving situations. DQN is also utilized in [33]
+for learning to steer a vehicle within a realistic physics
+simulator. Given the camera input feeds, their DQN-based
+agent is aiming for following lanes with minimal offroad
+steering errors.
+2) Continuous Action Space:
+Deep Deterministic Policy Gradient (DDPG):
+When it comes to continuous action space, DDPG [34] is
+the most widely used algorithm in DRL research. DDPG is
+a model-free and off-policy approach falling under the actor-
+critic algorithms. It extends DQN by learning a deterministic
+policy in a continuous action space using actor-critic frame-
+work.
+DPG is extensively used in the field of training autonomous
+vehicles within simulated driving scenarions [9]. Authors
+in [10] uses DDPG to construct a DRL model for learning
+to avoid collisions and steering. DDPG is also used in [35]
+for learning a lane following policy within driving simulation
+using continuous action space.
+Twin Delayed DDPG (TD3):
+TD3 [36] extends the idea of DDPG in continuous action
+space algorithms by tackling issues regarding overestimation
+of the Q-learning function found in the value-based and actor-
+critic methods. This results in both improving the learning
+speed and model performance of DDPG within a continuous
+action setting.
+TD3 is extensively used in urban driving scenarios for
+training AC agents. As a model-free approach, TD3 is used
+in [37] [38] for learning an AD policy within an urban
+simulated environment. The authors proposed a framework for
+learning complex driving scenarios using visual encoding to
+capture low-level latent variables. Another work in [39] also
+uses TD3 in to overcome the challenges of driving in an urban
+simulated environment.
+B. Multi-agent Autonomous Driving
+While introducing multi-agent AD agents, we need to
+consider an environment where agents do not have access to
+all the states at each time step. Such types of environments are
+found in the field of robotics and ACs where an agent is limited
+787
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:57 UTC from IEEE Xplore.  Restrictions apply. 
+
+to the sensory information gathered by its hardware. Therefore,
+the existing MDP can be termed as a Partially Observable
+Markov decision process (POMDP) [40]. Furthermore, the cur-
+rent formulation of POMDP can be reformulated as Partially
+Observable Stochastic Games (POSG) [41] by defining a DRL
+control problem as a tuple (I, S, A, O, P, R). In POSG, we can
+incorporate multi-agent scenarios using Markov Games [42]
+where multiple agents are interacting with the environment.
+An actor i ϵ I receives its partial observations from a joint
+observation state oi ϵ Oi at each time step t. Following the
+traditional MDP approach, each actor uses its learned policy
+function πi : Oi 7→Ai to perform actions ai ϵ Ai. As a return,
+each actor gets a desired reward value ri ϵ Ri.
+IV. END-TO-END BENCHMARKING FRAMEWORK
+In this section, we provide the details of the DRL bench-
+marking framework architecture as well as an explanation of
+the reward function, hyperparameters, and driving policies.
+The implementation of the framework is available at 1.
+A. Driving Policies
+We divide our driving policies into πAC, where πAC rep-
+resents the policy of AC driving agents that are trained using
+one of the six selected DRL algorithms. Policies and their
+associated algorithm symbols are mentioned in Table I. Their
+usage is thoroughly explained in Section V-B.
+TABLE I: Driving Policies and their associated symbols for
+ACs.
+DRL Algorithm
+Notation for AC Policy
+PPO
+πP P O
+A3C
+πA3C
+IMPALA
+πIMP ALA
+DQN
+πDQN
+DDPG
+πDDP G
+TD3
+πT D3
+B. Deep Neural Network Model
+A pictorial description of the DRL benchmarking frame-
+work can be seen in Figure 1. Each driving agent as AC
+receives partial input state observation of 84x84x3 dimen-
+sion images through the front camera sensors. Cameras are
+mounted as part of the driving agents, and during each time
+step of the simulation environment, cameras capture the input
+state observations which serve as an input layer to the DRL
+model. The input layer is then passed to the convolutions and
+connected to hidden layers for extracting important features
+before they are passed to the output layer of the architecture.
+ACs driving policies predict the control actions at the output
+layer based on the 3-dimensional input images at each time
+step.
+1https://github.com/AizazSharif/Benchmarking-QRS-2022
+Since our six selected DRL models work on a discrete as
+well as a continuous action space, the output layer of the
+architecture predicts nine distinct action values for the discrete
+action space and two float values for the continuous action
+space policies. These output actions can be summed into three
+vehicle control commands: Steer, Throttle, and Brake. Reverse
+is disabled for our experiments.
+C. Reward functions
+As described in Section III-B, each agent in a POMDP
+setting is following MDP. Thus, the driving policies receive
+reward R at each time step of the simulated environment while
+collecting trajectories of the tuple (S, R, A). R is the reward
+value returned while performing action A on the current state
+observations S which helps in improving the driving policies
+πAC.
+One of the contributions of this paper is the design of a
+detailed reward function with multiple objectives for learning
+ACs in a closed-loop multi-agent urban driving environments.
+For our experiments, we define the reward function RAC used
+by the DRL AC policies πAC during the training phase.
+RAC can be formulated as:
+RAC =
+
+
+
+
+
+
+
+
+
+−50.0(CVt ∧COt ∧CPt)
+Safety
++10(∆D + Ft)
+Efficiency
+−0.5(OSt)
+Lane Keeping
++ϕ
+Penalty Constant
+RAC aims to maximize the driving performance of an AC
+agent by keeping the following objectives in check:
+Safety: The first objective of RAC includes CVt, COt, and
+CPt that represent a boolean value {0,1} for collision with
+another vehicle, road objects, and pedestrian respectively. To
+ensure safety, AC tries to avoid any type of collision based on
+past rewards.
+Efficiency: If driving efficiently, an AC agent gets positive
+rewards on minimizing the distance to goal state compared to
+the previous timestep i.e. ∆D = Dt−1 −Dt and speed of the
+driving agent as as Ft.
+Lane Keeping: For ensuring lane keeping, OSt refers to
+the boolean value represented by a boolean value {0,1} for
+minimizing offroad steering errors of the AC model.
+Penalty Constant: ϕ at the end of the reward function is a
+penalty constant used to encourage AC models to explore the
+environment and making decisions while driving. This helps in
+situations where DRL agents get stuck and remain indecisive
+in making decisions, and therefore not able to move and learn.
+D. Hyperparameters
+There are some common hyperparameter configurations
+called model hyperparameters used for defining the training
+and testing of the driving DRL policies as described in
+Section IV-B. As for the algorithmic hyperparamters, we
+first select hyperparameters by going through the literature
+on the available implementations for DRL in AD. Since
+we are using six different DRL implementations for training
+their driving policies, each of the algorithms requires separate
+788
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:57 UTC from IEEE Xplore.  Restrictions apply. 
+
+Autonomous Driving 
+Deep RL Agents
+Observations
+1
+Action
+2
+Steer
+Throttle
+Reward
+3
+Multi-agent Autonomous 
+Driving Environment
+Discrete Action
+Space
+Continuous Action
+Space
+Discrete (9)
+Box (2)
+Brake
+Figure 1: End-to-end DRL benchmarking framework for AC agents. An agent receives an input observation image of 84x84x3
+which is passed to a DRL model. Actions are selected at the output layer of every agent and are performed in the next time
+step of the simulation in order to obtain a reward and a new observation state.
+hyperparameter tuning. Therefore we take advantage of a
+hybrid hyperparameter tuning algorithm known as Population
+Based Training (PBT) [43] during the training of each DRL
+AC agent. Each DRL is started with an initial configuration
+set of hyperparameters and with the help of PBT each DRL
+agent explores the possible configurations, leading to different
+training and episodic runs. The details of the hyperparameters
+for all the AC agents are provided in the GitHub repository 2.
+The extensive details of the key hyperparameters used in
+the training phase of the ACs are shown in Table II. Based on
+a DRL algorithm and its interaction with the environment, the
+number of episodes varies between 650 and 800 episodes, and
+steps per training iteration also vary accordingly as shown in
+the Table.
+V. COMPARATIVE STUDY
+In this section, we present a comparative study of the
+performance of six DRL algorithms for AD, including the
+description of the simulation frameworks for the training and
+testing of AC agents.
+The research questions in our work evaluate:
+RQ1: Which DRL-based ACs act better (or worse) in a
+single-agent as well as a multi-agent competitive scenario
+when trained in a multi-agent-only scenario?
+RQ2: Which DRL-based ACs are more successful in ful-
+filling multiple driving objectives throughout different envi-
+ronments?
+In RQ1, we evaluate the driving performance of victim ACs
+using six Driving Performance Metrics:
+• CV: the amount of collision with another driving vehicle
+• CO: the amount of collision with road objects
+• CP: the amount of collision with pedestrians
+• OS: offroad steering percentage from its driving lane
+• TTFC: the time it takes to have the first collision
+• SPEED: the forward speed of the AC agent
+2https://github.com/AizazSharif/Benchmarking-QRS-2022
+For CV , CO, CP, and OS we calculate the percentage of
+error within each episode (as a value between 0 and 1). In
+each testing episode per environment, we run 5000 simulation
+steps and at the end of 50 episodic test runs, we compute
+the average error rate for each metric across all the episodes.
+TTFC on the other hand shows the time in seconds it takes
+to detect the first collision in a testing episode. SPEED is
+visualized to plot the average forward speed (in km/h) by each
+DRL-based ACs.
+Whereas in RQ2, we use the same Driving Performance
+Metrics to measure the success rate of DRL ACs with respect
+to Safety, Efficiency, and Lane Keeping across all environ-
+ments.
+• Safety is calculated as an average among all collision
+based metrics such as CV , CO, and CP.
+• Efficiency is computed by using SPEED and a seventh
+metric DISTANCE.
+• Lane Keeping is measured as an average among offroad
+steering metric values taken as OS.
+For calculating DISTANCE, we define a goal state for
+each driving condition covered by each DRL policy during
+testing. This is required since we can only rely on current
+episodic results during testing. DISTANCE can be formu-
+lated as:
+DISTANCEt =
+q
+(xgoal −xspawn)2 + (ygoal −yspawn)2−
+q
+(xgoal −xcurrent)2 + (ygoal −ycurrent)2
+where it measures the difference between euclidean dis-
+tances from the goal to the spawn state versus the ending
+states of the episode.
+We analyze which DRL-based AC agent achieves each
+learning objective as described in Section IV-C.
+789
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:57 UTC from IEEE Xplore.  Restrictions apply. 
+
+TABLE II: Hyperparameters for the training of AC driving
+agents.
+AC Policy
+Hyperparameters
+value
+Total Training Episodes
+650
+Epochs per minibatch
+8
+Value Loss Coefficient
+1.0
+Entropy Coefficient
+0.01
+PPO
+Total Training steps
+1331200
+Learning Rate
+0.001
+Clipping
+0.3
+KL Initialization
+0.3
+Lambda
+0.99
+KL Target
+0.03
+Total Training Episodes
+600
+Value Loss Coefficient
+1.0
+Entropy Coefficient
+0.01
+A3C
+Total Training steps
+1228800
+Learning Rate
+0.005
+Lambda
+1.0
+Gradient Clipping
+30.0
+Sample Async
+True
+Total Training Episodes
+800
+Value Loss Coefficient
+0.5
+Entropy Coefficient
+0.01
+IMPALA
+Vtrace
+True
+Vtrace Threshold
+1.0
+Total Training steps
+1638400
+Learning Rate
+0.0001
+Gradient Clipping
+30.0
+Total Training Episodes
+800
+No. of Atoms
+1
+Noisy Network
+False
+Dueling DQN
+True
+N-step Q-learning
+1
+DQN
+Initial ϵ
+1.0
+Final ϵ
+0.02
+Replay Buffer Size
+400
+Entropy Coefficient
+0.01
+Total Training steps
+1638400
+Learning Rate
+0.0001
+Gradient Clipping
+40.0
+Total Training Episodes
+800
+Policy Delay
+1
+Target Noise
+0.2
+Sigma (Σ)
+0.2
+Tau (τ)
+0.002
+N-step Q-learning
+1
+DDPG
+Initial Exploration Scale
+1.0
+Replay Buffer Size
+500
+Critics Learning Rate
+0.001
+Actor Learning Rate
+0.001
+Entropy Coefficient
+0.01
+Total Training steps
+1638400
+Learning Rate
+0.0001
+Total Training Episodes
+790
+Policy Delay
+1
+Target Noise
+0.2
+Tau (τ)
+0.0002
+Sigma (Σ)
+0.2
+N-step Q-learning
+1
+Initial Exploration Scale
+1.0
+TD3
+Replay Buffer Size
+500
+Critics Learning Rate
+0.001
+Actor Learning Rate
+0.001
+Entropy Coefficient
+0.01
+Total Training steps
+1617920
+Learning Rate
+0.0001
+Lambda
+0.005
+Batch Size
+128
+Batch Mode
+Complete Episodes
+Epsilon (ϵ)
+0.1
+Common Parameters
+Training Steps per episode
+2048
+Optimizer
+Adam
+Discount Factor (γ)
+0.99
+A. Driving Environment
+To train our AC agents in a partially observable urban
+environment we use Town03 map from Carla with Python
+API [44]. This environment is configured for training multi-
+agent ACs and testing the same ACs in a single and multi-
+agent scenario. The details of the training and testing con-
+figurations for our experiments are mentioned in Section V-B.
+We first provide brief descriptions of the driving environments
+displayed in the Figure 2.
+1) Driving Environment 1 (env_1): We use Straight road
+from the Town03 map. The driving setting is simple yet
+suitable especially for validating multi-agent AC policies in
+order to see their lane-keeping capability.
+2) Driving Environment 2 (env_2): We use Three Way
+intersection (also known as T-intersection) from the Town03
+map. The driving setting is perfect for validating multi-agent
+AC policies in a scenario where multiple driving cars, as well
+as pedestrians, are faced.
+3) Driving Environment 3 (env_3): The environment has
+independent non-communicating agents spawned close to the
+four-way intersection throughout the testing scenarios. The
+choice of a four-way intersection as a driving scenario is based
+on its higher complexity for an AC agent. Similar to env_2,
+this driving environment also contains pedestrians.
+4) Driving Environment 4 (env_4): The environment has
+independent non-communicating agents spawned close to the
+Roundabout throughout the training and testing scenarios. The
+choice of the roundabout as a driving scenario is based on its
+higher complexity for an AC agent.
+5) Driving Environment 5 (env_5): The environment is
+called Merge where two roads merge to a single point. The
+choice of merge as a driving scenario is also based on its
+higher complexity for an AC agent.
+Figure 2: Illustration of Town03 Carla urban driving environ-
+ment. Bottom middle highlighted area on the map represents
+env_1 (Straight), top right highlighted area on the map rep-
+resents env_2 (Three Way intersection) and top middle high-
+lighted area displays env_3 (Four-way intersection).
+Middle
+highlighted area on the same map shows env_4 (Roundabout)
+while bottom left highlighted area represents env_5 (Merge).
+790
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:57 UTC from IEEE Xplore.  Restrictions apply. 
+
+B. Experimental Setup
+1) Scenario 1: Training and testing of multi-agent ACs:
+First, we train AC policies πAC in a multi-agent driving
+environment. There are DRL-based, as well as a few auto-
+controlled cars driving around each of the AC agents rep-
+resenting human drivers from real-life scenarios. We train
+πAC policies using the reward function RAC described in
+Section IV-C. The performance of AC policies that are trained
+in the first scenario is shown in Figure 3.
+10
+20
+30
+40
+50
+0
+2k
+4k
+6k
+8k
+10k
+Straight
+Three Way
+Four Way
+Roundabout
+Merge
+Training Iterations
+Mean Episodic Reward
+PPO
+10
+20
+30
+40
+50
+8k
+8.5k
+9k
+9.5k
+10k
+10.5k
+Straight
+Three Way
+Four Way
+Roundabout
+Merge
+Training Iterations
+A3C
+10
+20
+30
+40
+50
+4k
+6k
+8k
+10k
+Straight
+Three Way
+Four Way
+Roundabout
+Merge
+Training Iterations
+Mean Episodic Reward
+IMPALA
+10
+20
+30
+40
+50
+0
+2k
+4k
+6k
+8k
+10k
+Straight
+Three Way
+Four Way
+Roundabout
+Merge
+Training Iterations
+DQN
+10
+20
+30
+40
+50
+5k
+6k
+7k
+8k
+9k
+10k
+Straight
+Three Way
+Four Way
+Roundabout
+Merge
+Training Iterations
+Mean Episodic Reward
+DDPG
+10
+20
+30
+40
+50
+0
+5k
+10k
+Straight
+Three Way
+Four Way
+Roundabout
+Merge
+Training Iterations
+TD3
+Figure 3: Convergence of DRL AC policies in Scenario 1.
+Each plot represents DRL algorithm trained in all 5 driving
+environments. The first four plots shows mean episodic reward
+for PPO, A3C, IMPALA, and DQN from a discrete action
+space. The last two plots illustrate mean episodic reward for
+DDPG and TD3 algorithms from a continuous action space.
+Next, for testing and validating ACs in a multi-agent Sce-
+nario 1 all six DRL-based ACs drive next to each other, as well
+as around auto-controlled cars, therefore acting as independent
+non-communicating competitive driving agents, illustrated in
+Figure 4 (a). The driving performance of each AC is evaluated
+against the six Driving Performance Metrics.
+2) Scenario 2: Testing of single-agent ACs: After training
+all six DRL-based ACs for a number of episodes in a multi-
+agent Scenario 1, we validate the driving performance of each
+AC policy in a single-agent driving environment, illustrated in
+Figure 4 (b). Testing in a single-agent scenario is important
+in order to validate the driving capability of AC policies in
+similar driving situations but with no cars around. Just like in
+Scenario 1, ACs’ driving performance is validated based on
+the six Driving Performance Metrics.
+Both scenarios are illustrated in Figure 4.
+(a)
+(b)
+Figure 4: Illustration of two different scenarios for the testing
+phase. The left figure (a) shows a competitive multi-agent
+testing environment for all of the five driving environments.
+env_2 and env_3 additionally consists of pedestrians as well.
+Right figure (b) displays a single-agent driving scenario for
+testing every DRL-based AC agent individually.
+C. Simulation Setup
+The proposed benchmarking framework uses the following
+open libraries/frameworks:
+CARLA [45] is an urban driving simulation framework
+designed for training and validating autonomous vehicles.
+CARLA is famous for its highly integrated Python API and
+access to high-fidelity urban driving environments. We use the
+0.9.4 version.
+RLlib [46] is a very fine-tuned and scalable DRL framework
+library. RLlib gives the opportunity to access more than one
+DRL policy graph and its hyperparameters for creating a non-
+shared multi-agent system. We use versions 0.8.0 for IMPALA
+and 0.8.5 for the rest of the 5 DRL algorithms.
+Macad-gym [47] is an open-source framework that connects
+CARLA, RLlib, and Open AI’s Gym toolkit [25]. We have
+modified the framework by adding competitive multi-agent
+driving functionalities required for our experiments. We use
+the 0.1.4 version.
+Tensorflow [48] is one of the leading frameworks used to
+create deep learning-based algorithms. We use version 2.2.0
+within the RLlib library.
+VI. RESULTS & ANALYSIS
+In this section, we discuss the experimental results for
+testing DRL AC policies. For collecting the results, we run
+50 testing episodes in both single and multi-agent scenarios
+to take an average among the Driving Performance Metrics
+explained in Section V. In each episode, we use 5000 simula-
+tion steps in env_1 to env_5 in order to test the performance
+of every AC driving policy.
+A. RQ1: Testing AC policies in a single and multi-agent
+scenario
+We first look into the performance comparison among the
+4 discrete and 2 continuous action space DRL AC policies.
+Each of the AC agents is trained with a various number of
+791
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:57 UTC from IEEE Xplore.  Restrictions apply. 
+
+episodes and their model convergence performance has been
+discussed in Section V-B1. Now we use the same training
+environment and analyze their driving behavior in both single
+and multi-agent scenarios.
+The evaluation results of the driving performance of DRL-
+based AC agents are presented in Table III using five Driving
+Performance Metrics: CV, CO, CP, OS, and TTFC. AC poli-
+cies having values closer to 0 are driving error-free, while
+those near to 1 have a higher failure state. The results of
+these five metrics should be analyzed jointly with the sixth
+metric: SPEED. This is because a car could have no collision
+and offroad steering errors due to being stationary. Therefore,
+we provide Figure 5, which shows an AC’s driving speed per
+timestep in a testing simulation. For displaying all the episodic
+results, we took an average of both Scenario 1 and 2 for every
+DRL AC policy across each driving environment setting. The
+dash sign (-) for the CV metric represents Scenario 2 where
+the evaluation contains only single-agent driving scenarios.
+Similarly, dash sign (-) for the CP metric also represents
+driving scenarios and environments where pedestrians were
+not involved. For TTFC, we use double dash sign (- -) that
+represents cases when there is no collision detected by the
+driving policy.
+1) πP P O:
+πP P O based AC policy was able to avoid
+collision with other vehicles except for some minimal collision
+states in env_3. On the other hand, πP P O performed poorly
+in respect of road and pedestrian collisions throughout the
+multi-agent driving scenarios. From simpler environments as
+env_1 to much more complex driving conditions as env_4
+and env_5, we see many offroad steering errors made by the
+πP P O algorithm. We see similar behavior in the single-agent
+scenario, where it performs no offroad steering errors in only
+env_3, while the agent collides with other road objects and
+drives off-lane throughout the driving settings. PPO-based AC
+policy also ends up having its first collisions in early timesteps
+of the episodes, whether tested in multi-agent or single-agent
+scenarios. πP P O performance with respect to SPEED has
+been mostly consistent regardless of the collisions and offroad
+steering states as stated above.
+2) πA3C: From Table III, it is clear that A3C algorithm-
+based policy πA3C performs best with no collision with other
+vehicles in four out of five environments. It also performs with
+minimal road collisions and offroad steering errors across all
+driving environments. The driving behavior remains similar in
+both multi and single-agent testing scenarios. While testing
+against pedestrians within env_2 and env_3, it successfully
+avoids any collision. πA3C only gets very minor states of
+collision with other vehicles in env_3 multi-agent scenarios.
+πA3C policy while facing these minor collisions was detected
+in the first half of the episodes, but the driving agent was
+able to recover from the failure state. The time to detect the
+first collision in such scenarios is also comparatively longer
+than other driving policies as shown in the Table. In terms
+of SPEED, the A3C algorithm-based policy πA3C keeps
+a decent driving speed throughout episodic timesteps. A3C
+overall performs consistently throughout the testing episodes
+with both high and low-speed values.
+3) πIMP ALA: πIMP ALA can be observed in our exper-
+iments as the weakest discrete action space algorithm. In a
+multi-agent scenario, it sometimes avoids collisions with other
+driving vehicles, but most of the time ends up colliding with
+other road objects and pedestrians with a large percentage
+of offroad steering errors. The driving behavior is slightly
+improved when driving alone within env_4 and env_5. Other
+than single-agent testing, πIMP ALA-based AC policy in env_4
+is also found in its first collision state in the earlier timesteps of
+the episodes. This can also be visualized in terms of SPEED,
+where the AC policy performs its best in env_4, while in the
+rest it drastically decreases its speed after early collision states.
+4) πDQN: πDQN overall performs second best within dis-
+crete action space algorithms. In 4 out of 5 environments, the
+πDQN AC policy avoids vehicle collisions in the multi-agent
+scenario. However, it constantly drives offroad in multi-agent
+conditions and also collides a few times with pedestrians while
+facing them in env_2 and env_3. The driving performance
+of πDQN improves a lot when driving alone in single-agent
+scenarios across all environments. It only faces road object
+collision states in a difficult and complex env_4 environment.
+The driving policy even after getting its first collision in the
+early stage of the episodes recovers to a better driving state.
+The SPEED factor is maintained quite well by πDQN AC
+policy throughout the testing phase.
+5) πDDP G: In continuous action space algorithms, we first
+evaluate the robustness of πDDP G across various driving
+conditions. The πDDP G policy performs the worst in overall
+driving while following the road lane and therefore gets into
+the majority of the offroad driving states whether it is a single
+or multi-agent scenario. It also collides with pedestrians while
+testing in env_2 and env_3. The time to detect the first collision
+is also earlier in four out of 5 driving environments whether it
+is a first or second scenario. The driving SPEED of πDDP G
+can be interpreted as similar to πIMP ALA where it slows down
+in early timesteps of the episodes due to collisions and offroad
+steering errors.
+6) πT D3: In continuous action space algorithms, πT D3
+on the other hand makes a lot better driving decisions as
+compared to πDDP G. It successfully avoids collision with
+other vehicles within multi-agent scenario settings and also
+gets in no contact with pedestrians across env_2 and env_3
+driving conditions. The πT D3 AC policy faces some minor
+road collision and offroad steering states in multi-agent sce-
+nario testing. The driving behavior slightly drops when πT D3
+is tested in single-agent scenarios, especially in env_4 where
+both offroad steering and road collision percentages increases.
+In the case of environments where it had any collision, the time
+to detect the first one is far greater than the ones detected in
+the DDPG AC policy. The forward SPEED conditions of
+πT D3 is in general slower than πDDP G, and therefore able
+to drive mostly safer in comparison to πDDP G from start to
+end.
+In summary, the experimental results of testing AC policies
+in a single and multi-agent scenario indicate that the A3C and
+792
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:57 UTC from IEEE Xplore.  Restrictions apply. 
+
+TABLE III: Comparison of the behavior of AC driving agents in terms of CV, CO, CP, OS error percentages, and TTFC when
+tested both in a multi (Scenario 1) and single-agent (Scenario 2) environment.
+Scenario 1
+Scenario 2
+Environment
+Metric
+πP P O
+πA3C
+πIMP ALA
+πDQN
+πDDP G
+πT D3
+πP P O
+πA3C
+πIMP ALA
+πDQN
+πDDP G
+πT D3
+env_1 (Straight)
+CV
+0.0
+0.0
+0.0
+0.0
+0.19
+0.0
+-
+-
+-
+-
+-
+-
+CO
+0.76
+0.0
+0.97
+0.0
+0.19
+0.1
+0.2
+0.0
+0.9
+0.0
+0.05
+0.05
+CP
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+OS
+0.9
+0.0
+0.96
+0.7
+0.9
+0.2
+0.2
+0.1
+0.95
+0.1
+0.5
+0.0
+TTFC (seconds)
+268
+- -
+53.6
+603
+67
+335
+402
+- -
+120.6
+- -
+60.3
+616.4
+env_2 (Three Way)
+CV
+0.0
+0.0
+0.0
+0.17
+0.3
+0.0
+-
+-
+-
+-
+-
+-
+CO
+0.9
+0.1
+0.0
+0.0
+0.18
+0.05
+0.2
+0.006
+0.19
+0.0
+0.0
+0.16
+CP
+0.0
+0.0
+0.2
+0.05
+0.2
+0. 0
+-
+-
+-
+-
+-
+-
+OS
+0.2
+0.1
+0.6
+0.3
+0.9
+0.0
+0.0
+0.0
+0.2
+0.0
+0.19
+0.39
+TTFC (seconds)
+241.2
+636.6
+268
+314.9
+53.6
+284.08
+281.4
+670
+281.4
+- -
+62
+263
+env_3 (Four Way)
+CV
+0.1
+0.1
+0.1
+0.0
+0.0
+0.0
+-
+-
+-
+-
+-
+-
+CO
+0.0
+0.0
+0.7
+0.26
+0.0
+0.0
+0.0
+0.0
+0.1
+0.0
+0.0
+0.1
+CP
+0.1
+0.0
+0.1
+0.05
+0.1
+0.0
+-
+-
+-
+-
+-
+-
+OS
+0.8
+0.1
+0.1
+0.3
+0.95
+0.0
+0.21
+0.0
+0.19
+0.49
+0.1
+0.17
+TTFC (seconds)
+564.14
+611.04
+42.88
+335
+248.302
+- -
+- -
+- -
+49
+- -
+- -
+308.2
+env_4 (Roundabout)
+CV
+0.0
+0.0
+0.5
+0.0
+0.0
+0.0
+-
+-
+-
+-
+-
+-
+CO
+0.8
+0.2
+0.8
+0.0
+0.9
+0.0
+0.4
+0.0
+0.05
+0.5
+0.7
+0.59
+CP
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+OS
+0.6
+0.3
+0.3
+0.75
+0.89
+0.1
+0.8
+0.08
+0.6
+0.64
+0.94
+0.55
+TTFC (seconds)
+214.4
+663.7
+268.89
+- -
+53.6
+- -
+335.1
+- -
+660
+26.8
+51
+120.6
+env_5 (Merge)
+CV
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+-
+-
+-
+-
+-
+-
+CO
+0.9
+0.0
+0.0
+0.0
+0.0
+0.05
+0.2
+0.0
+0.0
+0.0
+0.34
+0.05
+CP
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+OS
+0.5
+0.1
+0.4
+0.8
+0.98
+0.6
+0.8
+0.0
+0.06
+0.1
+0.96
+0.21
+TTFC (seconds)
+323.6
+- -
+- -
+- -
+- -
+634.22
+536
+- -
+- -
+- -
+33.5
+650
+0
+2000
+4000
+Steps
+0
+10
+20
+Speed (km/h)
+PPO env_1
+0
+2000
+4000
+Steps
+0
+5
+10
+A3C env_1
+0
+2000
+4000
+Steps
+0
+10
+20
+30
+IMPALA env_1
+0
+2000
+4000
+Steps
+0
+5
+10
+DQN env_1
+0
+2000
+4000
+Steps
+0
+10
+20
+DDPG env_1
+0
+2000
+4000
+Steps
+0
+2
+TD3 env_1
+0
+2000
+4000
+Steps
+0
+5
+10
+Speed (km/h)
+PPO env_2
+0
+2000
+4000
+Steps
+0
+5
+10
+A3C env_2
+0
+2000
+4000
+Steps
+0
+2
+4
+IMPALA env_2
+0
+2000
+4000
+Steps
+0
+2
+DQN env_2
+0
+2000
+4000
+Steps
+0
+10
+DDPG env_2
+0
+2000
+4000
+Steps
+0
+2
+4
+TD3 env_2
+0
+2000
+4000
+Steps
+0
+5
+10
+Speed (km/h)
+PPO env_3
+0
+2000
+4000
+Steps
+0
+5
+10
+15
+A3C env_3
+0
+2000
+4000
+Steps
+0
+2
+4
+6
+IMPALA env_3
+0
+2000
+4000
+Steps
+0
+5
+DQN env_3
+0
+2000
+4000
+Steps
+0
+5
+10
+15
+DDPG env_3
+0
+2000
+4000
+Steps
+0.0
+2.5
+5.0
+7.5
+TD3 env_3
+0
+2000
+4000
+Steps
+0
+5
+10
+Speed (km/h)
+PPO env_4
+0
+2000
+4000
+Steps
+0
+5
+10
+A3C env_4
+0
+2000
+4000
+Steps
+0
+2
+4
+IMPALA env_4
+0
+2000
+4000
+Steps
+0
+10
+DQN env_4
+0
+2000
+4000
+Steps
+0
+10
+20
+DDPG env_4
+0
+2000
+4000
+Steps
+0
+1
+2
+3
+TD3 env_4
+0
+2000
+4000
+Steps
+0
+5
+10
+Speed (km/h)
+PPO env_5
+0
+2000
+4000
+Steps
+0
+2
+4
+A3C env_5
+0
+2000
+4000
+Steps
+0
+5
+10
+15
+IMPALA env_5
+0
+2000
+4000
+Steps
+0
+5
+10
+DQN env_5
+0
+2000
+4000
+Steps
+0
+2
+4
+6
+DDPG env_5
+0
+2000
+4000
+Steps
+0
+2
+4
+TD3 env_5
+Figure 5: Comparison of the behavior of AC driving agents in terms of forward speed when tested both in a single and
+multi-agent scenario. Each row represents an average driving speed of DRL AC policies in the driving environments labeled
+from env_1 to env_5.
+793
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:57 UTC from IEEE Xplore.  Restrictions apply. 
+
+TD3-based driving agents perform better than the rest of the
+DRL agents in both single and multi-agent scenarios within
+five driving environment settings, answering RQ1.
+B. RQ2: Success rate of AC driving policies in achieving
+multiple driving objectives
+1) Safety: By visualizing the results in Figure 6, we can see
+the average success rate of each DRL algorithm in achieving
+safety across all driving environments. A value closer to zero is
+considered much safer than the ones closer to one displayed in
+the figure. As thoroughly discussed in Section VI-A we can
+clearly see that πA3C overall performs the best in terms of
+avoiding collisions with drivers, pedestrians, and other road
+objects. πDQN performs similarly to πA3C within env_1 and
+env_5 but performs less safely in the rest of the 3 environ-
+ments. πP P O other than env_3 has a mediocre success rate in
+terms of safety, whereas πIMP ALA other than env_5 performs
+the worst overall. In continuous action space, πT D3 shows
+the overall safest driving behavior across all environmental
+conditions as compared to πDDP G.
+PPO
+A3C
+IMPALA
+DQN
+DDPG
+TD3
+0
+0.2
+0.4
+0.6
+Straight
+Three Way
+Four Way
+Roundabout
+Merge
+Safety
+Figure 6: Illustration of the success rate within DRL AC
+policies with respect to safety. Each algorithm in discrete
+and continuous action space is evaluated across all driving
+environments.
+2) Efficiency: When it comes to the success rate for mea-
+suring efficiency, we need to analyze the results with respect to
+both the driving SPEED and DISTANCE covered for each
+DRL AC policy. Figure 7 displays the box plot of minimum,
+maximum, and median speed values throughout the testing
+phase. In discrete action space, πA3C maintains consistent
+speed across all environments, whereas in continuous space
+algorithms, πT D3 is much slower than πDDP G.
+To fully understand the efficiency, we also visualize Figure 8
+to measure the average distance covered by each DRL AC
+policy, since speed does not alone guarantee the efficiency of
+AC policies. πA3C overall covers the majority of the distance
+across driving conditions. A similar pattern can be observed
+for πT D3 in terms of driving more distance than πDDP G by
+also maintaining a slower speed as discussed above.
+3) Lane Keeping: As described in Section IV-C, one of
+the objectives of DRL AC policies in this experiment is to
+also focus on lane-keeping behavior. A safer car is much
+more likely to drive within a lane with minimum offroad
+steering errors, but these are two different goals that separately
+need to be achieved. In terms of evaluating success rate,
+πA3C once again performs the best. Other than env_4 it
+learns to fully drive in its lane throughout the experiments.
+πIMP ALA remains inconsistent with its lane-keeping decisions
+PPO
+A3C
+IMPALA
+DQN
+DDPG
+TD3
+0
+10
+20
+30
+Straight
+Three Way
+Four Way
+Roundabout
+Merge
+Efficiency (Speed)
+Figure 7: Illustration of the success rate within DRL AC
+policies with respect to efficiency in speed. Each algorithm
+in discrete and continuous action space is evaluated across all
+driving environments.
+PPO
+A3C
+IMPALA
+DQN
+DDPG
+TD3
+0
+20
+40
+60
+80
+Straight
+Three Way
+Four Way
+Roundabout
+Merge
+Efficiency (Distance)
+Figure 8: Illustration of the success rate within DRL AC
+policies with respect to efficiency in covering distance. Each
+algorithm in discrete and continuous action space is evaluated
+across all driving environments.
+since it performs the worst in simplistic environments such
+as env_1 but performs better in complex conditions such
+as env_4. πP P O and πDQN are somewhat similar in lane-
+keeping decision-making where both do not perform well in
+env_4. When coming towards continuous action space, πT D3
+performs better in terms of driving within its lane in all of the
+environments compared to πDDP G by a large margin.
+PPO
+A3C
+IMPALA
+DQN
+DDPG
+TD3
+0
+0.2
+0.4
+0.6
+0.8
+1
+Straight
+Three Way
+Four Way
+Roundabout
+Merge
+Lane Keeping
+Figure 9: Illustration of the success rate within DRL AC
+policies with respect to lane keeping. Each algorithm in
+discrete and continuous action space is evaluated across all
+driving environments
+In summary, the analysis of the success rate of testing
+AC policies in RQ2 in all of the environments indicates that
+the A3C and TD3-based driving agents perform safe driving
+decisions, cover the majority of the distance, and perform
+minimal offroad steering errors. The analysis also shows that
+πA3C in discrete action space learns to drive with consistent
+speed while πT D3 tends to keep lower speed as a trade-off in
+order to make better driving decisions.
+VII. DISCUSSION AND OPEN RESEARCH DIRECTIONS
+This section provides our observations and thoughts on
+the effectiveness and robustness of the six evaluated DRL
+algorithms for their use in AD research, specifically, as AC
+agents used for testing the driving agents.
+794
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:57 UTC from IEEE Xplore.  Restrictions apply. 
+
+PPO as AC, in general, did not perform better than the
+rest of the algorithms while driving in a single or multi-
+agent scenario. Standard PPO policies are often stuck at non-
+optimal actions while learning since they are very sensitive
+to sparse high rewards. However, the PPO-based AC policy
+drove efficiently with a good driving speed and covered a lot
+of distance. This shows that PPO-based policies need to focus
+more on safety and lane-keeping driving behaviors as per our
+experiments.
+A3C as AC performs the best in both single-agent and
+multi-agent environments. With its default implementation, the
+critic model seems to learn the value function well while actors
+are independently learning their driving policies in parallel.
+A3C seems to work well where training is performed on
+input camera images [27] [7] [29] as in our case. One of the
+future directions is to investigate how A3C-based policy would
+perform if it tries to drive with more speed than the rest of
+discrete action space policies.
+IMPALA has shown great results when used before in the
+same simulation environment [47], but the main difference
+in that work is that the authors implemented the IMPALA
+algorithm for training multi-agent ACs using shared connected
+AC weights. In our work, we train a non-shared multi-agent
+AC which shows to not only fail in single-agent testing but also
+in a multi-agent competitive scenario. The algorithm is unable
+to effectively use the trajectories gathered from actors that
+are decoupled from the learner. IMPALA algorithm has only
+been successful in driving in complex driving conditions such
+as roundabouts while also performing fewer offroad steering
+mistakes. This shows that the algorithm has the potential to
+further tune the driving capability in complex urban driving
+scenarios.
+Default DQN is the most used algorithm within the DRL
+community and even in AD research, even though training
+ACs using DQN in our case did not achieve good results as
+compared to A3C. A lot of extensions have been proposed
+since the popularity of DQN in atari games. Therefore, one
+prosperous research direction is to explore the continuous
+action space as in DDPG [49].
+DDPG is widely used for training AC policies [9] [10] [35],
+and we show that the improved DRL model TD3 performs
+better during single and multi-agent testing scenarios. The
+algorithmic advantages of the TD3 policy over DDPG really
+help in learning a multi-agent driving policy. At the same
+time, TD3 maintained a very low speed in our experiments
+to perform safe and efficient driving. Just like A3C in discrete
+action space, TD3 in continuous action space needs to be
+further looked into with respect to higher speed and analyze
+the safety and lane keeping performing in parallel.
+VIII. THREATS TO VALIDITY
+Non stationary multi-agent driving environments. In
+multi-agent non-stationary environments, each agent’s transi-
+tion probability and reward function depends on the actions
+of all the agents since they change every time with the
+actions performed by the agents. DRL research for AD is
+mainly focused on driving in a single-agent stationary MDP
+environment. Driving behavior is affected a lot when tested
+in a multi-agent scenario due to the non-stationary driving
+environment [50]. This is one of the key threats to the existing
+DRL-based AD research that is performed only in a single-
+agent scenario. As explained in Section VI-A, the driving
+performance of AC agents is affected significantly when they
+are exposed to more AC agents in a multi-agent setting.
+Choice of DRL algorithms. We have selected a total of six
+DRL algorithms to test the robustness of AC driving agents as
+described in Section III-A. While there could be other suitable
+DRL algorithms, we have selected ours to cover a range
+of DRL categories, including value-based, policy-based, and
+actor-critic-based. Furthermore, our benchmarking framework
+relies on the Ray RLlib framework [46] which makes it
+possible to implement a competitive DRL-based multi-agent
+driving environment. At the moment, the choice of DRL
+algorithms also partly depends on which DRL algorithms work
+smoothly while integrated with Ray RLlib, Tensorflow [48],
+and CARLA-specific versions [45].
+Hyperparameters tuning. Hyperparameter tuning is con-
+sidered a very sensitive part of training DRL policies, and to
+mitigate this threat, we have used the best hyperparameters
+reported in the past implementations in literature as a starting
+point, while also utilizing a hybrid hyperparameter tuning
+algorithm to search for the most optimum hyperparameters.
+Experimenting with hyperparameter tuning can be tested fur-
+ther in future AD research.
+IX. CONCLUSION
+In this work, we compare the robustness of DRL-based
+policies while training ACs agents. By first training DRL AC
+policies in a multi-agent environment, we test their driving
+performance in both single and multi-agent scenarios. We
+analyze the robustness of AC policies using six evaluation
+metrics within both multi and single-agent scenarios. We
+also propose a comprehensive multi-objective reward function
+designed for the evaluation of DRL AC driving agents. Based
+on our proposed reward function, we analyze the overall
+success rate in achieving safety, efficiency, and lane keeping
+for each DRL policy as described in Section VI.
+REFERENCES
+[1] J. Garcia, Y. Feng, J. Shen, S. Almanee, Y. Xia, Chen, and Q. Alfred,
+“A comprehensive study of autonomous vehicle bugs,” in Proceedings of
+the ACM/IEEE 42nd International Conference on Software Engineering,
+2020.
+[2] V. Riccio, G. Jahangirova, and A. e. a. Stocco, “Testing machine learning
+based systems: a systematic mapping,” Empir Software Eng, p. 5193,
+2020.
+[3] D. Marijan and A. Gotlieb, “Software testing for machine learning,”
+Proceedings
+of
+the
+AAAI
+Conference
+on
+Artificial
+Intelligence,
+vol. 34, no. 09, pp. 13 576–13 582, Apr. 2020. [Online]. Available:
+https://ojs.aaai.org/index.php/AAAI/article/view/7084
+[4] D.
+Silver,
+“Ai
+day
+showcases
+the
+breadth
+of
+tesla’s
+ambition,”
+in
+Forbes,
+2021.
+[Online].
+Available:
+https://www.forbes.com/sites/davidsilver/2021/08/20/ai-day-
+showcases-the-breadth-of-teslas-ambition/
+[5] H. Schäfer, “End-to-end lateral planning,” in comma.ai, 2021.
+795
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:57 UTC from IEEE Xplore.  Restrictions apply. 
+
+[6] B. Osi´nski, A. Jakubowski, P. Zi˛ecina, P. Miło´s, C. Galias, S. Homo-
+ceanu, and H. Michalewski, “Simulation-based reinforcement learning
+for real-world autonomous driving,” in IEEE International Conference
+on Robotics and Automation (ICRA), 2020.
+[7] N. Xu, B. Tan, and B. Kong, “Autonomous driving in reality
+with reinforcement learning and image translation,” arXiv preprint
+arXiv:1801.05299, 2018.
+[8] P. Almási, R. Moni, and B. Gyires-Tóth, “Robust reinforcement
+learning-based autonomous driving agent for simulation and real world,”
+in 2020 International Joint Conference on Neural Networks (IJCNN).
+IEEE, 2020, pp. 1–8.
+[9] S. Wang, D. Jia, and X. Weng, “Deep reinforcement learning for
+autonomous driving,” arXiv preprint arXiv:1811.11329, 2018.
+[10] H. Porav and P. Newman, “Imminent collision mitigation with rein-
+forcement learning and vision,” in 21st International Conference on
+Intelligent Transportation Systems (ITSC), 2018.
+[11] M. e. a. Zhou, “Smarts: An open-source scalable multi-agent rl training
+school for autonomous driving.”
+PMLR, 2021.
+[12] W. Schwarting, A. Pierson, J. Alonso-Mora, S. Karaman, and D. Rus,
+“Social behavior for autonomous vehicles,” Proceedings of the National
+Academy of Sciences, 2019.
+[13] K. Jang, E. Vinitsky, B. Chalaki, B. Remer, L. Beaver, A. A. Ma-
+likopoulos, and A. Bayen, “Simulation to scaled city: Zero-shot policy
+transfer for traffic control via autonomous vehicles,” in 10th ACM/IEEE
+International Conference on Cyber-Physical Systems (ICCPS), 2019.
+[14] M. Stang, D. Grimm, M. Gaiser, and E. Sax, “Evaluation of deep
+reinforcement learning algorithms for autonomous driving,” in 2020
+IEEE Intelligent Vehicles Symposium (IV), 2020, pp. 1576–1582.
+[15] E. Vinitsky, A. Kreidieh, L. L. Flem, N. Kheterpal, K. Jang, F. Wu,
+R. Liaw, E. Liang, and A. M. Bayen, “Benchmarks for reinforcement
+learning in mixed-autonomy traffic,” in CoRL, 2018.
+[16] Z. Huang, J. Wu, and C. Lv, “Efficient deep reinforcement learning with
+imitative expert priors for autonomous driving,” IEEE Transactions on
+Neural Networks and Learning Systems, 2022.
+[17] J. Chen, B. Yuan, and M. Tomizuka, “Model-free deep reinforcement
+learning for urban autonomous driving,” in 2019 IEEE intelligent
+transportation systems conference (ITSC). IEEE, 2019, pp. 2765–2771.
+[18] Q. Li, Z. Peng, L. Feng, Q. Zhang, Z. Xue, and B. Zhou, “Metadrive:
+Composing diverse driving scenarios for generalizable reinforcement
+learning,” 2021. [Online]. Available: https://arxiv.org/abs/2109.12674
+[19] P. Palanisamy, “Multi-agent connected autonomous driving using deep
+reinforcement learning,” in 2020 International Joint Conference on
+Neural Networks (IJCNN), 2020.
+[20] M. O’Kelly, H. Zheng, D. Karthik, and R. Mangharam, “F1tenth:
+An open-source evaluation environment for continuous control and
+reinforcement learning,” in Proceedings of the NeurIPS 2019 Compe-
+tition and Demonstration Track, ser. Proceedings of Machine Learning
+Research, H. J. Escalante and R. Hadsell, Eds., vol. 123. PMLR, 08–14
+Dec 2020, pp. 77–89.
+[21] I. Han, D.-H. Park, and K.-J. Kim, “A new open-source off-road en-
+vironment for benchmark generalization of autonomous driving,” IEEE
+Access, vol. 9, pp. 136 071–136 082, 2021.
+[22] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov,
+“Proximal policy optimization algorithms,” 2017.
+[23] M. Holen, R. Saha, M. Goodwin, C. W. Omlin, and K. E. Sandsmark,
+“Road detection for reinforcement learning based autonomous car,” in
+Proceedings of the The 3rd International Conference on Information
+Science and System (ICISS).
+Association for Computing Machinery,
+2020.
+[24] “A self-driving car simulator built with unity,” in Udacity, 2017.
+[Online]. Available: https://github.com/udacity/self-driving-car-sim
+[25] G. Brockman, V. Cheung, L. Pettersson, J. Schneider, J. Schulman,
+J. Tang, and W. Zaremba, “Openai gym,” 2016.
+[26] V. Mnih, A. P. Badia, M. Mirza, A. Graves, T. Lillicrap, T. Harley,
+D. Silver, and K. Kavukcuoglu, “Asynchronous methods for deep
+reinforcement learning,” in Proceedings of The 33rd International Con-
+ference on Machine Learning (PMLR), 2016.
+[27] Y. You, X. Pan, Z. Wang, and C. Lu, “Virtual to real reinforcement
+learning for autonomous driving,” 2017.
+[28] “Torcs, the open racing car simulator.” 2007. [Online]. Available:
+https://sourceforge.net/projects/torcs/
+[29] M. Jaritz, R. de Charette, M. Toromanoff, E. Perot, and F. Nashashibi,
+“End-to-end race driving with deep reinforcement learning,” in IEEE
+International Conference on Robotics and Automation (ICRA), 2018.
+[30] L. Espeholt, H. Soyer, R. Munos, K. Simonyan, V. Mnih, T. Ward,
+Y. Doron, V. Firoiu, T. Harley, I. Dunning, S. Legg, and K. Kavukcuoglu,
+“IMPALA: Scalable distributed deep-RL with importance weighted
+actor-learner architectures,” in Proceedings of the 35th International
+Conference on Machine Learning (PMLR), 2018.
+[31] V. Mnih, K. Kavukcuoglu, D. Silver, A. Graves, I. Antonoglou, D. Wier-
+stra, and M. A. Riedmiller, “Playing atari with deep reinforcement
+learning,” 2013.
+[32] A. R. Fayjie, S. Hossain, D. Oualid, and D.-J. Lee, “Driverless car:
+Autonomous driving using deep reinforcement learning in urban envi-
+ronment,” in 15th International Conference on Ubiquitous Robots (UR),
+2018.
+[33] P. Wolf, C. Hubschneider, M. Weber, A. Bauer, J. Härtl, F. Dürr, and
+J. M. Zöllner, “Learning how to drive in a real world simulation with
+deep q-networks,” in IEEE Intelligent Vehicles Symposium (IV), 2017.
+[34] T. P. Lillicrap, J. J. Hunt, A. Pritzel, N. Heess, T. Erez, Y. Tassa,
+D. Silver, and D. Wierstra, “Continuous control with deep reinforcement
+learning,” 2015.
+[35] A. Kendall, J. Hawke, D. Janz, P. Mazur, D. Reda, J.-M. Allen, V.-
+D. Lam, A. Bewley, and A. Shah, “Learning to drive in a day,” in
+International Conference on Robotics and Automation (ICRA), 2019.
+[36] S. Fujimoto, H. van Hoof, and D. Meger, “Addressing function approx-
+imation error in actor-critic methods,” 2018.
+[37] J. Chen, B. Yuan, and M. Tomizuka, “Model-free deep reinforcement
+learning for urban autonomous driving,” in 2019 IEEE Intelligent
+Transportation Systems Conference (ITSC), 2019.
+[38] J. Chen, S. E. Li, and M. Tomizuka, “Interpretable end-to-end urban
+autonomous driving with latent deep reinforcement learning,” IEEE
+Transactions on Intelligent Transportation Systems, 2021.
+[39] H. Liu, Z. Huang, and C. Lv, “Improved deep reinforcement learning
+with expert demonstrations for urban autonomous driving,” 2021.
+[40] F. A. Oliehoek, “Decentralized pomdps,” in Springer Berlin Heidelberg,
+2012.
+[41] R. Emery-Montemerlo, S. Thrun, G. Gordon, and J. Schneider, “Approx-
+imate solutions for partially observable stochastic games with common
+payoffs,” in International Joint Conference on Autonomous Agents and
+Multiagent Systems.
+IEEE Computer Society, 2004.
+[42] M. L. Littman, “Markov games as a framework for multi-agent rein-
+forcement learning,” in 11th International Conference on International
+Conference on Machine Learning, 1994.
+[43] M. Jaderberg, V. Dalibard, S. Osindero, W. M. Czarnecki, J. Donahue,
+A. Razavi, O. Vinyals, T. Green, I. Dunning, K. Simonyan, C. Fernando,
+and K. Kavukcuoglu, “Population based training of neural networks,”
+2017. [Online]. Available: https://arxiv.org/abs/1711.09846
+[44] “3rd
+maps
+and
+navigation,”
+2021.
+[Online].
+Available:
+https://carla.readthedocs.io/en/latest/core_map/
+[45] A. Dosovitskiy, G. Ros, F. Codevilla, A. Lopez, and V. Koltun,
+“CARLA: An open urban driving simulator,” in 1st Annual Conference
+on Robot Learning, 2017.
+[46] P. Moritz, R. Nishihara, S. Wang, A. Tumanov, R. Liaw, E. Liang,
+W. Paul, M. I. Jordan, and I. Stoica, “Ray: A distributed framework
+for emerging AI applications,” 2017.
+[47] P. Palanisamy, “Multi-agent connected autonomous driving using deep
+reinforcement learning,” in International Joint Conference on Neural
+Networks (IJCNN), 2020.
+[48] “TensorFlow: Large-scale machine learning on heterogeneous systems,”
+2015. [Online]. Available: https://www.tensorflow.org/
+[49] T. P. Lillicrap, J. J. Hunt, A. Pritzel, N. M. O. Heess, T. Erez, Y. Tassa,
+D. Silver, and D. Wierstra, “Continuous control with deep reinforcement
+learning,” CoRR, vol. abs/1509.02971, 2016.
+[50] G. Papoudakis, F. Christianos, A. Rahman, and S. V. Albrecht, “Dealing
+with non-stationarity in multi-agent deep reinforcement learning,” 2019.
+796
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:57 UTC from IEEE Xplore.  Restrictions apply. 

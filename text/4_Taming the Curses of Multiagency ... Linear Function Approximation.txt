@@ -1,0 +1,6997 @@
+Taming the Curses of Multiagency in Robust Markov Games
+with Large State Space through Linear Function
+Approximation
+Jingchu Gai*
+Laixi Shi†
+CMU Machine Learning Department
+Johns Hopkins University
+jgai@andrew.cmu.edu/laixis@jhu.edu
+Abstract
+Multi-agent reinforcement learning (MARL) holds great potential but faces robustness challenges due
+to environmental uncertainty. To address this, distributionally robust Markov games (RMGs) optimize
+worst-case performance when the environment deviates from the nominal model within a uncertainty
+set. Beyond robustness, an equally urgent goal for MARL is data efficiency—sampling from vast state
+and action spaces that grow exponentially with the number of agents potentially leads to the curse of
+multiagency. However, current provably data-efficient algorithms for RMGs are limited to tabular settings
+with finite state and action spaces, which are only computationally manageable for small-scale problems,
+leaving RMGs with large-scale (or infinite) state spaces largely unexplored. The only existing work beyond
+tabular settings focuses on linear function approximation (LFA) for a restrictive class of RMGs using vanish
+minimal value assumption and still suffers from sample complexity with the curse of multiagency. In this
+work, we focuses on general RMGs with LFA. For uncertainty sets defined by total variation distance,
+we develop provably data-efficient algorithms that break the curse of multiagency in both the generative
+model setting and a newly proposed online interactive setting. To our knowledge, our results are the first to
+break the curse of multiagency of sample complexity for RMGs with large (possibly infinite) state spaces,
+regardless of the uncertainty set construction.
+Contents
+1
+Introduction
+2
+2
+Related work
+3
+3
+Problem Formulation
+4
+3.1
+Background: standard linear Markov games . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+4
+3.2
+Distributionally robust linear MGs . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5
+4
+Robust Linear MGs with a Generative Model
+6
+4.1
+Algorithm Design . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+7
+4.2
+Theoretical Guarantees . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+7
+5
+Robust Linear MGs with Online Adversarial Environment
+8
+5.1
+Interactive Data Collection within the Uncertainty Set . . . . . . . . . . . . . . . . . . . . . . . .
+8
+5.2
+Algorithm Design . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+9
+5.3
+Theoretical Guarantee . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+11
+6
+Conclusion
+12
+A Algorithm Design with a Generative Model
+17
+B
+Proof of Theorem 1
+18
+*Machine Learning Department, Carnegie Mellon University.
+†Department of Electrical and Computer Engineering, Johns Hopkins University, MD 21286, USA.
+1
+arXiv:2605.03125v2  [cs.LG]  6 May 2026
+
+C Proof of Theorem 2
+19
+C.1
+Preliminaries
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+19
+C.2
+Proof pipeline of Theorem 2
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+21
+C.3
+Proof of auxiliary results . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+27
+D Proof of Theorem 3
+30
+D.1
+Proof of auxiliary results. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+35
+1
+Introduction
+Multi-agent reinforcement learning (MARL), formulated as Markov games (MGs) for strategic games, provides
+a powerful framework for sequential decision-making problems involving multiple agents interacting in a shared
+environment. MARL has demonstrated strong empirical success across a wide range of domains, including fine-
+tuning multi-LLM agent systems [Park et al., 2025], autonomous driving [Zhou et al., 2020], games [Silver et al.,
+2017], and ecosystem protection [Fang et al., 2015]. Due to the inherently conflicting objectives among agents,
+solution concepts for MGs are typically defined in terms of equilibrium notions: joint strategies under which no
+rational agent has an incentive to deviate unilaterally, assuming all other agents keep their strategies fixed. Widely
+studied examples include Nash equilibria (NE) [Nash, 1951, Shapley, 1953], correlated equilibria (CE), and coarse
+correlated equilibria (CCE) [Aumann, 1987, Moulin and Vial, 1978].
+Robustness becomes a central challenge in MARL, as learned solutions can be highly sensitive to subtle
+perturbations in human behavior and environmental dynamics, potentially leading to substantial degradation in both
+individual-agent performance and overall return [Balaji et al., 2019, Zhang et al., 2020a, Zeng et al., 2022, Yeh
+et al., 2021]. This motivates the development of algorithms that remain reliable under uncertainty—particularly in
+high-stakes or safety-critical applications—and has spurred growing interest in robust MARL through the lens of
+distributionally robust Markov games (RMGs) [Karde¸s et al., 2011, Zhang et al., 2020a, Shi et al., 2024a]. Unlike
+standard MGs, which assume a fixed environment, RMGs explicitly pursue robustness by optimizing worst-case
+performance over environments within a prescribed uncertainty set.
+Beyond robustness, an equally critical goal in MARL is data efficiency. In extensive real-world applications,
+agents must sample from environments with vast state and action spaces. This challenge is further amplified in
+MARL by the exponential growth of the joint action space as the number of agents increases, leading to potentially
+exploding sample complexity—a phenomenon known as the curse of multiagency. Consequently, substantial
+research effort has focused on designing provably sample-efficient algorithms not only for RMGs [Blanchet et al.,
+2024, Shi et al., 2024b] but also for broader MARL problems [Wang et al., 2023, Jin et al., 2021].
+However, current sample-efficient algorithms are often limited to tabular RMGs with finite state and action spaces.
+In practice, (multi-agent) RL problems inherently involve large-scale or even continuous and infinite-dimensional
+state spaces—e.g., transportation with autonomous vehicles [Hua et al., 2025], robotics and swarm manipulation
+[Orr and Dutta, 2023], water and energy systems [Jia and Pei, 2025], and financial markets [Mohl et al., 2025].
+Scaling learning algorithms to such large-scale state spaces poses significant data and computational challenges.
+To address this, function approximation—such as deep neural networks—is widely employed in RL [Silver et al.,
+2016, Vinyals et al., 2019, Wang et al., 2023, Cui et al., 2023]. Nevertheless, incorporating function approximation
+into provably sample-efficient solutions for RMGs remains largely unexplored. The only existing work [Zheng
+and Lin, 2025] studies linear function approximation in an online setting, focusing on a restrictive class of RMGs
+[Wang et al., 2023, Jin et al., 2019] and requiring an additional vanishing minimal value assumption to obtain
+meaningful guarantees; moreover, its sample complexity still suffers from the curse of multiagency. This raises an
+open question:
+Can the curse of multiagency be tamed in robust Markov games with large-scale state spaces?
+To address this gap, to the best of our knowledge, this work provides the first provably sample-efficient algorithm
+for RMGs with large-scale (or infinite) state spaces that avoids the curse of multiagency. In particular, we focus on
+linear function approximation. Let S and A1, . . . , An denote the cardinality of the state space and the action spaces
+of n agents, respectively; let d denote the feature dimension of the linear function class for each state-action pair
+(see (2) for details). Let H denote the horizon (number of steps per episode), and let T denote the total number of
+episodes in the online learning process. The main contributions are summarized as below:
+• We focus on distributionally robust linear Markov games (R-LMGs), i.e., RMGs with linear function approxi-
+mation. Under the data collection mechanism with a generative model, we develop a provable algorithm that
+achieves an ε-approximate CCE for R-LMGs using total variation uncertainty set, with sample complexity at
+most ˜O(H9d3/ϵ4) (cf. Theorem 2). To the best of our knowledge, this is the first provable sample-complexity
+guarantee for R-LMGs under the generative model setting, irrespective of the uncertainty-set formulation;
+moreover, it effectively overcomes the curse of multi-agency. Technically, unlike tabular RMGs, large-scale
+2
+
+Data Mechanism
+Algorithm
+Robust MG Model
+Uncertainty Set
+Break
+Curse
+Sample Complexity/ Regret(T)
+Generative Model
+P2MPO
+Tabular
+(s, a)-rectangularity
+No
+S4 (Qn
+i=1 Ai)3 H4
+ε2
+[Blanchet et al., 2024]
+DR-NVI
+Tabular
+(s, a)-rectangularity
+No
+SH3 Qn
+i=1 Ai
+ε2
+min
+n
+H,
+1
+mini σi
+o
+[Shi et al., 2024a]
+Robust-Q-FTRL
+Tabular
+fictitious
+Yes
+SH6 Pn
+i=1 Ai
+ε4
+min
+n
+H,
+1
+mini σi
+o
+[Shi et al., 2024b]
+(s, ai)-rectangularity
+This Work
+Linear,
+fictitious
+(Generative)
+d = S maxi∈[n] Ai
+(s, ai)-rectangularity
+Yes
+H9d3
+ε4
+Online Interaction
+DRMG
+[Farhat et al., 2025]
+Tabular
+(s, a)-rectangularity
+No
+˜O
+ q
+min{σ−1
+min, H}HS(Q
+i∈[n] Ai)T
+
+,
+DR-CCE-LSI
+Linear,
+(s, a)-rectangularity
+No
+dcurseH min
+
+H,
+1
+min{σi}
+	 √
+T
+[Zheng and Lin, 2025]
+dcurse = S Q
+i∈[n] Ai
+This Work
+Linear,
+fictitious
+(Online)
+d = S maxi∈[n] Ai
+(s, ai)-rectangularity
+Yes
+d maxi∈[n] Ai H2√
+T
+Table 1: The existing results of sample complexity in the generative model setting (or regret in the online setting)
+for finding an ε-approximate equilibrium in finite-horizon, multi-agent, general-sum robust Markov games (RMGs),
+omitting logarithmic factors. To our knowledge, this work provides the first algorithms that break the curse of
+multiagency for large (possibly infinite) state spaces using linear function approximation.
+(possibly infinite) state spaces make exhaustive sampling over all state–action pairs infeasible. We therefore
+employ a infinite-to-finite reduction to sample a carefully chosen finite subset and generalize to the full state
+space.
+• Beyond the generative model setting, we consider a more practical data-collection regime—an online interactive
+protocol in which agents sample Markovian trajectories from transition kernels within the uncertainty set
+of R-LMGs, rather than solely from the nominal kernel. In this setting, we propose a sample-efficient
+algorithm that attains sublinear regret ˜O
+
+d maxi∈[n] Ai H2√
+T
+
+(cf. Theorem 3), thereby breaking the curse
+of multiagency. Technically, since the true robust value function is unknown, we cannot sample directly from
+the worst-case transition kernel and must instead approximate the adversarial environment. To this end, beyond
+the optimistic value estimates commonly used in standard linear MGs for policy updates, we introduce a new
+sampling strategy that leverages an additional sequence of pessimistic robust value estimates to approximate
+the adversarial model, combined with a hybrid sampling scheme to establish our guarantees.
+2
+Related work
+Distributionally Robust RL.
+Standard reinforcement learning (RL) methods can be highly sensitive to pertur-
+bations of environment dynmaics (transition kernels and reward function) [Zhang et al., 2020a, Mahmood et al.,
+2018]. To enhance robustness, distributionally robust RL (robust RL) seeks policies that optimize worst-case
+performance over a prescribed uncertainty set by incorporating distributionally robust optimization (DRO) into
+sequential decision making. DRO has also been extensively studied in supervised learning Rahimian and Mehrotra
+[2019], Gao [2020], Bertsimas et al. [2018], Duchi and Namkoong [2018], Blanchet and Murthy [2019], Gao and
+Kleywegt [2023].
+Distributionally robust RL was first studied in the single-agent setting [Nilim and El Ghaoui, 2005, Iyengar,
+2005, Badrinath and Kalathil, 2021, Zhou et al., 2021, Shi and Chi, 2022, Shi et al., 2023]. More recently, DRO
+formulations have been incorporated to multi-agent RL and formulates robust Markov games (RMGs) Zhang et al.
+[2020a], Karde¸s et al. [2011], Ma et al. [2023], Blanchet et al. [2023], Shi et al. [2024a]. Existing sample-complexity
+guarantees for algorithms of RMGs largely focus on tabular settings with finite state and action spaces Ma et al.
+[2023], Blanchet et al. [2024], Shi et al. [2024a,b], while comparatively few results address large-scale or infinite
+state spaces. To our knowledge, the only existing work [Zheng and Lin, 2025] studied RMGs under linear function
+approximation. [Zheng and Lin, 2025] focuses on a restrictive class of RMGs [Zheng and Lin, 2025, Lu et al., 2024]
+that requires an additional vanishing minimal value assumption, which is a more restrictive subclass of RMGs than
+the setting considered in this work; moreover, its sample complexity still suffers from the curse of multiagency
+when transferred to the tabular setting. In this work, we focus on general RMGs under independent per-agent
+linear function approximation modeling with no further assumption on the structure of the value function, and
+achieve sample complexity that breaks the curse of multi-agency. See the discussion after Theorem 3 for a detailed
+comparison.
+3
+
+Multi-Agent RL with Function Approximation.
+Linear function approximation (LFA) was first studied in
+the single-agent setting [Jin et al., 2020, Yang and Wang, 2020]. Building on these techniques, Xie et al. [2020]
+and Chen et al. [2024] investigated Markov games under centralized LFA, where a central function class models
+value functions across the joint actions of all agents. This setting makes circumventing the curse of multi-agency
+challenging. To address this issue, Wang et al. [2023], Cui et al. [2023] introduced independent per-agent linear
+function classes and correspondingly developed provably efficient algorithms that break the curse of multi-agency;
+further, Dai et al. [2024] obtained optimal dependence on the action-set size via sharper analysis. Beyond LFA,
+several works have studied Markov games with general function approximation in both centralized settings [Huang
+et al., 2022, Ni et al., 2022, Xiong et al., 2022, Chen et al., 2022, Zhan et al., 2023, Jin et al., 2022] and per-agent
+settings [Wang et al., 2023]. In this paper, we extend independent per-agent LFA to a popular robust counterpart of
+standard MGs—robust linear MGs (R-LMGs). Compared to standard MGs, in both generative and online settings,
+we must handle the additional statistical error induced by the high nonlinearity of R-LMGs with respect to the
+nominal transition kernel. In the online interactive setting in particular, additional challenges arise from the need to
+sample from the approximate adversarial environment and from the fact that the LFA assumption applies solely to
+the nominal kernel; kernels within the uncertainty set do not necessarily preserve this linear structure. To address
+this, we introduce a hybrid sampling strategy that uses a sequence of pessimistic robust value estimates, allowing us
+to estimate the nominal transition kernel satisfying LFA through ridge regression and then apply the pessimistic
+estimates to approximate the adversarial model for subsequent robust objective estimation.
+Breaking the Curse of Multiagency in Multi-Agent RL.
+In multi-agent reinforcement learning (MARL), the
+joint action space grows exponentially with the number of agents, making it crucial to develop algorithms whose
+sample complexity does not scale exponentially in the number of agents—often referred to as breaking the curse
+of multi-agency. This challenge is ubiquitous in MARL and has attracted substantial interest. Song et al. [2021],
+Rubinstein [2017], Bai and Jin [2020] show that learning a Nash equilibrium in general Markov games can require
+sample complexity exponential in the number of agents. This has motivated work on alternative solution concepts,
+such as correlated equilibrium (CE) and coarse correlated equilibrium (CCE), for which non-exponential guarantees
+are possible. For standard MGs, Daskalakis et al. [2023] provide a complexity bound of eO(H11S3 maxi∈[n] Ai/ϵ3)
+for learning a CCE, and Jin et al. [2021], Song et al. [2021], Li et al. [2022] also propose algorithms with non-
+exponential sample complexity, both for tabular MGs. Beyond the tabular setting, Cui et al. [2023] and Wang et al.
+[2023] develop algorithms that break the curse of multi-agency under independent per-agent LFA. Beyond standard
+Markov games, Song et al. [2021], Alatur et al. [2024], Dong et al. [2024] study Markov potential games and give
+algorithms that learn Nash equilibria with sample complexity that does not scale exponentially with the number of
+agents.
+For robust Markov games, breaking the curse remains largely underexplored. The only existing results that breaks
+the curse of multi-agency Shi et al. [2024b], Jiao and Li [2024] are restricted to tabular RMGs with R-contamination
+or TV distance. To the best of our knowledge, this is the first work to break the curse of multi-agency for large-scale
+(continuous) state space, in both generative model and online data collection setting.
+3
+Problem Formulation
+3.1
+Background: standard linear Markov games
+Finite-horizon multi-agent general-sum Markov games (MGs). We consider an episodic finite-horizon general-
+sum MG represented by the tuple (H, S, {Ai}i∈[n], P, {ri}i∈[n]), where H denotes the length of each episode and
+S represents the state space. The joint action space for all agents is defined as A = A1 × · · · × An, where, for
+each i ∈[n], Ai is a finite action set of agent i with cardinality Ai. We use a ∈A to represent the joint action of
+all agents, and a−i to denote the joint action of all agents except for agent i. Additionally, P = {Ph}h∈[H] is a
+collection of transition kernels, where Ph(· | s, a) gives the distribution of the next state when agents take action a
+at state s and step h. For each agent i, ri = {ri,h}h∈[H] represents the reward functions, where agent i receives
+ri,h(s, a) ∈[0, 1] when all agents take action a at state s and step h.
+To continue, we focus on Markov policies, where the action selection rule depends only on the current state,
+independent of the previous trajectory. Specifically, for each agent i ∈[n], actions are chosen according to the
+policy πi = {πi,h : S →∆(Ai)}1≤h≤H. Here, πi,h(ai | s) denotes the probability of selecting action ai ∈Ai in
+state s at time step h.The joint policy for all agents is represented as π = π1 × π2 × · · · × πn : S × [H] →∆(A).
+Additionally, we define π−i = ⊗j̸=iπj to denote the joint policy of all agents except for agent i. For any given
+joint policy π and transition kernel P in a Markov game, the long-term cumulative reward for the i-th agent can
+be described by the value function V π,P
+i,h
+: S →R (or the Q-function Qπ,P
+i,h : S × A →R) as follows: for all
+(h, s, a) ∈[H] × S × A,
+Qπ,P
+i,h (s, a) := Eπ,P
+ PH
+t=h ri,t
+ st, at
+
+| sh = s, ah = a
+
+,
+V π,P
+i,h (s) := Eπ,P
+ PH
+t=h ri,t
+ st, at
+
+| sh = s
+
+.
+(1)
+4
+
+Here, the expectation is taken over the trajectory {(st, at)}h≤t≤H generated by following the joint policy π under
+the transition kernel P.
+Linear Markov games: MGs with per-agent independent linear function approximation.
+In this work, we
+focus on MGs with linear function approximation (LFA), abbreviated by linear MGs later, assuming that each
+agents’ transitions and reward functions can be described by independent linear functions, as proposed by Cui et al.
+[2023], Wang et al. [2023], Dai et al. [2024]. Specifically, in any linear MG with transition kernel P = P 0, for each
+agent i ∈[n], there exists a known d-dimensional feature mapping ϕi : S × Ai →Rd, such that for all joint policy
+π : [H] × S 7→∆(A), as well as (i, h, s, ai) ∈[n] × [H] × S × Ai, we have
+Ea−i∼π−i(s)
+
+P 0
+h(· | s, (ai, a−i))
+
+= ϕi(s, ai)⊤µπ−i
+i,h ,
+Ea−i∼π−i(s) [ri,h(s, (ai, a−i))] = ϕi(s, ai)⊤θπ−i
+i,h ,
+(2)
+where µπ−i
+i,h = (µπ−i,(1)
+i,h
+, . . . , µπ−i,(d)
+i,h
+)⊤consists of d-rows, where each row µπ−i,(j)
+i,h
+is a unknown signed measure
+over S. θπ−i
+i,h ∈Rd is the unknown reward parameter. We assume the standard normalization bounds: ∥θπ−i
+i,h ∥2 ≤d
+and ∥µπ−i
+i,h (s)∥2 ≤
+√
+d for all (s, h) ∈S × [H]. Here, µπ−i
+i,h (s) ∈Rd denotes the feature vector corresponding to
+state s over time step h.
+Remark.
+The above assumption on the linear structure (cf. (2)) is strictly weaker than that in the closely related
+prior work [Zheng and Lin, 2025, Assumption 3.1], which also studies robust linear MGs but adopts a centralized
+linear structure. Specifically, Zheng and Lin [2025] requires the transition kernel Ph(s′ | s, a) for each state-joint
+action (s, a) to admit a linear representation proportional to a feature vector ϕ(s, a).
+3.2
+Distributionally robust linear MGs
+To consider robustness for linear MGs, we focus on a distributionally robust linear Markov game (R-LMG),
+characterized by the tuple {S, {Ai}i∈[n], {Uσi
+ρ (P 0, ·)}i∈[n], r, H}. The key difference between an R-LMG and a
+standard linear MG is that, in an R-LMG, the transition kernel for each agent i can vary within its own uncertainty
+set Uσi
+ρ (P 0, ·) around a nominal transition kernel P 0. Note that the nominal transition P 0 and r satisfy the linear
+function approximation described in (2), while other transitions within the uncertainty set Uσi
+ρ (P 0, ·) do not need
+to satisfy LFA or any other modeling assumptions. We shall specify the uncertainty set Uσi
+ρ (P 0, ·) with ρ and σi
+shortly.
+Fictitious uncertainty set.
+Robust MGs (and also robust linear MGs) form a broad class due to the flexibility in
+specifying uncertainty sets that capture different notions of model mismatch and shifts. For a generic uncertainty
+set Uσi
+ρ (P 0, ·), ρ represents a divergence function that quantifies the discrepancy between transition kernels, and
+σi ≥0 controls the uncertainty radius for agent i. Various choices of the divergence function ρ can be considered,
+including but not limited to f-divergence family (such as total variation and Kullback-Leibler (KL) divergence),
+Wasserstein distance Xu et al. [2023], and learning-based approximation Ding et al. [2023]. In this work, we
+adopt the fictitious uncertainty sets Uσi
+ρ (P 0, π) from Shi et al. [2024b], which model each agent as addressing
+and responding to the aggregate uncertainty induced by all other agents, rather than decomposing uncertainty into
+agent-by-agent individual uncertainty. This aligns with realistic human decision-making under uncertainty, as
+observed in behavioral economics [Goeree et al., 2005, Sandomirskiy et al., 2024].
+To specify, we firstly introduce some useful notations. For all (s, a, h) ∈S × A × [H], let P 0
+h,s,a ∈∆(S)
+represent the nominal transition kernel such that, for all s′ ∈S, we have P 0
+h,s,a(s′) = P 0
+h(s′ | s, a). Additionally,
+let A−i := Q
+j̸=i Aj. And we define the expected nominal transition kernel conditioned on agent i selecting action
+ai ∈Ai, while the other agents follow a conditional policy, as described below:
+P π−i
+h,s,ai(s′) := P
+a−i∈A−i
+πh(ai,a−i|s)
+πi,h(ai|s) P 0
+h,s,a(s′),
+∀s′ ∈S.
+(3)
+Armed with the notation, for any joint policy π : S × [H] →∆(A) and uncertainty levels {σi}1≤i≤n, the
+uncertainty set is defined as {Uσi
+ρ (P 0, π)}i∈[n] as Uσi
+ρ (P 0, π) = ⊗Uσi
+ρ (P π−i
+h,s,ai), where
+Uσi
+ρ (P π−i
+h,s,ai) :=
+
+P ∈∆(S) : ρ(P, P π−i
+h,s,ai) ≤σi
+	
+.
+(4)
+Robust value functions. In a robust linear Markov game, each agent optimizes its worst-case performance. For a
+joint policy π : S × [H] →∆(A), we define agent i’s robust value function {V π,σi
+i,h }h∈[H] and robust Q-function
+{Qπ,σi
+i,h }h∈[H]: for all (i, h, s, ai) ∈[n] × [H] × S × Ai,
+Qπ,σi
+i,h (s, ai) := infP ∈U
+σi
+ρ (P 0,π) Qπ,P
+i,h (s, ai),
+V π,σi
+i,h (s) := infP ∈U
+σi
+ρ (P 0,π) V π,P
+i,h (s).
+(5)
+Notably, unlike in (1), the Q-function for agent i is evaluated based solely on its individual action ai ∈Ai, rather
+than the joint action a ∈A of all agents. We further define the robust best-response policy as the corresponding
+5
+
+benchmark value function. For each agent i ∈[n], given the policies of the other n −1 agents, define for all
+(h, s) ∈[H] × S,
+V ⋆,π−i,σi
+i,h
+(s) := maxπ′
+i: S×[H]→∆(Ai) V π′
+i×π−i, σi
+i,h
+(s).
+(6)
+Any maximizer π′
+i is referred to as a robust best response of agent i.
+Solution concepts: robust equilibria.
+Analogous to standard MGs, we introduce two types of equilibria as the
+learning objectives in R-LMGs, the robust variants — robust Nash equilibrium (NE) and robust coarse correlated
+equilibrium (CCE):
+• Robust Nash equilibrium (Robust NE): A product policy π = π1 × · · · × πn : S × [H] →Qn
+i=1 ∆(Ai) is a
+robust NE if
+V π,σi
+i,1
+(s) = V ⋆,π−i,σi
+i,1
+(s),
+∀(i, s) ∈[n] × S.
+(7)
+In other words, fixing other agents’ policy π−i, agent i cannot improve its worst-case outcome (i.e., the robust
+value function) by unilaterally changing its own policy.
+• Robust coarse correlated equilibrium (Robust CCE): A distribution over joint product policies ξ := {ξh}h∈[H] :
+[H] →∆(S →Q
+i∈[n] ∆(Ai)) is a robust CCE if, for all (i, s) ∈[n] × S,
+Eπ∼ξ
+
+V π,σi
+i,1
+(s)
+
+≥maxπ′
+i:S×[H]→∆(Ai) Eπ∼ξ
+
+V π′×π−i,σi
+i,1
+(s)
+
+.
+Intuitively, when the joint policy π is drawn from ξ, no agent can increase its expected robust value by
+committing to an alternative policy.
+Building on the definition of the fictitious uncertainty set, the following theorem establishes the existence of both a
+robust NE and a robust CCE in robust linear MGs (R-LMGs). The proof is deferred to Appendix B.
+Existence of robust NE
+Theorem 1. For any robust linear MG {S, {Ai}1≤i≤n, {Uσi
+ρ (P 0, ·)}1≤i≤n, r, H} with linear approximation
+(cf. (2)) and fictitious uncertainty sets, there exists at least one robust NE, which further implies the existence of
+at least one robust CCE.
+This theorem extends existing robust-NE existence results in [Shi et al., 2024b] for robust MGs with finite state
+spaces to settings with possibly infinite state spaces, by combining Glicksberg’s fixed-point theorem [Glicksberg,
+1952] with additional analytic arguments.
+Additionally, for any joint policy π : S × [H] →∆(A), the robust value function can be represented by the
+following equation, which we refer to as the robust Bellman equation:
+V π,σi
+i,h (s) = Eai∼πi,h(s)
+
+rπ−i
+i,h (s, ai) + infU
+σi
+ρ (P
+π−i
+h,s,ai) PV π,σi
+i,h+1
+
+,
+(8)
+where we define rπ−i
+i,h (s, ai) = Ea−i∼π−i,h(s) [ri,h(s, a)] for all (s, ai) ∈S × Ai.
+Specification of the uncertainty set: total variation (TV).
+In this work, we consider the total variation (TV)
+distance as the divergence function ρ, motivated by its simplicity, practical utility [Szita et al., 2003, Lee et al., 2021,
+Pan et al., 2023], and potential theoretical advantages [Shi et al., 2023, 2024a]. Namely, for any two distributions
+P, P ′ ∈∆(S), the TV distance between P and P ′ is given by:
+∥P −P ′∥dTV = 1
+2
+P
+s∈S |P(s) −P ′(s)| .
+(9)
+For simplicity, we denote Uσi(·) := Uσi
+dTV(·) throughout the rest of the paper.
+4
+Robust Linear MGs with a Generative Model
+In both single-agent and multi-agent RL, three data-collection mechanisms are widely used: the generative model
+setting [Zhang et al., 2020b, Li et al., 2022], the offline setting [Blanchet et al., 2023], and the online setting [Jin
+et al., 2018]. In this section, we begin with the fundamental generative model setting, in which we assume access to
+a generative model or simulator that provides samples s′ ∼P 0
+h(· | s, a) from the nominal environment P 0 for any
+given state, joint action, and time-step tuple (s, a, h) ∈S × A × [H].
+To learn equilibria in MARL, we focus on finding an ε-approximate CCE using as few samples as possible. This
+is motivated by the fact that computing a Nash equilibrium is generally intractable [Daskalakis, 2013], while finding
+an exact robust equilibrium is computationally hard and often impractical [Aghassi and Bertsimas, 2006, Wiesemann
+6
+
+et al., 2013]. Mathematically, our goal is to find a distribution ξ = {ξh}h∈[H] : [H] →∆(S →Q
+i∈[n] ∆(Ai))
+over policies such that
+maxs∈S,i∈[n]
+
+Eπ∼ξ
+
+V ⋆,π−i,σi
+i,1
+(s)
+
+−Eπ∼ξ
+
+V π,σi
+i,1
+(s)
+ 	
+≤ε.
+(10)
+4.1
+Algorithm Design
+To solve robust linear MGs (R-LMGs), we propose L-Robust-Q-FTRL (outlined in Algorithm 3). Motivated
+by Robust-Q-FTRL algorithm developed for robust MGs in tabular setting [Shi et al., 2024b], it incorporates
+designs tailored to linear function approximation (LFA) for large-scale possibly infinite state space, through an
+infinite-to-finite sampling design and leveraging ridge regression to estimate the transition probabilities and reward
+functions. Due to the space limit, we will introduce this key module of infinite-to-finite sampling for nominal model
+estimation, which differs fundamentally from the tabular robust MG setting. The details of the entire algorithm are
+postponed to the Appendix A.
+Nominal model estimation: constructing finite set reflecting (infinite) state space. Unlike the tabular case, where
+the state space is finite and relatively small, sampling costs become prohibitive when enumerating all state-action
+pairs in a large-scale (or infinite) state space. To address this challenge, we employ the following lemma, a
+widely-used tool for linear Markov games [Wang et al., 2023]:
+Lemma 1
+Let X ⊂Rd be a compact, full-dimensional set a There exists a distribution ρ supported on at most d(d + 1)/2
+points in X such that, defining Σ = Ex∼ρ[xx⊤], we have Σ is invertible and ∥x∥2
+Σ−1 ≤d for all x ∈X.
+aHere, full-dimensional implies that the linear span of X covers the entire space, i.e., span(X) = Rd. Namely, there
+exists a distribution ρ over X so that the second moment matrix Σ = Ex∼ρ[xx⊤] is positive definite and invertible. See
+Boyd and Vandenberghe [2004].
+The proof of Lemma 1 can be found in Lattimore and Szepesvári [2020]. Without loss of generality, we assume
+that the feature set of each agent i, denoted by Xi := {ϕi(s, ai)}(s,ai)∈S×Ai, is full-dimensional. If this is not the
+case, the model parameters can be represented using a lower-dimensional linear parameterization (i.e., a smaller d).
+Applying Lemma 1, we can construct a support set of state-action pairs Yi ⊂S × Ai with |Yi| ≤d(d + 1)/2, and a
+distribution ρi over Yi such that max(s,ai)∈S×Ai∥ϕi(s, ai)∥2
+Σ−1
+i
+≤d, where Σi = E(s,ai)∼ρi[ϕi(s, ai)ϕi(s, ai)⊤].
+Given the finite set Yi, we query the generative model ⌈Nρi(s, ai)⌉times for each (s, ai) ∈Yi. This yields a total
+sample size of at most N + d(d + 1)/2. Crucially, this sampling design relies only on the finite set Yi, making the
+process feasible even when the original state-action space Xi is infinite.
+Armed with the constructed finite set Yi for each agent i, we estimate nominal transitions and rewards via ridge
+regression. L-Robust-Q-FTRL then follows an adversarial online learning procedure similar to Robust-Q-FTRL [Li
+et al., 2022], using backward recursion from h = H to h = 1. At each step h, the algorithm executes a K-iteration
+loop that samples around size N based on Yi, estimates the nominal model, and updates the robust Q-function
+via the dual form of robust Bellman equation [Iyengar, 2005] (cf. (19) in Appendix A). After completing the K
+iterations, it constructs an optimistic robust value function by adding a bonus term βi,h. See Appendix A for more
+details.
+4.2
+Theoretical Guarantees
+We provide the theoretical guarantee for the sample complexity of L-Robust-Q-FTRL in Algorithm 3.
+Theoretical Guarantee for Algorithm 3
+Theorem 2. Consider any robust linear MG {S, {Ai}1≤i≤n, {Uσi(P 0, ·)}1≤i≤n, r, H} with uncer-
+tainty level {σi}i∈[n] and some δ
+∈
+(0, 1).
+Algorithm 3 can output an ε-robust CCE ξ, i.e.,
+max1≤i≤n{Eπ∼ξ[V ⋆,π−i,σi
+i,1
+(s)] −Eπ∼ξ[V π,σi
+i,1
+(s)]} ≤ε with probability at least 1 −δ, provided that
+N ≥CH4d3/ε2 and K ≥CH4/ε2, where C is a positive constant. Namely, the requirement of the to-
+tal number of samples during the learning process is
+Nall = HK(N + d(d + 1)/2) ≥O
+ H9d3/ε4
+.
+The implications of the above theorem are as below:
+Breaking the curse of multi-agency in large state spaces.
+To the best of our knowledge, this provides the
+first provable sample complexity guarantees for robust linear MGs using a generative model, irrespective of
+7
+
+the uncertainty set formulation. To illustrate the implications of our results, we consider the reduction to the
+tabular setting, which corresponds to d = S maxi∈[n] Ai. Substituting this into Theorem 2 yields a complexity
+of O
+ H9S3 maxi∈[n](Ai)3/ε4
+, which depends polynomially on all salient parameters. This demonstrates that
+L-Robust-Q-FTRL is a sample-efficient algorithm for robust linear MGs, effectively overcoming the curse of
+multi-agency in the generative model setting. Comparisons with existing results in the tabular setting are summarized
+in Table 1.
+Technical insights.
+In contrast to robust Markov games in the tabular setting, estimating the transition model and
+reward function in large-scale (possibly infinite) state spaces presents a challenge, since sampling every state-action
+pair—as done in tabular robust Markov games—is infeasible. To address this, we construct a specific finite subset
+of the state-action space to sample from; this enables us to obtain sufficient model information for the entire space,
+followed by ridge regression to estimate the parameters. On the other hand, compared to standard linear MGs, the
+robust value function in R-LMGs is highly nonlinear with respect to the nominal transition kernel. As a result, the
+statistical error to be controlled is no longer a linear aggregation of the estimation errors across K iterations, which
+typically cancel out in standard linear MGs. We address this challenge by drawing N samples in each iteration
+(compared to a single sample in standard linear MGs) and employing a tailored decomposition of the robust value
+function to control the auxiliary statistical error, ultimately achieving a sharp sample complexity guarantee.
+5
+Robust Linear MGs with Online Adversarial Environment
+In this section, we move beyond the generative model setting and focus on learning R-LMGs in a more practical
+online interactive setting, where agents interact with the environment and collect Markovian trajectories, reflecting
+many real-world applications [Mnih et al., 2015, Vinyals et al., 2019]. Notably, the online setting in RMGs can
+be substantially more challenging than the generative model setting, due to the need to balance exploration and
+exploitation and to cope with statistical dependence along sampled trajectories.
+In contrast to the generative model setting discussed in Section 4, the online setting concerns not only the final
+output policy but also the performance throughout the entire exploration process, relative to the best possible
+performance in hindsight. Specifically, over a T-round online process, the goal is to minimize regret incurred along
+the way. Let ξt : [H] →∆
+ S →∆(Q
+i∈[n] Ai)
+
+denote the distribution over product policies executed by the
+algorithm at round t ∈[T]. The regret is then defined as
+Regret(T) := maxi∈[n]
+PT
+t=1
+
+Eπ∼ξt
+V ⋆,π−i,σi
+i,1
+(s1)
+
+−Eπ∼ξt
+V π,σi
+i,1
+(s1)
+	
+.
+(11)
+5.1
+Interactive Data Collection within the Uncertainty Set
+Many online interaction paradigms in practical studies allow agents to interact not only with the nominal environment
+but also with perturbed environments for adversarial training aimed at safety and sim-to-real transfer [Akkaya
+et al., 2019, Ding et al., 2020]. For instance, to address the sim-to-real gap in robotics [Akkaya et al., 2019] and
+safety in autonomous driving [Ding et al., 2020], the training environment is explicitly generated using approximate
+worst-case parameters or scenarios, actively configured to expose the agent’s vulnerabilities. This interaction
+paradigm is also reflected in recent theoretical works: Jackson et al. [2024] and Zhang et al. [2021] optimize policies
+against estimated adversarial environments, while Ren and Majumdar [2022] approximate worst-case models within
+a Wasserstein ball centered on nominal estimates.
+Motivated by such widely used online interaction paradigms, we propose an practically meaningful online
+protocol in which agents may sample from transition kernels within the prescribed uncertainty set, rather than only
+from the nominal kernel. Specifically, we can sample from the nominal environment and also utilize the following
+sampling mechanism interacting with an "adversarial environment" inside the uncertainty set, defined as:
+Definition 1
+(Interaction with an Adversarial Environment)
+For any agent i
+∈
+[n], given a collection of vectors {Vh
+:
+S
+→
+[0, H]}h∈[H] (which need
+not be the robust value functions) and a joint policy π, we are allowed to sample trajectories
+(s1, a1, r1(s1, a1), . . . , aH−1, rH−1(s1, a1), sH), where the transitions following sh+1 ∼P π−i,Vh+1
+i,h,sh,ai (·) with
+P π−i,Vh+1
+i,h,sh,ai
+:= arg minP ∈Uσi(P
+π−i
+h,sh,ai) PVh+1.
+Namely, we are allowed to interact with and sample from the still unknown approximate adversarial environment
+induced by the input approximate robust value function vectors {Vh}h∈[H]. This environment lies within the
+fictitious uncertainty set Uσi(P π−i
+h,sh,ai) (see (4)).
+8
+
+Comparison to prior online interaction mechanisms.
+Prior works on robust RL with online data collection [Lu
+et al., 2024, Zheng and Lin, 2025] consider agents to interact with only the fixed nominal environment. However, this
+mechanism is inherently ill-posed: even for a special subclass of tabular robust Markov games (single-agent robust
+Markov decision processes), achieving sublinear regret is generally impossible in the worst case, as noted by Lu et al.
+[2024, Theorem 3.2]. Consequently, analyses in this setting are typically established under additional assumptions
+on the RMGs considered, namely, that the robust value function satisfies a vanishing minimality condition [Lu et al.,
+2024, Zheng and Lin, 2025].
+Challenges.
+We emphasize that the proposed online interaction setting introduces unique challenges beyond those
+in standard linear MGs and in existing online interaction settings considered for R-LMGs.
+1. No degeneration to standard linear Markov games. Even if we can query a worst-case transition kernel
+with respect to a given value function, without access to the ground-truth robust value function, it is impossible to
+identify and sample from the exact worst-case transition kernel within the uncertainty set; therefore, the problem
+does not degenerate to solving a standard linear MG. The key challenge is therefore to approximate the worst-case
+environment using progressively more accurate estimates of the robust value function.
+2. The sampled adversarial environment can be non-linear. Prior work [Zheng and Lin, 2025] focuses on
+sampling only in the nominal transition environment satisfying linear function approximation, where the samples
+from the nominal model can be directly leveraged for estimating a linear model. While in our problems, we sample
+from both the nominal kernel and online adversarial environments lacking the linearity assumption. Consequently,
+the collected trajectories may be generated by a potentially non-linear model, which requires extra care in model
+estimation and in the design of subsequent procedures based on these samples.
+5.2
+Algorithm Design
+To solve R-LMGs in the proposed online interactive setting, we develop Online-L-Robust-Q-FTRL (summarized in
+Algorithm 2), which achieves an ε-approximate CCE for general R-LMGs (cf. (10)) and simultaneously minimizes
+regret. Compared to the generative model setting in Section 4, the main challenge is to design a sampling procedure
+that mimics drawing Markovian trajectories under the exact worst-case environment using only an estimated
+robust value function. Before presenting the full algorithmic pipeline, we first describe one key component: the
+sampling strategy employed by Online-L-Robust-Q-FTRL. This strategy differs substantially from those used in
+the generative model setting and from those for standard linear Markov games [Wang et al., 2023, Jin et al., 2021],
+which serve as inspiration for our approach.
+Collecting online trajectories in the approximate adversarial environment.
+At the t-th online sampling round,
+for t ∈[T], we run a K-iteration procedure at each time step h ∈[H]. For a fixed round t ∈[T], step h ∈[H],
+and iteration k, let πt,k
+h
+denote the current learned policy, and apply the hybrid sampling scheme in Algorithm 1.
+Concretely, for each agent i, we collect N samples by interacting with an approximate adversarial environment for
+the first h −1 steps, and then sampling from the nominal environment only at the final step h. The approximate
+adversarial environment in Algorithm 1 is specified by querying an additional collection of pessimistic robust value
+estimates {V l
+j}(j,l)∈[H]×[t−1]. These auxiliary pessimistic estimates are designed to handle robust linear Markov
+games and are crucial for sampling under adversarial dynamics, a difficulty that does not arise in standard linear
+Markov games [Wang et al., 2023, Jin et al., 2021].
+Specifically, for a given agent i, each l ∈[t −1], and each step j ∈[h −1], the agents first select a joint
+policy π uniformly from the set {⊗i′∈[n]πl,k
+i′,j}k∈[K] of K policies from round l. For the rest of the paper, we
+denote ai,h as the action of the i-th agent at time step h for all (i, h) ∈[n] × [H]. They then sample an
+action aj ∼π(· | sj) (Line 6) and observe the next state sj+1 from the adversarial kernel P
+π−i,V l
+i,j+1
+i,j,sj,ai,j
+(·), as
+in Definition 1. At step h, we switch strategies: the opponents’ joint policy π−i is selected uniformly from
+{⊗i′̸=iπl,k
+i′,h}k∈[K] and their actions are sampled as a−i,h ∼π−i(· | sh), while agent i samples ai,h uniformly from
+its action space (Line 9). Finally, we draw sh+1 from the nominal kernel P π−i
+h,sh,ai,h(·) (Line 10). We repeat this
+procedure ⌈N/t⌉times for each l ∈[t −1], yielding a dataset Di containing approximately N samples, denoted by
+{(s(m)
+1
+, a(m)
+1
+, r(m)
+1
+, . . . , a(m)
+h
+, r(m)
+h
+, s(m)
+h+1)}|Di|
+m=1.
+Algorithm 1
+Hybrid-Sampling
+1: Input: Agent i, step h, episode t, distribution ξl
+h, values {V l
+j }(j,l)∈[H]×[t−1].
+2: Repeat for each l ∈[t −1], iterating ⌈N/t⌉times:
+3:
+// Sample from the approximate adversarial environment for the first h −1 steps
+4: for j ∈[h −1] do
+5:
+// Random policy draw from historical FTRL iterates at step j.
+9
+
+6:
+Select π ∼Unif
+ {⊗i′∈[n]πl,k
+i′,j}k∈[K]
+
+, take action aj ∼π(· | sj)
+7:
+Collect state sample sj+1 ∼P
+π−i,V l
+j+1
+i,j,sj,ai,j (·) (see Definition 1))
+8:
+// At step h, explore ai uniformly; opponents from past policies.
+9: Select π−i ∼Unif({⊗i′̸=iπl,k
+i′,h}k∈[K]), a−i,h ∼π−i(sh), ai ∼Unif(Ai).
+10: Collect sh+1 ∼P π−i
+h,sh,ai,h(·) (defined in (3)).
+11: Output: Samples are collected in Di = {(s(m)
+1
+, a(m)
+1
+, r(m)
+1
+, . . . , a(m)
+h
+, r(m)
+h
+, s(m)
+h+1)}|Di|
+m=1.
+The central mechanism of Algorithm 2 is to construct both optimistic and pessimistic estimates of the robust value
+function for subseqeunt procedures. Using the pessimistic estimate, the algorithm collects online trajectory samples
+from an adversarial environment, while using the optimistic estimate to update the policy. We now describe the
+algorithm in detail. At each online round t ∈[T], the algorithm learns a distribution ξt over policies by running K
+iterations at each time step h ∈[H]. For any fixed round t and step h ∈[H], the k-th iteration proceeds as follows:
+• Estimate nominal model. In the generative-model setting of Section 4.1, one actively queries a pre-designed per-
+agent state-action set Yi from Lemma 1. In contrast, the online setting’s visited state-action pairs are determined
+entirely by the sampled trajectories in Di and need not—nor can they—be chosen as a prior. We therefore
+directly apply ridge regression to the trajectory samples in Di collected by Hybrid-Sampling to estimate the
+transition probabilities and the reward function:
+Λk,t
+i,h = P|Di|
+m=1 ϕi(s(m)
+h
+, a(m)
+i,h )ϕi(s(m)
+h
+, a(m)
+i,h )⊤+ λI,
+bθk,t
+i,h = (Λk,t
+i,h)−1 P|Di|
+m=1 ϕi(s(m)
+h
+, a(m)
+i,h )r(m)
+i,h ,
+(12a)
+bµk,t
+i,h = (Λk,t
+i,h)−1 P|Di|
+m=1 ϕi(s(m)
+h
+, a(m)
+i,h )δs(m)
+h+1,
+(12b)
+where Λk,t
+i,h ∈Rd×d, ϕi(·, ·) ∈Rd, bµk,t
+i,h ∈Rd →∆(S). Here, we denote δs as a measure over state space S
+so that the measure on state s is 1, and the measure on other states is 0, for all s ∈S. λ is the regularization
+parameter in ridge regression satisfying λ ≥1. For all (s, ai) ∈S × Ai, we compute the estimated reward
+function and transition probabilities as:
+rk,t
+i,h(s, ai) = ϕi(s, ai)⊤bθk,t
+i,h,
+P k,t
+i,h (· | s, ai) = ϕi(s, ai)⊤bµk,t
+i,h.
+(12c)
+• Update robust-Q-function and policy. Different from generative model setting, we now compute both the
+optimistic estimation and pessimistic estimation of the current-step Q-function. Specifically, for all (s, ai) ∈
+S × Ai, we compute qk,t
+i,h(s, ai) and qk,t
+i,h(s, ai) as follows:
+qk,t
+i,h(s, ai) = rk,t
+i,h(s, ai) + maxα∈
+
+V min,V max
+ 
+P k,t
+i,h (· | s, ai)
+
+V
+t
+i,h+1
+
+α −σi
+ α −mins′ 
+V
+t
+i,h+1
+
+α (s′)
+	
+,
+(13a)
+qk,t
+i,h(s, ai) = rk,t
+i,h(s, ai) + maxα∈
+
+V min,V max
+ 
+P k,t
+i,h (· | s, ai)
+
+V t
+i,h+1
+
+α −σi
+ α −mins′ 
+V t
+i,h+1
+
+α (s′)
+	
+.
+(13b)
+where we define V min = mins V
+t
+i,h+1(s), V max = maxs V
+t
+i,h+1(s), V min = mins V t
+i,h+1(s) and V max =
+maxs V t
+i,h+1(s). After calculating the q-function, we employ the Follow-the-Regularized-Leader (FTRL)
+strategy to update the learner’s policy, i,e.,
+∀(i, s, ai) ∈[n] × S × Ai : πk+1,t
+i,h
+(ai | s) =
+exp(ηk+1
+Pk
+l=1 ql,t
+i,h(s,ai))
+P
+ai∈Ai exp(ηk+1
+Pk
+l=1 ql,t
+i,h(s,ai)).
+• Estimate robust value function. Subsequently, we compute the optimistic and pessimistic estimates of the value
+function as follows:
+V
+t
+i,h(s) = min
+ PK
+k=1
+1
+K
+
+πk,t
+i,h(· | s), qk,t
+i,h(s, ·)
+
++ βt
+i,h,1(s), H −h + 1
+	
+V t
+i,h(s) = max
+ PK
+k=1
+1
+K
+
+πk,t
+i,h(· | s), qk,t
+i,h(s, ·)
+
+−βt
+i,h,2(s), 0
+	
+.
+(14)
+Here, for all (i, h, t, s) ∈[n] × [H] × [T] × S, the bonus terms are defined as
+βt
+i,h,1(s) = maxai∈Ai
+PK
+k=1
+1
+K
+ϕi(s, ai)
+ Λk,t
+i,h
+−1 4H
+q
+d ln(NH + 1) + ln
+  3T NHnK
+δ
+
++ 2H
+√
+d
+
+10
+
++ 1
+N + 2H
+q
+ln Ai
+K ,
+(15)
+βt
+i,h,2(s) = PK
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+ϕi(s, ai)
+ Λk,t
+i,h
+−1 4H
+q
+d ln(NH + 1) + ln
+  3T NHnK
+δ
+
++ 2H
+√
+d
+
++ 1
+N .
+(16)
+Algorithm 2
+Online-Robust-Q-Linear-FTRL
+1: Input: Iterations T, learning rate {ηt+1}.
+2: for t = 1, 2, . . . , T do
+3:
+Initialization: V
+t
+i,H+1 = V t
+i,H+1 = qt
+i,H+1 = 0, π1
+i,h(ai|s) = 1/Ai for all i, h, s, ai.
+4:
+for h = H, H −1, . . . , 1 and k = 1, . . . , K do
+5:
+// Backward procedure over [H] with K inner FTRL steps;
+6:
+for i = 1, 2, . . . , n do
+7:
+// Collect samples from the approximate adversarial environment
+8:
+Collect N samples with Hybrid-Sampling(i, h, t, {ξl}l<t, {V l
+i,j}(j,l)∈[H]×[t−1]) in Algo 1.
+9:
+// Estimate the transition probabilities, reward function, and current step Q-function
+10:
+Estimate rk,t
+i,h, P k,t
+i,h via (12) and q-function qk,t
+i,h and qk,t
+i,h via (13).
+11:
+// Update policy using FTRL with optimistic q only.
+12:
+Update policy for all (s, ai): πk+1,t
+i,h
+(ai|s) =
+exp(ηk+1
+Pk
+l=1 ql,t
+i,h(s,ai))
+P
+a′
+i∈Ai exp(ηk+1
+Pk
+l=1 ql,t
+i,h(s,a′
+i))
+13:
+Update V
+t
+i,h(s), V t
+i,h(s) via (14).
+14:
+Let ξt be the uniform distribution over product policies {πk,t
+h }(h,k)∈[H]×[K].
+15: Output: All distributions {ξt}t∈[T ] over product policies.
+5.3
+Theoretical Guarantee
+Theoretical Guarantee for Algorithm 2
+Theorem 3. Consider any R-LMG {S, {Ai}1≤i≤n, {Uσi(P 0, ·)}1≤i≤n, r, H} with a fixed initial state s1 ∈S,
+uncertainty levels {σi}i∈[n], and fix δ ∈(0, 1). Let N = K = T. Then, with probability at least 1 −δ, the
+regret of Algorithm 2 satisfies
+Regret(T) ≤˜O
+ H2d maxi∈[n] Ai
+√
+T
+
+.
+And if the online iteration time T satisfies T > H4d2 maxi∈[n](Ai)2/ϵ2, then Algorithm 2 outputs an ε-CCE.
+Breaking the curse of multiagency and comparison to prior work. To illustrate the implications of our
+results, we consider the specialization to the tabular setting, which corresponds to setting the feature dimension
+as d = S maxi∈[n] Ai. In this case, Theorem 3 yields the regret bound ˜O
+
+H2S maxi∈[n](Ai)2√
+T
+
+, which is
+polynomial in all salient parameters. This shows that Linear-Robust-Q-FTRL breaks the curse of multiagency in the
+proposed online interactive setting.
+A closely related work is Zheng and Lin [2025], which also studies robust linear MGs, but under a different
+online interactive setting: agents interact only with the fixed nominal transition kernel. Zheng and Lin [2025]
+focuses on a restrictive problem class in which the robust value function is required to satisfy a vanishing minimal
+value condition. Moreover, under some additional assumptions in [Zheng and Lin, 2025, Corollary 5.3], Zheng
+and Lin [2025] obtains a sublinear regret bound Regret(T) ≤˜O
+
+H min
+
+H,
+1
+min{σi}
+	
+dcurse
+√
+T
+
+, where, in the
+tabular reduction, the feature dimension becomes dcurse = S Qn
+i=1 Ai. Consequently, the regret bound in [Zheng
+and Lin, 2025, Corollary 5.3] scales as ˜O
+ H min
+
+H,
+1
+min{σi}
+	
+S Qn
+i=1 Ai
+√
+T
+
+, which grows exponentially in
+the number of agents through the joint action space Qn
+i=1 Ai. In contrast, Linear-Robust-Q-FTRL guarantees
+˜O
+
+H2S maxi∈[n](Ai)2 √
+T
+
+, thereby avoiding exponential dependence on the number of agents—a benefit that is
+retained even in the tabular setting.
+11
+
+Technical Contributions
+• Constructing an adversarial environment using a pessimistic value function. As discussed above, we
+cannot sample directly from the true worst-case adversarial transition dynamics because the ground-truth
+robust value function is unknown. To approximate that adversarial environment, in addition to the optimistic
+robust value estimates typically used to guide policy updates in standard (linear) MGs [Wang et al., 2023,
+Jin et al., 2021], we introduce a sequence of pessimistic robust value estimates. These pessimistic estimates
+are fed into the hybrid sampling module (cf. Algorithm 1) to obtain a tight lower bound on the robust value
+function under the true adversarial environment.
+• Maintaining nominal-model estimation via hybrid-environment sampling. A key technical challenge
+is that the linear function approximation assumption applies only to the nominal kernel; kernels in the
+uncertainty set need not preserve this structure, making direct estimation of the worst-case kernel intractable.
+To address this, we continue to estimate the nominal model while preserving the state–action occupancy
+distribution induced by the worst-case environment. Specifically, we use a hybrid sampling mechanism
+that rolls out Markovian trajectories under the approximate worst-case environment for the first h −1 steps
+and queries the nominal kernel only at the final step h. This design allows us to estimate the nominal
+kernel while preserving the state-action occupancy distribution induced by the worst-case environment up
+to step h −1, which play a crucial role in subsequent estimation of the value function corresponding to the
+worst-case environment.
+6
+Conclusion
+In this work, we develop provably data-efficient algorithms for robust linear Markov games (R-LMGs) for large-
+scale, possibly infinite state spaces under linear function approximation. Focusing on a fictitious uncertainty set
+defined via total variation, we study both the generative-model setting and a more practical online interactive
+data-collection setting. In both settings, to the best of our knowledge, we provide the first provably sample-efficient
+algorithms for R-LMGs that overcome the curse of multi-agency, regardless of the uncertainty set formulation.
+Notably, the proposed online interactive setting is practically meaningful while also preserving well-posedness
+for achieving sublinear regret. On the technical side, we introduce a new hybrid sampling mechanism to address
+the challenge of sampling from an approximate adversarial environment in the online setting, which may be of
+independent interest for future research.
+Acknowledgments
+The authors thank Prof. Yuejie Chi for her guidance throughout the process and Prof. Eric Mazumdar for very
+helpful discussions. Laixi Shi acknowledges funding support from MERL.
+References
+Chanwoo Park, Seungju Han, Xingzhi Guo, Asuman E Ozdaglar, Kaiqing Zhang, and Joo-Kyung Kim. Maporl:
+Multi-agent post-co-training for collaborative large language models with reinforcement learning. In Proceedings
+of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages
+30215–30248, 2025.
+Ming Zhou, Jun Luo, Julian Villella, Yaodong Yang, David Rusu, Jiayu Miao, Weinan Zhang, Montgomery Alban,
+Iman Fadakar, Zheng Chen, et al. Smarts: Scalable multi-agent reinforcement learning training school for
+autonomous driving. arXiv preprint arXiv:2010.09776, 2020.
+David Silver, Julian Schrittwieser, Karen Simonyan, Ioannis Antonoglou, Aja Huang, Arthur Guez, Thomas Hubert,
+Lucas Baker, Matthew Lai, Adrian Bolton, et al. Mastering the game of Go without human knowledge. Nature,
+550(7676):354–359, 2017.
+Fei Fang, Peter Stone, and Milind Tambe. When security games go green: Designing defender strategies to prevent
+poaching and illegal fishing. In IJCAI, pages 2589–2595, 2015.
+John Nash. Non-cooperative games. Annals of mathematics, pages 286–295, 1951.
+Lloyd S Shapley. Stochastic games. Proceedings of the national academy of sciences, 39(10):1095–1100, 1953.
+Robert J Aumann. Correlated equilibrium as an expression of Bayesian rationality. Econometrica: Journal of the
+Econometric Society, pages 1–18, 1987.
+12
+
+Hervé Moulin and J-P Vial. Strategically zero-sum games: the class of games whose completely mixed equilibria
+cannot be improved upon. International Journal of Game Theory, 7(3):201–221, 1978.
+Bharathan Balaji, Sunil Mallya, Sahika Genc, Saurabh Gupta, Leo Dirac, Vineet Khare, Gourav Roy, Tao Sun,
+Yunzhe Tao, Brian Townsend, et al. Deepracer: Educational autonomous racing platform for experimentation
+with sim2real reinforcement learning. arXiv preprint arXiv:1911.01562, 2019.
+Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Mingyan Liu, Duane Boning, and Cho-Jui Hsieh. Robust deep
+reinforcement learning against adversarial perturbations on state observations. Advances in Neural Information
+Processing Systems, 33:21024–21037, 2020a.
+Lanting Zeng, Dawei Qiu, and Mingyang Sun. Resilience enhancement of multi-agent reinforcement learning-based
+demand response against adversarial attacks. Applied Energy, 324:119688, 2022.
+Christopher Yeh, Chenlin Meng, Sherrie Wang, Anne Driscoll, Erik Rozi, Patrick Liu, Jihyeon Lee, Marshall Burke,
+David B Lobell, and Stefano Ermon. Sustainbench: Benchmarks for monitoring the sustainable development
+goals with machine learning. arXiv preprint arXiv:2111.04724, 2021.
+Erim Karde¸s, Fernando Ordóñez, and Randolph W Hall. Discounted robust stochastic games and an application to
+queueing control. Operations research, 59(2):365–382, 2011.
+Laixi Shi, Eric Mazumdar, Yuejie Chi, and Adam Wierman. Sample-efficient robust multi-agent reinforcement
+learning in the face of environmental uncertainty. arXiv preprint arXiv:2404.18909, 2024a.
+Jose Blanchet, Miao Lu, Tong Zhang, and Han Zhong. Double pessimism is provably efficient for distributionally
+robust offline reinforcement learning: Generic algorithm and robust partial coverage. Advances in Neural
+Information Processing Systems, 36, 2024.
+Laixi Shi, Jingchu Gai, Eric Mazumdar, Yuejie Chi, and Adam Wierman. Can we break the curse of multiagency in
+robust multi-agent reinforcement learning?, 2024b. URL https://arxiv.org/abs/2409.20067.
+Yuanhao Wang, Qinghua Liu, Yu Bai, and Chi Jin.
+Breaking the curse of multiagency: Provably efficient
+decentralized multi-agent rl with function approximation. In The Thirty Sixth Annual Conference on Learning
+Theory, pages 2793–2848. PMLR, 2023.
+Chi Jin, Qinghua Liu, Yuanhao Wang, and Tiancheng Yu. V-learning–a simple, efficient, decentralized algorithm
+for multiagent RL. arXiv preprint arXiv:2110.14555, 2021.
+Min Hua, Xinda Qi, Dong Chen, Kun Jiang, Zemin Eitan Liu, Hongyu Sun, Quan Zhou, and Hongming Xu.
+Multi-agent reinforcement learning for connected and automated vehicles control: Recent advancements and
+future prospects. IEEE Transactions on Automation Science and Engineering, 2025.
+James Orr and Ayan Dutta. Multi-agent deep reinforcement learning for multi-robot applications: A survey. Sensors,
+23(7):3625, 2023.
+Lei Jia and Yan Pei. Recent advances in multi-agent reinforcement learning for intelligent automation and control
+of water environment systems. Machines, 13(6):503, 2025.
+Valentin Mohl, Sascha Frey, Reuben Leyland, Kang Li, George Nigmatulin, Mihai Cucuringu, Stefan Zohren, Jakob
+Foerster, and Anisoara Calinescu. Jaxmarl-hft: Gpu-accelerated large-scale multi-agent reinforcement learning
+for high-frequency trading. In Proceedings of the 6th ACM International Conference on AI in Finance, pages
+18–26, 2025.
+David Silver, Aja Huang, Chris J Maddison, Arthur Guez, Laurent Sifre, George Van Den Driessche, Julian
+Schrittwieser, Ioannis Antonoglou, Veda Panneershelvam, Marc Lanctot, et al. Mastering the game of go with
+deep neural networks and tree search. nature, 529(7587):484–489, 2016.
+Oriol Vinyals, Igor Babuschkin, Wojciech M Czarnecki, Michaël Mathieu, Andrew Dudzik, Junyoung Chung,
+David H Choi, Richard Powell, Timo Ewalds, Petko Georgiev, et al. Grandmaster level in starcraft ii using
+multi-agent reinforcement learning. Nature, 575(7782):350–354, 2019.
+Qiwen Cui, Kaiqing Zhang, and Simon Du. Breaking the curse of multiagents in a large state space: Rl in markov
+games with independent linear function approximation. In The Thirty Sixth Annual Conference on Learning
+Theory, pages 2651–2652. PMLR, 2023.
+Zewu Zheng and Yuanyuan Lin. Distributionally robust online markov game with linear function approximation.
+arXiv preprint arXiv:2511.07831, 2025.
+Chi Jin, Zhuoran Yang, Zhaoran Wang, and Michael I. Jordan. Provably efficient reinforcement learning with linear
+function approximation, 2019. URL https://arxiv.org/abs/1907.05388.
+13
+
+Zain Ulabedeen Farhat, Debamita Ghosh, George K Atia, and Yue Wang. Online robust multi-agent reinforcement
+learning under model uncertainties. arXiv preprint arXiv:2508.02948, 2025.
+A Rupam Mahmood, Dmytro Korenkevych, Gautham Vasan, William Ma, and James Bergstra. Benchmarking
+reinforcement learning algorithms on real-world robots. In Conference on robot learning, pages 561–591. PMLR,
+2018.
+Hamed Rahimian and Sanjay Mehrotra.
+Distributionally robust optimization: A review.
+arXiv preprint
+arXiv:1908.05659, 2019.
+Rui Gao. Finite-sample guarantees for wasserstein distributionally robust optimization: Breaking the curse of
+dimensionality. arXiv preprint arXiv:2009.04382, 2020.
+Dimitris Bertsimas, Vishal Gupta, and Nathan Kallus. Data-driven robust optimization. Mathematical Programming,
+167(2):235–292, 2018.
+John Duchi and Hongseok Namkoong. Learning models with uniform performance via distributionally robust
+optimization. arXiv preprint arXiv:1810.08750, 2018.
+Jose Blanchet and Karthyek Murthy. Quantifying distributional model risk via optimal transport. Mathematics of
+Operations Research, 44(2):565–600, 2019.
+Rui Gao and Anton Kleywegt. Distributionally robust stochastic optimization with wasserstein distance. Mathemat-
+ics of Operations Research, 48(2):603–655, 2023.
+Arnab Nilim and Laurent El Ghaoui. Robust control of Markov decision processes with uncertain transition matrices.
+Operations Research, 53(5):780–798, 2005.
+Garud N Iyengar. Robust dynamic programming. Mathematics of Operations Research, 30(2):257–280, 2005.
+Kishan Panaganti Badrinath and Dileep Kalathil. Robust reinforcement learning using least squares policy iteration
+with provable performance guarantees. In International Conference on Machine Learning, pages 511–520.
+PMLR, 2021.
+Zhengqing Zhou, Qinxun Bai, Zhengyuan Zhou, Linhai Qiu, Jose Blanchet, and Peter Glynn. Finite-sample regret
+bound for distributionally robust offline tabular reinforcement learning. In International Conference on Artificial
+Intelligence and Statistics, pages 3331–3339. PMLR, 2021.
+Laixi Shi and Yuejie Chi. Distributionally robust model-based offline reinforcement learning with near-optimal
+sample complexity. arXiv preprint arXiv:2208.05767, 2022.
+Laixi Shi, Gen Li, Yuting Wei, Yuxin Chen, Matthieu Geist, and Yuejie Chi. The curious price of distributional
+robustness in reinforcement learning with a generative model. arXiv preprint arXiv:2305.16589, 2023.
+Shaocong Ma, Ziyi Chen, Shaofeng Zou, and Yi Zhou. Decentralized robust v-learning for solving markov games
+with model uncertainty. Journal of Machine Learning Research, 24(371):1–40, 2023.
+Jose Blanchet, Miao Lu, Tong Zhang, and Han Zhong. Double pessimism is provably efficient for distribu-
+tionally robust offline reinforcement learning: Generic algorithm and robust partial coverage. arXiv preprint
+arXiv:2305.09659, 2023.
+Miao Lu, Han Zhong, Tong Zhang, and Jose Blanchet. Distributionally robust reinforcement learning with
+interactive data collection: Fundamental hardness and near-optimal algorithm. arXiv preprint arXiv:2404.03578,
+2024.
+Chi Jin, Zhuoran Yang, Zhaoran Wang, and Michael I Jordan. Provably efficient reinforcement learning with linear
+function approximation. In Conference on Learning Theory, pages 2137–2143, 2020.
+Lin Yang and Mengdi Wang. Reinforcement learning in feature space: Matrix bandit, kernels, and regret bound. In
+International Conference on Machine Learning, pages 10746–10756. PMLR, 2020.
+Qiaomin Xie, Yudong Chen, Zhaoran Wang, and Zhuoran Yang. Learning zero-sum simultaneous-move Markov
+games using function approximation and correlated equilibrium. In Conference on Learning Theory, pages
+3674–3682. PMLR, 2020.
+Fan Chen, Song Mei, and Yu Bai. Unified algorithms for rl with decision-estimation coefficients: Pac, reward-free,
+preference-based learning, and beyond, 2024. URL https://arxiv.org/abs/2209.11745.
+Yan Dai, Qiwen Cui, and Simon S. Du. Refined sample complexity for markov games with independent linear
+function approximation, 2024. URL https://arxiv.org/abs/2402.07082.
+14
+
+Baihe Huang, Jason D. Lee, Zhaoran Wang, and Zhuoran Yang. Towards general function approximation in
+zero-sum markov games. In International Conference on Learning Representations, 2022.
+Chengzhuo Ni, Yuda Song, Xuezhou Zhang, Chi Jin, and Mengdi Wang. Representation learning for general-sum
+low-rank markov games. arXiv preprint arXiv:2210.16976, 2022.
+Wei Xiong, Han Zhong, Chengshuai Shi, Cong Shen, and Tong Zhang. A self-play posterior sampling algorithm for
+zero-sum markov games. In International Conference on Machine Learning, pages 24496–24523. PMLR, 2022.
+Zixiang Chen, Dongruo Zhou, and Quanquan Gu. Almost optimal algorithms for two-player zero-sum linear
+mixture Markov games. In International Conference on Algorithmic Learning Theory, pages 227–261. PMLR,
+2022.
+Wenhao Zhan, Jason D. Lee, and Zhuoran Yang. Decentralized optimistic hyperpolicy mirror descent: Provably
+no-regret learning in markov games. In The Eleventh International Conference on Learning Representations,
+2023.
+Chi Jin, Qinghua Liu, and Tiancheng Yu. The power of exploiter: Provable multi-agent rl in large state spaces. In
+International Conference on Machine Learning, pages 10251–10279. PMLR, 2022.
+Ziang Song, Song Mei, and Yu Bai. When can we learn general-sum Markov games with a large number of players
+sample-efficiently? arXiv preprint arXiv:2110.04184, 2021.
+Aviad Rubinstein. Settling the complexity of computing approximate two-player nash equilibria. ACM SIGecom
+Exchanges, 15(2):45–49, 2017.
+Yu Bai and Chi Jin. Provable self-play algorithms for competitive reinforcement learning. In International
+Conference on Machine Learning, pages 551–560. PMLR, 2020.
+Constantinos Daskalakis, Noah Golowich, and Kaiqing Zhang. The complexity of markov equilibrium in stochastic
+games. In The Thirty Sixth Annual Conference on Learning Theory, pages 4180–4234. PMLR, 2023.
+Gen Li, Yuejie Chi, Yuting Wei, and Yuxin Chen. Minimax-optimal multi-agent RL in Markov games with a
+generative model. Advances in Neural Information Processing Systems, 35:15353–15367, 2022.
+Pragnya Alatur, Anas Barakat, and Niao He. Independent policy mirror descent for markov potential games: Scaling
+to large number of players, 2024. URL https://arxiv.org/abs/2408.08075.
+Jing Dong, Baoxiang Wang, and Yaoliang Yu. Convergence to nash equilibrium and no-regret guarantee in (markov)
+potential games, 2024. URL https://arxiv.org/abs/2404.06516.
+Yuchen Jiao and Gen Li.
+Minimax-optimal multi-agent robust reinforcement learning.
+arXiv preprint
+arXiv:2412.19873, 2024.
+Zaiyan Xu, Kishan Panaganti, and Dileep Kalathil. Improved sample complexity bounds for distributionally robust
+reinforcement learning. arXiv preprint arXiv:2303.02783, 2023.
+Wenhao Ding, Laixi Shi, Yuejie Chi, and Ding Zhao. Seeing is not believing: Robust reinforcement learning against
+spurious correlation. Advances in Neural Information Processing Systems, 36:66328–66363, 2023.
+Jacob K Goeree, Charles A Holt, and Thomas R Palfrey. Regular quantal response equilibrium. Experimental
+economics, 8:347–367, 2005.
+Fedor Sandomirskiy, Po Hyun Sung, Omer Tamuz, and Ben Wincelberg. Narrow framing and risk in games. 2024.
+Irving L Glicksberg. A further generalization of the kakutani fixed point theorem, with application to nash
+equilibrium points. Proceedings of the American Mathematical Society, 3(1):170–174, 1952.
+István Szita, Bálint Takács, and András Lorincz. ε–mdps: Learning in varying environments. Journal of Machine
+Learning Research, 3(1), 2003.
+Jongmin Lee, Wonseok Jeon, Byungjun Lee, Joelle Pineau, and Kee-Eung Kim. Optidice: Offline policy optimiza-
+tion via stationary distribution correction estimation. In International Conference on Machine Learning, pages
+6120–6130. PMLR, 2021.
+Yuxin Pan, Yize Chen, and Fangzhen Lin. Adjustable robust reinforcement learning for online 3d bin packing.
+arXiv preprint arXiv:2310.04323, 2023.
+Kaiqing Zhang, Sham Kakade, Tamer Basar, and Lin Yang. Model-based multi-agent RL in zero-sum Markov
+games with near-optimal sample complexity. Advances in Neural Information Processing Systems, 33:1166–1178,
+2020b.
+15
+
+Chi Jin, Zeyuan Allen-Zhu, Sebastien Bubeck, and Michael I Jordan. Is Q-learning provably efficient? In Advances
+in Neural Information Processing Systems, pages 4863–4873, 2018.
+Constantinos Daskalakis. On the complexity of approximating a nash equilibrium. ACM Transactions on Algorithms
+(TALG), 9(3):1–35, 2013.
+Michele Aghassi and Dimitris Bertsimas. Robust game theory. Mathematical programming, 107(1):231–273, 2006.
+Wolfram Wiesemann, Daniel Kuhn, and Berç Rustem. Robust markov decision processes. Mathematics of
+Operations Research, 38(1):153–183, 2013.
+Stephen Boyd and Lieven Vandenberghe. Convex optimization. Cambridge university press, 2004.
+Tor Lattimore and Csaba Szepesvári. Bandit algorithms. Cambridge University Press, 2020.
+Volodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A Rusu, Joel Veness, Marc G Bellemare, Alex Graves,
+Martin Riedmiller, Andreas K Fidjeland, and Georg Ostrovski. Human-level control through deep reinforcement
+learning. Nature, 518(7540):529–533, 2015.
+Ilge Akkaya, Marcin Andrychowicz, Maciek Chociej, Mateusz Litwin, Bob McGrew, Arthur Petron, Alex Paino,
+Matthias Plappert, Glenn Powell, Raphael Ribas, et al. Solving rubik’s cube with a robot hand. arXiv preprint
+arXiv:1910.07113, 2019.
+Wenhao Ding, Baiming Chen, Minjun Xu, and Ding Zhao. Learning to collide: An adaptive safety-critical scenarios
+generating method. In 2020 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), pages
+2243–2250. IEEE, 2020.
+Matthew T Jackson, Minqi Jiang, Jack Parker-Holder, Risto Vuorio, Chris Lu, Greg Farquhar, Shimon Whiteson,
+and Jakob Foerster. Discovering general reinforcement learning algorithms with adversarial environment design.
+Advances in Neural Information Processing Systems, 36, 2024.
+Huan Zhang, Hongge Chen, Duane Boning, and Cho-Jui Hsieh. Robust reinforcement learning on state observations
+with learned optimal adversary. arXiv preprint arXiv:2101.08452, 2021.
+Allen Z Ren and Anirudha Majumdar. Distributionally robust policy learning via adversarial environment generation.
+IEEE Robotics and Automation Letters, 7(2):1379–1386, 2022.
+Shai Shalev-Shwartz. Online learning and online convex optimization. Foundations and Trends® in Machine
+Learning, 4(2):107–194, 2012.
+David G Wright. Tychonoff’s theorem. Proceedings of the American Mathematical Society, pages 985–987, 1994.
+John L Kelley. General topology. Courier Dover Publications, 2017.
+Gottfried Köthe. Topological vector spaces. In Topological Vector Spaces I, pages 123–201. Springer, 1969.
+Roman Vershynin. High-dimensional probability: An introduction with applications in data science, volume 47.
+Cambridge university press, 2018.
+Shai Shalev-Shwartz. Online learning: Theory, algorithms, and applications. 2007.
+Joel A Tropp. An introduction to matrix concentration inequalities. Foundations and trends® in machine learning,
+8(1-2):1–230, 2015.
+16
+
+Algorithm 3
+L-Robust-Q-FTRL
+1: Input: The support set {Yi}i∈[n] and the sampling distribution {ρi}i∈[n]; number of iterations K.
+2: Initialization: bVi,H+1(s) = Q0
+i,h(s, ai) = 0, π1
+i,h(ai | s) = 1/Ai for all (i, h, s, ai) ∈[n] × [H] × S × Ai.
+3: for h = H, H −1, . . . , 1, and k ∈[K] do
+4:
+for i = 1, 2, . . . , n do
+5:
+// Sampling from the nominal model based on the finite set Yi and probability distribution ρi.
+6:
+for (s, ai) ∈Yi and u = 1, 2, · · · ⌈Nρi(s, ai)⌉do
+7:
+Sample a(u)(s, ai) = [aj(s, ai)]j∈[n] with aj(s, ai)
+ind.
+∼πj,h(· | s) (j ̸= i),
+ai(s, ai) = ai.
+8:
+Sample from the generative model:
+r(u)
+i,h = ri,h(s, a(u)(s, ai)),
+s(u)
+h+1 ∼Ph(· | s, a(u)(s, ai)).
+9:
+// Observe reward and next state from the nominal model Ph.
+10:
+Insert the data tuple {s(m)
+h
+= s, a(m)
+i,h = ai, r(m)
+i,h = r(u)
+i,h , s(m)
+h+1 = s(u)
+h+1} into Di.
+11:
+Estimate model parameters {rk
+i,h, P k
+i,h} with Di via ridge regression using (18).
+12:
+// Ridge regression for estimating nominal reward and transition in the feature space.
+13:
+Compute q-function qk
+i,h(s, ai) with (19).
+14:
+// Follow the Regularized Leader (FTRL) algorithm to update the policy.
+15:
+Update policy for all (s, ai) ∈S × Ai with
+πk+1
+i,h (ai | s) =
+exp(ηk+1
+Pk
+l=1 ql
+i,h(s, ai))
+P
+ai∈Ai exp(ηk+1
+Pk
+l=1 ql
+i,h(s, ai))
+(17)
+16:
+// Update optimistic robust values with bonus βi,h after K rounds at step h.
+17:
+Construct an upper bound {bVi,h} for value functions using (21).
+18: Output: Product policies {πk
+h = (πk
+1,h × · · · × πk
+n,h)}h∈[H],k∈[K] and a probability distribution ξ =
+{ξh}h∈[H] over product policies so that ξh(πk
+h) = 1/K for all h ∈[H].
+A
+Algorithm Design with a Generative Model
+Due to the space limit, we postpone the entire pipleline of Algorithm 3 in this section as follows.
+For initialization, L-Robust-Q-FTRL set the robust value function, robust Q-function bVi,H+1(s) = Q0
+i,h(s, ai) =
+0, and the policy π1
+i,h(ai | s) = 1/Ai for all (i, s) ∈[n] × S. Then L-Robust-Q-FTRL performs a backward
+recursive learning path, learning recursively from the final time step h = H to h = 1. At each time step h ∈[H],
+a K-iterations online learning process is applied. At each interaction iteration k ∈[K], parallelly for each agent
+i ∈[n], we execute the following steps:
+• Sampling Di from the nominal model. For each (s, ai) ∈Yi, we collect ⌈Nρi(s, ai)⌉samples from the
+generative model (cf. line 7 to 10) and yield the dataset Di =
+
+s(m)
+h
+, a(m)
+i,h , r(m)
+i,h , s(m)
+h+1
+	
+m∈Di
+• Estimating the nominal model. Armed with the dataset Di, we estimate the model parameters {rk
+i,h, P k
+i,h}
+via ridge regression as below:
+Λk
+i,h =
+X
+m∈Di
+ϕi(s(m)
+h
+, a(m)
+i,h )ϕi(s(m)
+h
+, a(m)
+i,h )⊤+ λI,
+bθk
+i,h = (Λk
+i,h)−1 X
+m∈Di
+ϕi(s(m)
+h
+, a(m)
+i,h )r(m)
+i,h ,
+(18a)
+bµk
+i,h = (Λk
+i,h)−1 X
+m∈Di
+ϕi(s(m)
+h
+, a(m)
+i,h )δs(m)
+h+1,
+(18b)
+where Λk
+i,h ∈Rd×d, ϕi(·, ·) ∈Rd, bµk
+i,h ∈Rd →∆(S). Here, we denote δs as a measure over state space S
+so that the measure on state s is 1, and the measure on other states is 0, for all s ∈S. λ is the regularization
+parameter in ridge regression satisfying λ ≥1. For all (s, ai) ∈S × Ai, we compute the estimated reward
+function and transition probabilities as:
+rk
+i,h(s, ai) = ϕi(s, ai)⊤bθk
+i,h,
+P k
+i,h(· | s, ai) = ϕi(s, ai)⊤bµk
+i,h.
+(18c)
+• Updating the robust-Q-function and policy. Denoting the current joint policy by πk
+h, with the estimated
+model {rk
+i,h, P k
+i,h}i∈[n], we compute a robust Q-function at each iteration. Specifically, for all (s, ai) ∈S ×Ai,
+17
+
+we compute qk
+i,h(s, ai) as follows:
+qk
+i,h(s, ai) = rk
+i,h(s, ai)
++
+max
+α∈
+
+mins bVi,h+1(s),maxs bVi,h+1(s)
+
+
+P k
+i,h(· | s, ai)
+bVi,h+1
+
+α −σi
+ α −min
+s′
+bVi,h+1
+
+α (s′)
+	
+,
+(19)
+which is the dual form of the robust Bellman equation [Shi et al., 2023, Lemma 1]
+qk
+i,h(s, ai) = rk
+i,h(s, ai) +
+inf
+P∈Uσi(P k
+i,h(· | s,ai)) P bVi,h+1
+(20)
+and is computationally tractable [Iyengar, 2005]. Note that even S may be infinite, the model estimate
+P k
+i,h(· | s, ai) obtained from ridge regression in (18) is supported on the finite number of observed next states
+{s(m)
+h+1}m∈Di in dataset Di. Consequently, P k
+i,h(· | s, ai)[bVi,h+1]α is a finite weighted sum, and bVi,h+1 need
+only be evaluated at finitely many points, as in the lazy-evaluation implementation in standard linear MDP/MG
+algorithms [Jin et al., 2019, Wang et al., 2023]. After calculating the q-function, we employ the Follow-the-
+Regularized-Leader (FTRL) strategy [Shalev-Shwartz, 2012, Li et al., 2022] to update the learner’s policy
+towards πk+1
+i,h
+via (17).
+• Estimate robust value function. Subsequently, after completing the K iterations at step h, we compute an
+optimistic estimate of the value function as follows: for all (i, s) ∈[n] × S,
+bVi,h(s) = min
+ K
+X
+k=1
+1
+K
+
+πk
+i,h(· | s), qk
+i,h(s, ·)
+
++ βi,h(s), H −h + 1
+	
+,
+(21)
+Here, βi,h(s) is a bonus term specified as follows:
+βi,h(s) = 8
+r
+d
+N
+ 2H
+r
+d ln(NH + 1) + 2 ln
+ 3KNHn
+δ
+
++ H
+√
+d
+
++ 2H
+r
+ln Ai
+K .
+(22)
+After completing the learning for all h ∈[H], each with K iterations at every step, we output the joint correlated
+policy
+ 1
+K
+PK
+k=1 πk
+h = 1
+K
+PK
+k=1{(πk
+1,h × · · · × πk
+n,h)}h∈[H]
+	
+as the learned solution, which can be shown later as
+an ε-CCE with high probability.
+B
+Proof of Theorem 1
+The proof of equilibrium existence often relies on fixed-point theorems. In this paper, to establish equilibrium
+existence for large-scale (possibly infinite) state spaces—including those that may be infinite or continuous—we
+appeal to the following fixed-point theorem.
+Definition 2
+(Upper semi-continuous)
+A point-to-set mapping x ∈X 7→ϕ(x) ∈Y is upper semi-continuous if limn→∞xn = x0, yn ∈
+ϕ(xn), limn→∞yn = y0 imply that y0 ∈ϕ(x0).
+Theorem 4 (Glicksberg’s fixed point theorem [Glicksberg, 1952]). If X is a compact and convex subset in a
+Hausdorff locally convex topological vector space, and ϕ is an upper semi-continuous correspondence mapping X
+into the family of all convex subsets of X, then there exists x ∈X so that x ∈ϕ(x).
+It is worth noting that for cases with finite state spaces, the existence of Nash equilibria for RMGs—a broader
+class of games that includes R-LMGs—has been established in Shi et al. [2024b, Theorem1], where another theorem
+— Kakutani’s fixed-point theorem is used. Theorem 4 relaxes the requirement in Kakutani’s fixed-point theorem,
+where X must belong to a finite-dimensional Euclidean space, extending it to a broader class of Hausdorff linear
+topological spaces that is crucial for us to handle infinite state spaces.
+Proof of Theorem 1.
+With Theorem 4 in hand, we prove Theorem 1 by following the proof outline of Shi
+et al. [2024b, Theorem 1], with modifications to accommodate a large-scale (possibly infinite) state space. In the
+large-state setting, we work directly with general robust MGs and do not exploit the game’s linear structure to
+narrow down to the subclass of robust MGs (robust linear MGs). Following Shi et al. [2024b, Section B.1], we first
+establish the existence of a Nash equilibrium in an auxiliary one-step game; this result is then used recursively to
+verify equilibrium existence for the full sequential RMG.
+18
+
+Fix a step h ∈[H] and consider the associated auxiliary one-step game. Let Vi,h+1 ∈RS be a fixed "value
+function" for agent i, with 0 ≤Vi,h+1(s) ≤H for all s ∈S. Given any joint product policy π : S →Q
+i∈[n] ∆(Ai)
+at step h, define agent i’s payoff at state s by
+∀s ∈S :
+fi,s
+ πi(s), π−i(s); Vi,h+1
+
+= Ea∼π(s)
+
+ri,h(s, a)
+
++ Eai∼πi(s)
+
+infUσi
+
+P
+π−i
+h,s,ai
+ PVi,h+1
+
+.
+(23)
+Based on these payoffs, we can introduce the best-response correspondence mapping ϕ as follows: for any
+π : S →Q
+i∈[n] ∆(Ai),
+ϕ(π) :=
+
+u : S 7→Q
+i∈[n] ∆(Ai) | ui(s) ∈argmaxπ′
+i(s)∈∆(Ai) fi,s(π′
+i(s), π−i(s); Vi,h+1), ∀(i, s) ∈[n] × S
+	
+.
+(24)
+For this one-step game, the (joint) product policy space is
+X :=
+n
+π : S →Q
+i∈[n] ∆(Ai)
+o
+.
+Since fixed points of ϕ correspond to Nash equilibria (NE), Theorem 4 yields the existence of NE once its conditions
+are verified. To show the three conditions, we begin by showing that X is a compact and convex subset of a
+convex Hausdorff linear topological space. First, {π : S 7→Q
+i∈[n] ∆(Ai)} is convex since the finite product
+of simplex X′ := Q
+i∈[n] ∆(Ai) is convex and {π : S 7→Q
+i∈[n] ∆(Ai)} can be seen as a infinite product of a
+convex set, whose convexity is easily verified since product operations preserve convexity. Next, the compactness
+of {π : S 7→Q
+i∈[n] ∆(Ai)} follows from the compactness of Q
+i∈[n] ∆(Ai) and Tychonoff’s theorem [Wright,
+1994], which guarantees that an arbitrary product of compact sets remains compact. Therefore, we verified that X is
+a compact and convex set.
+Next, define
+Y ′ := Q
+i∈[n] R|Ai|,
+Y := (Y ′)S =
+n
+π : S →Y ′o
+,
+Since Y ′ is a finite-dimensional Euclidean space, it is a locally convex Hausdorff topological vector space. And
+arbitrary products of Hausdorff (resp. locally convex) topological vector spaces are again Hausdorff [Kelley, 2017,
+Theorem 5] (resp. locally convex [Köthe, 1969, Page 207]). It follows that the finite product Y ′ is a locally convex
+Hausdorff topological vector space, and then the arbitrary product Y = (Y ′)S is a locally convex Hausdorff
+topological vector space. Moreover, because X′ ⊂Y ′, we have X ⊂Y . Consequently, X is a compact and convex
+subset of the locally convex Hausdorff topological vector space Y .
+The remaining conditions of Theorem 4, as well as the subsequent recursive argument, can be verified similarly
+as in Shi et al. [2024b, Theorem 1] and are omitted for brevity.
+C
+Proof of Theorem 2
+C.1
+Preliminaries
+We first introduce a standard bound on the ridge-regression estimation error under linear function approximation,
+adapted from [Jin et al., 2019, Theorem 3.1], which plays a key role in the proof of both the generative case and the
+online interactive case.
+Theorem 5 (Upper bound for ridge-regression estimation Jin et al., 2019, Theorem 3.1). For any fixed agent i ∈[n],
+step h ∈[H], and iteration k ∈[K], let bπk be the product policy at current iteration k, and {(sm, am
+i , sm
++1)}N
+m=1 be
+N samples collected independenly in this iteration, with sm
++1 ∼P
+bπk
+−i
+h,sm,am
+i (·). Let ϕm
+i := ϕi(sm, am
+i ) ∈Rd satisfy
+∥ϕm
+i ∥2 ≤1. Fix the regularization parameter λ ≥1 and define the Gram matrix
+Λk
+i,h :=
+N
+X
+m=1
+ϕm
+i (ϕm
+i )⊤+ λId.
+Let µ
+bπk
+−i
+i,h : Rd →∆(S) be the linear model parameter of the true transition kernel: P
+bπk
+−i
+h,s,ai(·) = ϕi(s, ai)⊤µ
+bπk
+−i
+i,h (·)
+for all (s, ai) ∈S × Ai, and assume the standard normalization ∥µ
+bπk
+−i
+i,h (S)∥2 ≤
+√
+d. For any fixed value function
+f : S →[0, H], define
+µ
+bπk
+−i
+i,h f :=
+Z
+S
+f(s′) µ
+bπk
+−i
+i,h (ds′) ∈Rd
+and
+bµk
+i,hf := (Λk
+i,h)−1
+N
+X
+m=1
+ϕm
+i f(sm
++1) ∈Rd.
+19
+
+Then, with probability at least 1 −δ, it holds that
+bµk
+i,hf −µ
+bπk
+−i
+i,h f
+
+Λk
+i,h ≤2H
+q
+d ln(NH + 1) + ln
+  3NH
+δ
+
++ H
+√
+dλ,
+and by Cauchy–Schwarz, for all (s, ai) ∈S × Ai,
+ϕi(s, ai)⊤ bµk
+i,hf −µ
+bπk
+−i
+i,h f
+ ≤
+ϕi(s, ai)
+
+(Λk
+i,h)−1
+
+2H
+q
+d ln(NH + 1) + ln
+  3NH
+δ
+
++ H
+√
+dλ
+
+.
+Proof. We adapt the argument of [Jin et al., 2019, Theorem 3.1] to our multi-agent linear-function-approximation
+setting.
+Step 1: error decomposition.
+Recalling the definitions of Λk
+i,h and bµk
+i,hf, combined with the fact that
+(ϕm
+i )⊤µ
+bπk
+−i
+i,h f = E
+s′∼P
+bπk
+−i
+h,sm,am
+i
+[f(s′)], we have
+bµk
+i,hf −µ
+bπk
+−i
+i,h f = (Λk
+i,h)−1h
+N
+X
+m=1
+ϕm
+i f(sm
++1) −Λk
+i,h µ
+bπk
+−i
+i,h f
+i
+= (Λk
+i,h)−1
+N
+X
+m=1
+ϕm
+i
+ f(sm
++1) −(ϕm
+i )⊤µ
+bπk
+−i
+i,h f
+
+|
+{z
+}
+:= ξk
+i,h (stochastic term)
+−λ (Λk
+i,h)−1µ
+bπk
+−i
+i,h f.
+Taking the Λk
+i,h-norm and applying the triangle inequality together with the identity ∥(Λk
+i,h)−1v∥Λk
+i,h = ∥v∥(Λk
+i,h)−1,
+bµk
+i,hf −µ
+bπk
+−i
+i,h f
+
+Λk
+i,h ≤
+ξk
+i,h
+
+(Λk
+i,h)−1
+|
+{z
+}
+(I) stochastic
++ λ
+µ
+bπk
+−i
+i,h f
+
+(Λk
+i,h)−1
+|
+{z
+}
+(II) bias
+.
+(25)
+Step 2: bounding the stochastic term (I).
+We first recall the lemma in [Jin et al., 2019, Lemma D.4] (renaming
+their time index k to τ to avoid clash with our iteration index k ∈[K]): let {xτ}τ≥1 be a stochastic process on
+state space S with corresponding filtration {Fτ}τ≥0. Let {eϕτ}τ≥1 be an Rd-valued stochastic process where
+eϕτ ∈Fτ−1, and ∥eϕτ∥2 ≤1. Let eΛn := λId + Pn
+τ=1 eϕτ eϕ⊤
+τ . Then for any δ > 0, with probability at least 1 −δ,
+for all n ≥0, and any V ∈V so that supx |V (x)| ≤H, we have:
+
+n
+X
+τ=1
+eϕτ
+
+V (xτ) −E[V (xτ) | Fτ−1]
+	
+2
+eΛ−1
+n
+≤4H2h
+d
+2 log n+λ
+λ
++ log Nε
+δ
+i
++ 8n2ε2
+λ
+,
+(26)
+where Nε = Nε(V) is the ε-covering number of V with respect to the distance dist(V, V ′) = supx |V (x) −V ′(x)|.
+To apply the lemma into our setting, the sample index m ∈[N] plays the role of τ, so we apply (26) with n = N
+and let
+eϕτ = ϕm
+i = ϕi(sm, am
+i ),
+(predictor)
+xτ = sm
++1,
+(next-state observation)
+Fm = σ
+ {(sj, aj
+i, sj
++1)}j≤m
+
+,
+(natural filtration)
+eΛn = Λk
+i,h,
+(Gram matrix at n = N, fixed iteration k)
+V = f : S →[0, H].
+(value function)
+Therefore, (sm, am
+i ) ∈Fm−1, ϕm
+i ∈Fm−1 as required, and sm
++1 ∼P
+bπk
+−i
+h,sm,am
+i (·), which gives
+E[V (xτ) | Fτ−1] = E
+s′∼P
+bπk
+−i
+h,sm,am
+i
+[f(s′)] = (ϕm
+i )⊤µ
+bπk
+−i
+i,h f.
+Hence the LHS of (26) is exactly
+ξk
+i,h
+2
+(Λk
+i,h)−1.
+To proceed, since f is data-independent, we apply (26) to the singleton class V = {f}, for which Nε({f}) = 1
+for every ε ≥0. Letting ε →0 then drives 8N 2ε2/λ →0, so that with probability at least 1 −δ,
+ξk
+i,h
+2
+(Λk
+i,h)−1 ≤4H2h
+d
+2 log N+λ
+λ
++ log 1
+δ
+i λ≥1
+≤
+2H2 d log(N + 1) + 4H2 log 1
+δ ,
+and consequently
+ξk
+i,h
+
+(Λk
+i,h)−1 ≤2H
+q
+d log(NH + 1) + log
+  3NH
+δ
+
+.
+(27)
+20
+
+Step 3: bounding the bias term (II).
+Since Λk
+i,h ⪰λId, we have (Λk
+i,h)−1 ⪯λ−1Id, and thus
+µ
+bπk
+−i
+i,h f
+
+(Λk
+i,h)−1 ≤λ−1/2µ
+bπk
+−i
+i,h f
+
+2.
+Invoking the standard normalization ∥µ
+bπk
+−i
+i,h (S)∥2 ≤
+√
+d together with f(s′) ∈[0, H], one has
+µ
+bπk
+−i
+i,h f
+
+2 =
+
+Z
+f(s′) µ
+bπk
+−i
+i,h (ds′)
+
+2 ≤∥f∥∞·
+µ
+bπk
+−i
+i,h (S)
+
+2 ≤H
+√
+d.
+Therefore the bias term is bounded by
+λ
+µ
+bπk
+−i
+i,h f
+
+(Λk
+i,h)−1 ≤
+√
+λ · H
+√
+d = H
+√
+dλ.
+(28)
+The bias bound
+√
+λ H
+√
+d = H
+√
+dλ requires smaller λ for a tighter bound, while the stochastic bound (I) deteriorates
+as λ →0; we therefore restrict to λ ≥1. Note that the generative-model case takes λ = 1, recovering the standard
+H
+√
+d bias (cf. Jin et al., 2019); the online algorithm later sets λ ≥c0 log(2dnKHT/δ) = e
+O(1) (see the matrix-
+Bernstein step around (61)), so the
+√
+λ factor in the bias is also e
+O(1) and the bias term becomes H
+√
+dλ = e
+O(H
+√
+d).
+Step 4: combining and pointwise version.
+Plugging the stochastic bound (27) and the bias bound (28) into (25),
+we obtain the first inequality of the theorem:
+bµk
+i,hf −µ
+bπk
+−i
+i,h f
+
+Λk
+i,h ≤2H
+q
+d log(NH + 1) + log
+  3NH
+δ
+
++ H
+√
+dλ
+holds with probability at least 1 −δ. Then it follows by Cauchy–Schwarz inequality that: for all (s, ai) ∈S × Ai,
+ϕi(s, ai)⊤ bµk
+i,hf −µ
+bπk
+−i
+i,h f
+ ≤∥ϕi(s, ai)∥(Λk
+i,h)−1
+bµk
+i,hf −µ
+bπk
+−i
+i,h f
+
+Λk
+i,h.
+C.2
+Proof pipeline of Theorem 2
+Before presenting the proof for Algorithm 3, we introduce some general notations and auxiliary robust value
+functions for clarity.
+Step 1: Notation conventions and worst-case transition operators.
+• Notation abbreviations: Recall the definition of the value function:
+V π,σi
+i,h (s) = Eai∼πi,h(s)
+h
+rπ−i
+i,h (s, ai) +
+inf
+Uσi(P
+π−i
+h,s,ai)
+PV π,σi
+i,h+1
+i
+.
+Throughout the remainder of the proof, we suppress the superscript σi and write
+∀(i, h) ∈[n] × [H] :
+V π
+i,h := V π,σi
+i,h .
+(29)
+And we denote the estimated transitions in (18) as
+∀(h, k) ∈[H] × [K] : P k
+i,h,s,ai := P k
+i,h(· | s, ai).
+(30)
+In addition, for any distribution ζ over the space of product policies, for all (s, i) ∈S × [n] and any policy π′
+i
+for the agent i, we define
+V ⋆,ζ
+i,1 (s) := Eπ∼ζ
+
+V ⋆,π−i
+i,1
+(s)
+
+,
+V ζ
+i,1(s) := Eπ∼ζ
+
+V π
+i,1(s)
+
+,
+V π′
+i,ζ
+i,1 (s) := Eπ−i∼ζ
+h
+V π′
+i,π−i
+i,1
+(s)
+i
+.
+(31)
+• Notations for worst-case transitions: Consider any set of policies
+
+bπk
+h
+	
+(h,k)∈[H]×[K] with bπk
+h ∈[H] × S 7→
+∆(A). For any value vector V : S →[0, H], for any (h, i, k) ∈[H] × [n] × [K], we define the transition
+operators P
+bπk
+−i,V
+i,h,s,aiV and bP
+bπk
+−i,V
+i,h,s,aiV as:
+P
+bπk
+−i,V
+i,h,s,aiV :=
+inf
+P∈Uσi P
+bπk
+−i
+h,s,ai
+ PV,
+bP
+bπk
+−i,V
+i,h,s,aiV :=
+inf
+P∈Uσi P k
+i,h,s,ai
+ PV.
+(32)
+21
+
+Step 2: Auxiliary aggregated value functions.
+Let ζ := {ζh}h∈[H] be a distribution over the product policy
+space, namely ζh : S 7→∆(Q
+i∈[n] ∆(Ai)). For all (i, h, s) ∈[n] × [H] × S, we can define the aggregated value
+functions V
+ζ
+i,h(s) and V
+⋆,ζ
+i,h(s) as follows:
+V
+ζ
+i,h(s) := 1
+K
+K
+X
+k=1
+Eai∼πk
+i,h(s)
+h
+rk
+i,h(s, ai) + bP
+πk
+−i,V
+ζ
+i,h+1
+i,h,s,ai
+V
+ζ
+i,h+1
+i
+,
+V
+⋆,ζ
+i,h(s) := max
+ai∈Ai
+1
+K
+K
+X
+k=1
+h
+rk
+i,h(s, ai) + bP
+πk
+−i,V
+⋆,ζ
+i,h+1
+i,h,s,ai
+V
+⋆,ζ
+i,h+1
+i
+.
+(33)
+Finally, for any policy πi of agent i, we define the value function V
+πi,ζ
+i,h (s):
+V
+πi,ζ
+i,h (s) := 1
+K
+K
+X
+k=1
+Eai∼eπ⋆
+i,h(s)
+h
+rk
+i,h(s, ai) + bP
+πk
+−i,V
+πi,ζ
+i,h+1
+i,h,s,ai
+V
+πi,ζ
+i,h+1
+i
+.
+(34)
+These objects will serve as the estimate to the true robust value functions by aggregating the polices output by
+Algorithm 3.
+With the above setup in place, we are ready to prove the main theorem of Algorithm 3, starting from an error
+decomposition:
+Step 3: Error decomposition.
+Our goal is to show that for all i ∈[n] and s ∈S, the distribution ξ over the
+product policies, produced by Algorithm 3, satisfies
+max
+i∈[n],s∈S
+
+V ⋆,ξ
+i,1 (s) −V ξ
+i,1
+
+=
+max
+i∈[n],s∈S
+
+Eπ∼ξ
+
+V ⋆,π−i
+i,1
+(s)
+
+−Eπ∼ξ
+
+V π
+i,1(s)
+
+≤ε.
+Towards this, before proceeding, we introduce several auxiliary definitions that will be used throughout the proof.
+We define the best response policy as follows:
+∀i ∈[n] :
+eπ⋆
+i = arg
+max
+π′
+i:S×[H]→∆(Ai) V π′
+i,ξ
+i,1 .
+Accordingly, we have the fundamental fact that for all s ∈S
+V
+ξ
+i,H+1(s) = V
+eπ⋆
+i ,ξ
+i,H+1(s) = V
+⋆,ξ
+i,H+1(s).
+(35)
+We then decompose the error of the value function as follows: for any agent i ∈[n],
+V ⋆,ξ
+i,1 (s) −V ξ
+i,1(s) =
+
+V ⋆,ξ
+i,1 (s) −V
+bπ⋆
+i ,ξ
+i,1 (s)
+
++
+
+V
+bπ⋆
+i ,ξ
+i,1 (s) −V
+ξ
+i,1(s)
+
++
+
+V
+ξ
+i,1(s) −V ξ
+i,1(s)
+
+≤
+
+V ⋆,ξ
+i,1 (s) −V
+bπ⋆
+i ,ξ
+i,1 (s)
+
+|
+{z
+}
+term(A)
++
+
+V
+⋆,ξ
+i,1 (s) −V
+ξ
+i,1(s)
+
+|
+{z
+}
+term(B)
++
+
+V
+ξ
+i,1(s) −V ξ
+i,1(s)
+
+|
+{z
+}
+term(C)
+,
+where the last line is due to the elementary fact that
+V
+⋆,ξ
+i,1 (s) =
+max
+π′
+i:S×[H]→∆(Ai) V π′
+i,ξ
+i,1 (s) ≥V
+bπ⋆
+i ,ξ
+i,1 (s).
+We now control term A, term B and term C separately.
+Step 4: Controlling Term A and C.
+Terms (A) and (C) both characterize the difference between a true robust
+value function and an estimated one, so we derive one template bound and then specialize it to these two cases.
+Towards this, we consider a more general case involving a given set of policies
+
+bπk
+h
+	
+(h,k)∈[H]×[K], where either
+bπk
+h = πk
+h, or bπk
+h = eπ⋆
+i × πk
+−i,h for all (h, k) ∈[H] × [K]. Additionally, we define a uniform distribution over the
+aforementioned set of policies ζ := {ζh}h∈[H] so that ζh(bπk
+h) = 1/K for all h ∈[H]. Our objective is to derive
+an upper bound on
+V ζ
+i,h(s) −V
+ζ
+i,h(s)
+ for all i ∈[n] over any such policy set {bπk
+h}(h,k)∈[H]×[K], which directly
+yields bounds for terms A and C.
+To proceed, we start with the following lemma in terms of estimation errors of transition model and reward
+function, where the proof is postponed to Appendix C.3.1.
+22
+
+Lemma 2
+Let δ ∈(0, 1). With probability at least 1 −δ, for all (h, i, k) ∈[H] × [n] × [K], all (s, ai) ∈S × Ai, and any
+fixing value function V : S →[0, H], we have
+P
+bπk
+−i,V
+i,h,s,aiV −bP
+bπk
+−i,V
+i,h,s,aiV
+ ≤2
+r
+d
+N
+ 2H
+r
+d ln(NH + 1) + 2 ln
+ 3KNHn
+δ
+
++ H
+√
+d
+
+,
+(36)
+Ea−i∼bπk
+−i(s)
+
+ri,h(s, a)
+
+−rk
+i,h(s, ai)
+ ≤
+r
+d
+N
+ 2H
+r
+d ln(NH + 1) + ln
+ 3KNHn
+δ
+
++ H
+√
+d
+
+.
+(37)
+To continue, for the clarity of notations, in this subsection, we use
+bP
+bπk
+−i,V
+i,h,s,ai := bP
+bπk
+−i,V
+ζ
+i,h+1
+i,h,s,ai
+,
+bP
+bπk
+−i,V
+i,h,s,ai := bP
+bπk
+−i,V ζ
+i,h+1
+i,h,s,ai
+.
+(38)
+We begin by expressing out the gap
+V ζ
+i,h(s) −V
+ζ
+i,h(s)
+ under controlling using the Bellman structure and then
+splitting the expression into two one-sided terms that can be controlled separately. Initially, recalling the definitions
+in (33), we have
+V ζ
+i,h(s) −V
+ζ
+i,h(s)
+
+=
+V ζ
+i,h(s) −
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+
+rk
+i,h(s, ai)
+
+−
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+ bP
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
+≤max
+
+V ζ
+i,h(s) −
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+
+rk
+i,h(s, ai)
+
+−
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+ bP
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
+|
+{z
+}
+(a)
+,
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+
+rk
+i,h(s, ai)
+
++
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+ bP
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
+−V ζ
+i,h(s)
+|
+{z
+}
+(b)
+	
+.
+Now we proceed to control term (a) and term (b) separately, starting with term (a). At any time step h ∈[H], we
+have
+V ζ
+i,h(s) −
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+
+rk
+i,h(s, ai)
+
+−
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+ bP
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
+(i)=
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+Ea−i∼bπk
+−i(s)
+
+ri,h(s, a)
+
+−rk
+i,h(s, ai)
+ +
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+
+P
+bπk
+−i,V
+i,h,s,aiV ζ
+i,h+1
+
+−
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+ bP
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
+≤
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+Ea−i∼bπk
+−i(s)
+
+ri,h(s, a)
+
+−rk
+i,h(s, ai)
+ +
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+
+P
+bπk
+−i,V
+i,h,s,aiV ζ
+i,h+1
+
+−
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+
+P
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
++
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+P
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1 −bP
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+,
+where (i) follows from the robust Bellman equation (8). Then applying Lemma 2 to control the reward and the
+transition estimation errors, we arrive at
+V ζ
+i,h(s) −V
+ζ
+i,h(s)
+(39)
+=V ζ
+i,h(s) −
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+
+rk
+i,h(s, ai)
+
+−
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+ bP
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
+≤
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+ P
+bπk
+−i,V
+i,h,s,aiV ζ
+i,h+1 −P
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
++ 3
+r
+d
+N
+ 2H
+q
+d ln(NH + 1) + 2 ln
+  3KNHn
+δ
+
++ H
+√
+d
+
+(40)
+23
+
+≤
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+ P
+bπk
+−i,V
+i,h,s,aiV ζ
+i,h+1 −P
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
++ 3
+r
+d
+N
+ 2H
+q
+d ln(NH + 1) + 2 ln
+  3KNHn
+δ
+
++ H
+√
+d
+
+(41)
+holds with probability at least 1 −δ.
+By symmetry of the argument, we derive an analogous upper bound for term (b).
+V
+ζ
+i,h(s) −V ζ
+i,h(s)
+(42)
+=
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)[rk
+i,h(s, ai)] +
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+ bP
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
+−V ζ
+i,h(s)
+=
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)[rk
+i,h(s, ai)] +
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+ bP
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
+−
+K
+X
+k=1
+1
+K Ea∼bπk
+h(s)
+
+ri,h(s, a)
+
+−
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)P
+bπk
+−i,V
+i,h,s,aiV ζ
+i,h+1
+≤
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+
+P
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
+−
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+h
+P
+bπk
+−i,V
+i,h,s,aiV ζ
+i,h+1
+i
++
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+rk
+i,h(s, ai) −Ea−i∼bπk
+−i(s)
+
+ri,h(s, a)
+
++
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+P
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1 −bP
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
+(i)
+≤
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+
+P
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
+−
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+h
+P
+bπk
+−i,V
+i,h,s,aiV ζ
+i,h+1
+i
++
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+rk
+i,h(s, ai) −Ea−i∼bπk
+−i(s)
+
+ri,h(s, a)
+
++
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+P
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1 −bP
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
+≤
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+
+P
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1
+
+−
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)
+h
+P
+bπk
+−i,V
+i,h,s,aiV ζ
+i,h+1
+i
++ 3
+r
+d
+N
+ 2H
+q
+d ln(NH + 1) + 2 ln
+  3KNHn
+δ
+
++ H
+√
+d
+
+.
+(43)
+where the first equality is obtained by the robust Bellman equation (8), (i) holds due to the elementary fact
+that P
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1 ≥P
+bπk
+−i,V
+i,h,s,aiV
+ζ
+i,h+1, and the final inequality holds with probability at least 1 −δ for all
+(i, h, s) ∈[n] × [H] × S, by applying Lemma 2.
+Now we have controlled the two one-sided differences V ζ
+i,h(s) −V
+ζ
+i,h(s) and V
+ζ
+i,h(s) −V ζ
+i,h(s) separately in
+(41) and (43).
+Denoting
+C0 := 3
+√
+d
+√
+N
+
+2H
+q
+d ln(NH + 1) + 2 ln
+  3KNHn
+δ
+
++ H
+√
+d
+
+for brevity, we rewrite (41) as below:
+V ζ
+i,h(s) −V
+ζ
+i,h(s) ≤
+K
+X
+k=1
+1
+K Eai∼bπk
+i,h(s)P
+bπk
+−i,V
+i,h,s,ai
+ V ζ
+i,h+1 −V
+ζ
+i,h+1
+
++ C0.
+(44)
+Note that the operator QV
+h := PK
+k=1
+1
+K Eai∼bπk
+i,h(s)P
+bπk
+−i,V
+i,h,s,ai. Iterating (44) from h to H and using the terminal
+condition V ζ
+i,H+1 = V
+ζ
+i,H+1 = 0 yields
+V ζ
+i,h(s) −V
+ζ
+i,h(s) ≤QV
+h QV
+h+1 · · · QV
+H
+ V ζ
+i,H+1 −V
+ζ
+i,H+1
+
++ (H + 1 −h) C0
+24
+
+= 0 + (H + 1 −h) C0 ≤H C0
+for all s ∈S.
+Applying the identical argument to (43) with the probability operator QV
+h := PK
+k=1
+1
+K Eai∼bπk
+i,h(s)P
+bπk
+−i,V
+i,h,s,ai gives
+V
+ζ
+i,h(s) −V ζ
+i,h(s) ≤H C0
+for all s ∈S.
+Combining the two one-sided bounds via |x| = max{x, −x}, we obtain that for all (i, h, s) ∈[n] × [H] × S, with
+probability at least 1 −δ:
+V ζ
+i,h(s) −V
+ζ
+i,h(s)
+ ≤H C0 = 3
+√
+d H
+√
+N
+
+2H
+q
+d ln(NH + 1) + 2 ln
+  3KNHn
+δ
+
++ H
+√
+d
+
+.
+(45)
+Finally, we instantiate (45) for the two cases bπk
+h = πk
+h and bπk
+h = eπ⋆
+i × πk
+−i,h, which correspond to term (C) and
+term (A) respectively. With probability at least 1 −δ, there exists an absolute constant c such that
+term(A) = V ⋆,ξ
+i,1 (s) −V
+eπ⋆
+i ,ξ
+i,1 (s) ≤c
+√
+dH2
+√
+N
+r
+d ln
+ NHnK
+δ
+
+term(C) = V
+ξ
+i,1(s) −V ξ
+i,1(s) ≤c
+√
+dH2
+√
+N
+r
+d ln
+ NHnK
+δ
+
+.
+(46)
+Step 5: Controlling Term B.
+Recall that term(B) = V
+⋆,ξ
+i,1 (s) −V
+ξ
+i,1(s), which measures the gap between the
+best-response aggregated value V
+⋆,ξ
+i,1 and the own-policy aggregated value V
+ξ
+i,1 at h = 1. This is an intrinsic
+optimization error arising from the FTRL-based policy updates under the coupled, non-stationary multi-agent
+dynamics. We control it by first replacing V
+⋆,ξ
+i,h with an optimistic surrogate bVi,h satisfying bVi,h ≥V
+⋆,ξ
+i,h (Lemma 3),
+then bounding the gap bVi,h(s) −V
+ξ
+i,h(s). For brevity, for all (h, k, i, s, ai) ∈[H] × [K] × [n] × S × Ai, we
+abbreviate the definitions in (32) in this subsection as below:
+bP
+πk
+−i,bV
+i,h,s,ai := bP
+πk
+−i,bVi,h+1
+i,h,s,ai
+= argminP∈Uσi P k
+i,h,s,ai
+P bVi,h+1,
+P
+πk
+−i,V
+i,h,s,ai := P
+πk
+−i,V
+ξ
+i,h+1
+i,h,s,ai
+= argmin
+P∈Uσi P
+πk
+−i
+h,s,ai
+PV
+ξ
+i,h+1.
+(47)
+To continue, we first introduce the following lemma, which establishes that the value bVi,h is an optimistic version
+of the best-response surrogate V
+⋆,ξ
+i,h; its proof is deferred to Appendix C.3.2:
+Lemma 3
+With probability at least 1 −δ, for all (i, h, s) ∈[n] × [H] × S, with the bonus factors βi,h(s) defined in (22), it
+holds that
+bVi,h(s) ≥V
+⋆,ξ
+i,h.
+Applying Lemma 3, we first replace V
+⋆,ξ
+i,h by its optimistic quantity bVi,h and choose to control the corresponding
+gap as below:
+V
+⋆,ξ
+i,h(s) −V
+ξ
+i,h(s) ≤bVi,h(s) −V
+ξ
+i,h(s).
+(48)
+Using techniques and arguments analogous to those in the proof of Lemma 3, we obtain the following lemma and
+corrolary:
+Lemma 4
+With probability at least 1 −δ, it holds that
+bVi,h(s) ≥V
+ξ
+i,h(s),
+for all (i, h, s) ∈[n] × [H] × S.
+25
+
+Corollary 5.1. With probability at least 1 −δ, it holds that for all (i, h, s) ∈[n] × [H] × S,
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+rk
+i,h(s, ai) + bP
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
++ βi,h(s)
+≥
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+rk
+i,h(s, ai) + bP
+πk
+−i,V
+i,h,s,aiV
+ξ
+i,h+1
+
+Combining Lemma 4 and Corollary 5.1,
+recalling the definition of bVi,h in (21) gives that
+bVi,h(s) = min
+( K
+X
+k=1
+1
+K
+
+πk
+i,h(· | s), qk
+i,h(s, ·)
+
++ βi,h(s), H −h + 1
+)
+,
+= min
+ K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+rk
+i,h(s, ai) + bP
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
++ βi,h(s), H −h + 1
+	
+Therefore, term (B) can be controlled by
+V
+⋆,ξ
+i,h(s) −V
+ξ
+i,h(s) ≤bVi,h(s) −V
+ξ
+i,h(s)
+(i)
+≤
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+rk
+i,h(s, ai) + bP
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
++ βi,h(s) −1
+K
+K
+X
+k=1
+Eai∼πk
+i,h(s)
+h
+rk
+i,h(s, ai) + bP
+πk
+−i,V
+ζ
+i,h+1
+i,h,s,ai
+V
+ζ
+i,h+1
+i
+=
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+ bP
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
++ βi,h(s) −
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+ bP
+πk
+−i,V
+i,h,s,aiV
+ξ
+i,h+1
+
+≤
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+P
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
++ βi,h(s) −
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+P
+πk
+−i,V
+i,h,s,aiV
+ξ
+i,h+1
+
++
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+ bP
+πk
+−i,bV
+i,h,s,ai bVi,h+1 −P
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
++
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+P
+πk
+−i,V
+i,h,s,aiV
+ξ
+i,h+1 −bP
+πk
+−i,V
+i,h,s,aiV
+ξ
+i,h+1
+.
+(49)
+Here, (i) holds by recalling the definition of bVi,h in (21) and the definition of V
+ξ
+i,h(s) in (33). Furthermore, we
+apply Lemma 2 and arrive at: with probability at least 1 −δ,
+V
+⋆,ξ
+i,h(s) −V
+ξ
+i,h(s) ≤
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+P
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
++ βi,h(s) −
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+P
+πk
+−i,V
+i,h,s,aiV
+ξ
+i,h+1
+
++ 4
+√
+d
+√
+N
+ 2H
+q
+d ln(NH + 1) + 2 ln
+  3KNHn
+δ
+
++ H
+√
+d
+
+≤
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+P
+πk
+−i,V
+i,h,s,ai bVi,h+1
+
++ βi,h(s) −
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+P
+πk
+−i,V
+i,h,s,aiV
+ξ
+i,h+1
+
++ 4
+√
+d
+√
+N
+ 2H
+q
+d ln(NH + 1) + 2 ln
+  3KNHn
+δ
+
++ H
+√
+d
+
+=
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+h
+P
+πk
+−i,V
+i,h,s,ai
+
+bVi,h+1 −V
+ξ
+i,h+1
+i
++ βi,h(s) + 4
+√
+d
+√
+N
+ 2H
+q
+d ln(NH + 1) + 2 ln
+  3KNHn
+δ
+
++ H
+√
+d
+
+(50)
+where the penultimate inequality holds due to the elementary fact that P
+πk
+−i,bV
+i,h,s,ai bVi,h+1 ≤P
+πk
+−i,V
+i,h,s,ai bVi,h+1. Finally,
+applying the recursive bound in (50) recursively for h = 1, 2, . . . , H yields
+term(B) = V
+⋆,ξ
+1,h(s) −V
+ξ
+1,h(s) ≤
+H
+X
+i=1
+βi,h(s) + H · 4
+√
+d
+√
+N
+ 2H
+q
+d ln(NH + 1) + 2 ln
+  3KNHn
+δ
+
++ H
+√
+d
+
+26
+
+≤12
+√
+dH
+√
+N
+ 2H
+q
+d ln(NH + 1) + 2 ln
+  3KNHn
+δ
+
++ H
+√
+d
+
++ 2H2
+r
+ln Ai
+K .
+(51)
+where the first inequality holds by bVi,H+1(s) = 0 and the fundamental fact V
+ξ
+i,H+1(s) = 0 in (35) for all
+(i, h) ∈[n] × [H].
+Step 6: Summing up the results.
+To complete the proof, combining the bounds for terms (A) and (C) in (46)
+with that for term (B) in (51), we obtain
+V ⋆,ξ
+i,1 (s) −V ξ
+i,1(s) ≲dH2
+√
+N
+r
+ln
+ KNnH
+δ
+
++ H2
+r
+ln Ai
+K .
+Consequently, Algorithm 3 outputs an ε-robust CCE ξ, i.e.,
+max
+i∈[n],s∈S
+
+Eπ∼ξ
+
+V ⋆,π−i
+i,1
+(s)
+
+−Eπ∼ξ
+
+V π
+i,1(s)
+
+≤ε
+with probability at least 1 −δ, provided that N ≥CH4d3/ε2 and K ≥CH4/ε2, where C is an absolute constant.
+Specifically, if the total number of samples acquired during the learning process satisfies
+Nall ≥HK(N + d(d + 1)/2) ≥O
+ H9d3/ε4
+.
+Thus, we finish the proof of Theorem 2.
+C.3
+Proof of auxiliary results
+C.3.1
+Proof of Lemma 2
+Step 1: Proof of the transition estimation gap.
+First, let’s consider any fixed triple (h, i, k) ∈[H] × [n] × [K].
+Applying strong duality property [Iyengar, 2005], we can rewrite the transition estimation error as
+max
+(s,ai)∈S×Ai
+P
+bπk
+−i,V
+i,h,s,aiV −bP
+bπk
+−i,V
+i,h,s,aiV
+
+(i)=
+max
+(s,ai)∈S×Ai
+
+max
+α∈
+
+mins V (s),maxs V (s)
+
+
+P
+bπk
+−i
+h,s,ai
+
+V
+
+α −σi
+ α −min
+s′
+
+V
+
+α
+ s′
+−
+max
+α∈
+
+mins V (s),maxs V (s)
+
+
+P k
+i,h,s,ai
+
+V
+
+α −σi
+ α −min
+s′
+
+V
+
+α
+ s′
+≤
+max
+(s,ai)∈S×Ai
+max
+α∈
+
+mins V (s),maxs V (s)
+
+P
+bπk
+−i
+h,s,ai
+
+V
+
+α −P k
+i,h,s,ai
+
+V
+
+α
+,
+where (i) holds by refering to the definitions in (32) and then apply the dual form of robust Bellman operator [Shi
+et al., 2023, Lemma 1] due to strong duality property [Iyengar, 2005]. See the definiton of P k
+i,h,s,ai in (30). For a
+fixed α, we have
+max
+(s,ai)∈S×Ai
+P
+bπk
+−i
+h,s,ai
+
+V
+
+α −P k
+i,h,s,ai
+
+V
+
+α
+
+(i)=
+max
+(s,ai)∈S×Ai
+ϕi(s, ai)⊤µ
+bπk
+−i
+i,h
+
+V
+
+α −ϕi(s, ai)⊤bµk
+i,h
+
+V
+
+α
+
+(ii)
+≤
+max
+(s,ai)∈S×Ai
+ϕi(s, ai)
+
+(Λk
+i,h)−1
+ 2H
+r
+d ln(NH + 1) + ln
+ 3NH
+δ
+
++ H
+√
+d
+
+,
+where (i) holds due to the linear assumption of Markov games in (2) and the definition of the estimated transition
+kernel in (18), and (ii) follows by applying Theorem 5 with f = [V ]α (which is a fixed function with range [0, H]
+for the given α) and λ = 1, which holds with probability at least 1 −δ.
+Furthermore, we apply Lemma 1 with Σ =
+Λk
+i,h
+|Di| and x = ϕi(s, ai) for all (s, ai) and arrive at
+max
+(s,ai)∈S×Ai
+P
+bπk
+−i
+h,s,ai
+
+V
+
+α −P k
+i,h,s,ai
+
+V
+
+α
+ ≤
+r
+d
+N
+ 2H
+r
+d ln(NH + 1) + ln
+ 3NH
+δ
+
++ H
+√
+d
+
+,
+(52)
+27
+
+with probability at least 1 −δ. To extend the pointwise bound towards a union bound for all α ∈[0, H], we define
+a ε1-net denoted as Nε1 for α. To cover α ∈[0, H], the net size bounded by |Nε1| ≤3H/ε1 [Vershynin, 2018]
+allows us to apply the union bound:
+max
+(s,ai)∈S×Ai
+max
+α∈
+
+mins V (s),maxs V (s)
+
+P
+bπk
+−i
+h,s,ai
+
+V
+
+α −P k
+i,h,s,ai
+
+V
+
+α
+
+≤
+max
+(s,ai)∈S×Ai max
+α∈Nε1
+P
+bπk
+−i
+h,s,ai
+
+V
+
+α −P k
+i,h,s,ai
+
+V
+
+α
+ + ε1
+≤
+r
+d
+N
+ 2H
+r
+d ln(NH + 1) + ln
+ 3NH|Nε1|
+δ
+
++ H
+√
+d
+
++ ε1
+≤2
+r
+d
+N
+ 2H
+r
+d ln(NH + 1) + ln
+ 3NH
+δ
+
++ H
+√
+d
+
+,
+(53)
+where the first inequality follows because the chosen α lies within an ε-ball centered at some point in Nε1, and the
+function
+P
+bπk
+−i
+h,s,ai
+
+V
+
+α −P k
+i,h,s,ai
+
+V
+
+α
+ is 1-Lipschitz in α; the penultimate line holds by appying (52); and the last
+line is induced by letting ε1 = 1/N and |Nε1| ≤3HN.
+Note that (53) is established for a fixed triple (h, i, k) ∈[H] × [n] × [K], with probability at least 1 −δ. To
+upgrade this pointwise bound to a union bound over all (h, i, k) ∈[H] × [n] × [K], we apply for all nKH triples
+and arrive at: with probability at least 1 −δ, for all (h, i, k) ∈[H] × [n] × [K], and any fixed value function
+V : S →[0, H], it obeys
+max
+(s,ai)∈S×Ai
+P
+bπk
+−i,V
+i,h,s,aiV −bP
+bπk
+−i,V
+i,h,s,aiV
+ ≤2
+r
+d
+N
+ 2H
+r
+d ln(NH + 1) + 2 ln
+ 3KNHn
+δ
+
++ H
+√
+d
+
+.
+Proof of the reward estimation gap.
+The reward bound follows the same proof structure as that used for the
+transition kernel, but with a simpler one-dimensional parameter vector. Based on the linear assumption of the reward
+function ri,h in (2) and the construction of the estimated reward function rk
+i,h in (18), we derive that
+max
+(s,ai)∈S×Ai
+Ea−i∼bπk
+−i(s)ri,h(s, a) −rk
+i,h(s, ai)
+ =
+max
+(s,ai)∈S×Ai
+ϕi(s, ai)⊤θ
+bπk
+−i
+i,h −ϕi(s, ai)⊤bθk
+i,h
+.
+Applying Theorem 5 with the scalar target f = Ea−i∼bπk
+−i(s)[ri,h(s, a)] ∈[0, H] and λ = 1, we instantiate the
+ridge-regression concentration bound for the one-dimensional reward parameter and obtain that with probability at
+least 1 −δ, for a fixed (h, i, k):
+max
+(s,ai)∈S×Ai
+Ea−i∼bπk
+−i(s)ri,h(s, a) −rk
+i,h(s, ai)
+
+≤
+max
+(s,ai)∈S×Ai
+ϕi(s, ai)
+ Λk
+i,h
+−1 ·
+ 2H
+r
+d ln(NH + 1) + ln
+ 1
+δ
+
++ H
+√
+d
+
+≤
+√
+d
+√
+N
+·
+ 2H
+r
+d ln(NH + 1) + ln
+ 1
+δ
+
++ H
+√
+d
+
+,
+(54)
+where the last inequality holds by applying Lemma 1 with Σ =
+Λk
+i,h
+|Di| and x = ϕi(s, ai) for all (s, ai).
+As in the transition case, we will transfer this pointwise bound (54) the high-probability event underlying the
+ridge-regression bound above is defined relative to the samples used to estimate bθk
+i,h for a fixed triple (h, i, k) ∈
+[H] × [n] × [K] for any fixed(h, i, k) to a union bound over the nKH triples of the space [H] × [n] × [K].
+Consequently, it obeys that with probability at least 1 −δ, for all (h, i, k) ∈[H] × [n] × [K],
+Ea−i∼bπk
+−i(s)ri,h(s, a) −rk
+i,h(s, ai)
+ ≤
+√
+d
+√
+N
+ 2H
+q
+d ln(NH + 1) + ln
+  3NHnK
+δ
+
++ H
+√
+d
+
+.
+C.3.2
+Proof of Lemma 3
+Before proceeding, we first introduce an exsiting result for Follow-the-Regularized-Leader (FTRL) (see Shalev-
+Shwartz [2007, Theorem 6] and also Li et al. [2022, Theorem 3]) that we will resort to: for all (i, h) ∈[n] × [H]:
+max
+ai∈Ai
+K
+X
+k=1
+1
+K
+
+rk
+i,h(s, ai) + bP
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
+≤
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+rk
+i,h(s, ai) + bP
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
++ 2H
+r
+ln Ai
+K ,
+(55)
+28
+
+which can be obtained byc instantiating the standard FTRL regret bound in our setting as follows. For any
+fixed time step h, agent i, and state s ∈S, view the K iterations as an online-learning process for the agent.
+At each iteration k, the per-round reward is defnied as ℓk
+i,h(ai) := rk
+i,h(s, ai) + bP
+πk
+−i,bV
+i,h,s,ai bVi,h+1 for all ai ∈Ai
+and bVi,h+1 ∈[0, H]. During the prpocess, the agent i plays the mixed strategy πk
+i,h(· | s) ∈∆(Ai) produced
+by FTRL with entropy regularizer. Applying Shalev-Shwartz [2007, Theorem 6] (equivalently Li et al. [2022,
+Theorem 3]) with per-round reward range size H and action-space size |Ai| = Ai yields the regret bound
+maxai
+PK
+k=1 ℓk
+i,h(ai) −PK
+k=1 Eai∼πk
+i,h(s)
+
+ℓk
+i,h(ai)
+
+≤2H√K ln Ai; dividing by K gives (55).x
+Armed with the key results, we shall prove Lemma 3 using induction arguments. Initially, for the base case at the
+final time step H + 1, we directly have
+for all (i, s) ∈[n] × S :
+bVi,H+1(s) = 0 = V
+⋆,ξ
+i,H+1(s),
+due to the definition of bVi,H+1 and the fundamental fact in (35). We proceed by backward induction from the last
+step h = H + 1 to h = 1. Assume that bVi,h+1(s) ≥V
+⋆,ξ
+i,h+1(s) holds for all (i, s) ∈[n] × S. Our goal is to show
+that bVi,h(s) ≥V
+⋆,ξ
+i,h(s) for all (i, s) ∈[n] × S.
+Before proceeding, to invoke the FTRL regret bound in (55), we must bound the range of the per-
+round gain ℓk
+i,h(ai) := rk
+i,h(s, ai) + bP π−ik,bV
+i,h,s,ai bVi,h+1. By the definition of bVi,h in (21), we have bVi,h(s) =
+min
+ PK
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+rk
+i,h(s, ai) + bP
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
++ βi,h(s), H −h + 1
+	
+. It immediately yields bVi,h(s) ≤
+H −h + 1 ≤H. For the lower bound, we proceed by backward induction on h: with the base case bVi,H+1 = 0,
+and given bVi,h+1 ≥0, each summand of the first argument is non-negative—rk
+i,h(s, ai) ≥0 by assumption,
+bP π−ik,bV
+i,h,s,ai bVi,h+1 ≥0 as a probability kernel applied to a non-negative function, and βi,h(s) ≥0.
+Hence
+bVi,h(s) ∈[0, H] for all (i, h) ∈[n] × [H]. Now we are ready to verify the induction hypothesis for step h.
+Towards this, recalling the definition of V
+⋆,ξ
+i,h(s) (see (33)) gives
+V
+⋆,ξ
+i,h(s) = max
+ai∈Ai
+K
+X
+k=1
+1
+K
+
+rk
+i,h(s, ai) + bP
+πk
+−i,V
+⋆,ξ
+i,h+1
+i,h,s,ai
+V
+⋆,ξ
+i,h+1
+
+(i)
+≤max
+ai∈Ai
+K
+X
+k=1
+1
+K
+
+rk
+i,h(s, ai) + P
+πk
+−i,V
+⋆,ξ
+i,h+1
+i,h,s,ai
+V
+⋆,ξ
+i,h+1
+
++ 2
+√
+d
+√
+N
+ 2H
+r
+d ln(NH + 1) + 2 ln
+ 3KNHn
+δ
+
++ H
+√
+d
+
+(ii)
+≤max
+ai∈Ai
+K
+X
+k=1
+1
+K
+
+rk
+i,h(s, ai) + P
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
++ 2
+√
+d
+√
+N
+ 2H
+r
+d ln(NH + 1) + 2 ln
+ 3KNHn
+δ
+
++ H
+√
+d
+
+(iii)
+≤max
+ai∈Ai
+K
+X
+k=1
+1
+K
+
+rk
+i,h(s, ai) + bP
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
++ 4
+√
+d
+√
+N
+ 2H
+r
+d ln(NH + 1) + 2 ln
+ 3KNHn
+δ
+
++ H
+√
+d
+
+(iv)
+≤
+K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+rk
+i,h(s, ai) + bP
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
++ βi,h(s),
+(56)
+Here, (i) and (iii) follows from applying Lemma 2, (ii) follows from the induction assumption, and (iv) is based on
+the results of FTRL in (55) and recalling βi,h(s) in (22) for all (i, s) ∈[n] × S:
+βi,h(s) = 8
+r
+d
+N
+ 2H
+r
+d ln(NH + 1) + 2 ln
+ 3KNHn
+δ
+
++ H
+√
+d
+
++ 2H
+r
+ln Ai
+K .
+On the other hand, recalling the definition of bVi,h in (21) gives that
+bVi,h(s) = min
+( K
+X
+k=1
+1
+K
+
+πk
+i,h(· | s), qk
+i,h(s, ·)
+
++ βi,h(s), H −h + 1
+)
+,
+= min
+ K
+X
+k=1
+1
+K Eai∼πk
+i,h(s)
+
+rk
+i,h(s, ai) + bP
+πk
+−i,bV
+i,h,s,ai bVi,h+1
+
++ βi,h(s), H −h + 1
+	
+29
+
+where the last equality holds by the definitions of qk
+i,h in (19). Therefore, with the fact that V
+⋆,ξ
+i,h(s) ≤H −h + 1
+for all (i, s) ∈[n] × S, we obtain that
+∀(i, s) ∈[n] × S :
+V
+⋆,ξ
+i,h(s) ≤bVi,h(s).
+Therefore, we have finished the proof of the lemma by induction arguments.
+D
+Proof of Theorem 3
+We now turn to the proof for the online interactive setting. The overall structure parallels the generative case: we
+begin with estimation lemmas, then construct optimistic and pessimistic surrogates, and finally combine them to
+derive a recursive relationship, which leads to the regret bound.
+Step 1: error decomposition.
+First, recall that the objective in the online interactive setting is to upper bound the
+following regret term induced by the process of Algoarithm 2:
+max
+i∈[n]
+T
+X
+t=1
+Eπ∼ξt
+V ⋆,π−i,σi
+i,1
+(s)
+
+−Eπ∼ξt
+V π,σi
+i,1
+(s)
+
+= max
+i∈[n]
+T
+X
+t=1
+V ⋆,ξt
+i,1 (s) −V ξt
+i,1(s).
+Before continuning, for any fixed set of policies
+
+bπk.t	
+(k,t)×[K]×[T ] with bπk.t ∈[H] × S 7→Qn
+i=1 ∆(Ai), we
+define the following useful auxiliary notations of transition kernels:
+P
+bπk,t
+−i ,V
+i,h,s,aiV :=
+inf
+P∈Uσi P
+bπk,t
+−i
+h,s,ai
+ PV,
+bP
+bπk,t
+−i ,V
+i,h,s,aiV :=
+inf
+P∈Uσi P k,t
+i,h,s,ai)
+PV,
+where P k,t
+i,h,s,ai is the estimated transition kernel output by Algoarithm 2.
+Armed with the notations, we first introduce the following lemma, which bounds the estimation errors of the
+transition probability and the reward function. The proof, which is analogous to that of Lemma 2 with the added
+union bound over t ∈[T], is provided in Appendix D.1.1.
+Lemma 5
+Consider any fixed (h, i, k, t) ∈[H] × [n] × [K] × [T], fixed value function V : S →[0, H] and δ ∈(0, 1).
+With probability at least 1 −2δ, the following hold simultaneously for all (s, ai) ∈S × Ai:
+P
+bπk,t
+−i ,V
+i,h,s,aiV −bP
+bπk,t
+−i ,V
+i,h,s,aiV
+ ≤
+ϕ(s, ai)
+ Λk,t
+i,h
+−1 2H
+q
+d ln(NH + 1) + 2 ln
+  3T KNHn
+δ
+
++ H
+√
+dλ
+
++ 1
+N ,
+Ea−i∼bπk,t
+−i (s)
+
+ri,h(s, a)
+
+−rk,t
+i,h(s, ai)
+ ≤
+ϕ(s, ai)
+ Λk,t
+i,h
+−1 2H
+q
+d ln(NH + 1) + ln
+  3NT HnK
+δ
+
++ H
+√
+dλ
+
+,
+(57)
+where Λk,t
+i,h was defined in (12) with regularization λ ≥1.
+To continue, recalling the definition of the estimated value function V
+t
+i,h(s) in (14), analogous to the gener-
+ative case, we will show that V
+t
+i,h(s) is an optimistic estimation of the best-response value function V ⋆,ξt
+i,h (s)
+simultaneously for all h ∈[H].
+Lemma 6
+For all (t, i, h, s) ∈[T] × [n] × [H] × S, invoking the optimistic bonus term defined in (15), with probability at
+least 1 −δ, the following inequality holds true:
+∀s ∈S :
+V
+t
+i,h(s) ≥V ⋆,ξt
+i,h (s).
+Unlike the generative case, we also maintain a collection of pessimistic estimates of the value function, and will
+show that V t
+i,h(s) serves as a lower bound for V ξt
+i,h(s).
+30
+
+Lemma 7
+Invoking the pessimistic bonus in (16), with probability at least 1 −δ,
+V t
+i,h(s) ≤V ξt
+i,h(s),
+holds true for all (i, h, t, s) ∈[n] × [H] × [T] × S.
+The proof of Lemma 6 and Lemma 7 are postponed to Appendix D.1. Now we are now ready to prove Theorem 3.
+Applying Lemma 6 and Lemma 7, we have
+V ⋆,ξt
+i,h (s) −V ξt
+i,h(s) ≤V
+t
+i,h(s) −V t
+i,h(s)
+(i)
+≤
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+rk,t
+i,h(s, ai) + bP
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1
+
++ βt
+i,h,1(s) + βt
+i,h,2(s)
+−
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+rk,t
+i,h(s, ai) + bP
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1
+
+≤βt
+i,h,1(s) + βt
+i,h,2(s) +
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+P
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1
+
++
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+ bP
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1 −P
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1
+ −
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+P
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1
+
++
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+P
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1 −bP
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1
+
+(ii)
+≤
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+P
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1 −P
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1
+
++ βt
+i,h,1(s) + βt
+i,h,2(s)
++
+K
+X
+k=1
+1
+K max
+ai∈Ai
+ϕi(s, ai)
+ Λk,t
+i,h
+−1 4H
+q
+d ln(NH + 1) + ln
+  3NT HnK
+δ
+
++ 2H
+√
+dλ
+
++ 1
+N
+≤
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+P
+πk,t
+−i V
+i,h,s,ai
+ V
+t
+i,h+1 −V t
+i,h+1
+
++ βt
+i,h,1(s) + βt
+i,h,2(s)
++
+K
+X
+k=1
+1
+K max
+ai∈Ai
+ϕi(s, ai)
+ Λk,t
+i,h
+−1 4H
+q
+d ln(NH + 1) + ln
+  3NT HnK
+δ
+
++ 2H
+√
+dλ
+
++ 1
+N .
+(58)
+where (i) is obtained by recalling the definition of V
+t
+i,h(s) and V t
+i,h(s) in (14), (ii) is obtained by applying Lemma 5
+to replace the empirical estimate bP by their ground truth, and the last inequality holds with probability at least 1 −δ.
+Step 2: controlling the second term in (58).
+To continue, we focus on the second term in (58). We first show
+that, for λ ≥c0 log(2dnKHT/δ) = e
+O(1), the empirical Gram matrix Λk,t
+i,h concentrates multiplicatively around its
+expectation.
+Recall the empirical Gram matrix from (12):
+Λk,t
+i,h =
+|Di|
+X
+m=1
+ϕ(m)
+i
+(ϕ(m)
+i
+)⊤+ λId,
+where
+ϕ(m)
+i
+:= ϕi
+ s(m)
+h
+, a(m)
+i,h
+
+.
+which is a positive definite matrix satisfying Λk,t
+i,h ⪰λId. By invoking the Hybrid-Sampling procedure in Algo-
+rithm 1, the dataset Di at round t contains |Di| ≈N samples. Specifically, for each l ∈[t −1], we independently
+collect ⌈N/t⌉samples conditioned on {πk,l}k∈[K], which together form {(s(m)
+h
+, a(m)
+i,h )}|Di|
+m=1. Recall the hybrid
+sampling procedure in Algorithm 1 for any round t ∈[T], time step h ∈[H], and agent i: for each j ∈[h −1],
+sj+1 ∼
+K
+X
+k=1
+1
+K Eai,j∼πk,t
+i,j (sj)P
+πk,t
+−i,j,V
+i,j,sj,ai,j(·),
+(59)
+31
+
+where P
+πk,t
+−i,j,V
+i,j,sj,ai,j denotes the pessimistic worst-case transition kernel defined in (75). Accordingly, we denote the
+resulting distribution of sh by
+sh ∼
+ K
+X
+k=1
+1
+K P
+πk,t
+1
+,V
+i,1
+
+· · ·
+ K
+X
+k=1
+1
+K P
+πk,t
+h−1,V
+i,h−1
+
+.
+For all (t, h) ∈[T] × [H], we define
+Xt,h = Esh,ai
+
+ϕi(sh, ai)ϕi(sh, ai)⊤ sh ∼
+h K
+X
+k=1
+1
+K P
+πk,t
+1
+,V
+i,1
+i
+· · ·
+h K
+X
+k=1
+1
+K P
+πk,t
+h−1,V
+i,h−1
+i
+, ai ∼Unif(Ai)
+
+.
+Therefore, denoting the round index of any m-th sample as τ(m) ∈[t −1], one has
+E
+
+ϕ(m)
+i
+(ϕ(m)
+i
+)⊤
+= Xτ(m),h
+so that
+¯Λ := E[Λk,t
+i,h] =
+|Di|
+X
+m=1
+Xτ(m),h + λId
+and
+¯Λ ⪰λId.
+(60)
+Then we introduce the following lemma whose proof is postponed to Appendix D.1.4.
+Lemma 8
+Let λ ≥c0 log(2dnKHT/δ) for some large enough constant c0. With probability at least 1 −δ, for all
+(k, t, h, i) ∈[K] × [T] × [H] × [n], one has
+1
+2 ¯Λ ⪯Λk,t
+i,h ⪯
+3
+2 ¯Λ.
+(61)
+With the above lemma in hand, we introduce an auxiliary term
+St,h =
+t−1
+X
+τ=1
+Xτ,h + λId
+As each round l ∈[t −1] contributes at least one sample to Di, we have P|Di|
+m=1 Xτ(m),h ⪰Pt−1
+l=1 Xl,h, since each
+population covariance Xl,h is positive semi-definite. Therefore, one has
+¯Λ ⪰St,h ⪰λId,
+(62)
+and consequently
+∀ϕ ∈Rd :
+¯Λ−1 ⪯S−1
+t,h,
+ϕ
+¯Λ−1 ≤
+ϕ
+
+S−1
+t,h.
+(63)
+Inverting (61) in Lemma 8 yields the operator inequality (Λk,t
+i,h)−1 ⪯2¯Λ−1. Combining with (63) gives that with
+probability at least 1 −δ, simultaneously for all (s, k, t, h, i) ∈S × [K] × [T] × [H] × [n],
+max
+ai∈Ai
+ϕi(s, ai)
+ Λk,t
+i,h
+−1 ≲max
+ai∈Ai
+ϕi(s, ai)
+ EΛk,t
+i,h
+−1 ≤max
+ai∈Ai
+ϕi(s, ai)
+
+S−1
+t,h.
+(64)
+Inserting (64) back into (58) gives
+V ⋆,ξt
+i,h (s) −V ξt
+i,h(s) ≤V
+t
+i,h(s) −V t
+i,h(s)
+≤
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+P
+πk,t
+−i V
+i,h,s,ai
+ V
+t
+i,h+1 −V t
+i,h+1
+
++ βt
+i,h,1(s) + βt
+i,h,2(s)
++
+K
+X
+k=1
+1
+K max
+ai∈Ai
+ϕi(s, ai)
+
+S−1
+t,h
+ 4H
+q
+d ln(NH + 1) + ln
+  3NT HnK
+δ
+
++ 2H
+√
+dλ
+
++ 1
+N
+32
+
+≤1
+K
+K
+X
+k=1
+Eai∼πk,t
+i,h(s)P
+πk,t
+−i ,V
+i,h,s,ai
+ V
+t
+i,h+1 −V t
+i,h+1
+
++ cH
+r
+ln Ai
+K
++ c
+N
++ c
+K
+X
+k=1
+1
+K max
+ai∈Ai
+ϕi(s, ai)
+
+S−1
+t,h · H
+ p
+2d ln(NH + 1) + ln(3TNHnK/δ) +
+√
+dλ
+
+,
+(65)
+which holds with probability at least 1 −δ.
+Here the last inequality holds by invoking the definitions of
+βt
+i,h,1(s), βt
+i,h,2(s) in (15) and (16).
+Step 3: recursion arguments.
+Consequently, applying (65) recursively across layers h = 1, . . . , H arrives at
+V ⋆,ξt
+i,1 (s1) −V ξt
+i,1(s1) ≤V
+t
+i,1(s1) −V t
+i,1(s1)
+≤
+H
+X
+h=1
+c
+
+H
+r
+ln Ai
+K
++ 1
+N + E
+
+∥ϕi(sh, ai)∥S−1
+t,h
+ sh ∼
+ K
+X
+k=1
+1
+K P
+πk,t
+1
+,V
+i,1
+
+· · ·
+ K
+X
+k=1
+1
+K P
+πk,t
+h−1,V
+i,h−1
+
+, ai ∼Unif(Ai)
+
+· AiH
+ r
+2d ln(NH + 1) + ln
+ 3TNHnK
+δ
+
++
+√
+dλ
+
+(66)
+with probability at least 1 −δ. Therefore, we can control the regret by applying (66) for all t ∈[T]:
+T
+X
+t=1
+V ⋆,ξt
+i,1 (s1) −V ξt
+i,1(s1)
+≤
+H
+X
+h=1
+c
+
+T
+X
+t=1
+E
+
+∥ϕi(sh, ai)∥S−1
+t,h
+ sh ∼
+ K
+X
+k=1
+1
+K P
+πk,t
+1
+,V
+i,1
+
+· · ·
+ K
+X
+k=1
+1
+K P
+πk,t
+h−1,V
+i,h−1
+
+, ai ∼Unif(Ai)
+
+· AiH
+ r
+2d ln(NH + 1) + ln
+ 3TNHnK
+δ
+
++
+√
+dλ
+
++
+H
+X
+h=1
+T
+X
+t=1
+c
+ r
+ln Ai
+K
++ 1
+N
+
+≤
+H
+X
+h=1
+c
+v
+u
+u
+tT
+T
+X
+t=1
+E
+
+∥ϕi(sh, ai)∥2
+S−1
+t,h
+ sh ∼
+ K
+X
+k=1
+1
+K P
+πk,t
+1
+,V
+i,1
+
+· · ·
+ K
+X
+k=1
+1
+K P
+πk,t
+h−1,V
+i,h−1
+
+, ai ∼Unif(Ai)
+
+· AiH
+ r
+2d ln(NH + 1) + ln
+ 3TNHnK
+δ
+
++
+√
+dλ
+
++
+H
+X
+h=1
+T
+X
+t=1
+c
+ r
+ln Ai
+K
++ 1
+N
+
+≤
+H
+X
+h=1
+c
+v
+u
+u
+tT
+T
+X
+t=1
+tr
+ S−1/2
+t,h
+Xt,hS−1/2
+t,h
+
+· AiH
+ r
+2d ln(NH + 1) + ln
+ 3TNHnK
+δ
+
++
+√
+dλ
+
++
+H
+X
+h=1
+T
+X
+t=1
+c
+ r
+ln Ai
+K
++ 1
+N
+
+(67)
+where the second inequality holds by the Cauchy–Schwarz inequality applied to the sum over t (i.e.,
+PT
+t=1 xt ≤
+q
+T PT
+t=1 x2
+t with xt = E[∥ϕi(s, ai)∥S−1
+t,h | · · · ], after also using Jensen’s inequality, which yields
+(E[∥ϕi(s, ai)∥S−1
+t,h])2 ≤E[∥ϕi(s, ai)∥2
+S−1
+t,h]).
+The final inequality holds by the cyclic property of the trace: for any vector ϕ ∈Rd and any positive definite
+matrix M ≻0,
+∥ϕ∥2
+M −1 = ϕ⊤M −1ϕ = tr
+ M −1ϕϕ⊤
+.
+Let M = St,h and noting that St,h = Pt−1
+τ=1 Xτ,h +λId depends only on iterations τ < t and is therefore measur-
+able with respect to (and constant given) the conditioning event {sh ∼[P
+k
+1
+K P
+πk,t
+1
+,V
+i,1
+] · · · [P
+k
+1
+K P
+πk,t
+h−1,V
+i,h−1
+], ai ∼
+Unif(Ai)} used at iteration t, we may interchange the conditional expectation with the trace by linearity:
+E
+
+∥ϕi(s, ai)∥2
+S−1
+t,h
+ sh ∼
+ K
+X
+k=1
+1
+K P
+πk,t
+1
+,V
+i,1
+
+· · ·
+ K
+X
+k=1
+1
+K P
+πk,t
+h−1,V
+i,h−1
+
+, ai ∼Unif(Ai)
+
+= tr
+ S−1
+t,h E[ϕi(sh, ai)ϕi(sh, ai)⊤ sh ∼
+ K
+X
+k=1
+1
+K P
+πk,t
+1
+,V
+i,1
+
+· · ·
+ K
+X
+k=1
+1
+K P
+πk,t
+h−1,V
+i,h−1
+
+, ai ∼Unif(Ai)
+
+33
+
+= tr
+ S−1
+t,hXt,h
+
+= tr
+ S−1/2
+t,h
+Xt,hS−1/2
+t,h
+
+where the last line holds by invoking the definition of Xt,h and the cyclic invariance of the trace.
+We introduce the following lemme that controls PT
+t=1 tr
+ S−1/2
+t,h
+Xt,hS−1/2
+t,h
+
+. The proof is postponed to Ap-
+pendix D.1.5.
+Lemma 9
+T
+X
+t=1
+tr
+
+S−1/2
+t,h
+Xt,hS−1/2
+t,h
+
+= 2d log
+
+1 + T
+dλ
+
+= eO(d).
+(68)
+Substituting this lemma into (67) gives
+T
+X
+t=1
+V ⋆,ξt
+i,1 (s1) −V ξt
+i,1(s1)
+≤
+H
+X
+h=1
+c
+v
+u
+u
+tT
+T
+X
+t=1
+tr
+
+S−1/2
+t,h
+Xt,hS−1/2
+t,h
+
+· AiH ·
+q
+2d ln(NH + 1) + ln( 3T NHnK
+δ
+) +
+√
+dλ
+
++
+H
+X
+h=1
+T
+X
+t=1
+c
+ r
+ln Ai
+K
++ 1
+N
+
+≤
+H
+X
+h=1
+c e
+O(
+√
+Td) · AiH ·
+q
+2d ln(NH + 1) + ln( 3T NHnK
+δ
+) +
+√
+dλ
+
++
+H
+X
+h=1
+T
+X
+t=1
+c
+ r
+ln Ai
+K
++ 1
+N
+
+(i)
+≤
+H
+X
+h=1
+c e
+O(
+√
+Td) · AiH · e
+O(
+√
+d) +
+H
+X
+h=1
+T
+X
+t=1
+c
+ r
+ln Ai
+K
++ 1
+N
+
+(ii)
+≤e
+O
+ AiH2d
+√
+T
+
++ e
+O(H
+p
+T ln Ai + H)
+(iii)
+≤
+e
+O
+ AiH2d
+√
+T
+
+where (i) bounds
+q
+2d ln(NH + 1) + ln( 3T NHnK
+δ
+) +
+√
+dλ by e
+O(
+√
+d) due to the requirement of λ
+≥
+c0 log(2dnKHT/δ) = e
+O(1) in Lemma 8, (ii) holds by setting T = N = K, and (iii) drops the residual be-
+cause it is dominated by the leading e
+O(AiH2d
+√
+T).
+Finally, we conclude that with probability at least 1 −δ, Algorithm 2 guarantees that the regret is bounded by
+Regret(T) = max
+i∈[n]
+T
+X
+t=1
+Eπ∼ξt
+V ⋆,π−i
+i,1
+(s1)
+
+−Eπ∼ξt
+V π
+i,1(s1)
+
+≤e
+O
+ dH2√
+T · max
+i∈[n] Ai
+
+.
+(69)
+Thus, we have finished the proof of the regret bound in Theorem 3.
+Proof of the ε-CCE guarantee.
+It remains to show that, when T > H4d2(maxi∈[n] Ai)2/ε2, Algorithm 2 outputs
+an ε-robust CCE specialized to any fixed initial state s1 (cf. (10)). Define the uniform mixture of the output policy
+distributions of Algorithm 2 over the T iterates as
+bξ := 1
+T
+T
+X
+t=1
+ξt.
+(70)
+For any fixed agent i ∈[n], by linearity of expectation, one has
+Eπ∼bξ
+
+V ⋆,π−i,σi
+i,1
+(s1)
+
+−Eπ∼bξ
+
+V π,σi
+i,1
+(s1)
+
+= 1
+T
+T
+X
+t=1
+
+Eπ∼ξt
+V ⋆,π−i,σi
+i,1
+(s1)
+
+−Eπ∼ξt
+V π,σi
+i,1
+(s1)
+
+≤1
+T max
+j∈[n]
+T
+X
+t=1
+
+Eπ∼ξt
+V ⋆,π−j,σj
+j,1
+(s1)
+
+−Eπ∼ξt
+V π,σj
+j,1
+(s1)
+
+= 1
+T Regret(T),
+34
+
+where the last equality follows from the definition of Regret(T) in (11). Plugging in the regret bound in (69) gives
+max
+i∈[n]
+n
+Eπ∼bξ
+
+V ⋆,π−i,σi
+i,1
+(s1)
+
+−Eπ∼bξ
+
+V π,σi
+i,1
+(s1)
+o
+≤Regret(T)
+T
+≤e
+O
+dH2 maxi∈[n] Ai
+√
+T
+
+≤ε
+with probability at least 1 −δ, as long as
+T > H4d2 (maxi∈[n] Ai)2
+ε2
+,
+This is exactly the ε-robust CCE condition in (10), which completes the proof of Theorem 3.
+D.1
+Proof of auxiliary results.
+D.1.1
+Proof of Lemma 5
+The proof follows the pipeline of that for Lemma 2 in Appendix C.3.1. Throughout the proof, V : S →[0, H] is a
+fixed value function.
+Step 1: Proof of the transition estimation gap.
+First, consider any fixed (h, i, k, t) ∈[H] × [n] × [K] × [T].
+Recalling the auxiliary defintions in (32), and then applying strong-duality formulation [Iyengar, 2005] for the dual
+form of the robust Bellman operator [Shi et al., 2023, Lemma 1] yields
+P
+bπk,t
+−i ,V
+i,h,s,aiV −bP
+bπk,t
+−i ,V
+i,h,s,aiV
+ ≤
+max
+α∈[mins V (s), maxs V (s)]
+P
+bπk,t
+−i
+h,s,ai[V ]α −P k,t
+i,h,s,ai[V ]α
+,
+where P k,t
+i,h,s,ai(·) := ϕi(s, ai)⊤bµk,t
+i,h(·) is the estimated transition kernel defined in (12).
+For any fixed α, the linear-MG assumption in (2) gives P
+bπk,t
+−i
+h,s,ai[V ]α = ϕi(s, ai)⊤µ
+bπk,t
+−i
+i,h [V ]α. Therefore, applying
+Theorem 5 to the online Gram matrix Λk,t
+i,h defined in (12) with f = [V ]α ∈[0, H] yields that with probability at
+least 1 −δ,
+P
+bπk,t
+−i
+h,s,ai[V ]α −P k,t
+i,h,s,ai[V ]α
+ ≤
+ϕi(s, ai)
+
+(Λk,t
+i,h)−1
+ 2H
+q
+d ln(NH + 1) + ln
+  3NH
+δ
+
++ H
+√
+dλ
+
+,
+(71)
+for all (s, ai) ∈S × Ai.
+To derive the union bound over α ∈[0, H], we apply the same ε1-net argument as in (53): for ε1 = 1/N, we have
+|Nε1| ≤3HN. Observing the fact that the function α 7→|P
+bπk,t
+−i
+h,s,ai[V ]α −P k,t
+i,h,s,ai[V ]α| is 1-Lipschitz, combined
+with the pointwise bound in (71) gives, with probability at least 1 −δ, for all (s, ai) and α ∈[0, H],
+P
+bπk,t
+−i
+h,s,ai[V ]α −P k,t
+i,h,s,ai[V ]α
+ ≤
+ϕi(s, ai)
+
+(Λk,t
+i,h)−1
+ 2H
+q
+d ln(NH + 1) + ln
+  3NH·3HN
+δ
+
++ H
+√
+dλ
+
++ 1
+N .
+With above pointwise bound for any fixed (h, i, k, t) ∈[H] × [n] × [K] × [T], we replace δ by δ/(nKHT)
+to derive the union bound over [H] × [n] × [K] × [T]: with probability at least 1 −δ, for all (h, i, k, t) and all
+(s, ai) ∈S × Ai,
+P
+bπk,t
+−i ,V
+i,h,s,aiV −bP
+bπk,t
+−i ,V
+i,h,s,aiV
+ ≤
+ϕi(s, ai)
+
+(Λk,t
+i,h)−1
+ 2H
+q
+d ln(NH + 1) + 2 ln
+  3T KNHn
+δ
+
++ H
+√
+dλ
+
++ 1
+N .
+Step 2: Proof of the reward estimation gap.
+The argument is identical to the generative case, except: (i)
+the Gram matrix is now Λk,t
+i,h from (12) with regularization λ ≥1, so the ridge-regression bias term becomes
+H
+√
+dλ (rather than H
+√
+d in the generative case due to the λ = 1 specialization); (ii) we retain ∥ϕi(s, ai)∥(Λk,t
+i,h)−1
+explicitly; (iii) the union bound is over (h, i, k, t) ∈[H] × [n] × [K] × [T], contributing an extra ln T factor inside
+the logarithmic term. Concretely, applying Theorem 5 to the scalar target f = Ea−i∼bπk,t
+−i (s)[ri,h(s, a)] ∈[0, H]
+with the online Gram matrix and replacing δ by δ/(nKHT) in the resulting union bound, we have with probability
+at least 1 −δ,
+Ea−i∼bπk,t
+−i (s)[ri,h(s, a)] −rk,t
+i,h(s, ai)
+ ≤
+ϕi(s, ai)
+
+(Λk,t
+i,h)−1
+ 2H
+q
+d ln(NH + 1) + ln
+  3NT HnK
+δ
+
++ H
+√
+dλ
+
+,
+holds simultaneously for all (h, i, k, t) and (s, ai).
+35
+
+D.1.2
+Proof of Lemma 6
+We will prove Lemma 6 through induction arguments. For the base case h = H + 1, by definition,
+V
+t
+i,H+1(s) = V ⋆,ξt
+i,H+1(s) = 0
+(72)
+for all s ∈S. Thus, assuming that the desired fact is satisfied at time step h + 1, namely V
+t
+i,h+1(s) ≥V ⋆,ξt
+i,h+1(s)
+holds for all s ∈S, we will prove V
+t
+i,h(s) ≥V ⋆,ξt
+i,h (s) for all s ∈S.
+Towards this, we first define several auxiliary notations as follows. For all agents i ∈[n] and (t, k, s, h, ai) ∈
+[T] × [K] × S × [H] × Ai, let P k,t
+i,h,s,ai(·) := ϕi(s, ai)⊤bµk,t
+i,h(·) denote the online estimated transition kernel from
+(12). Define the worst-case kernels under the true and the estimated nominal transitions, respectively, as
+P
+πk,t
+−i ,V
+i,h,s,ai := arg
+min
+P∈Uσi P
+πk,t
+−i
+h,s,ai
+ PV
+t
+i,h+1
+and
+bP
+πk,t
+−i ,V
+i,h,s,ai := arg
+min
+P∈Uσi P k,t
+i,h,s,ai
+ PV
+t
+i,h+1.
+To continue, let ξt be the uniform distribution over the K product policies {πk,t}k∈[K] output by Algorithm 2 at
+iteration t, where each πk,t = {πk,t
+h }h∈[H] with πk,t
+h
+: S →Q
+i∈[n] ∆(Ai). Recalling the definition of the expected
+best-response value function V ⋆,ξt
+i,h
+in (31) and (6), by the robust Bellman equation (8), we have
+V ⋆,ξt
+i,h (s) = max
+ai∈Ai
+K
+X
+k=1
+1
+K
+
+Ea−i∼πk,t
+−i,h(s)
+
+ri,h(s, a)
+
++
+inf
+P∈Uσi
+
+P
+πk,t
+−i
+h,s,ai
+ PV ⋆,ξt
+i,h+1
+
+(i)
+≤max
+ai∈Ai
+K
+X
+k=1
+1
+K
+
+Ea−i∼πk,t
+−i,h(s)
+
+ri,h(s, a)
+
++
+inf
+P∈Uσi
+
+P
+πk,t
+−i
+h,s,ai
+ PV
+t
+i,h+1
+
+= max
+ai∈Ai
+K
+X
+k=1
+1
+K
+
+Ea−i∼πk,t
+−i,h(s)
+
+ri,h(s, a)
+
++ P
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1
+
+≤max
+ai∈Ai
+K
+X
+k=1
+1
+K
+
+rk,t
+i,h(s, ai) + bP
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1 +
+rk,t
+i,h(s, ai) −Ea−i∼πk,t
+−i,h[ri,h(s, a)]
+
++
+ bP
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1 −P
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1
+
+,
+where (i) holds by the induction assumption V ⋆,ξt
+i,h+1(s) ≤V
+t
+i,h+1(s) for all s ∈S. In the next step, we apply a
+similar analysis as in Lemma 2, from which we obtain
+V ⋆,ξt
+i,h (s)
+≤max
+ai∈Ai
+K
+X
+k=1
+1
+K
+
+rk,t
+i,h(s, ai) + bP
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1 +
+rk,t
+i,h(s, ai) −Ea−i∼πk,t
+−i,h[ri,h(s, a)]
+
++
+ bP
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1 −P
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1
+
+.
+(i)
+≤max
+ai∈Ai
+K
+X
+k=1
+1
+K
+ϕ(s, ai)
+ Λk,t
+i,h
+−1 2H
+r
+d ln(NH + 1) + ln
+ 3TNHnK
+δ
+
++ H
+√
+d
+
++ 1
+N
++ max
+ai∈Ai
+K
+X
+k=1
+
+rk,t
+i,h(s, ai) + bP
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1
+
+(ii)
+≤max
+ai∈Ai
+K
+X
+k=1
+1
+K
+ϕ(s, ai)
+ Λk,t
+i,h
+−1 4H
+r
+d ln(NH + 1) + ln
+ 3TNHnK
+δ
+
++ 2H
+√
+d
+
++ 1
+N + 2H
+r
+ln Ai
+K
++
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+rk,t
+i,h(s, ai) + bP
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1
+
+= βt
+i,h,1(s) +
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+rk,t
+i,h(s, ai) + bP
+πk,t
+−i ,V
+i,h,s,aiV
+t
+i,h+1
+
+.
+(73)
+36
+
+Here, (i) follows from Lemma 5, (ii) holds by the bound for standard FTRL in Theorem 5, and th final line follows
+from the definition of βt
+i,h,1(s) in (15) as follows:
+βt
+i,h,1(s) = max
+ai∈Ai
+K
+X
+k=1
+1
+K
+ϕ(s, ai)
+ Λk,t
+i,h
+−1 4H
+r
+d ln(NH + 1) + ln
+ 3TNHnK
+δ
+
++ 2H
+√
+d
+
++ 1
+N + 2H
+r
+ln Ai
+K .
+Finally, recalling the definition of the optimistic estimation V
+t
+i,h(s) in (14)
+V
+t
+i,h(s) = min
+ PK
+k=1
+1
+K
+
+πk,t
+i,h(· | s), qk,t
+i,h(s, ·)
+
++ βt
+i,h,1(s), H −h + 1
+	
+,
+(74)
+combining(73) with the elementary fact that V ⋆,ξt
+i,h (s) ≤H −h + 1 gives that
+∀(h, i, t, s) ∈[H] × [n] × [T] × S :
+V ⋆,ξt
+i,h (s) ≤V
+t
+i,h(s)
+holds with probability at least 1 −δ.
+D.1.3
+Proof of Lemma 7
+We will prove Lemma 7 through induction arguments. For the base case h = H + 1, by definition,
+∀(i, s) ∈[n] × S :
+V t
+i,H+1(s) = 0 = V ξt
+i,H+1(s).
+Thus, assuming that the desired fact is satisfied at time step h + 1, namely V t
+i,h+1(s) ≤V ξt
+i,h+1(s) holds for all
+s ∈S, we will prove V t
+i,h(s) ≤V ξt
+i,h(s) for all s ∈S.
+Towards this, we first define several auxiliary notations as follows. For all agents i ∈[n] and (t, k, s, h, ai) ∈
+[T] × [K] × S × [H] × Ai, with P k,t
+i,h,s,ai the online estimated transition kernel from (12), we define the worst-case
+kernels (for the pessimistic value) under the true and the estimated nominal transitions, respectively, as
+P
+πk,t
+−i ,V
+i,h,s,ai := arg
+min
+P∈Uσi P
+πk,t
+−i
+h,s,ai
+ PV t
+i,h+1
+and
+bP
+πk,t
+−i ,V
+i,h,s,ai := arg
+min
+P∈Uσi P k,t
+i,h,s,ai
+ PV t
+i,h+1.
+(75)
+To continue, recall that ξt is the uniform distribution over product policies {πk,t
+h }(h,k)∈[H]×[K] output by Algorithm 2.
+Recalling the definition of the expected version of the value function V ξt
+i,h in (31), and referring to the robust Bellman
+equation in (8), we have
+V ξt
+i,h(s) =
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+Ea−i∼πk,t
+−i,h(s)
+
+ri,h(s, a)
+
++
+inf
+P∈Uσi P
+πk,t
+−i
+h,s,ai
+ PV ξt
+i,h+1
+
+(i)
+≥
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+Ea−i∼πk,t
+−i,h(s)
+
+ri,h(s, a)
+
++
+inf
+P∈Uσi P
+πk,t
+−i
+h,s,ai
+ PV t
+i,h+1
+
+(ii)
+=
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+Ea−i∼πk,t
+−i,h(s)
+
+ri,h(s, a)
+
++ P
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1
+
+(iii)
+≥
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+rk,t
+i,h(s, ai) + bP
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1
+
+−
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+rk,t
+i,h(s, ai) −Ea−i∼πk,t
+−i,h(s)
+
+ri,h(s, a)
+
+−
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+ bP
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1 −P
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1
+,
+(76)
+where (i) holds by the induction hypothesis V t
+i,h+1(s) ≤V ξt
+i,h+1(s) for all s ∈S, (ii) uses the notations defined
+in (75), and (iii) follows from the elementary inequality x ≥y −|x −y| applied separately to the reward term
+37
+
+Ea−i∼πk,t
+−i,h(s)
+
+ri,h(s, a)
+
+against its linear estimate rk,t
+i,h(s, ai) and to the transition kernel term P
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1
+against its empirical counterpart bP
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1.
+In the next step, we apply Lemma 5, which simultaneously controls the reward and transition estimation errors,
+from which we obtain that, with probability at least 1 −δ:
+V ξt
+i,h(s) ≥
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+rk,t
+i,h(s, ai) + bP
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1
+
+−
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+rk,t
+i,h(s, ai) −Ea−i∼πk,t
+−i,h(s)
+
+ri,h(s, a)
+
+−
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+ bP
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1 −P
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1
+
+(i)
+≥
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+rk,t
+i,h(s, ai) + bP
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1
+
+−
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+ϕ(s, ai)
+ Λk,t
+i,h
+−1 4H
+r
+d ln(NH + 1) + ln
+ 3TNHnK
+δ
+
++ 2H
+√
+d
+
+−1
+N
+=
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+
+rk,t
+i,h(s, ai) + bP
+πk,t
+−i ,V
+i,h,s,aiV t
+i,h+1
+
+−βt
+i,h,2(s),
+(77)
+where (i) follows from Lemma 5, and the final line follows from the definition of the pessimistic bonus βt
+i,h,2(s) in
+(16), which we recall below:
+βt
+i,h,2(s) =
+K
+X
+k=1
+1
+K Eai∼πk,t
+i,h(s)
+ϕ(s, ai)
+ Λk,t
+i,h
+−1 4H
+r
+d ln(NH + 1) + ln
+ 3TNHnK
+δ
+
++ 2H
+√
+d
+
++ 1
+N .
+Finally, recalling the definition of the pessimistic estimation V t
+i,h(s) in (14)
+V t
+i,h(s) = max
+ PK
+k=1
+1
+K
+
+πk,t
+i,h(· | s), qk,t
+i,h(s, ·)
+
+−βt
+i,h,2(s), 0
+	
+,
+(78)
+combining (77) with the elementary fact that V ξt
+i,h(s) ≥0 gives that
+∀(h, i, t, s) ∈[H] × [n] × [T] × S :
+V t
+i,h(s) ≤V ξt
+i,h(s)
+holds with probability at least 1 −δ.
+D.1.4
+Proof of Lemma 8
+we define the centered symmetric matrices
+Wm := ϕ(m)
+i
+(ϕ(m)
+i
+)⊤−Xτ(m),h,
+so that
+|Di|
+X
+m=1
+Wm = Λk,t
+i,h −¯Λ,
+where each Wm are independent conditional on the past t −1 ronuds. Before continuing, note the basic fact
+ϕ(m)
+i
+
+2 ≤1
+and
+∥ϕ(m)
+i
+(ϕ(m)
+i
+)⊤∥op = ∥ϕ(m)
+i
+∥2
+2 ≤1.
+(79)
+Therefore, we have
+∥Wm∥op ≤
+ϕ(m)
+i
+(ϕ(m)
+i
+)⊤
+op +
+Xτ(m),h
+
+op ≤2
+(80)
+where the first inequality follows the triangle inequality, and the last inequality holds by (79) and
+∥Xτ(m),h∥op ≤E[∥ϕ(m)
+i
+(ϕ(m)
+i
+)⊤∥op] ≤1,
+(81)
+which is achieved by applying Jensen’s inequality.
+38
+
+In addition, for the variance term,
+E[W 2
+m] = E[(ϕ(m)
+i
+(ϕ(m)
+i
+)⊤)2] −X2
+τ(m),h ⪯E
+
+(ϕ(m)
+i
+(ϕ(m)
+i
+)⊤)2
+⪯E
+
+ϕ(m)
+i
+(ϕ(m)
+i
+)⊤
+= Xτ(m),h,
+where the first inequality holds by the fact that X2
+τ(m),h ⪰0, and the second inequality holds by (ϕ(m)
+i
+(ϕ(m)
+i
+)⊤)2 =
+∥ϕ(m)
+i
+∥2
+2 ϕ(m)
+i
+(ϕ(m)
+i
+)⊤⪯ϕ(m)
+i
+(ϕ(m)
+i
+)⊤, since ∥ϕ(m)
+i
+∥2 ≤1 by (79).
+Consequently,
+V :=
+|Di|
+X
+m=1
+E[W 2
+m] ⪯
+|Di|
+X
+m=1
+Xτ(m),h = ¯Λ −λId ⪯¯Λ.
+(82)
+With above results for Wn and the variance of the sum in hand, we define the conjugated increments
+Ym := ¯Λ−1/2Wm¯Λ−1/2,
+so that
+|Di|
+X
+m=1
+Ym = ¯Λ−1/2 Λk,t
+i,h −¯Λ
+¯Λ−1/2.
+Notice that
+∥Ym∥op ≤∥¯Λ−1/2∥2
+op ∥Wm∥op ≤2
+λ
+(83)
+where the last inequality holds by (80) and the fact ∥¯Λ−1/2∥2
+op = ∥¯Λ−1∥op ≤λ−1 since ¯Λ ⪰λId. For the variance
+term,
+|Di|
+X
+m=1
+E[Y 2
+m] = ¯Λ−1/2
+ |Di|
+X
+m=1
+E
+
+Wm¯Λ−1Wm
+
+¯Λ−1/2
+(i)
+⪯1
+λ ¯Λ−1/2V ¯Λ−1/2 (ii)
+⪯1
+λ ¯Λ−1/2¯Λ¯Λ−1/2 = 1
+λId.
+where (i) holds by ¯Λ−1 ⪯λ−1Id, and (ii) follows from (82). So we have
+σ′2 :=
+
+|Di|
+X
+m=1
+E[Y 2
+m]
+
+op ≤1
+λ.
+(84)
+Applying matrix Bernstein [Tropp, 2015, Theorem 6.1.1] to the independent, mean-zero, symmetric matrices
+{Ym}|Di|
+m=1 with R′ = 2
+λ and σ′2 = 1
+λ as in (83) and (84), we obtain, for any θ > 0,
+P
+h
+|Di|
+X
+m=1
+Ym
+
+op ≥θ
+i
+≤2d exp
+
+−
+θ2/2
+σ′2 + R′θ/3
+
+.
+Setting the RHS to δ′ := δ/(nKHT) and inverting yields that with probability at least 1 −δ′,
+
+|Di|
+X
+m=1
+Ym
+
+op
+=
+¯Λ−1/2 Λk,t
+i,h −¯Λ
+¯Λ−1/2
+op ≤
+p
+2σ′2 log(2d/δ′) + 2R′ log(2d/δ′)
+3
+≤
+q
+2 log(2d/δ′)
+λ
++ 4 log(2d/δ′)
+3λ
+≤1
+2
+(85)
+where the last inequality holds by setting λ ≥c0 log(2dnKHT/δ) for a sufficiently large universal constant c0, so
+that both terms on the right-hand side of (85) are at most 1/4.
+Regarding (85), we have −1
+2Id ⪯¯Λ−1/2(Λk,t
+i,h −¯Λ)¯Λ−1/2 ⪯1
+2Id, which directly gives −1
+2 ¯Λ ⪯Λk,t
+i,h −¯Λ ⪯1
+2 ¯Λ,
+yielding
+1
+2 ¯Λ ⪯Λk,t
+i,h ⪯
+3
+2 ¯Λ.
+(86)
+39
+
+D.1.5
+Proof of Lemma 9
+Denote µ1, . . . , µd ≥0 denote the eigenvalues of the positive definite matrix S−1/2
+t,h
+Xt,hS−1/2
+t,h
+, since Xt,h is
+positive semi-definite. We have
+∥S−1/2
+t,h
+Xt,hS−1/2
+t,h
+∥op ≤∥S−1
+t,h∥op∥Xt,h∥op ≤1
+(87)
+since the fact St,h
+⪰λId in (62) with λ
+≥
+1 gives ∥S−1
+t,h∥op
+≤
+1, and ∥Xt,h∥op
+≤
+tr(Xt,h)
+=
+Esh,ai[∥ϕi(sh, ai)∥2
+2] ≤1. Therefore, we have 0 ≤µi ≤1 and thus
+log(1 + µi) ≥µi
+2
+(88)
+due to log(1 + x) ≥x/2 for x ∈[0, 1]. Applying the fact to each eigenvalue, we arrive at
+tr
+ S−1/2
+t,h
+Xt,hS−1/2
+t,h
+
+=
+d
+X
+i=1
+µi ≤2
+d
+X
+i=1
+log det(1 + µi) = 2 log det(Id + S−1/2
+t,h
+Xt,hS−1/2
+t,h
+).
+(89)
+Since St,h ≻0, both S1/2
+t,h and S−1/2
+t,h
+are well-defined. Therefore, we have
+det(St+1,h) = det(St,h + Xt,h)
+= det
+
+S1/2
+t,h
+
+Id + S−1/2
+t,h
+Xt,hS−1/2
+t,h
+
+S1/2
+t,h
+
+= det(S1/2
+t,h ) det(Id + S−1/2
+t,h
+Xt,hS−1/2
+t,h
+) det(S1/2
+t,h )
+= det(St,h) det(Id + S−1/2
+t,h
+Xt,hS−1/2
+t,h
+),
+(90)
+where the first equality uses the update rule St+1,h = St,h +Xt,h, and the last two equalities use the multiplicativity
+of the determinant and det(S1/2
+t,h )2 = det(St,h).
+Summing over t = 1, . . . , T, we obtain
+T
+X
+t=1
+tr
+
+S−1/2
+t,h
+Xt,hS−1/2
+t,h
+
+≤2
+T
+X
+t=1
+log det
+
+Id + S−1/2
+t,h
+Xt,hS−1/2
+t,h
+
+= 2
+T
+X
+t=1
+[log det(St+1,h) −log det(St,h)]
+= 2 [log det(ST +1,h) −log det(S1,h)]
+= 2 [log det(ST +1,h) −d log λ] ,
+(91)
+where the last equality uses S1,h = λId. It remains to upper bound log det(ST +1,h). Let ν1, . . . , νd > 0
+be the eigenvalues of ST +1,h. By he arithmetic mean–geometric mean inequality (AM–GM) and the update
+ST +1,h = λId + PT
+t=1 Xt,h,
+log det(ST +1,h) = log
+d
+Y
+i=1
+νi ≤d log
+ 
+1
+d
+d
+X
+i=1
+νi
+!
+= d log
+tr(ST +1,h)
+d
+
+= d log
+ 
+tr(λId) + PT
+t=1 tr(Xt,h)
+d
+!
+≤d log
+dλ + T
+d
+
+,
+(92)
+where the last inequality uses tr(Xt,h) ≤1 for all t ∈T. Therefore,
+T
+X
+t=1
+tr
+
+S−1/2
+t,h
+Xt,hS−1/2
+t,h
+
+≤2
+
+d log
+dλ + T
+d
+
+−d log λ
+
+= 2d log
+
+1 + T
+dλ
+
+= eO(d).
+(93)
+40

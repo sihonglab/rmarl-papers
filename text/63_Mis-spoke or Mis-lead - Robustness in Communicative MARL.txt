@@ -1,0 +1,1504 @@
+Mis-spoke or mis-lead: Achieving Robustness in Multi-Agent
+Communicative Reinforcement Learning
+Wanqi Xue
+Nanyang Technological University
+Singapore
+wanqi001@e.ntu.edu.sg
+Wei Qiu∗
+Nanyang Technological University
+Singapore
+qiuw0008@e.ntu.edu.sg
+Bo An
+Nanyang Technological University
+Singapore
+boan@ntu.edu.sg
+Zinovi Rabinovich
+Nanyang Technological University
+Singapore
+zinovi@ntu.edu.sg
+Svetlana Obraztsova
+Nanyang Technological University
+Singapore
+lana@ntu.edu.sg
+Chai Kiat Yeo
+Nanyang Technological University
+Singapore
+asckyeo@ntu.edu.sg
+ABSTRACT
+Recent studies in multi-agent communicative reinforcement learn-
+ing (MACRL) have demonstrated that multi-agent coordination can
+be greatly improved by allowing communication between agents.
+Meanwhile, adversarial machine learning (ML) has shown that ML
+models are vulnerable to attacks. Despite the increasing concern
+about the robustness of ML algorithms, how to achieve robust com-
+munication in multi-agent reinforcement learning has been largely
+neglected. In this paper, we systematically explore the problem
+of adversarial communication in MACRL. Our main contributions
+are threefold. First, we propose an effective method to perform
+attacks in MACRL, by learning a model to generate optimal ma-
+licious messages. Second, we develop a defence method based on
+message reconstruction, to maintain multi-agent coordination un-
+der message attacks. Third, we formulate the adversarial commu-
+nication problem as a two-player zero-sum game and propose a
+game-theoretical method ℜ-MACRL to improve the worst-case
+defending performance. Empirical results demonstrate that many
+state-of-the-art MACRL methods are vulnerable to message attacks,
+and our method can significantly improve their robustness.
+KEYWORDS
+Multi-Agent Reinforcement Learning; Robust Reinforcement Learn-
+ing; Adversarial Reinforcement Learning
+ACM Reference Format:
+Wanqi Xue, Wei Qiu∗, Bo An, Zinovi Rabinovich, Svetlana Obraztsova,
+and Chai Kiat Yeo. 2022. Mis-spoke or mis-lead: Achieving Robustness in
+Multi-Agent Communicative Reinforcement Learning. In Proc. of the 21st
+International Conference on Autonomous Agents and Multiagent Systems
+(AAMAS 2022), Online, May 9–13, 2022, IFAAMAS, 12 pages.
+1
+INTRODUCTION
+Cooperative multi-agent reinforcement learning (MARL) has achieved
+remarkable success in a variety of challenging problems, such as ur-
+ban systems [31], coordination of robot swarms [11] and real-time
+strategy video games [38]. To tackle the problems of scalability and
+non-stationarity in MARL, the framework of centralized training
+∗Corresponding author.
+Proc. of the 21st International Conference on Autonomous Agents and Multiagent Systems
+(AAMAS 2022), P. Faliszewski, V. Mascardi, C. Pelachaud, M.E. Taylor (eds.), May 9–13,
+2022, Online. © 2022 International Foundation for Autonomous Agents and Multiagent
+Systems (www.ifaamas.org). All rights reserved.
+with decentralized execution (CTDE) is proposed [18, 25], where de-
+centralized policies are learned in a centralized manner so that they
+can share experiences, parameters, etc., during training. Despite
+the advantages, CTDE-based methods still perform unsatisfactorily
+in scenarios where multi-agent coordination is necessary, mainly
+due to partial observability in decentralized execution. To mitigate
+partial observability, many multi-agent communicative reinforce-
+ment learning (MACRL) methods have been proposed, which allow
+agents to exchange information such as private observations, inten-
+tions during the execution phase. MACRL greatly improves multi-
+agent coordination in a wide range of tasks [6, 7, 13, 15, 32, 39, 40].
+Meanwhile, adversarial machine learning has received extensive
+attention [2, 10]. Adversarial machine learning demonstrates that
+machine learning (ML) models are vulnerable to manipulation [8, 9].
+As a result, ML models often suffer from performance degradation
+when under attack. For the same reason, many practical applications
+of ML models are at high risk. For instance, researchers have shown
+that, by placing a few small stickers on the ground at an intersection,
+self-driving cars can be tricked into making abnormal judgements
+and driving into the opposite lane [34]. Maliciously designed attacks
+on ML models can have serious consequences.
+Unfortunately, despite great importance, adversarial problems,
+especially adversarial inter-agent communication problems, remain
+largely uninvestigated in MACRL. Blumenkamp et al. show that,
+by introducing random noise in communication, agents are able
+to deceive their opponents in competitive games [3]. However,
+the attacks are not artificially designed and therefore inefficient.
+Besides, cooperative cases, where communication is more crucial,
+are neglected. They also fail to propose an effective defence, but
+merely retrain the models to adapt to the attacks. Mitchell et al.
+propose to generate weights of Attention models [37] through
+Gaussian process for defending against random attacks in attention-
+based MACRL [22]. However, the applicability of this approach is
+unsatisfactory, being limited to attention-based MACRL, and its
+performance on maliciously designed attacks is unclear.
+In this paper, we systematically explore the problem of adversar-
+ial communication in MACRL, where there are malicious agents
+that attempt to disrupt multi-agent cooperation by manipulating
+messages. Our contributions are in three aspects. First, we pro-
+pose an effective learning approach to model the optimal attacking
+scheme in MACRL. Second, to defend against the adversary, we
+propose a two-stage message filter which works by first detecting
+arXiv:2108.03803v2  [cs.LG]  26 Jan 2022
+
+the malicious message and then recovering the message. The de-
+fending scheme can greatly maintain the coordination of agents
+under message attacks. Third, to address the problem that the mes-
+sage filter can be exploited by learnable attackers, we formulate the
+attack-defense problem as a two-player zero-sum game and propose
+ℜ-MACRL, based on a game-theoretical framework Policy-Space
+Response Oracle (PSRO) [19, 23], to approximate a Nash equilib-
+rium policy in the adversarial communication game. ℜ-MACRL
+improves the defensive performance under the worst case and thus
+improves the robustness. Empirical experiments demonstrate that
+many state-of-the-art MACRL algorithms are vulnerable to attacks
+and our method can significantly improve their robustness.
+2
+PRELIMINARIES AND RELATED WORK
+Multi-Agent Communicative Reinforcement Learning. There
+has been extensive research on encouraging communication be-
+tween agents to improve performance on cooperative or compet-
+itive tasks. Among the recent advances, some design communi-
+cation mechanisms to address the problem of when to commu-
+nicate [13, 14, 30]; other lines of works, e.g., TarMac [6], focus
+on who to communicate. These works determine the two funda-
+mental elements in communication, i.e., the message sender and
+the receiver. Apart from the two elements, the message itself is
+another element which is crucial in communication, i.e., what to
+communicate: Jaques et al. propose to maximize the social influ-
+ence of messages [12]. Kim et al. encode messages such that they
+contain the intention of agents [15]. Some other works learn to
+send succinct messages to meet the limitations of communication
+bandwidth [39, 40, 44]. Despite significant progress in MACRL, if
+some agents are adversarial and send maliciously designed mes-
+sages, multi-agent coordination will rapidly disintegrate as these
+messages propagate.
+Adversarial Training. Adversarial training is a prevalent para-
+digm for training robust models to defend against potential at-
+tacks [9, 33]. Recent literature has considered two types of at-
+tacks [5, 26, 35]: black-box attack and white-box attack. In black-box
+attack, the attacker does not have access to information about the
+attacked deep neural network (DNN) model; whereas in white-box
+attack, the attacker has complete knowledge, e.g., the architecture,
+the parameters and potential defense mechanisms, about the DNN
+model. We consider the black-box attack in our problem formula-
+tion, because the setting of the white-box attack is too idealistic
+and may not be applicable to many realistic adversarial scenar-
+ios. In adversarial training, the attacker tries to attack a DNN by
+corrupting the input via ℓ𝑝-norm (𝑝∈{1, 2, ∞}) attack [9]. The
+attacker carefully generates artificial perturbations to manipulate
+the input of the model. In doing so, the DNN will be fooled into
+making incorrect predictions or decisions. The attacker finds the
+optimal perturbation 𝛿by optimizing:
+max
+𝛿Lpredict (𝑓(𝒙), 𝑓(𝒙+ 𝛿))
+s.t.
+min Lnorm (𝒙, 𝒙+ 𝛿)
+where 𝒙is the input, 𝑓is the DNN model, Lpredict is a metric to
+measure the distance between the outputs of the DNN model w/ and
+w/o being attacked, Lnorm is used to measure that for the inputs.
+Adversarial Reinforcement Learning (RL). Recent advances in
+adversarial machine learning motivate researchers to investigate
+the adversarial problem in RL [8, 20, 41]. SA-MDP [43] character-
+izes the problem of decision making under adversarial attacks on
+state observations. Lin et al. propose two tactics of attacks, i.e., the
+strategically-timed attack and the enchanting attack, which attack
+by injecting noise to states and luring the agent to a designated
+target [20]. Gleave et al. consider the problem of taking adver-
+sarial actions that change the environment and consequentially
+change the observation of agents [8]. ATLA [42] propose to train
+the optimal adversary to perturb state observations and improve
+the worst-case agent reward. The settings of these works are differ-
+ent from ours: we consider the multi-agent scenario and restrict the
+attacking approach to adversarial messages, which makes the detec-
+tion of anomalies difficult. Tu et al. propose to attack on multi-agent
+communication [36]. However, their focus is on the representation-
+level, whereas we focus on the policy-level. Recently, there are
+some works considering a similar setting as ours [3, 22]. However,
+they either focus on random attacks in specific competitive games
+or the defence of specific communication methods.
+3
+ACHIEVING ROBUSTNESS IN MACRL
+In this section, we propose our method for achieving robustness in
+MACRL. We begin by proposing the problem formulation for adver-
+sarial communication in MACRL. Then, we introduce the method to
+build the optimal attacking scheme in MACRL. Next, we propose a
+learnable two-stage message filter to defend against possible attacks.
+Finally, we propose to formulate the attack-defense problem as a
+two-player zero-sum game, and design a game-theoretic method
+ℜ-MACRL to approximate a Nash equilibrium policy for the de-
+fender. In this way, we can improve the worst-case performance of
+the defender and thus enhance robustness.
+3.1
+Problem Formulation: Adversarial
+Communication in MACRL
+An MACRL problem can be modeled by Decentralised Partially Ob-
+servable Markov Decision Process with Communication (Dec-POMDP-
+Com) [24], which is defined by a tuple ⟨S, M, A, P, 𝑅, Υ,𝑂,𝐶, N,𝛾⟩.
+S denotes the state of the environment and M is the message
+space. Each agent 𝑖∈N := {1, ..., 𝑁} chooses an action 𝑎𝑖∈A at
+a state 𝒔∈S, giving rise to a joint action vector, 𝒂:= [𝑎𝑖]𝑁
+𝑖=1 ∈
+A𝑁. P(𝒔′|𝒔, 𝒂) : S × A𝑁× S ↦→P(S) is a Markovian tran-
+sition function. Every agent shares the same joint reward func-
+tion 𝑅(𝒔, 𝒂) : S × A𝑁↦→R, and 𝛾∈[0, 1) is the discount fac-
+tor. Due to partial observability, each agent has individual par-
+tial observation 𝜐∈Υ, according to the observation function
+𝑂(𝒔,𝑖) : S × N ↦→Υ. Each agent holds two policies, i.e., action
+policy 𝑝𝑖(𝑎𝑖|𝜏𝑖,𝑚𝑖𝑛
+𝑖) : T × M × A ↦→[0, 1] and message policy
+𝑣𝑖(𝑚𝑜𝑢𝑡
+𝑖
+|𝜏𝑖,𝑚𝑖𝑛
+𝑖) : T × M × M ↦→[0, 1], both of which are condi-
+tioned on the action-observation history 𝜏𝑖∈T := (Υ × A) and
+incoming messages𝑚𝑖𝑛
+𝑖aggregated by the communication protocol
+𝐶(𝑚𝑖𝑛
+𝑖|𝒎𝑜𝑢𝑡,𝑖) : M |N | × N × M ↦→[0, 1].
+In adversarial communication where there are 𝑁𝑎𝑑𝑣malicious
+agents, we assume that each malicious agent holds the third private
+adversarial policy, 𝜉(𝛿𝑎𝑑𝑣
+𝑖
+|𝜏𝑖,𝑚𝑖𝑛
+𝑖,𝑚𝑜𝑢𝑡
+𝑖
+) : T ×M×M×M ↦→[0, 1],
+which generates adversarial message 𝛿𝑎𝑑𝑣
+𝑖
+based on its action-
+observation history 𝜏𝑖, received messages 𝑚𝑖𝑛
+𝑖
+and the message
+
+!"
+#"
+Msg $
+Comm
+Protocol
+#%
+Attacker
+Loss
+Attacker
+&%
+'()
+*%
++,-
+&%
+%.
+/0
+/1
+/2
+0.1
+0.9
+0.93
+/0
+/1
+/2
+0.1
+0.9
+0.76
+Without attack
+With attack
+!"
+Msg $
+Comm
+Protocol
+#%
+&"
+%.
+Attacker
+Loss
+Attacker
+&%
+'()
+*%
++,-
+&%
+%.
+/0
+/1
+/2
+0.1
+0.9
+0.85
+/0
+/1
+/2
+0.1
+0.9
+0.76
+Without attack
+With defense
+/0
+/1
+/2
+0.1
+0.9
+0.93
+With attack
+Defender
+/"
+3&"
+%.
+Defender
+Loss
+(a)
+(b)
+/"
+&"
+%.
+45%
+'()
+45%
+'()
+#"
+&%
++,-
+&%
++,-
+Figure 1: General framework of attack (left) and defence (right) in MACRL. Attack: The agent 𝑖, taken over by the attacker,
+generates malicious message 𝑚𝑎𝑑𝑣
+𝑖
+to disrupt multi-agent cooperation. The incoming message 𝑚𝑖𝑛
+𝑗and estimated Q-values of
+the benign agent 𝑗will be affected due to𝑚𝑎𝑑𝑣
+𝑖
+, which may lead to incorrect decisions. Defence: A learnable defender is cascaded
+to the communication protocol module, which is used to reconstruct the contaminated message (𝑚𝑖𝑛
+𝑗to ˆ𝑚𝑖𝑛
+𝑗). The benign agent
+𝑗estimates Q-values based on ˆ𝑚𝑖𝑛
+𝑗, which can reduce the probability of selecting sub-optimal actions.
+𝑚𝑜𝑢𝑡
+𝑖
+intended to be sent. Malicious agents could send messages
+by convexly combining their original messages with adversarial
+messages, i.e., 𝑚𝑎𝑑𝑣
+𝑖
+= (1 −𝜔) × 𝑚𝑜𝑢𝑡
+𝑖
++ 𝜔× 𝛿𝑎𝑑𝑣
+𝑖
+, or simply sum-
+ming up the messages, i.e., 𝑚𝑎𝑑𝑣
+𝑖
+= 𝑚𝑜𝑢𝑡
+𝑖
++ 𝛿𝑎𝑑𝑣
+𝑖
+. To reduce the
+likelihood of being detected, apart from the adversarial policy 𝜉,
+malicious agents strictly follow their former action policy and mes-
+sage policy, trying to behave like benign agents. Fig. 1(a) presents
+the overall attacking procedure. The agent 𝑖(attacker) is malicious
+and tries to generate adversarial message 𝑚𝑎𝑑𝑣
+𝑖
+to disrupt coopera-
+tion. The adversarial message sent by agent 𝑖together with normal
+messages sent by other agents (denoted by 𝒎𝑜𝑢𝑡
+−𝑖) are processed
+by the communication protocol (algorithm-related), generating a
+contaminated incoming message 𝑚𝑖𝑛
+𝑗for a benign agent 𝑗. From
+agent 𝑗’s perspective, under such attack, the estimated Q-values
+will change. If the action with the highest Q-value shifts, agent
+𝑗will make incorrect decisions, leading to suboptimality. To per-
+form an effective attack in MACRL, we propose to optimize the
+adversarial policy 𝜉by minimizing the joint accumulated rewards,
+i.e., min𝜉E
+Í∞
+𝑡=0 𝛾𝑡𝑟𝑡
+. We make two assumptions to make the
+adversarial communication problem both practical and tractable.
+Assumption 1. (Byzantine Failure [17]) Agents have imperfect
+information on who are malicious.
+Assumption 2. (Concealment) Malicious agents do not communi-
+cate or cooperate with each other when performing attacks in order
+to be covert.
+To defend against the attacker, as in Fig. 1(b), we propose to
+cascade a learnable defender to the communication protocol mod-
+ule. The defender performs a transformation from 𝑚𝑖𝑛
+𝑗to ˆ𝑚𝑖𝑛
+𝑗to
+reconstruct the contaminated messages, to avoid distributing the
+contaminated message 𝑚𝑖𝑛
+𝑗directly to agent 𝑗. With such transfor-
+mation, the benign agent 𝑗can estimate the Q-value for each action
+more properly and reduce the probability of selecting sub-optimal
+actions.
+3.2
+Learning the Attacking Scheme
+To model the attack scheme in adversarial communication, we use
+a deep neural network (DNN) 𝑓𝜇, parameterized by 𝜃𝜇, to generate
+adversarial messages for a malicious agent. The adversarial pol-
+icy 𝜉is a multivariate Gaussian distribution whose parameters are
+determined by the DNN 𝑓𝜇, i.e., 𝜉= N (𝑓𝜇(·|𝜏,𝑚𝑖𝑛,𝑚𝑜𝑢𝑡;𝜃𝑑), Λ)
+where Λ is a fixed covariance matrix. The reason of using Gaussian
+distribution as the prior is that it is the maximum entropy distribu-
+tion under constraints of mean and variance. Each malicious agent
+generates adversarial messages by sampling from its adversarial
+policy. The optimization objective of the adversarial policy is to
+minimize the accumulated team rewards subject to a constraint
+on the distance between 𝑚𝑜𝑢𝑡and 𝑚𝑎𝑑𝑣. We utilize Proximal Pol-
+icy Optimization (PPO) [29] to optimize the adversarial policy by
+maximizing the following objective:
+J𝜉(𝜃𝜇) = E(𝜏,𝑚𝑖𝑛,𝑚𝑜𝑢𝑡,𝛿𝑎𝑑𝑣) [min(𝜌· 𝐴𝜉, clip (𝜌, 1 ± 𝜖) · 𝐴𝜉)]
+−𝛼· E(𝑚𝑜𝑢𝑡,𝛿𝑎𝑑𝑣) [(𝑚𝑜𝑢𝑡−𝑚𝑎𝑑𝑣)2]
+(1)
+where 𝜌= 𝜉(𝛿𝑎𝑑𝑣|𝜏,𝑚𝑖𝑛,𝑚𝑜𝑢𝑡)/𝜉𝑜𝑙𝑑(𝛿𝑎𝑑𝑣|𝜏,𝑚𝑖𝑛,𝑚𝑜𝑢𝑡), 𝜉𝑜𝑙𝑑is the
+policy in the previous learning step, 𝜖is the clipping ratio, and
+𝐴𝜉(𝛿𝑎𝑑𝑣,𝜏,𝑚𝑖𝑛,𝑚𝑜𝑢𝑡) is the advantage function. Let𝑒= ⟨𝜏,𝑚𝑖𝑛,𝑚𝑜𝑢𝑡⟩
+denotes the input of the value function and we define the reward
+of the attacker to be negative team reward, then 𝐴𝜉(𝛿𝑎𝑑𝑣,𝑒) =
+−𝑟+ 𝑉(𝑒′) −𝑉(𝑒) where 𝑉is the value function, 𝑒′ denotes the
+next step state, and 𝑟is the immediate reward. We learn the value
+function 𝑉(𝑒) by minimizing E[(𝑉(𝑒) + Í
+𝑡𝛾𝑡𝑟𝑡)2].
+3.3
+Defending against Adversarial
+Communication
+We can train a DNN to model the attack scheme in adversarial
+communication. However, the defence of that is non-trivial because
+i) benign agents have no prior knowledge on which agents are
+malicious; ii) the malicious agents can inconsistently pretend to
+be cooperative or non-cooperative to avoid being detected; and iii)
+
+Anomaly Detector
+𝑚"
+#$%
+𝑚&
+#$%
+𝑚&'(
+#$%
+…
+Reconstructor
+Message Aggregator
+𝑚&
+)&
+𝑚"
+)&
+𝑚&'(
+)&
+…
+Comm Protocol
+Figure 2: Structure of the communication protocol with the
+message filter (defender). The anomaly detector and the re-
+constructor are designed to determine and recover the po-
+tential malicious messages, respectively.
+recovering useful information from the contaminated messages is
+difficult. To address these challenges, we design a two-stage mes-
+sage filter for the communication protocol to perform defence. The
+message filter works by first determining the messages that are
+likely to be malicious and then recovering the potential malicious
+messages before distributing them to the corresponding agents. As
+in Fig. 2, the message filter 𝜁(ℎ𝑑,𝑔𝑟) consists of an anomaly detector
+ℎ𝑑and a message reconstructor 𝑔𝑟. The anomaly detector, parame-
+terized by 𝜃𝑑, outputs the probability that each incoming message
+needs to be recovered, i.e., ℎ𝑑(·|𝑚𝑜𝑢𝑡
+𝑖
+;𝜃𝑑) : M ↦→Ψ, where Ψ de-
+notes a binomial distribution, 𝑚𝑜𝑢𝑡
+𝑖
+denotes the message sent by
+agent 𝑖. We perform sampling from the generated distributions to
+determine the anomaly messages 𝒙∼ℎ𝑑(·|𝒎𝑜𝑢𝑡;𝜃𝑑) 1. Here, 𝒙is
+an indicator that records whether a message is predicted to be mali-
+cious or not. The predicted malicious messages ¤𝒎are recovered by
+the reconstructor 𝑔𝑟(·| ¤𝑚𝑖;𝜃𝑟) : M ↦→M separately. The recovered
+message and other normal messages are aggregated and determine
+the messages that each agent will receive.
+The optimization objective of the message filter is to maximize
+the joint accumulated rewards under attack, i.e., max𝜁E
+Í∞
+𝑡=0 𝛾𝑡˜𝑟𝑡|𝜉
+
+,
+where ˜𝑟𝑡is the team reward after performing the defending strat-
+egy. We utilize PPO to optimize the strategy. To mitigate the local
+optima induced by unguided exploration in large message space,
+we introduce a regularizer which is optimized under the guidance
+of the ground-truth labels of messages (whether they are malicious).
+For the reconstructor, we train it by minimizing the distance be-
+tween the messages before and after being attacked. To improve the
+tolerance of the reconstructor to errors made by the detector, apart
+from malicious messages, we also use benign messages as training
+data, in which case the reconstructor is an identical mapping. For-
+mally, the two-stage message filter is optimized by maximizing the
+following function:
+J𝜁(𝜃𝑑,𝜃𝑟) = E(𝒎,𝒙)
+
+|𝒎|
+∑︁
+𝑖
+min
+
+𝜌𝑖· 𝐴ℎ𝑑
+𝑖
+, clip (𝜌𝑖, 1 ± 𝜖) · 𝐴ℎ𝑑
+𝑖
+
++ 𝛽1 · E𝒎[ ˆ𝒚· log(ℎ𝑑(·|𝒎;𝜃𝑑))]
+−𝛽2 · E𝒎
+
+( ˆ𝒎−𝑔𝑟(·|𝒎;𝜃𝑟))2
+(2)
+where 𝜌𝑖= ℎ𝑑(𝑥𝑖|𝑚𝑖;𝜃𝑑)/ℎ𝑜𝑙𝑑
+𝑑
+(𝑥𝑖|𝑚𝑖;𝜃𝑑), 𝐴ℎ𝑑
+𝑖(𝑥𝑖,𝑚𝑖) is the advan-
+tages which are estimated similarly as in the attack, ˆ𝒚is the one-hot
+1We abuse ℎ𝑑(·|𝒎𝑜𝑢𝑡;𝜃𝑑) to represent that messages 𝑚𝑜𝑢𝑡
+𝑖
+∈𝒎𝑜𝑢𝑡are fed into ℎ𝑑
+in batch.
+Attacker
+Defender
+𝜋!!
+2
+-3
+1
+2
+𝜋!"
+𝜋"! 𝜋""
+𝜋"#
+𝜋!#
+-3
+-1
+1
+0
+1
+. . .
+Figure 3: Workflow of ℜ-MACRL.
+ground-truth labels of messages, ˆ𝒎is the messages that have not
+been attacked. 𝛽1, 𝛽2 and 𝜖are hyperparameters.
+3.4
+Achieving Robust MACRL
+Despite the defensive message filter, the effectiveness of the defence
+system can rapidly decrease if malicious agents are aware of the
+defender and adjust their attack schemes. To mitigate this, we
+formulate the attack-defence problem as a two-player zero-sum
+game (malicious agents are controlled by the attacker) and improve
+the performance of the defender in the worst case. We define the
+adversarial communication game by a tuple ⟨Π, 𝑈⟩, where Π =
+⟨Π𝜉, Π𝜁⟩is the joint policy space of the players (Π𝜉and Π𝜁denote
+the policy space of the defender and the attacker respectively),
+𝑈: Π ↦→R2 is the utility function which is used to calculate
+utilities for the attacker and the defender given their joint policy
+𝜋= ⟨𝜋𝜉, 𝜋𝜁⟩∈Π. The utility of the defender is defined as the
+expected team return. The adversarial communication game is zero-
+sum, i.e., the utility of the defender 𝑈𝜁(𝜋) must be the negative of
+the utility of the attacker 𝑈𝜉(𝜋) for ∀𝜋∈Π. The solution concept
+of the adversarial communication game is Nash equilibrium (NE)
+and we can approach an NE by optimizing the following MaxMin
+objective:
+J𝜉,𝜁= max
+𝜋𝜁∈Π𝜁
+𝑈𝜁(Br(𝜋𝜁), 𝜋𝜁) = max
+𝜋𝜁∈Π𝜁
+min
+𝜋𝜉∈Π𝜉
+E
+h∑︁∞
+𝑡=0 𝛾𝑡˜𝑟𝑡|𝜋𝜉, 𝜋𝜁
+i
+(3)
+where Br(𝜋𝜁) is the best response policy of the defender, i.e., Br(𝜋𝜁) =
+arg min𝜋𝜉𝑈𝜁(𝜋𝜉, 𝜋𝜁).
+We propose ℜ-MACRL to optimize the objective in the adversar-
+ial communication game. ℜ-MACRL is developed based on Policy-
+Space Response Oracle (PSRO) [19], a deep learning-based exten-
+sion of the classic Double Oracle algorithm [21]. The workflow of
+ℜ-MACRL is depicted in Fig. 3. At each iteration, ℜ-MACRL keeps
+a population (set) of policies Π𝑡⊂Π, e.g., Π𝑡
+𝜁= (𝜋11, 𝜋12) and Π𝑡
+𝜉=
+(𝜋21, 𝜋22). We can evaluate the utility table 𝑈(Π𝑡) for the current
+iteration and calculate a Nash equilibrium 𝜋𝑡∗= ⟨Δ(Π𝑡
+𝜉), Δ(Π𝑡
+𝜁)⟩
+for the game restricted to policies in Π𝑡by, for example, linear pro-
+gramming, replicator dynamics, etc. Δ denotes the meta-strategy
+which is an arbitrary categorical distribution. Next, we calculate
+the best response policy Br(𝜋𝑡
+∗,−𝑖) to the NE in this restricted
+game for each player 𝑖(player −𝑖denotes the opponent of player 𝑖,
+𝑖∈{𝜉,𝜁}), e.g., 𝜋13 = Br(𝜋𝑡
+∗,𝜉) and 𝜋23 = Br(𝜋𝑡
+∗,𝜁). We extend the
+population by adding the best response policies to the policy set:
+
+Algorithm 1: ℜ-MACRL
+1 Input: initial policy sets for both players Π0, maximum
+number of iterations 𝑇;
+2 Empirically estimate utilities 𝑈(Π0) for each joint policy
+𝜋∈Π0;
+3 Initialize mixed strategies for both players
+𝜋0
+∗,𝑖= Uniform(Π0
+𝑖) for 𝑖∈{𝜉,𝜁};
+4 Initialize number of iterations 𝑡= 0;
+5 while not converge and 𝑡≤𝑇do
+6
+for player 𝑖∈{𝜉,𝜁} do
+7
+Train 𝜋𝑡+1
+𝑖
+by letting it exploit 𝜋𝑡
+∗,−𝑖;
+8
+Extend policy set Π𝑡+1
+𝑖
+= Π𝑡
+𝑖∪{𝜋𝑡+1
+𝑖
+};
+9
+Check convergence and 𝑡= 𝑡+ 1;
+10
+Estimate missing entries in 𝑈(Π𝑡+1) ;
+11
+Compute mixed strategies 𝜋𝑡+1
+∗
+by solving the matrix
+game defined by 𝑈(Π𝑡+1) ;
+12 Output: mixed strategies 𝜋∗for both players ;
+Π𝑡+1
+𝑖
+= Π𝑡
+𝑖∪Br(𝜋𝑡
+∗,−𝑖) for 𝑖∈{𝜉,𝜁}. After extending the popula-
+tion, we complete the utility table 𝑈(Π𝑡+1) and perform the next
+iteration. The algorithm converges if the best response policies are
+already in the population. Practically, ℜ-MACRL approximates the
+utility function 𝑈(·) by having each policy in the population Π𝑡
+𝑖
+playing with each other policy in Π𝑡
+−𝑖and tracking the average util-
+ities. The approximation of the best response policies is performed
+by maximizing J𝜉(𝜃𝜇|𝜋𝑡
+∗,𝜁) and J𝜁(𝜃𝑑,𝜃𝑟|𝜋𝑡
+∗,𝜉) for the attacker and
+the defender, where the full expressions of the two objectives are
+described in Eq. 1 and Eq. 2, respectively.
+The overall algorithm of ℜ-MACRL is presented in Algorithm 1.
+We first initialize the meta-game and the mixed strategies (line 2 and
+line 3). Then, at each step, we train the attacker and the defender
+alternately by letting them best respond to their corresponding
+opponent (line 7). Next, the learned new policy 𝜋𝑡+1
+𝑖
+is added to
+the policy set Π𝑡+1
+𝑖
+for the two players respectively (line 8). After
+extending the policy set, we can check the convergence (line 9) and
+calculate the missing entries in 𝑈(Π𝑡+1) (line 10). Finally, we solve
+the new meta-game (line 11) and repeat the iteration.
+4
+EXPERIMENTS
+We conduct extensive experiments on a variety of state-of-the-art
+MACRL algorithms to answer: Q1: Are MACRL methods vulnerable
+to message attacks and whether the two-stage message filter is able
+to consistently recover multi-agent coordination? Q2: Whether ℜ-
+MACRL is able to improve the robustness of MACRL algorithms under
+message attacks? Q3: Whether our method is able to scale to scenarios
+where there are multiple attackers? Q4: Which components contribute
+to the performance of the method and how does the proposed method
+work? We first categorize existing MACRL algorithms and then
+select representative algorithms to perform the evaluation. All ex-
+periments are conducted on a server with 8 NVIDIA Tesla V100
+GPUs and a 44-core 2.20GHz Intel(R) Xeon(R) E5-2699 v4 CPU.
+Categories
+Methods
+Environments
+CD
+CommNet [32]
+Predator Prey (PP) [4]
+LC
+TarMAC [6]
+Traffic Junction (TJ) [32]
+CC
+NDQ [40]
+StarCraft II (SCII) [28]
+Table 1: The chosen algorithms and environments.
+4.1
+Experimental Setting
+MACRL methods are commonly categorized by whether they are
+implicit or explicit [1, 24]. In implicit communication, the actions
+of agents influence the observations of the other agents. Whereas
+in explicit communication, agents have a separate set of commu-
+nication actions and exchange information via communication
+actions. In this paper, we focus on explicit communication because
+in implicit communication, to carry out an attack, the attacker’s
+behaviour is often bizarre, making the attack trivial and easily de-
+tectable. We consider the following three realistic types of explicit
+communication:
+• Communication with delay (CD): Communication in real
+world is usually not real-time. We can model this by assum-
+ing that it takes one or a few time steps for the messages
+being received by the targeted agents [32].
+• Local communication (LC): Messages sometimes cannot
+be broadcast to all agents due to communication distance
+limitations or privacy concerns. Therefore, agents need to
+learn to communicate locally, affecting only those agents
+within the same communication group [4, 6].
+• Communication with cost or limited bandwidth (CC):
+Agents should avoid sending redundant messages because
+communication in real world is costly and communication
+channels often have a limited bandwidth [40, 44].
+Following the above taxonomy, we select some representative state-
+of-the-art algorithms to perform evaluation2. As in Table 1, we
+select CommNet [32], TarMAC [6] and NDQ [40] for CD, LC and
+CC respectively. A brief introduction to each of the chosen algo-
+rithms is provided in Appendix A. We evaluate in the following
+environments, which are similar to those in the paper that first
+introduced the algorithms:
+Predator Prey (PP). There are 3 predators, trying to catch 6 prey
+in a 7 × 7 grid. Each predator has local observation of a 3 × 3 sub-
+grid centered around it and can move in one of the 4 compass
+directions, remain still, or perform catch action. The prey moves
+randomly and is caught if at least two nearby predators try to catch
+it simultaneously. The predator will obtain a team reward at 10 for
+each successful catch and will be punished 𝑝for each losing catch
+action. There are two tasks with 𝑝= 0 and 𝑝= −0.5, respectively. A
+prey will be removed from the grid after it being caught. An episode
+ends after 60 steps or all preys have been caught.
+Traffic Junction (TJ). In TJ, there are 𝑁𝑚𝑎𝑥cars and the aim of
+each car is to complete its pre-assigned route. Each car can observe
+of a 3 × 3 region around it, but is free to communicate with other
+cars. The action space for each car at every time step is {gas, brake}.
+The reward function is −0.01𝜏+ 𝑟collision, where 𝜏is the number of
+time steps since the activation of the car, and 𝑟collision = −10 is a
+2Sweeping the whole list of algorithms for each category is impossible and unnecessary
+since there have been a lot of algorithms proposed and algorithms in each category
+usually share common characteristics.
+
+0
+100K
+200K
+Steps
+20
+30
+40
+Test Return
+p=0
+Attacker
+Defender
+CommNet
+0
+100K
+200K
+Steps
+10
+20
+30
+p=-0.5
+Attacker
+Defender
+CommNet
+Figure 4: Attack and defence on CommNet.
+collision penalty. Cars become available to be sampled and put back
+to the environment with new assigned routes once they complete
+their routes.
+StarCraft II (SCII). We consider SMAC [28] combat scenarios
+where the enemy units are controlled by StarCraft II built-in AI
+(difficulty level is set to hard), and each of the ally units is con-
+trolled by a learning agent. The units of the two groups can be
+asymmetric. The action space contains no-op, move[direction],
+attack[enemy id], and stop. Agents receive a globally shared
+reward which calculates the total damage made to the enemy units
+at each time step. We conduct experiments on four SMAC tasks:
+3bane_vs_hM, 4bane_vs_hM, 1o_2r_vs_4r and 1o_3r_vs_4r. More
+details about the tasks are in Appendix B.
+For each of the tasks, we first train the chosen MACRL methods
+to obtain the action policy and the message policy for each agent.
+After that, we randomly select an agent to be malicious and train its
+adversarial policy to examine whether MACRL methods are vulner-
+able to message attacks. Then we perform defence by training the
+message filter, during which the adversarial policy of the malicious
+agent is fixed but keeps working. To show that a single message
+filter is brittle and can be easily exploited if the attacker adapts to
+it, we freeze the learned message filter and retrain the adversarial
+policy. Finally, we integrate the message filter into the framework
+of ℜ-MACRL and justify if ℜ-MACRL is helpful to improve the
+robustness. All experiments are carried out with five random seeds
+and results are shown with a 95% confidence interval.
+4.2
+Recovering Multi-Agent Coordination
+We first evaluate the performance of our attacking method on the
+three selected MACRL algorithms. Then we try to recover multi-
+agent coordination for the attacked algorithms by applying the
+message filter.
+CommNet. The experiments for CommNet are conducted on preda-
+tor prey (PP) [4]. We set the punishment as 𝑝= 0 and 𝑝= −0.5 to
+create two PP tasks with different difficulties. As in Fig. 4, at the
+beginning of the attack, the performance of CommNet does not
+have obvious decrease, indicating that injecting random noise into
+the message is hard to disrupt agent coordination. As we gradually
+train the adversarial policy, there is a significant drop in the test re-
+turn, with 40% and 33% decreases in the task of 𝑝= 0 and 𝑝= −0.5,
+respectively. Multi-agent cooperation has been severely affected
+due to the malicious messages. When the test return decreases to
+preset thresholds, i.e., 23 for 𝑝= 0 and 20 for 𝑝= −0.5, we freeze
+the adversarial policy network and start to train the message fil-
+ter. As shown in the blue curves in Fig 4, with the message filter,
+Easy
+Hard
+TarMAC
+99.9 ± 0.1%
+94.9 ± 0.2%
+TarMAC w/ 𝜋𝜉
+87.2 ± 4.68%
+88.75 ± 7.29%
+TarMAC w/ 𝜋𝜁
+96.41 ± 1.38%
+93.23 ± 8.11%
+Table 2: Attack and defence on TarMAC.
+0
+20K 40K 60K 80K
+Steps
+25
+50
+75
+Test Win %
+3bane_vs_hM
+Attacker
+Defender
+NDQ
+0
+20K
+40K
+60K
+Steps
+40
+50
+60
+70
+1o_2r_vs_4r
+Attacker
+Defender
+NDQ
+Figure 5: Attack and defence on NDQ.
+0
+16K 32K 48K 64K 80K
+Steps
+20
+30
+Test Return
+p=0 (CommNet)
+0
+16K 32K 48K 64K
+Steps
+20
+25
+p=-0.5 (CommNet)
+Figure 6: Exploiting the message filter in CommNet.
+test return steadily approaches the converged value of CommNet
+(red line), indicating that the message filter can effectively recover
+multi-agent coordination under attack.
+TarMAC. We conduct message attack and defence on the Traffic
+Junction (TJ) environment [32]. There are two modes in TJ, i.e.,
+easy and hard. The easy task has one junction of two one-way
+roads on a 7 × 7 grid with 𝑁𝑚𝑎𝑥= 5. In the hard task, its map has
+four junctions of two-way roads on a 18 × 18 grid and 𝑁𝑚𝑎𝑥= 20.
+As shown in Table 2, under attack, the success rate of TarMAC
+decreases in both the easy and the hard scenarios, demonstrating
+the vulnerability of TarMAC under malicious messages. After that,
+we equip TarMAC with the defender, then its performance improves
+considerably, demonstrating the merit of the message filter.
+NDQ. We further examine the adversarial communication prob-
+lem in NQD. We perform evaluation on two StarCraft II Multi-
+Agent Challenge (SMAC) [28] scenarios, i.e., 3bane_vs_hM and
+1o_2r_vs_4r, in which the communication between cooperative
+agents is necessary [40]. As presented in Fig. 5, under attack, the
+test win rate of NDQ decreases dramatically, demonstrating that
+NDQ is also vulnerable to message attacks. After applying the mes-
+sage filter as the defender, we can find the test win rate quickly
+reaches to around 60% in 3bane_vs_hM and 55% in 1o_2r_vs_4r,
+demonstrating that, once again, our defence methods succeed in
+restoring multi-agent coordination under message attacks.
+4.3
+Improving Robustness with ℜ-MACRL
+We have demonstrated that many state-of-the-art MACRL algo-
+rithms are vulnerable to message attacks, and after applying the
+
+Methods
+Scenarios
+𝑢ℜ
+𝜁
+𝑢𝑣𝑛
+𝜁
+CommNet
+𝑝= 0
+41.75 ± 0.00
+40.74 ± 0.23
+𝑝= −0.5
+35.38 ± 1.28
+31.91 ± 0.94
+TarMAC
+Easy
+−4.08 ± 0.04
+−4.24 ± 0.08
+Hard
+−9.33 ± 0.29
+−9.80 ± 0.08
+NDQ
+3bane_vs_hM
+12.36 ± 0.26
+11.32 ± 0.15
+1o_2r_vs_4r
+17.70 ± 0.16
+16.33 ± 0.54
+Table 3: Expected utilities for the defender trained with ℜ-
+MACRL and the vanilla approach.
+message filter, multi-agent coordination can be recovered. In this
+part, we integrate the message filter into the framework of ℜ-
+MACRL and show that the robustness of MACRL algorithms can
+be significantly improved with ℜ-MACRL.
+Exploiting the message filter. We first show that a single mes-
+sage filter is brittle and can be easily exploited if the attacker adapts
+to it. We perform experiments on CommNet by freezing the mes-
+sage filter and retraining the adversarial policy. As depicted in Fig.
+6, the test return of the team gradually decreases as the training
+proceeds, with around 30% and 20% decreases in the task of 𝑝= 0
+and 𝑝= −0.5 respectively. We also conduct experiments on NDQ
+and similar phenomenon is observed (see Appendix D). We con-
+clude that even though the designed message filter is able to recover
+multi-agent cooperation under message attacks, its performance
+can degrade if faced with an adaptive attacker.
+Improving robustness. To illustrate the improvement in robust-
+ness, we make comparisons between the defender trained by ℜ-
+MACRL and the vanilla defending method. For the defender trained
+with ℜ-MACRL, a population of attack policies are learned together
+with the defender, whose policy is also a mixture of sub-policies.
+In the vanilla training method, only a single defending policy is
+trained for the defender. We use the expected utility value (the ac-
+cumulated team return) as the metric to compare the performance
+of the defender. Specifically, the larger the expected utility, the bet-
+ter the robustness. We denote the expected utility of the defender
+trained by ℜ-MACRL as 𝑢ℜ
+𝜁and the result for the vanilla one as
+𝑢vn
+𝜁. As shown in Table 3, ℜ-MACRL consistently outperforms the
+vanilla method over all the algorithms and environments. The im-
+provement of expected utilities indicates that the defender trained
+by ℜ-MACRL is more robust. Intuitively, the defender benefits from
+exploring a wider range of the policy space with ℜ-MACRL, which
+enables the defender to maintain multi-agent coordination when
+faced with attacks.
+4.4
+Scaling to Multiple Attackers
+To examine the performance of the method in scenarios where
+there is more than one attacker, we conduct experiments on NDQ
+in two new challenge tasks: 4bane_vs_hM and 1o_3r_vs_4r. In the
+former maps, i.e., 3bane_vs_hM and 1o_2r_vs_4r, there are only
+three agents in the team, making multiple attackers unreasonable.
+To mitigate this, we create 4bane_vs_hM and 1o_3r_vs_4r based on
+3bane_vs_hM and 1o_2r_vs_4r by increasing one more agent to the
+team. We randomly sample two agents to be malicious. According
+to our assumptions (agents have no knowledge about who are
+0
+40K
+80K
+120K
+Steps
+60
+80
+100
+Test Win %
+4bane_vs_hM
+Attacker
+Defender
+NDQ
+0
+40K
+80K
+120K
+Steps
+20
+40
+60
+80
+1o_3r_vs_4r
+Attacker
+Defender
+NDQ
+Figure 7: Multiple attackers: Attack and defence on NDQ.
+Methods
+Scenarios
+𝑢ℜ
+𝜁
+𝑢𝑣𝑛
+𝜁
+NDQ
+4bane_vs_hM
+15.86 ± 0.08
+15.50 ± 0.29
+1o_3r_vs_4r
+18.39 ± 0.80
+17.03 ± 0.53
+Table 4: Multiple attackers: Expected utilities for the de-
+fender trained with ℜ-MACRL and the vanilla approach.
+malicious and malicious agents cannot communicate with each
+other), we can directly apply the attacking method to each of the
+malicious agents. As shown in Fig. 7, the attackers can quickly learn
+effective adversarial policies with less learning steps. On the other
+hand, the message filter can still successfully recover multi-agent
+cooperation under multiple attackers, though it takes much more
+learning steps to converge. We further evaluate the effectiveness
+of ℜ-MACRL on the two tasks and consistent results are observed:
+trained with ℜ-MACRL, the agents can obtain larger expected
+utilities. More results on other algorithms and environments are
+provided in Appendix D.
+4.5
+Ablation Study and Analysis
+We have shown that by integrating the message filter into the
+framework of ℜ-MACRL, the robustness of MACRL algorithms can
+be improved. However, the performance of ℜ-MACRL directly is
+affected by the message filter. In this part, we will take a deeper
+look at how the message filter works.
+Which components contribute to the performance? The mes-
+sage filter consists of two components: the anomaly detector and
+the message reconstructor. Here, we alternatively disable these two
+components in the message filter to study how they contribute
+to the performance. We run experiments on three scenarios, with
+each scenario corresponding to an MACRL algorithm. Following
+the former training procedure, we first train the original MACRL
+algorithm to obtain the action policy and the message policy; then
+we sample an attacker and train its adversarial policy by PPO; next
+we freeze the policy of the attacker and train the message filter
+(with the anomaly detector or the reconstructor disabled). As in Fig.
+8, if we disable the message reconstructor in the message filter and
+replace it with a random message generator, after being attacked,
+multi-agent coordination is hard to be recovered, demonstrating the
+importance of the reconstructor. We further disable the anomaly
+detector and randomly choose an agent to reconstruct its message,
+as in Fig. 9, the defending performance is also poor. The ablation
+illustrates that both the anomaly detector and the reconstructor are
+critical in the message filter.
+
+0
+40K
+80K
+120K
+Steps
+20
+30
+Test Return
+p=-0.5 (CommNet)
+0
+200K
+400K
+600K
+Steps
+80
+90
+Test Success %
+Hard (TarMAC)
+0
+20K
+40K
+60K
+80K
+Steps
+0
+50
+Test Won %
+3bane_vs_hM (NDQ)
+Attacker
+Defender
+Figure 8: Defending by the message filter with the disabled message reconstructor.
+0
+40K
+80K
+120K
+Steps
+20
+30
+Test Return
+p=-0.5 (CommNet)
+0
+200K
+400K
+600K
+Steps
+80
+90
+Test Success %
+Hard (TarMAC)
+0
+20K
+40K
+60K
+80K
+Steps
+0
+50
+Test Win %
+3bane_vs_hM (NDQ)
+Attacker
+Defender
+Figure 9: Defending by the message filter with the disabled anomaly detector.
+(a) Q values (w/o attack)
+(b) Q values (w/ attack)
+(c) Q values (w/ defence)
+1.75
+0.98
+1.75
+0.99
+1.76
+0.97
+(d) Message attack
+(e) Reconstructed messages
+=
+⨁
+Figure 10: Q values and received messages under attack and defence. (a)-(c): Under attack, the optimal action of the benign
+agent 1 shifts from 𝑎3 to 𝑎1. After applying the message filter, its optimal action is recovered. (d)-(e): The attacked messages
+become quite different from the original messages, while the reconstructed messages are to similar the original.
+How does the proposed method work? Now we take a deeper
+look at how the message filter works. We conduct experiments
+on NDQ in the 3bane_vs_hM task. There are three agents in the
+team, of which agent 0 is the attacker and the others, namely agent
+1 and agent 2, are benign agents. As shown in Fig. 10 (a)-(c), the
+action space of each agent contains eight elements. White cells
+in Q values correspond to illegal actions at the current state, and
+the action with red Q value is optimal, e.g., 𝑎5 of agent 2. When
+attacked by the agent 0, the optimal action of agent 1 shifts from 𝑎3
+to 𝑎1, leading to sub-optimality. After applying the message filter,
+the decision of agent 1 is corrected to 𝑎3. We further examine the
+messages received by agent 1 and agent 2. As in Fig. 10 (d)-(e), the
+attacked messages are quite different from the original messages,
+while after applying the message filter, the distance between the
+original messages and the reconstructed messages becomes closer.
+5
+CONCLUSION
+In this paper, we systematically examine the problem of adversarial
+communication in MACRL. The problem is of importance but has
+been largely neglected before. We first provide the formulation of
+adversarial communication. Then we propose an effective method
+to model message attacks in MACRL. Following that, we design a
+two-stage message filter to defend against message attacks. Finally,
+to improve robustness, we formulate the adversarial communication
+problem as a two-player zero-sum game and propose ℜ-MACRL to
+improve the robustness. Experiments on a wide range of algorithms
+and tasks show that many state-of-the-art MACRL methods are
+vulnerable to message attacks, while our algorithm can consistently
+recover multi-agent cooperation and improve the robustness of
+MACRL algorithms under message attacks.
+
+REFERENCES
+[1] Sanjeevan Ahilan and Peter Dayan. 2021. Correcting Experience Replay for
+Multi-Agent Communication. ICLR (2021).
+[2] Marco Barreno, Blaine Nelson, Anthony D Joseph, and J Doug Tygar. 2010. The
+security of machine learning. Machine Learning 81, 2 (2010), 121–148.
+[3] Jan Blumenkamp and Amanda Prorok. 2020. The emergence of adversarial
+communication in multi-agent reinforcement learning. CoRL (2020).
+[4] Wendelin Böhmer, Vitaly Kurin, and Shimon Whiteson. 2020. Deep coordination
+graphs. In ICML. 980–991.
+[5] Nicholas Carlini and David Wagner. 2017. Towards evaluating the robustness of
+neural networks. In 2017 IEEE Symposium on Security and Privacy (SP). 39–57.
+[6] Abhishek Das, Théophile Gervet, Joshua Romoff, Dhruv Batra, Devi Parikh, Mike
+Rabbat, and Joelle Pineau. 2019. Tarmac: Targeted multi-agent communication.
+In ICML. 1538–1546.
+[7] Jakob N Foerster, Yannis M Assael, Nando de Freitas, and Shimon Whiteson.
+2016. Learning to communicate with Deep multi-agent reinforcement learning.
+In NeurIPS. 2145–2153.
+[8] Adam Gleave, Michael Dennis, Cody Wild, Neel Kant, Sergey Levine, and Stuart
+Russell. 2020. Adversarial Policies: Attacking Deep Reinforcement Learning. In
+ICLR.
+[9] Ian Goodfellow, Nicolas Papernot, Sandy Huang, Yan Duan, Pieter Abbeel, and
+Jack Clark. 2017. Attacking machine learning with adversarial examples. OpenAI.
+https://blog. openai. com/adversarial-example-research (2017).
+[10] Ling Huang, Anthony D Joseph, Blaine Nelson, Benjamin IP Rubinstein, and
+J Doug Tygar. 2011. Adversarial machine learning. In Proceedings of the 4th ACM
+Workshop on Security and Artificial Intelligence. 43–58.
+[11] Maximilian Hüttenrauch, Adrian Šošić, and Gerhard Neumann. 2017. Guided
+deep reinforcement learning for swarm systems. arXiv preprint arXiv:1709.06011
+(2017).
+[12] Natasha Jaques, Angeliki Lazaridou, Edward Hughes, Caglar Gulcehre, Pedro
+Ortega, DJ Strouse, Joel Z Leibo, and Nando De Freitas. 2019. Social influence
+as intrinsic motivation for multi-agent deep reinforcement learning. In ICML.
+3040–3049.
+[13] Jiechuan Jiang and Zongqing Lu. 2018. Learning attentional communication for
+multi-agent cooperation. In NeurIPS. 7254–7264.
+[14] Daewoo Kim, Sangwoo Moon, David Hostallero, Wan Ju Kang, Taeyoung Lee,
+Kyunghwan Son, and Yung Yi. 2019. Learning to schedule communication in
+multi-agent reinforcement learning. ICLR (2019).
+[15] Woojun Kim, Jongeui Park, and Youngchul Sung. 2021. Communication in multi-
+Agent reinforcement learning: Intention Sharing. ICLR (2021).
+[16] Diederik P Kingma and Jimmy Ba. 2014. Adam: A method for stochastic opti-
+mization. arXiv preprint arXiv:1412.6980 (2014).
+[17] Hubert Kirrmann. 2015. Fault Tolerant Computing in Industrial Automation.
+Switzerland: ABB Research Center.
+[18] Landon Kraemer and Bikramjit Banerjee. 2016. Multi-agent reinforcement learn-
+ing as a rehearsal for decentralized planning. Neurocomputing 190 (2016), 82–94.
+[19] Marc Lanctot, Vinicius Zambaldi, Audr¯unas Gruslys, Angeliki Lazaridou, Karl
+Tuyls, Julien Pérolat, David Silver, and Thore Graepel. 2017. A unified game-
+theoretic approach to multiagent reinforcement learning. In NeurIPS. 4193–4206.
+[20] Yen-Chen Lin, Zhang-Wei Hong, Yuan-Hong Liao, Meng-Li Shih, Ming-Yu Liu,
+and Min Sun. 2017. Tactics of adversarial attack on deep reinforcement learning
+agents. In IJCAI. 3756–3762.
+[21] H Brendan McMahan, Geoffrey J Gordon, and Avrim Blum. 2003. Planning in
+the presence of cost functions controlled by an adversary. In ICML. 536–543.
+[22] Rupert Mitchell, Jan Blumenkamp, and Amanda Prorok. 2020. Gaussian Process
+Based Message Filtering for Robust Multi-Agent Cooperation in the Presence of
+Adversarial Communication. arXiv preprint arXiv:2012.00508 (2020).
+[23] Paul Muller, Shayegan Omidshafiei, Mark Rowland, Karl Tuyls, Julien Perolat,
+Siqi Liu, Daniel Hennes, Luke Marris, Marc Lanctot, Edward Hughes, et al. 2019.
+A generalized training approach for multiagent learning. In ICLR.
+[24] Frans A Oliehoek, Christopher Amato, et al. 2016. A Concise Introduction to
+Decentralized POMDPs. Vol. 1. Springer.
+[25] Frans A Oliehoek, Matthijs TJ Spaan, and Nikos Vlassis. 2008. Optimal and
+approximate Q-value functions for decentralized POMDPs. JAIR 32 (2008), 289–
+353.
+[26] Nicolas Papernot, Patrick McDaniel, Ian Goodfellow, Somesh Jha, Z Berkay
+Celik, and Ananthram Swami. 2017. Practical black-box attacks against machine
+learning. In Proceedings of the 2017 ACM on Asia Conference on Computer and
+Communications Security. 506–519.
+[27] Adam Paszke, Sam Gross, Francisco Massa, Adam Lerer, James Bradbury, Gregory
+Chanan, Trevor Killeen, Zeming Lin, Natalia Gimelshein, Luca Antiga, Alban Des-
+maison, Andreas Kopf, Edward Yang, Zachary DeVito, Martin Raison, Alykhan
+Tejani, Sasank Chilamkurthy, Benoit Steiner, Lu Fang, Junjie Bai, and Soumith
+Chintala. 2019. PyTorch: An Imperative Style, High-Performance Deep Learning
+Library. In NeurIPS. 8026–8037.
+[28] Mikayel Samvelyan, Tabish Rashid, Christian Schroeder de Witt, Gregory Far-
+quhar, Nantas Nardelli, Tim G. J. Rudner, Chia-Man Hung, Philiph H. S. Torr,
+Jakob Foerster, and Shimon Whiteson. 2019. The StarCraft multi-agent challenge.
+CoRR abs/1902.04043 (2019).
+[29] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov.
+2017. Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347
+(2017).
+[30] Amanpreet Singh, Tushar Jain, and Sainbayar Sukhbaatar. 2018. Learning when
+to communicate at scale in multiagent cooperative and competitive tasks. ICLR
+(2018).
+[31] Arambam James Singh, Akshat Kumar, and Hoong Chuin Lau. 2020. Hierarchical
+Multiagent Reinforcement Learning for Maritime Traffic Management. In AAMAS.
+1278–1286.
+[32] Sainbayar Sukhbaatar, Arthur Szlam, and Rob Fergus. 2016. Learning multiagent
+communication with backpropagation. In NeurIPS. 2252–2260.
+[33] Christian Szegedy, Wojciech Zaremba, Ilya Sutskever, Joan Bruna, Dumitru Erhan,
+Ian Goodfellow, and Rob Fergus. 2014. Intriguing properties of neural networks.
+In ICLR.
+[34] Keen Security Lab Tencent. 2019.
+Experimental Security Research of Tesla
+Autopilot. (2019). https://keenlab.tencent.com/en/whitepapers/Experimental_
+Security_Research_of_Tesla_Autopilot.pdf
+[35] Florian Tramèr, Alexey Kurakin, Nicolas Papernot, Ian Goodfellow, Dan Boneh,
+and Patrick McDaniel. 2018. Ensemble adversarial training: attacks and defenses.
+In ICLR.
+[36] James Tu, Tsunhsuan Wang, Jingkang Wang, Sivabalan Manivasagam, Mengye
+Ren, and Raquel Urtasun. 2021. Adversarial attacks on multi-agent communica-
+tion. arXiv preprint arXiv:2101.06560 (2021).
+[37] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones,
+Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin. 2017. Attention is all
+you need. In NeurIPS. 5998–6008.
+[38] Oriol Vinyals, Igor Babuschkin, Wojciech M Czarnecki, Michaël Mathieu, An-
+drew Dudzik, Junyoung Chung, David H Choi, Richard Powell, Timo Ewalds,
+Petko Georgiev, et al. 2019. Grandmaster level in StarCraft II using multi-agent
+reinforcement learning. Nature 575, 7782 (2019), 350–354.
+[39] Rundong Wang, Xu He, Runsheng Yu, Wei Qiu, Bo An, and Zinovi Rabinovich.
+2020. Learning efficient multi-agent communication: An information bottleneck
+approach. In ICML. 9908–9918.
+[40] Tonghan Wang, Jianhao Wang, Chongyi Zheng, and Chongjie Zhang. 2019. Learn-
+ing Nearly Decomposable Value Functions Via Communication Minimization. In
+ICLR.
+[41] Hang Xu, Rundong Wang, Lev Raizman, and Zinovi Rabinovich. 2021. Transfer-
+able environment poisoning: Training-time attack on reinforcement learning. In
+AAMAS. 1398–1406.
+[42] Huan Zhang, Hongge Chen, Duane S Boning, and Cho-Jui Hsieh. 2021. Robust
+reinforcement learning on state observations with learned optimal adversary. In
+ICLR.
+[43] Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Mingyan Liu, Duane Boning,
+and Cho-Jui Hsieh. 2020. Robust deep reinforcement learning against adversarial
+perturbations on state observations. In NeurIPS. 21024–21037.
+[44] Sai Qian Zhang, Jieyu Lin, and Qi Zhang. 2020. Succinct and robust multi-agent
+communication with temporal message control. arXiv preprint arXiv:2010.14391
+(2020), 17271–17282.
+
+A
+INTRODUCTION TO THE SELECTED
+MACRL ALGORITHMS
+In this section, we introduce the selected MACRL algorithms for
+evaluation:
+CommNet [32] is a simple yet effective multi-agent communica-
+tive algorithm where incoming messages of each agent are gener-
+ated by averaging the messages sent by all agents in the last time
+step. We present the architecture of CommNet in Fig. 13.
+TarMAC [6] extends CommNet by allowing agents to pay atten-
+tion to important parts of the incoming messages via Attention [37]
+network. Concretely, each agent generates signature and query
+vectors when sending message. In the message receiving phase, at-
+tention weights of incoming messages are calculated by comparing
+the similarity between the query vector and the signature vector of
+each incoming message. Then a weighted sum over all incoming
+messages is performed to determine the message an agent will re-
+ceive for decentralized execution. The architecture of TarMAC is
+in Fig. 14.
+NDQ [40] achieves nearly decomposable Q-functions via communi-
+cation minimization. Specifically, it trains the communication model
+by maximizing mutual information between agents’ action selec-
+tion and communication messages while minimizing the entropy
+of messages between agents. Each agent broadcasts messages to all
+other agents. The sent messages are sampled from learned distribu-
+tions which are optimized by mutual information. The overview of
+NDQ is in Fig. 15.
+B
+THE SMAC MAPS
+Figure 11: Snapshots of the StarCraft II scenarios. Left:
+3bane_vs_hM. Right: 1o_2r_vs_4r.
+For the SCII environments, we conduct experiments on the fol-
+lowing four maps to examine the attack and defence on NDQ:
+3bane_vs_hM: 3 Banelings try to kill a Hydralisk assisted by
+a Medivac. 3 Banelings together can just blow up the Hydralisk.
+Therefore, to win the game, 3 Banelings ally units should not give
+the Hydralisk changes to rest time when the Medivac can restore
+its health.
+4bane_vs_hM: Similar to 3bane_vs_hM, the main difference in
+3bane_vs_hM is there are 4 Banelings.
+1o_2r_vs_4r: Ally units consist of 1 Overseer and 2 Roaches.
+The Overseer can find 4 Reapers and then notify its teammates to
+kill the invading enemy units, the Reapers, in order to win the game.
+At the start of an episode, ally units spawn at a random point on
+the map while enemy units are initialized at another random point.
+Given that only the Overseer knows the position of the enemy unit,
+the ability to learn to deliver this message to its teammates is vital
+for effectively winning the combat.
+1o_3r_vs_4r: Similar to 1o_2r_vs_4r, the main difference in
+1o_3r_vs_4r is there are 1 Overseer and 3 Roaches.
+C
+HYPERPARAMETERS
+We train all the selected MACRL methods with the same hyperpa-
+rameters as in the corresponding papers, to reproduce the perfor-
+mances. We use Adam [16] optimizer with a learning rate of 0.001
+to train the attacker model as well as the anomaly detector and
+the message reconstructor. We use the default hyperparameters of
+Adam optimizer. 𝛼, 𝛽1 and 𝛽2 are all 0.001. The clip ratio in PPO is
+0.5. The attacker model contains 3 linear layers and each layer has
+64 neurons with ReLU activation. Same deep neural networks are
+used in the anomaly detector and the message reconstructor. We
+use PyTorch [27] to implement all the deep neural network models.
+D
+ADDITIONAL RESULTS
+We train an adaptive attacker in NDQ to exploit the message filter.
+As in Fig. 12, the test won rate decrease significantly, illustrating
+that a single message filter is brittle and can easily be exploited.
+0
+8K
+16K
+24K
+32K
+Steps
+20
+40
+60
+Test Win %
+3bane_vs_hM (NDQ)
+0
+8K 16K 24K 32K 40K
+Steps
+40
+60
+1o_2r_vs_4r (NDQ)
+Figure 12: Exploiting the message filter in NDQ.
+We also conduct experiments of multi attackers on the original
+environments. Two agents are selected randomly to be malicious.
+As in Table. 5, ℜoutperforms the vanilla method in most of the
+tasks, demonstrating the effectiveness of our method.
+Methods
+Scenarios
+𝑢ℜ
+𝜁
+𝑢𝑣𝑛
+𝜁
+CommNet
+𝑝= 0
+41.64 ± 1.90
+41.25 ± 1.21
+𝑝= −0.5
+36.83 ± 1.71
+35.27 ± 0.66
+TarMAC
+Easy
+−0.70 ± 0.00
+−0.80 ± 0.00
+Hard
+−0.90 ± 0.00
+−1.00 ± 0.00
+NDQ
+3bane_vs_hM
+12.14 ± 0.35
+11.46 ± 0.23
+1o_2r_vs_4r
+17.72 ± 0.84
+16.77 ± 0.62
+Table 5: Multiple attackers: Expected utilities for the de-
+fender trained with ℜ-MACRL and the vanilla approach.
+
+hi
+j
+ci
+j
+hi+1
+j
+mean
+{s1, ..., sJ}
+di
+i
+{a1, ..., aJ}
+f
+h
+Ci
+l
+Hi
+tanh
+f i
+CommNet model
+th communication step
+Module for agent
+f i
+f i
+f i
+Φ
+uN
+Figure 13: The Architecture of CommNet from [32]. An overview of our CommNet model. Left: view of module 𝑓𝑖for a single
+agent 𝑗. Note that the parameters are shared across all agents. Middle: a single communication step, where each agents modules
+propagate their internal state ℎ, as well as broadcasting a communication vector 𝑐on a common channel (shown in red). Right:
+full model Φ, showing input states 𝑠for each agent, two communication steps and the output actions for each agent.
+Figure 14: Overview of TarMAC from [6]. Left: At every timestep, each agent policy gets a local observation 𝜔𝑡
+𝑖and aggregated
+message 𝑐𝑡
+𝑖as input, and predicts an environment action 𝑎𝑡
+𝑖and a targeted communication message 𝑚𝑡
+𝑖. Right: Targeted com-
+munication between agents is implemented as a signature-based soft attention mechanism. Each agent broadcasts a message
+𝑚𝑡
+𝑖consisting of a signature 𝑘𝑡
+𝑖, which can be used to encode agent-specific information and a value 𝑣𝑡
+𝑖, which contains the
+actual message. At the next timestep, each receiving agent gets as input a convex combination of message values, where the
+attention weights are obtained by a dot product between sender’s signature 𝑘𝑡
+𝑖and a query vector 𝑞𝑡+1
+𝑗
+predicted from the
+receiver’s hidden state.
+
+X
+message 𝑚"#
+𝑜"
+𝑜#
+ 𝑄"(𝜏", 𝑎", 𝑚"
+"+)
+𝑄#(𝜏#, 𝑎#, 𝑚#
+"+)
+Mixing Network
+𝑄-.-
+𝑚"
+"+
+𝑚#
+"+
+X
+𝑎"
+𝑎#
+message 𝑚#"
+X
+𝐺𝑅𝑈"
+𝐺𝑅𝑈#
+Messages 𝑚(2#)"
+from other agents
+Concatenate
+X
+Agent 𝑖
+MLP
+MLP
+MLP
+MLP
+Messages 𝑚2" #
+from other agents
+Agent 𝑗
+𝑜#
+MLP
+GRU
+ℎ#
+-
+ℎ#
+-67
+𝜏#
+𝐼(𝐴"; M#"|Τ", 𝑀2# ")
+Mutual Information Loss
+𝐼(𝐴#; M"#|Τ#, 𝑀2" #)
+Mutual Information Loss
+Entropy Loss
+𝐻(𝑀#")
+𝐻(𝑀"#)
+Entropy Loss
+Figure 15: Overview of NDQ from [40]. The message encoder generates an embedding distribution that is sampled and con-
+catenated with the current local history to serve as an input to the local action-value function. Local action values are fed into
+a mixing network to to get an estimation of the global action value..

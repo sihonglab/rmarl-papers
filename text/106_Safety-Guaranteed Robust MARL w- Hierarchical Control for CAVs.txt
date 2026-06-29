@@ -1,0 +1,923 @@
+Safety Guaranteed Robust Multi-Agent Reinforcement Learning with
+Hierarchical Control for Connected and Automated Vehicles
+Zhili Zhang∗1
+H M Sabbir Ahmad∗2
+Ehsan Sabouni∗2
+Yanchao Sun3
+Furong Huang3
+Wenchao Li2
+Fei Miao1
+Abstract— We address the problem of coordination and
+control of Connected and Automated Vehicles (CAVs) in the
+presence of imperfect observations in mixed traffic environment.
+A commonly used approach is learning-based decision-making,
+such as reinforcement learning (RL). However, most existing safe
+RL methods suffer from two limitations: (i) they assume accurate
+state information, and (ii) safety is generally defined over the
+expectation of the trajectories. It remains challenging to design
+optimal coordination between multi-agents while ensuring hard
+safety constraints under system state uncertainties (e.g., those
+that arise from noisy sensor measurements, communication, or
+state estimation methods) at every time step. We propose a safety
+guaranteed hierarchical coordination and control scheme called
+Safe-RMM to address the challenge. Specifically, the high-level
+coordination policy of CAVs in mixed traffic environment is
+trained by the Robust Multi-Agent Proximal Policy Optimization
+(RMAPPO) method. Though trained without uncertainty, our
+method leverages a worst-case Q network to ensure the model’s
+robust performances when state uncertainties are present during
+testing. The low-level controller is implemented using model
+predictive control (MPC) with robust Control Barrier Functions
+(CBFs) to guarantee safety through their forward invariance
+property. We compare our method with baselines in different
+road networks in the CARLA simulator. Results show that
+our method provides best evaluated safety and efficiency in
+challenging mixed traffic environments with uncertainties.
+I. INTRODUCTION
+Machine learning models assisted by more accurate on-
+board sensors, such as camera and LiDARs, have enabled
+intelligent driving to a certain degree. Meanwhile, advances
+in wireless communication technologies also make it possible
+for information sharing beyond an individual’s perception [1],
+[2]. Through vehicle-to-everything (V2X) communications,
+it has been shown that shared information can contribute to
+CAVs decision-making [3], [4], [5], and improve the safety
+and coordination of CAVs [6], [7], [8].
+However, it remains challenging for reinforcement learning
+(RL) or multi-agent reinforcement learning (MARL)-based
+decision-making methods to guarantee the safety of CAVs in
+complicated dynamic environments containing human driven
+vehicles (HDVs) and optimize the joint behavior of the
+*Z. Zhang, H. M. S. Ahmad and E. Sabouni contributed equally
+1Z. Zhang, and F. Miao are with the Department of Computer Science
+and Engineering, University of Connecticut, Storrs Mansfield, CT, USA
+06268 {zhili.zhang, fei.miao}@uconn.edu
+2H. M. S. Ahmad, E. Sabouni, and W. Li are with the Division of
+Systems Engineering and Department of Electrical & Computer Engineering,
+Boston University, Boston, MA, USA 02215{sabbir92, esabouni,
+wenchao}@bu.edu
+3Y. Sun, and F. Huang are with the Department of Computer Sci-
+ence, University of Maryland, College Park, MD, USA 20742 {ycs,
+furongh}@umd.edu.
+(a)
+(b)
+Fig. 1.
+Intersection (a, b): two HDVs run the red light when two CAVs are
+passing the box in Intersection scenario. CAVs are in green; HDVs are in
+red. (1a): CAVs successfully avoid collision with our method during testing
+with state uncertainties; (1b): CAV1 adopting benchmark (MCP) collides
+with an HDV because the perturbed location of HDV1 (with yellow triangle)
+misleads the CAV to believe collision will not happen.
+entire system. For real-world CAVs, state uncertainties that
+may result from noisy sensor measurements, state estimation
+algorithms or the communication medium pose another
+challenge. There can be scenarios where safety is highly
+correlated with the correctness of state information especially
+in the presence of HDVs/unconnected vehicles, as shown in
+Fig. 1b.
+In this work, we propose a hierarchical decision-making
+approach for the coordination and control problem of CAVs
+in mixed traffic environments. At the top of the hierarchy is a
+Robust MARL policy that learns the cooperative behavior of
+CAVs by generating discrete planning actions for each vehicle.
+At the lower level, to guarantee the safety of each CAV, a MPC
+controller with control barrier function (CBF) constraints is
+designed to track the planned path according to the MARL
+action. Specifically, for cooperative policy-learning, we design
+a robust MAPPO (RMAPPO) algorithm that optimizes the
+worst-case Q network [9] as a critic allowing the MAPPO [10]
+to train a robust policy without simulating potential state
+uncertainties during the training process. The MPC controller
+using robust CBFs serves twofold purposes: guarantees safety
+in the presence of state uncertainties for the CAVs in mixed
+traffic environment; and tracks the planned path determined
+by the RMAPPO policy’s actions. In summary, the main
+contributions of this work are:
+• We propose a hierarchical decision-making framework,
+Safe-RMM, for CAVs in mixed traffic environments.
+The framework comprises of two levels whereby the top
+level is Robust MARL (the "RM" in Safe-RMM) that
+determines discrete actions conditioned on the behavior
+of other CAVs and HDVs. The low-level controller uses
+MPC (the final "M" in Safe-RMM) with CBFs to execute
+arXiv:2309.11057v2  [cs.RO]  23 Sep 2024
+
+the high-level plan while guaranteeing safety to the
+neighborhood vehicles through the forward invariance
+property of CBFs.
+• To handle states uncertainties, we design the robust
+MARL algorithm which only requires training one
+more critic for the agents but no prior knowledge
+of uncertainties. Additionally, the MPC controller is
+incorporated with robust CBFs to consistently generate
+safe controls given MARL decisions, and to be endowed
+with the robustness against erroneous system state.
+• We validate through experiments in CARLA simulator
+that the proposed Safe-RMM approach significantly
+improves the collision-free rate and allows the CAV
+agents to achieve higher overall returns compared to
+baseline methods. Ablation studies further highlight the
+contributions of both the robust MARL algorithm and
+the MPC-CBF controller, as well as their reciprocal
+effects.
+II. RELATED WORK
+In this section we provide a survey of the existing literature
+in this area along with their limitations to motivate our
+proposed approach.
+a) Safe RL and Robust RL: Different approaches have
+been proposed to guarantee or improve safety of the sys-
+tem, such as defining a safety shield or barrier assisting
+RL or MARL algorithm in either training or execution
+stage [11], [12], [13], constrained RL/MARL that learns a
+risk network [14], an expected cost function [15], [16], or
+cost constraints from language [17] that define the safety
+requirements. For MARL of CAV, safety-checking module
+with CBF-PID controller for each individual vehicle has been
+designed [8], [18], [19]. However, the above works assume
+accurate state inputs to RL or MARL algorithm from the
+driving environment and cannot tolerate noisy or inaccurate
+state input. Meanwhile, robust RL and robust MARL that
+only considers to train a policy under state uncertainty
+or model uncertainty
+[9], [20], [21], [22], [23] without
+explicitly considering the safety requirements have been
+proposed recently. However, in the multi-agent settings with
+imperfect observations, considering both safety requirements
+and robustness in an unified decision-making framework for
+CAVs still remains challenging.
+b) Rule-Based Approaches: Unified optimization frame-
+work poses challenges that can be addressed by decomposing
+the problem into hierarchical structures. Specifically, the
+higher level control is responsible for decision making and
+the lower level control is responsible for safe execution. For
+the higher level planner, heuristic rule based methods can
+be employed in which a set of rules govern the behavior of
+each agent within the system. For instance existing driving
+behavior models in mixed traffic can be found in [24],
+[25],[26], [27]. However, these models often lack robustness
+and make various assumptions about HDVs, which prevents
+generalization to all scenarios. MPC can be used for the lower
+level controller due to its ability in reference tracking and
+handling hard constraints in real time. In situations where
+imperfect observations are present, robust MPC approaches
+may be used, such as tube MPC [28], [29]. Nevertheless,
+tube-based MPC approaches require a feedback controller
+that can keep the actual system trajectory close to the nominal
+one. The calculation of such feedback controller is not trivial
+in multi-agent systems with nonlinear dynamics. Min-Max
+MPC
+[30] can also be adopted but it is often difficult to
+solve, and when it is approximated, the approximation can
+result in an overly conservative solution.
+In this work, we consider safe and robust coordination
+and control for multi-agent CAV systems in mixed traffic-
+environments with state uncertainties. We define safety as
+collision-free condition for CAVs, and the concept of robust-
+ness refers to agents’ capability of ensuring its performances,
+including safety and efficiency, with state uncertainties. The
+proposed hierarchical scheme involves robust MARL that
+works in tandem with a low-level MPC controller using
+robust CBFs to guarantee safety for CAVs under input state
+uncertainties. Our robust MARL algorithm does not require
+injecting perturbations during training.
+III. PROBLEM FORMULATION
+A. Problem Description
+We consider the robust cooperative policy-learning problem
+under uncertain state inputs for CAVs in mixed traffic
+environments including HDVs that do not communicate or
+coordinate with CAVs, and various driving scenarios such
+as multi-lane intersection and highway (as shown in Fig.
+1&4). We assume that each CAV can get shared information
+from V2V and V2I communications. We consider that a CAV
+agent i has accurate self-observation of its driving state but
+potentially perturbed observations of the other vehicles. The
+two parts collectively constitute its state si in reinforcement
+learning explained in Sec. III-B, and also used by the MPC
+controller as inputs to the robust CBFs.
+B. Formulation of MARL with State Uncertainty for CAVs
+The problem of Multi-Agent Reinforcement Learning
+with State Uncertainty for CAVs is defined as a tuple
+G = (S, A, P, {ri}, ˜o, G, γ) where G := (N, E) is the
+communication network of all CAV agents. S is the joint
+state space of all agents: S := S1 ×· · ·×Sn. The state space
+of agent i: Si = {oi, oNi, oN UV
+i
+} contains self-observation
+oi, observations oNi = {oj|j ∈Ni} being the communicated
+message shared by neighbor connected agents Ni, observa-
+tions oN UV
+i
+of unconnected vehicles N UV
+i
+either observed
+by agent i itself or shared by other agents or infrastructures.
+For example, self-observation oi and shared observations oNi
+can contain location, velocity, acceleration and lane-detection:
+(l, v, α, LD); observations of unconnected vehicles N UV
+i
+can contain location and velocity (l, v).
+In this work, we consider agent i suffers from uncertain
+observed locations and velocities of other vehicles aside
+from the ego vehicle (i.e. ˜si = {oi} S{˜oj|j ∈Ni
+S N UV
+i
+}),
+where ˜oj denotes an uncertain observation over vehicle j in
+comparison with the true accurate self-observation oi. The
+uncertainty is defined by bounded errors (el, ev) := ˜o =
+
+(˜l, ˜v), ˜l = l + el, ˜v = v + ev. The implementation of state
+uncertainty in testing experiments is explained in Sec. V.
+The joint action set is A := A1 × · · · × An where
+Ai = {ai,1, ai,2, · · · , ai,3+k} is the discrete finite action
+space for agent i. ai,1: KEEP-LANE-MAX - the CAV i
+maximize its reference throttle in the current lane. ai,2:
+CHANGE-LANE-LEFT - the CAV i changes to its left
+lane. ai,3: CHANGE-LANE-RIGHT - the CAV i changes
+to its right lane. In experiment, the path planner will set a
+target waypoint trajectory onto its left/right neighboring lane.
+ai,4, . . . , ai,3+k are k lane-keeping actions associated with
+different reference throttle values. By choosing action ai,5, for
+example, reference throttle value throttle5 will first converted
+into reference acceleration then it will be fed to the controller
+and the calculation of safe control is introduced in IV-B. The
+state transition function is P : S × A × S 7→[0, 1]. The
+reward functions {ri := S × A 7→R} are defined as
+ri(s, a) =
+X
+j
+µv
+i,j∥vj∥2 +
+X
+j
+µl
+i,j∥lj −dj∥2 +
+X
+j
+µs
+i,jrs
+j(s, a) (1)
+in which vj is vehicle j’s velocity; dj is j’s default
+destination and rs
+j is the safety reward. µv, µl, µs are non-
+negative weights balancing the proportions of individual
+and total achievement. As break-downs of the safety reward
+rs
+j(s, a) = pCol(s, a) + pMPC(s, sNi, a), the collision penalty
+pCol(s, a) penalizes collision and pMPC(s, sNi, a) penalizes
+the infeasiblity of the low level controller.
+IV. METHODOLOGY
+We present Safe-RMM – our hierarchical decision-making
+framework design in this section. We begin by presenting
+the design of our Robust MARL algorithm and subsequently
+present the details of the MPC controller using robust CBFs.
+Our Robust MARL algorithm augments MAPPO [10] such
+that each PPO agent is equipped with a worst-case Q
+network [9]. The worst-case Q estimates the potential impact
+of state perturbations on the policy’s action selection and
+the resulting expected return. By incorporating it into the
+policy’s training objective, we enhance the robustness of the
+trained policy against state perturbations. Consequently, the
+proposed algorithm improves both the safety and efficiency
+of CAVs under state uncertainties. We present our proposed
+safe MARL algorithm, Safe-RMM, in Algorithm 1.
+A. Robust MAPPO
+The proposed Robust MARL algorithm (Alg 1; Fig. 2)
+uses centralized training and decentralized execution. We are
+inspired by the Worst-case-aware Robust RL framework [9]
+and designed the robust MAPPO. Each robust PPO agent
+maintains a policy network πθi (“actor”) with parameter θi,
+a value network (“critic”) V (s) with parameter ϕi and the
+second critic Qωi(si, ai) network approximating the worst-
+case action values with parameter ωi. In order to learn a safe
+cooperative policy for the CAVs, the MARL interacts with the
+MPC controller (Sec. IV-B) during the Rollout process. As
+the algorithm starts, agent i’s policy takes initial state si and
+samples an action ai; the MPC-controller with robust CBFs
+Algorithm 1: Safe-RMM
+1 Initialize policy, PPO critic and Worst-case Q
+networks θ0
+i , ϕ0
+i , ω0
+i ; worst-Q weight λ0
+i = 0 ;
+2 for each episode E do
+3
+Initialize s = Q
+i si ∈S, A = Q
+i Ai
+4
+Initialize centralized memory M = ∅
+5
+Rollout(s, A): for each step, agent i do
+6
+Choose ai ∈Ai based on ϵ-greedy, a = Q ai;
+7
+Computes safe control and safety reward
+usafe
+i
+, pMPC
+i
+= MPC(si, ai) ( IV-B) ;
+8
+Execute usafe
+i
+, observe next state s′ = Q
+i s′
+i ;
+9
+Compute rewards r = {ri} according to (1)
+Store (si, ai, ri, s′
+i), ∀i in M;
+10
+s ←s′;
+11
+end
+12
+Training: for each agent i do
+13
+Compute PPO critic loss gradient
+∇ϕi(LV
+i ) [31];
+14
+Compute worst-Q critic loss gradient
+∇ωi(L
+Q
+i ) [9];
+15
+Update ϕE
+i ←ϕE+1
+i
+,ωE
+i ←ωE+1
+i
+;
+16
+Compute policy loss gradients ∇θi(Li(θi))
+(2);
+17
+Update θE
+i ←θE+1
+i
+, λE
+i ←λE+1
+i
+;
+18
+end
+19 end
+given ai computes a safe control ui for the vehicle to execute.
+The agent receives ri (1) and all agents synchronously move
+to the next time-step by observing the new state s′ = Q
+i s′
+i.
+During training, both critics account for updating the policy
+with loss function (2) so that the trained policy can balance
+the goals between maximizing expectations of advantage
+ˆAi and worst-case return Q(ωi). Through value-based state
+regularization Lreg
+i
+(θi), the policy is trained to be robust at
+crucial “vulnerable” states around which uncertainties are
+more likely to affect the policy [32], [10].
+Li(θi) = 1
+N
+PN
+t min(ρθi,clip(ρθi))( ˆAt
+i + κQ(ωi)t)+Lreg
+i
+(θi)
+(2)
+B. Robust CBF-based Model Predictive Control
+We adopt receding horizon control to implement the low-
+level controller for every agent i in the road network. The low-
+level controller maps the high-level plans/actions ai ∼πθi
+into primitive actions/control inputs for agent i. Firstly, a
+path planning function z : A →Xi × Ui is used to map
+the high-level plans/actions into state and action references,
+i.e. (xref
+i
+, uref
+i
+) = z(xi, ai), where Xi ⊂Si is the state
+space and Ui is the input space of primitive actions of CAV
+i respectively. Subsequently this information is fed to the
+MPC controller. To prevent collision between agents, safety
+constraints are incorporated to the controller using CBFs.
+We consider that the dynamics for each vehicle is affine
+in terms of its control input u as follows:
+˙x = f(x) + g(x)u
+
+Fig. 2.
+Safe-RMM algorithm. The figure demonstrates an agent’s decision pipeline while other agents share the same procedure. During training, both
+Value network and worst-Q network join the update of actor’s policy. During testing, Agent i takes states with uncertainty to its actor and samples the high
+level action ai, which is subsequently handled by robust MPC controller for path-planning and generating safe control ui.
+
+
+˙x
+˙y
+˙ψ
+˙v
+
+
+| {z }
+˙x(t)
+=
+
+
+v cos ψ
+v sin ψ
+0
+0
+
+
+|
+{z
+}
+f(x(t))
++
+
+
+0
+0
+0
+0
+0
+v/(lf + lr)
+1
+0
+
+
+|
+{z
+}
+g(x(t))
+
+u
+ϕ
+
+| {z }
+u(t)
+, (3)
+where f and g are locally Lipschitz, x ∈X ⊂S denotes
+the state vector and u ∈U = [umin, umax] denotes the
+control input. In the above equations x(t), y(t), ψ(t), v(t)
+represent the current longitudinal position, lateral position,
+heading angle, and speed, respectively. u(t) and ϕ(t) are
+the acceleration and steering angle of vehicle at time t,
+respectively, g (x(t)) = [gu (x(t)) , gϕ (x(t))].
+We incorporate safety with respect to other vehicles
+(primarily unconnected vehicles) as follows. Let CAV i needs
+to stay safe to a vehicle j ∈{oi, oNi, oN UV
+i
+} in its vicinity.
+To achieve that we enforce a constraint on vehicles i by
+defining a speed dependent ellipsoidal safe region b1 (xi, xj)
+as follows:
+b (xi, xj) := (xi(t) −xj(t))2
+(aivi(t))2
++ (yi(t) −yj(t))2
+(bivi(t))2
+−1 ≥0,
+(4)
+where ai, bi are weights adjusting the length of the major
+and minor axes of the ellipse as illustrated in Fig. 3. We
+enforce safety constraints on any CAV i for vehicles in
+{oi, oNi, oN UV
+i
+} in one of three scenarios which are: i.
+immediately preceding in the same lane, ii. located in the
+lane the ego is changing to and iii. arriving from another lane
+that merges to the lane of the ego vehicle.
+Given a continuously differentiable function b : Rn →R
+and the safe set defined as C := {x ∈Rn : b(x) ≥0}, b(x)
+is a candidate control barrier function (CBF) for the system
+(3) if there exists a class K function α and u such that
+Lfb(x) + Lgb(x)u + α(b(x)) ≥0,
+(5)
+for all x ∈C, where Lf, Lg denote the Lie derivatives
+along f and g, respectively. Additionally, we use CLFs to
+incorporate state references to the controller. A continuously
+differentiable function V
+: Rn →R is a globally and
+exponentially stabilizing CLF for (3) if there exists constants
+Fig. 3.
+Illustration of the ellipsoidal safety set.
+ci ∈R>0, i = 1, 2, such that c1||x||2 ≤V (x) ≤c2||x||2,
+u ∈U, and the following inequality holds
+LfV (x) + LgV (x)u + η(x) ≤e,
+(6)
+where e makes this a soft constraint.
+The uncertain state measurements stemming from process
+noise and measurement noise denoted by ˆx(t) is expressed
+as follows:
+ˆx(t) = x(t) + w(t)
+(7)
+where w(t) is bounded noise such that ∥w(t)∥∞≤ϵ. In the
+presence of noise, the robust CBF constraint becomes the
+following which has been shown to make the safety set C
+forward invariant in [33].
+min
+{w(t):∥w(t)∥∞≤ϵ}[Lfb(ˆx(t)−w(t))] + Lgb(ˆx(t)−w(t))u(t)
++ α(b(ˆx(t) −w(t)))] ≥0
+(8)
+Finally, the MPC with robust CBF and CLF control
+problem can be expressed as follows:
+min
+x0:N|k
+u0:N−1|k
+N−1
+X
+h=0
+
+(xh|k −xref
+h|k )T Ax(xh|k −xref
+h|k )
++ (uh|k −uref
+h|k )T Au(uh|k −uref
+h|k ) + BT
+xh|k
+uh|k
+
++
+δT e2
+h|k
+
++ VN(xN|k)
+subject to xh+1|k = f(xh|k, uh|k),
+h = 0, . . . , N −1,
+(5), (6),
+h = 0, . . . , N −1,
+uh|k ∈U, xh|k ∈X, xN ∈Xf h = 0, . . . , N −1
+
+where Ax ∈Rn×n, Au ∈Rq×q are the matrix of weights,
+B ∈Rn+q is vector of weights, and δ is the vector of weights
+of the penalty terms associated with the relaxation parameters
+of the CLF constraints.
+V. EXPERIMENTS AND EVALUATIONS
+We conduct our experiment in the CARLA Simulator
+environment [34], where each vehicle is configured with
+onboard GPS and IMU sensors and a collision sensor
+that detects the collision with other objects. We show
+two challenging scenarios in daily driving, respectively, at
+Intersection (Fig. 4a) and on Highway (Fig. 4b), where we
+spawn multiple CAVs and some HDVs randomly. We adopt
+three types of state uncertainties exclusively for testing:
+A random error erand∼U(−3,3) (U: uniform distribution);
+error_over_time: ERRT and error_target_vehicles: ERRV that
+impose perturbation at consistent values to CAVs’ states to
+affect their behavior patterns:
+ERRT = {(et, et)|et∼U(e0−1
+2 ,e0+ 1
+2 ), ±e0∼U(4,5), t ∈T}
+ERRV = {(eν, eν)|eν∼U(e0−1
+2 ,e0+ 1
+2 ), ±e0∼U(4,5), ν ∈V}
+The former ERRT has state errors for all cars in duration
+T ⊂E, while the latter ERRV has a subset of vehicles V
+randomly sampled in each episode and adds uncertainties to
+how ν ∈V are observed by others throughout the current
+episode.
+a) Intersection: The Fig. 1 and Fig. 4a present an
+snapshot of the Intersection scenarios with CAVs (green)
+passing the intersection and HDVs (red) from opposite sides
+crossing the box at the same time. HDVs pose critical safety
+threats as they could either hit or be hit by a CAV from
+the side when driving fast (≈10m/s). CAVs aim to avoid
+collision and reach the preset destination after passing through
+the intersection.
+b) Highway: Figures. 4b illustrates the scenario, where
+CAVs (green) are spawned behind HDVs (red) on a multi-
+lane highway. During training and evaluation, HDVs keep
+in their lanes at random speed from [7-9] m/s except one
+random HDV simulates a stop and go scenario. CAVs aim to
+avoid any collision and drive at the speed limit of the road
+to arrive at the destination.
+A. Experiment Results
+In this section, we highlight our method’s performances
+in terms of safety guarantees and robustness against state
+uncertainty while generalizable to different driving scenarios.
+We demonstrate through ablation studies that the incorporation
+of MPC with robust CBF based controller improves the
+performance of MARL algorithm. Additionally, we also
+demonstrate that our proposed hierarchical approach with
+robust MARL also improves the MPC-CBF controller.
+We trained three models: our Safe-RMM method, the “non-
+robust” Safe-MM that also adopts our framework, and the
+MCP method adopting MARL-PID controller with CBF safety
+shield [8]. Each model is trained on Intersection and Highway
+respectively for 200 episodes. In evaluation, aside from
+the three trained models, we have “MP”, MARL with PID
+(a)
+(b)
+Fig. 4.
+Intersection (a) and Highway (b) scenarios for testing. (4a) 3 CAVs
+and 2 HDVs participate (left), CAVs could either dodge (middle) or collide
+with HDVs (right); (4b) 3 CAVs and 3 HDVs participate in a multi-lane
+Highway scenario, with one HDV suddenly brakes.
+Fig. 5.
+Discounted Efficiency Returns during Training in Intersection.
+Fig. 6.
+Discounted Efficiency Returns during Training in Highway.
+controller, as an example of learning-based method without
+safety shielding; and we also implemented the benchmark
+“RULE” adopting a rule-based planner and a robust MPC
+controller. The “RULE” benchmark has been implemented
+based on the method proposed in [35], which introduces
+a safety-guaranteed rule for managing vehicle merging on
+roadways. This rule ensures safe interactions between vehicles
+arriving from different roads converging at a common point.
+Methods are evaluated for 50 episodes in both scenarios
+under four uncertainty configurations: None (uncertainty-
+free), random error erand, and two targeting errors ERRV and
+ERRT . Training results in Intersection are shown in Fig. 5;
+evaluations in both scenarios are presented in Table. I. For
+each entry in both tables, the left integer is the number
+of collisions happened during evaluation (in 50 episodes);
+
+TABLE I
+EVALUATION RESULTS IN INTERSECTION AND HIGHWAY
+Uncertainty
+Method
+None
+erand
+ERRV
+ERRT
+Intersection
+Safe-RMM1
+0, 162.9
+0, 161.4
+0, 162.2
+0, 161.8
+Safe-MM2
+0, 157.9
+0, 155.7
+0, 155.9
+0, 155.7
+MCP3
+3, 65.7
+2, 60.6
+0, 66.2
+2, 67.7
+MP4
+33, 148.4
+41, 149.1
+36, 145.9
+30, 139.0
+RULE5
+2, 120.9
+1, 113.9
+3, 105.5
+2, 112.3
+Highway
+Safe-RMM
+0, 162.0
+0, 169.4
+0, 166.4
+0, 161.8
+Safe-MM
+0, 161.3
+0, 168.7
+0, 168.7
+0, 163.0
+MCP
+0, 56.8
+2, 55.8
+1, 60.7
+2, 58.4
+MP
+35, 74.1
+34, 74.5
+38, 73.8
+38, 74.5
+1Safe-RMM: our method–Safe Robust MARL-MPC; 2Safe-MM: Safe
+MARL-MPC adopting same framework as1 but trained without worst-
+case Q. Benchmarks: 3MCP: MARL-PID with CBF Safety Shield; 4MP:
+MARL-PID without shielding; 5RULE: rule-based planner with MPC
+controller.
+Each entry in the table above contains (number of collisions; mean of
+episodes discounted efficiency return).
+the right number is the agents’ mean discounted return
+considering only the rewards related to velocity and goal-
+achievement in (1). We highlight the top performance across
+all methods with the least collision numbers and the highest
+efficiency return.
+1) Top Safety and Efficiency Achieved by the Framework:
+Our proposed MARL-MPC framework demonstrates top
+safety performance as both Safe-RMM and Safe-MM achieve
+zero collisions across all evaluation scenarios, even when
+subjected to uncertainties. Additionally, Safe-RMM and
+Safe-MM rank among the top two in terms of efficiency
+across all settings. Our proposed approach with robust
+MPC controller enables MARL to fully realize its potential,
+allowing its decisions to be executed with accuracy and
+receiving precise reward feedback. The reciprocation between
+the MARL and MPC controller enhances policy training and
+demonstrates that ensuring safety in autonomous vehicles
+need not compromise efficiency.
+In contrast, the MP baseline, adopting MARL without
+safety shielding, experiences collisions in 60%-80% of evalu-
+ation episodes as shown in Table I. The result highlights the
+limited safety-awareness of pure learning-based approaches
+in complex driving scenarios. The MCP baseline, which
+incorporates a CBF-based safety shield, significantly reduces
+collisions to just 3% of episodes in average. However, this
+comes at the cost of performance efficiency due to more
+conservative behaviors. Specifically, MCP in the presence
+of safety shield shows a 54% performance drop in the
+Intersection scenario and a 23% drop in the Highway scenario
+compared to the MP method. These results verify that when
+applying learning-based algorithm in CAV system, the policy
+and the controller (or the action actuator) are not independent.
+Our Safe-RMM having MARL enabled by the accuracy
+and safety of MPC controller achieves comprehensively best
+performance while the same MARL algorithm is hindered
+by the limited capability of PID controller from reaching its
+optimality.
+2) Ablation Study with Rule-based Benchmark and Ro-
+bustness: We conducted an ablation study by evaluating the
+rule-based benchmark “RULE” in the Intersection scenario.
+As shown in Table I, our Safe-RMM method outperforms
+“RULE” in both safety and efficiency metrics. Compared
+with other benchmarks, the rule-based method offers a more
+“balanced” performance – being significantly safer and less
+“reckless” than MP, while achieving comparable safety and
+much higher efficiency than MCP. However, in a safety-critical
+scenario like the Intersection, more precise decision-making
+is required for CAVs to ensure both safety and speed. The
+lack of adaptability and learning capability limits rule-based
+approaches from achieving comparable performance as our
+approach in these complex scenarios.
+From the results of the RULE benchmark in Table I,
+we observe a 6%-13% drop in efficiency when comparing
+episodes with and without state uncertainties. This supports
+our earlier assessment in Sec. II that rule-based methods, as
+high-level planners, generally lack the robustness of learning-
+based approaches. Furthermore, a comparison between Safe-
+RMM and its “non-robust” counterpart, Safe-MM, shows
+that Safe-RMM outperforms Safe-MM by approximately 4%
+in efficiency across all evaluation settings in Intersection.
+However, this advantage does not extend to the Highway
+scenario. Our analysis of both scenarios suggests that the
+uncertainties of HDVs come not only from tested errors,
+but also from the initial randomization of HDVs’ location
+and speed. In Intersection, even slight variations in vehicle
+states may require completely different optimal strategies by
+the CAVs – either seizing the opportunity to pass ahead of
+the HDVs, or yielding for safety at the cost of efficiency.
+Safe-RMM demonstrates greater robustness against these
+uncertainties and can effectively manage these “critical”
+moments, optimizing for higher expected returns with a worst-
+case consideration. However, in less safety-critical scenarios
+like Highway, the worst-case awareness of Safe-RMM can
+result in sub-optimality. In these cases, the algorithm may
+avoid taking greedier actions and have lower efficiency, even
+when such actions carry little risk.
+VI. CONCLUSION
+In this work, we study the safe and robust planning
+and control problem for connected autonomous vehicles
+in common driving scenarios under state uncertainties. We
+propose the Safe-RMM algorithm for coordinated CAVs and
+further validate through experiments the effectiveness of our
+method. MARL can enhance the performance ceiling of
+MPC controller in safety-critical scenarios and robust MPC
+controller can safely and accurately execute the actions from
+RL and reciprocally contributes to better trained policies.
+The method achieves top safety and efficiency performances
+in evaluation, and maintain robustness against tested pertur-
+bations. Future work could consider optimizing the control
+policy in a mixed traffic scenario with both RL and rule-based
+intelligent agents.
+
+REFERENCES
+[1] D. Martín-Sacristán, S. Roger, D. Garcia-Roger, J. F. Monserrat,
+P. Spapis, C. Zhou, and A. Kaloxylos, “Low-latency infrastructure-
+based cellular v2v communications for multi-operator environments
+with regional split,” IEEE Trans. Intell. Transp. Syst., vol. 22, no. 2,
+pp. 1052–1067, 2020.
+[2] H. Mun, M. Seo, and D. H. Lee, “Secure privacy-preserving v2v
+communication in 5g-v2x supporting network slicing,” IEEE Trans.
+Intell. Transp. Syst., 2021.
+[3] N. Buckman, A. Pierson, S. Karaman, and D. Rus, “Generating
+visibility-aware trajectories for cooperative and proactive motion
+planning,” pp. 3220–3226, 2020.
+[4] A. Miller and K. Rim, “Cooperative perception and localization for
+cooperative driving,” pp. 1256–1262, 2020.
+[5] S. Han, H. Wang, S. Su, Y. Shi, and F. Miao, “Stable and efficient
+shapley value-based reward reallocation for multi-agent reinforcement
+learning of autonomous vehicles,” pp. 8765–8771, 2022.
+[6] J. Rios-Torres and A. A. Malikopoulos, “A survey on the coordination
+of connected and automated vehicles at intersections and merging at
+highway on-ramps,” IEEE Trans. Intell. Transp. Syst., vol. 18, no. 5,
+pp. 1066–1077, May 2017.
+[7] J. Lee and B. Park, “Development and evaluation of a cooperative
+vehicle intersection control algorithm under the connected vehicles
+environment,” IEEE Trans. Intell. Transp. Syst., vol. 13, no. 1, pp.
+81–90, March 2012.
+[8] Z. Zhang, S. Han, J. Wang, and F. Miao, “Spatial-temporal-aware safe
+multi-agent reinforcement learning of connected autonomous vehicles
+in challenging scenarios,” pp. 5574–5580, 2023.
+[9] Y. Liang, Y. Sun, R. Zheng, and F. Huang, “Efficient adversarial training
+without attacking: Worst-case-aware robust reinforcement learning,”
+Advances in Neural Information Processing Systems, vol. 35, pp. 22 547–
+22 561, 2022.
+[10] C. Yu, A. Velu, E. Vinitsky, J. Gao, Y. Wang, A. Bayen, and Y. Wu,
+“The surprising effectiveness of ppo in cooperative multi-agent games,”
+Advances in Neural Information Processing Systems, vol. 35, pp. 24 611–
+24 624, 2022.
+[11] L. Brunke, M. Greeff, A. W. Hall, Z. Yuan, S. Zhou, J. Panerati, and
+A. P. Schoellig, “Safe learning in robotics: From learning-based control
+to safe reinforcement learning,” Annual Review of Control, Robotics,
+and Autonomous Systems, vol. 5, pp. 411–444, 2022.
+[12] I. ElSayed-Aly, S. Bharadwaj, C. Amato, R. Ehlers, U. Topcu, and
+L. Feng, “Safe multi-agent reinforcement learning via shielding,” in
+Proceedings of the 20th International Conference on Autonomous
+Agents and MultiAgent Systems, ser. AAMAS ’21.
+Richland, SC:
+International Foundation for Autonomous Agents and Multiagent
+Systems, 2021, p. 483–491.
+[13] Z. Cai, H. Cao, W. Lu, L. Zhang, and H. Xiong, “Safe multi-agent
+reinforcement learning through decentralized multiple control barrier
+functions,” 2021.
+[14] L. Wen, J. Duan, S. E. Li, S. Xu, and H. Peng, “Safe reinforcement
+learning for autonomous vehicles through parallel constrained policy
+optimization,” pp. 1–7, 2020.
+[15] S. Lu, K. Zhang, T. Chen, T. Ba¸sar, and L. Horesh, “Decentralized
+policy gradient descent ascent for safe multi-agent reinforcement
+learning,” vol. 35, no. 10, pp. 8767–8775, 2021.
+[16] S. Gu, J. Grudzien Kuba, Y. Chen, Y. Du, L. Yang, A. Knoll,
+and Y. Yang, “Safe multi-agent reinforcement learning for multi-
+robot control,” Artificial Intelligence, vol. 319, p. 103905, 2023.
+[Online]. Available: https://www.sciencedirect.com/science/article/pii/
+S0004370223000516
+[17] Z. Wang, M. Fang, T. Tomilin, F. Fang, and Y. Du, “Safe multi-agent
+reinforcement learning with natural language constraints,” 2024.
+[Online]. Available: https://arxiv.org/abs/2405.20018
+[18] J. Wang, S. Yang, Z. An, S. Han, Z. Zhang, R. Mangharam, M. Ma,
+and F. Miao, “Multi-agent reinforcement learning guided by signal
+temporal logic specifications,” arXiv preprint arXiv:2306.06808, 2023.
+[19] S. Han, S. Zhou, J. Wang, L. Pepin, C. Ding, J. Fu, and F. Miao, “A
+multi-agent reinforcement learning approach for safe and efficient be-
+havior planning of connected autonomous vehicles,” arXiv:2003.04371,
+2022.
+[20] S. Han, S. Su, S. He, S. Han, H. Yang, and F. Miao, “What is the
+solution for state adversarial multi-agent reinforcement learning?” arXiv
+preprint arXiv:2212.02705, 2022.
+[21] S. He, S. Han, S. Su, S. Han, S. Zou, and F. Miao, “Robust multi-
+agent reinforcement learning with state uncertainty,” Transactions on
+Machine Learning Research, 2023.
+[22] E. Salvato, G. Fenu, E. Medvet, and F. A. Pellegrino, “Crossing the
+reality gap: A survey on sim-to-real transferability of robot controllers
+in reinforcement learning,” IEEE Access, vol. 9, pp. 153 171–153 187,
+2021.
+[23] L. Pinto, J. Davidson, R. Sukthankar, and A. Gupta, “Robust
+adversarial reinforcement learning,” in Proceedings of the 34th
+International Conference on Machine Learning, ser. Proceedings
+of Machine Learning Research, D. Precup and Y. W. Teh, Eds.,
+vol. 70.
+PMLR, 06–11 Aug 2017, pp. 2817–2826. [Online]. Available:
+https://proceedings.mlr.press/v70/pinto17a.html
+[24] M. Treiber, A. Hennecke, and D. Helbing, “Congested traffic states in
+empirical observations and microscopic simulations,” Physical Review
+E, vol. 62, pp. 1805–1824, 02 2000.
+[25] A. Kesting, M. Treiber, and D. Helbing, “General lane-changing
+model mobil for car-following models,” Transportation Research
+Record, vol. 1999, no. 1, pp. 86–94, 2007. [Online]. Available:
+https://doi.org/10.3141/1999-10
+[26] C. R. Munigety, “Modelling behavioural interactions of drivers’
+in mixed traffic conditions,” Journal of Traffic and Transportation
+Engineering (English Edition), vol. 5, no. 4, pp. 284–295, 2018.
+[27] J. J. Olstam and A. Tapani, “Comparison of car-following models,”
+2004. [Online]. Available: https://api.semanticscholar.org/CorpusID:
+15720655
+[28] B. T. Lopez, J.-J. E. Slotine, and J. P. How, “Dynamic tube mpc
+for nonlinear systems,” in 2019 American Control Conference (ACC).
+IEEE, 2019, pp. 1655–1662.
+[29] D. Q. Mayne and E. C. Kerrigan, “Tube-based robust nonlinear model
+predictive control,” IFAC Proceedings Volumes, vol. 40, no. 12, pp.
+36–41, 2007, 7th IFAC Symposium on Nonlinear Control Systems.
+[Online]. Available: https://www.sciencedirect.com/science/article/pii/
+S1474667016354994
+[30] D. M. Raimondo, D. Limon, M. Lazar, L. Magni, and E. F.
+ndez Camacho, “Min-max model predictive control of nonlinear
+systems: A unifying overview on stability,” European Journal of
+Control, vol. 15, no. 1, pp. 5–21, 2009. [Online]. Available: https:
+//www.sciencedirect.com/science/article/pii/S0947358009707034
+[31] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Prox-
+imal policy optimization algorithms,” arXiv preprint arXiv:1707.06347,
+2017.
+[32] H. Zhang, H. Chen, C. Xiao, B. Li, M. Liu, D. Boning, and C.-J. Hsieh,
+“Robust deep reinforcement learning against adversarial perturbations
+on state observations,” Advances in Neural Information Processing
+Systems, vol. 33, pp. 21 024–21 037, 2020.
+[33] H. M. S. Ahmad, E. Sabouni, A. Dickson, W. Xiao, C. G. Cassandras,
+and W. Li, “Secure control of connected and automated vehicles using
+trust-aware robust event-triggered control barrier functions,” 2024.
+[Online]. Available: https://arxiv.org/abs/2401.02306
+[34] A. Dosovitskiy, G. Ros, F. Codevilla, A. Lopez, and V. Koltun,
+“CARLA: An open urban driving simulator,” pp. 1–16, 2017.
+[35] E. Sabouni, H. S. Ahmad, C. G. Cassandras, and W. Li, “Merging
+control in mixed traffic with safety guarantees: A safe sequencing
+policy with optimal motion control,” in 2023 IEEE 26th International
+Conference on Intelligent Transportation Systems (ITSC), 2023, pp.
+4260–4265.

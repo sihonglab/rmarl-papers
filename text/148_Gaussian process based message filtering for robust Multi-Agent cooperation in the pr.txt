@@ -1,0 +1,1946 @@
+Gaussian Process Based Message Filtering for Robust Multi-Agent
+Cooperation in the Presence of Adversarial Communication
+Rupert Mitchell1, Jan Blumenkamp2 and Amanda Prorok2
+Abstract— In this paper, we consider the problem of provid-
+ing robustness to adversarial communication in multi-agent sys-
+tems. Speciﬁcally, we propose a solution towards robust coop-
+eration, which enables the multi-agent system to maintain high
+performance in the presence of anonymous non-cooperative
+agents that communicate faulty, misleading or manipulative in-
+formation. In pursuit of this goal, we propose a communication
+architecture based on Graph Neural Networks (GNNs), which is
+amenable to a novel Gaussian Process (GP)-based probabilistic
+model characterizing the mutual information between the
+simultaneous communications of different agents due to their
+physical proximity and relative position. This model allows
+agents to locally compute approximate posterior probabilities,
+or conﬁdences, that any given one of their communication
+partners is being truthful. These conﬁdences can be used as
+weights in a message ﬁltering scheme, thereby suppressing
+the inﬂuence of suspicious communication on the receiving
+agent’s decisions. In order to assess the efﬁcacy of our method,
+we introduce a taxonomy of non-cooperative agents, which
+distinguishes them by the amount of information available to
+them. We demonstrate in two distinct experiments that our
+method performs well across this taxonomy, outperforming
+alternative methods. For all but the best informed adversaries,
+our ﬁltering method is able to reduce the impact that non-
+cooperative agents cause, reducing it to the point of negligibility,
+and with negligible cost to performance in the absence of
+adversaries.
+Index Terms— Robustness, Multi-Agent Systems, Adversarial
+Communication, Deep Learning, Gaussian Processes
+I. INTRODUCTION
+Many real-world problems require the coordination of
+multiple autonomous agents [1], [2]. In fully decentralized
+systems, agents not only need to know how to cooperate,
+but also, how to communicate to most effectively coordinate
+their actions in pursuit of a common goal. However, control
+policies and communication protocols designed to optimally
+coordinate the behavior of multiple agents are inherently
+fragile with respect to unexpected behavior from any one
+of these agents, unless they are speciﬁcally designed to be
+robust. This fragility has been observed in the case of failures
+or malfunctions [3], [4], in the case of purposeful (adversar-
+ial) attacks [5], [6], as well as in worst-case scenarios, such
+as byzantine collusion [7], [8].
+While effective communication is key to successful coop-
+eration, it is far from obvious what information is crucial
+to the task, and what must be shared among agents. This
+1Rupert Mitchell is with Department of Engineering, University of
+Cambridge. (e-mail: rmjm3@cam.ac.uk).
+2Jan Blumenkamp and Amanda Prorok are with Department of Computer
+Science and Technology, University of Cambridge. (e-mail: {jb2270,
+asp45}@cam.ac.uk).
+question differs from problem to problem and the optimal
+strategy is often unknown. Hand-engineered coordination
+strategies often fail to deliver the desired performance, and
+despite ongoing progress in this domain, ﬁrst-principles
+based solutions still tend to scale poorly with growing agent
+team sizes, and require substantial design effort. Recent
+work has shown the promise of GNNs to learn explicit
+communication strategies that enable complex multi-agent
+coordination [9], [10], [11], [12]. GNNs exploit the fact that
+inter-agent relationships can be represented as graphs, which
+provide a mathematical description of the network topology.
+In multi-agent systems, an agent is modeled as a node in the
+graph, the connectivity of agents as edges, and the internal
+state of an agent as a graph signal. The key attribute of
+GNNs is that they operate in a localized manner, whereby
+information is shared over a multi-hop communication net-
+work through explicit communication with nearby neighbors
+only, hence resulting in fully decentralizable policies.
+While impressive results have been achieved, these multi-
+agent learning approaches assume full cooperation, whereby
+all agents share the same goal of maximizing a shared
+global reward. There is a dearth of work that explores
+whether agents can utilize machine learning to synthesize
+communication policies that are robust to non-cooperative
+or even adversarial communications from their neighbors.
+In this work, we consider the case of learned communi-
+cation in addition to learned control policies. We assume
+that the purpose of communication is the aggregation of
+observations across agents and therefore, without further
+loss of generality with respect to the capabilities of the
+overall communication architecture, we restrict messages to
+be learned (and likely lossy) encodings of an agent’s local
+observations. To the extent that messages convey information
+about the global world, an agent can then examine this
+information and potentially disregard a message if it contains
+information that is incongruous with its expectations of the
+state of the environment it is operating in.
+While there is a rich body of work on encoding-based
+anomaly detection (e.g., [13], [14], [15], [16], [17]), the
+aforementioned setting distinguishes our work. Instead of de-
+tecting individual anomalous observations, we are interested
+detecting anomalous observations within sets of observation
+encodings that are spatially inter-related. Speciﬁcally, we
+expect the encodings communicated by spatially proximate
+agents to share substantial mutual information, and that the
+structure of this non-independence will itself be dependent
+on the spatial arrangement of these agents in the world they
+are observing.
+arXiv:2012.00508v1  [cs.RO]  1 Dec 2020
+
+We therefore propose a communication model, in which
+each agent transmits an encoded version of its local obser-
+vations generated by a neural network-based auto-encoder
+which learns to represent these local observations in an
+unsupervised manner. Leveraging the Auto-Encoding Varia-
+tional Bayes (AEVB) framework introduced in [18], we co-
+optimize this auto-encoder with a joint prior distribution over
+the encoded observations of arbitrary sets of spatially prox-
+imate agents in order to successfully capture the expected
+mutual information between encodings. For this purpose we
+use a GP with a learnable kernel function to represent a
+distribution over functions from agent position to encodings,
+functions whose values we take to have only been indirectly
+observed at the ﬁnite set of points which happen to each be
+the physical location of an agent.
+We additionally propose a method of exploiting this prob-
+abilistic model of encodings, and therefore also messages, to
+construct a mechanism for detecting adversarial communica-
+tion. In particular, once we express a prior belief about the
+range of possible messages a malfunctioning or adversarial
+agent might send in terms of our probabilistic model, we
+can compare hypotheses regarding which nearby agents j of
+some speciﬁc agent i are communicating accurate informa-
+tion about their local region of the world, and thereby assign
+posterior probabilities (subjective to agent i) of truthfulness
+to each agent j. These subjective posterior probabilities,
+which we refer to as conﬁdences, can be used as weights
+in an attention-like modiﬁcation (e.g., [19]), of any GNN
+layer that uses sum aggregation. The resulting modiﬁed layer
+performs identically to the unmodiﬁed version in the limit of
+high conﬁdences of agent i in every one of its neighbors, but
+completely negates the impact of the communication of an
+agent j on the output of the layer for agent i in the opposite
+limit of low conﬁdence of agent i in j.
+Related Work.
+There is a recent body of work address-
+ing multi-agent robustness from the perspective of robust
+consensus in the presence of non-cooperative agents [4],
+[20], [21]. These methods provide guarantees of robustness
+up to some maximum number of non-cooperative agents
+subject to the condition of sufﬁcient redundant connectivity
+(deﬁned by (r, s)-robustness metrics [22], [4], [23]) in the
+agents’ communication network. The key difference between
+these methods and ours is that they aim to robustly reach a
+consensus on speciﬁc global values based on local infor-
+mation. We generalize this approach, as the class of robust
+communication problems we consider do not necessarily
+involve the explicit estimation of any such global values.
+Outlier-robust estimation algorithms such as RANSAC [24],
+[25], [26] are inapplicable to our class of problems for similar
+reasons.
+We identify two broad classes of previous work appli-
+cable to our class of problems. Some authors focus on
+optimizing the collective control policy itself for robustness
+to communication or hardware failure [27], [28], while
+others focus on the detection of malicious communication,
+either by dynamic watermarking, physical ﬁngerprinting or
+inconsistencies between reported location and directional
+variations in wireless signal strength [5], [29], [30]. None
+of these methods exploit the same source of information as
+ours: inconsistencies between the semantic implications of
+received messages, and so while they may be complementary
+to our approach they are fundamentally different in character.
+Contributions.
+Our contributions are fourfold:
+(i) We introduce a novel probabilistic model of the obser-
+vations of multi-agent systems which captures the position-
+dependent mutual information between the observations re-
+ceived by spatially proximate agents. This model incorpo-
+rates a learned encoding of the observations of an individual
+agent, and so is inherently also a model of the mutual
+information between these encodings, which are suitable for
+use as messages with a learned communication channel such
+as a GNN.
+(ii) We introduce a taxonomy of adversarial agents in order
+to characterize the breadth of the adversarial communication
+problem. Speciﬁcally, we distinguish between adversaries
+with different levels of knowledge about the cooperative
+agents, since an optimized attack varies substantially in
+strength depending on what information was used in its
+optimization.
+(iii) We use our probabilistic model to construct a message
+ﬁltering strategy that uses conﬁdence weights for erroneous
+or malicious communication in a networked multi-agent
+system and integrate this mechanism with a standard GNN
+communication channel via an attention-like modiﬁcation.
+The modiﬁed GNN layer is capable of mitigating or entirely
+negating the impact of the communication of adversaries
+from across our taxonomy on the behavior of the overall
+system. Importantly, our conﬁdence weighting mechanism
+imposes very low or no performance costs in the absence of
+such adversarial communication.
+(iv) We demonstrate these innovations in two distinct
+experiments. (1) The ﬁrst experiment considers a static group
+classiﬁcation problem chosen for its complex position-based
+inter-agent observation correlations. (2) The second exper-
+iment deals with a cooperative multi-agent reinforcement
+learning scenario where a non-cooperative agent defecting
+against the group can attempt to manipulate them for its
+own purposes.
+II. PROBLEM STATEMENT
+We consider a set of N agents in 2D planar space. The
+agents can communicate with each other via a network which
+can be described by a dynamic graph G(V, E(t)) where our
+set of agents V form its vertices (i.e. |V| = N) and its edge
+set E(t) ⊆V × V consists of ordered pairs (vi, vj) for every
+such pair of agents for which vi can communicate directly
+with vj, and can in general can vary over time t. We consider
+each agent to have a communication radius rc and to be
+able to communicate directly with any other agent within
+this radius, i.e. (vi, vj) ∈E(t) ⇔||xij(t)|| ≤rc where
+xij(t) = xj(t) −xi(t) and xi(t) is the two-dimensional
+position vector of agent i in the world at time t. An agent’s
+neighborhood Ni(t) = {vj : (vi, vj) ∈E(t)} is then the
+set of all agents within its communication radius, including
+itself, at a given time. We additionally assume a agent i to
+
+have access to the position relative to it xij(t) of any agent
+j ∈Ni(t) in its neighborhood.
+At time t each agent i receives a set of observations
+oi(t) of its local region of the world in the form of a
+vector of real numbers. It constructs a message mi(t), also
+a real valued vector, describing these observations via some
+encoding function enc of its observations. (That is, mi(t) =
+enc(oi(t)).) It communicates this message to every other
+agent in Ni(t) and receives a message mj(t) for every agent
+j ∈Ni(t). It then calculates a set of features fi(t) from these
+received messages by some aggregation function agg. (That
+is, fi(t) = agg(oi(t), {mj(t) : j ∈Ni(t)}).) Finally, it uses
+these features to either estimate some state of the overall
+world, or to determine an action to take in this world as
+pi, via a policy function pol(fi(t)). We assume that there
+is only one round of messages exchanged and, in particular,
+that each mi(t) is not re-transmitted beyond Ni(t). Since we
+consider only the communication at a given time instant in
+the rest of this work, we will suppress the time dependence
+of variables from here, denoting e.g. xi(t) as xi.
+We consider a networked system of N agents. N −F of
+these agents are cooperative while F are non-cooperative, as
+deﬁned below. We shall restrict the N cooperative agents to
+be homogeneous (i.e. to share enc, agg and pol), since
+heterogeneous agent teams are not the focus of this paper.
+Deﬁnition 1 (Cooperative Agent): A cooperative agent
+uses the shared cooperative encoding, aggregation and pol-
+icy functions encC, aggC and polC respectively. These
+functions are optimized to achieve some shared objective,
+the cooperative objective.
+A non-cooperative agent is in principle any agent which
+does not ﬁt all of these conditions, however in this paper
+all non-cooperative agents a we shall consider differ on at
+least the encoding function enca, since we are interested
+in the ways in which a non-cooperative agent can affect the
+interests of cooperative agents by misleading them (inten-
+tionally or otherwise), as opposed to communicating honestly
+and accurately but still taking non-cooperative actions in the
+world according to some non-cooperative policy pola.
+Deﬁnition 2 (Robust Message Aggregation): A particular
+choice of cooperative aggregation function aggC is consid-
+ered robust with respect to a non-cooperative agent a if a
+does not cause the cooperative agents to perform less well
+at their cooperative objective via its messages ma.
+Problem 1 (Robust Multi-Agent Cooperation): Given a
+networked system of N −F cooperative agents and F
+anonymous, unknown non-cooperative agents, learn a robust
+message aggregation mechanism that mitigates the negative
+impact of messages sent by the F non-cooperative agents.
+By the F non-cooperative agents being ‘unknown’ we
+mean that the behavior of the non-cooperative agents is
+unavailable to train against when learning the cooperative ag-
+gregation mechanism. By them being ‘anonymous’ we mean
+that they cannot be differentiated from cooperative agents by
+any means other than examining their communication.
+ci(j)
+K
+xji
+mj
+z(s)
+j
+GNN
+agg
+pol
+pi
+j ∈Ni
+enc
+oi
+mi
+enc
+oa
+ma
+enc
+ob
+mb
+enc
+oc
+mc
+rc
+Ni = {a, b, i}
+∼
+fi
+Fig. 1.
+Schematic overview of our proposed message aggregation
+method from the perspective of agent i, represented by the enlarged circle.
+Messages mj are received from every other agent (circle) inside agent
+i’s neighborhood Ni. Latent vectors z(s)
+j
+are sampled from the posterior
+distributions represented by each mj and combined in a GNN layer
+using attention weights calculated by a function ci(j) based on the full
+distributions and the relative positions xji.
+A. Assumptions
+Since there are many possible potentially harmful choices
+of non-cooperative behavior, goal-directed or otherwise, for
+any particular cooperative objective, we assume that the
+cooperative agents do not have any knowledge of what, if
+anything, the non-cooperative agent(s) are trying to achieve,
+let alone the particular communication strategy that the non-
+cooperative agents will therefore pursue. We also assume
+that the communication strategy of the cooperative agents is
+being formulated without knowing the level of knowledge
+that the non-cooperative agents will have about this strategy.
+While the previous assumption serves to ensure general-
+izability of our solution, we assume additional restrictions
+to specify the category of solution we wish to develop.
+Speciﬁcally, we focus on exploiting position-dependent cor-
+relations between agent observations to detect anomalous
+communication, and we therefore place less emphasis on
+other potential sources of information which could be used
+to identify an adversarial agent. For example, we ignore the
+non-communication behavior of agents, and we only crudely
+check for implausibly high or low precision in communi-
+cated posteriors, relying mostly on whether the messages
+are consistent with each other at their speciﬁed precision
+levels. Finally, we consider only the information available in
+received communication from a given time instant, and do
+not check for inter-temporal consistency.
+We assume the sole beneﬁt of communication for the
+cooperative agents is aggregation of information contained in
+the observations oi across neighborhoods. (Note that this also
+constitutes substantial information about the likely actions
+of a neighboring cooperative agent i since polC is ﬁxed
+and known.) We therefore assume without further loss of
+generality that each agent i communicates its approximate
+latent space posterior mi = q(z|o)i to each member of the
+set of neighboring agents in its communication range Ni.
+
+B. A Taxonomy of Non-Cooperative Agents
+In order to provide a more ﬁne-grained evaluation of
+our method, we distinguish between four types of non-
+cooperative agent:
+1) Faulty. The communication behavior of the non-
+cooperative agent is not directed towards the accom-
+plishment of any particular goal, e.g. the agent is
+simply faulty.
+2) Naive. The non-cooperative agent’s behavior was op-
+timized using knowledge of encC and polC as well
+as the effect of aggC on normal communication only.
+The communication behavior of the non-cooperative
+agent may therefore be actively manipulative, but the
+non-cooperative agent is unaware of, and therefore
+makes no attempts to evade, any manipulation detec-
+tion mechanisms the cooperative agents may use.
+3) Cautious. In addition to the information available to the
+Naive agent, this agent is optimized with the knowl-
+edge that there may be some manipulation detection
+mechanism, but not any knowledge of its speciﬁcs. The
+agent therefore limits manipulative communication to
+lie within the range of normal communication of a
+cooperative agent.
+4) Omniscient. The non-cooperative agent has perfect
+knowledge of the communication and detection strate-
+gies being followed by the cooperative agents and can
+optimize directly against them. The agent is exactly as
+manipulative as it can get away with being, given the
+countermeasures actually deployed in aggC.
+Since we do not assume knowledge of the type of non-
+cooperative agent, we are interested in designing a method
+that reduces the likely impact over this broad spectrum of
+non-cooperative behavior on the achievement of the cooper-
+ative objective. That is, it is desirable for the countermeasures
+to work as well as possible if the non-cooperative agents
+have low to medium knowledge of countermeasures, e.g. are
+Naive or Cautious, but only if this does not make the system
+much more vulnerable in cases of high knowledge, especially
+Omniscient agents.
+III. PRELIMINARIES
+In this section we outline the differentiable communication
+channel which we build on, the GNN, and the inference
+framework we use, AEVB, in addition to a well known
+instantiation of this, the Variational Autoencoder (VAE).
+A. Graph Attention Neural Networks
+As described earlier in Sec. II, we represent the commu-
+nication network of our agents as a graph G(V, E), with
+each member of the node set V representing an agent.
+We represent the initial observations of our agents as a
+function whose domain is the node set V. GNNs provide
+a means of aggregating this information across nodes while
+transmitting information only along graph edges and keeping
+all computation local to the nodes. Speciﬁcally, we consider
+a neural network layer of the form
+gi = σ
+
+h0(fi) +
+X
+j∈Ni
+αij sij h1(fj)
+
+
+(1)
+where Ni is the neighborhood of agent i, fi are input features
+and gi are output features, h0 and h1 are learnable linear
+transforms, σ is a pointwise nonlinearity, αij is an attention
+coefﬁcient that indicates the importance of node j’s features
+to node i [19] and sij is a normalizing constant that accounts
+for variability in neighborhood sizes:
+sij =
+1
+p
+|Ni||Nj|
+.
+(2)
+This layer clearly does not require information from
+outside the communication neighborhood of agent i, and the
+computation can be done locally on agent i. This formulation
+is equivalent to a GNN layer [31] restricted to one commu-
+nication hop between neighbors. The core of our work lies
+in the derivation of the graph self-attention coefﬁcient αij,
+which we describe in more detail in Sec. VI-B. In contrast
+to Graph Attention Networks [19], we do not learn αij, but
+instead calculate it with the conﬁdence weight function ci(j)
+(17) based on the full posterior latent space distributions
+contained in received messages mj and the relative positions
+xij. These calculated attentions are shown integrated into the
+layer in (12) and discussed further there.
+B. Auto-Encoding Variational Bayes (AEVB)
+The AEVB framework introduces learning and inference
+with directed probabilistic models and, in particular, its
+instantiation in the form of the VAE [18]. Each datapoint
+o in a dataset is modeled as having been generated by
+a random process involving an unobserved latent variable
+z. Speciﬁcally, z is ﬁrst drawn from a distribution p(z; θ)
+and then a value for o is drawn from p(o|z; θ), where
+the parameters θ specify a point in some space of such
+parameterized models.
+In order to ﬁt such a model to a dataset it is neces-
+sary to be able to estimate the marginal likelihood of the
+dataset according to the model speciﬁed by some point
+θ in parameter space. The posterior probability p(z|o; θ)
+is unfortunately in general intractable, so they introduce a
+variational posterior q(z|o; φ) as an approximation to the
+true posterior, parameterized by φ. This allows the marginal
+likelihood for a given datapoint to be stated as:
+log p(o; θ) = DKL(q(z|o; φ)||p(z|o; θ)) + L(o; θ, φ)
+(3)
+where L(o; θ, φ) is the evidence lower bound:
+log p(o; θ) ≥L(o; θ, φ) = −DKL(q(z|o; φ)||p(z; θ))
++ Eq(z|o;φ) log p(o|z; θ)
+(4)
+The parameters θ and φ can then be optimized to maximize
+the sum of L(o; θ, φ) across all datapoints, as a proxy for
+the similar sum of log p(o; θ, φ).
+VAEs are introduced in [18] as a simple example of
+this framework. They are obtained by letting p(z; θ) be an
+
+isotropic Gaussian and q(z|o; φ) be a multivariate Gaussian
+of diagonal covariance structure. The distribution p(o|z; θ)
+is chosen to be either Gaussian or Bernoulli, depending on
+the type of data being considered. The distribution q(z|o; φ)
+can then be seen as a probabilistic encoder, and p(o|z; θ) as
+a probabilistic decoder.
+IV. AUTO-ENCODING COMMUNICATION
+In this section we introduce our model of the communica-
+tion of cooperative agents. This model allows us to express
+hypotheses regarding the truthfulness of a given agent in a
+neighborhood, so that they can be compared and, ultimately,
+conﬁdence values assigned to the agent’s messages.
+A. Model of Cooperative Communication
+Similarly to a simple VAE, we assume the random process
+generating the observations oi of a particular agent i to in-
+volve some hidden latent variable zi. We assume that each oi
+is then drawn from a distribution P(oi|zi; θ) independently
+of the other latent vectors.
+We must break from the simple model of an independent
+VAE for each agent because we expect that when multiple
+nearby agents are receiving observations of the same world,
+these observations will share mutual information, and there-
+fore not be independent. We therefore, instead of drawing
+each zi (for each agent i in the neighborhood of some
+arbitrary agent j, Nj) independently from some position-
+invariant distribution P(z; ψ), draw all the zis simultane-
+ously from a common GP over position
+P(Z|X; ψ) = GP(0, Kψ(X))
+(5)
+where Z = [zi : i ∈Nj]T , X = [xi : i ∈Nj]T , xi is the
+position of agent i, and Kψ is a kernel function generating
+the covariance matrices of this GP and is parameterized by
+ψ. We choose a GP here because the starting point of a
+VAE gives us latent space priors which are independently
+Gaussian across agents, and the most obvious reﬁnement to
+introduce mutual information within a neighborhood is to
+let them be jointly but non-independently Gaussian across
+said neighborhood. Letting the structure of this mutual
+information vary by spatial arrangement implies a GP.
+In terms of the whole neighborhood Nj our decoder is
+then
+P(O|Z; θ) =
+Y
+i∈Nj
+P(oi|zi; θ)
+(6)
+where O = [oi : i ∈Nj]T and each independent P(oi|zi)
+is either Bernoulli or a diagonally covariant Gaussian de-
+pending on the observation data. (In contrast to [18] we
+distinguish between the sets of parameters for P(Z|X) and
+P(O|Z) since we will later optimize these parameters by
+different methods.) Similarly we choose the encoder (or
+approximate latent space posterior) to be
+Q(Z|O; φ) =
+Y
+i∈Nj
+Q(zi|oi; φ)
+(7)
+where each Q(zi|oi; φ), the output of a per-agent encoder,
+is an independent diagonally covariant Gaussian. A similar
+approach was presented in [32], which suggests a similar
+case of integration between GP and VAE, but assumes a
+particularly simple form for the covariances so that the model
+is less expressive. The authors are interested in a substantially
+different application: the domain on which the functions
+drawn from their Gaussian Process are deﬁned is an abstract
+feature space, unlike our physical space of agent positions.
+B. Alternative Hypotheses for Adversarial Communication
+We shall choose encC to be the probabilistic per-agent
+encoder of our AEVB model: Q(zi|oi; φ). Since the posterior
+provided by this function is a diagonally covariant Gaussian,
+our messages mi represent it via a vector of means and a
+vector of standard deviations.
+In order to assess the truthfulness of the messages received
+from neighboring agents, we compare three hypotheses re-
+garding their origin. While the received messages are raw
+posteriors over possible latent vectors z of unknown origin,
+we assume for this analysis that they were generated by the
+authentic encC function and express our hypotheses in terms
+of the origins of the observations oi that could have produced
+them. That is, in contrast to the likely reality, our model of
+general adversarial communication is therefore not a process
+which directly outputs arbitrary messages, but a process
+which generates an imaginary set of observations from some
+(potentially unrealistic) distribution and then encodes them
+faithfully.
+As our null hypothesis we have:
+• H0 (Truth): We assume that all agents who are telling
+the truth have had their observations oi generated by our
+best ﬁt model of the world and that these observations
+are therefore correlated as expected based on their
+physical positions in the world.
+Our alternative hypotheses are:
+• H1 (Plausible Lie): This represents an agent who is
+telling a lie by describing a plausible scenario it could
+have found itself in, but which is otherwise not nec-
+essarily related to its actual surroundings. The model
+is that its observation oi has been generated by our
+best ﬁt model of the world, but with its latent variable
+generated via a separate and independent draw from
+the GP over positions. Its latent vector zi is therefore
+uncorrelated with those of the other agents, regardless
+of their position or whether they are telling the truth.
+• H2 (Implausible Lie): In order to account for the fact
+that an agent is not restricted to telling lies that describe
+plausible scenarios, we need a special world model
+which contains those implausible scenarios which are
+expressible in our latent space. In this model the random
+process generating the observation oi is exactly the
+same as our best ﬁt model, except that the latent vector
+zi is drawn from a very high variance isotropic Gaussian
+instead of the best ﬁt GP. (For the sake of simplicity
+we then take the limit of high variance and therefore
+obtain a uniform distribution.)
+
+V. MODEL IMPLEMENTATION
+In this section we describe the procedure by which our
+model of cooperative communication may be ﬁtted to a
+dataset. We also specify our choice of kernel function for
+our GP along with its justiﬁcation.
+A. Model Fitting
+We have three sets of parameters: θ for our decoder, φ
+for our encoder and ψ for our GP. Analogously with VAEs,
+we optimize these to maximize an approximate lower bound
+of the marginal likelihood of observations oi observed in
+training conditional on agent positions xi for agents i in
+some neighborhood Nj. (We have many such Njs in our
+dataset and therefore maximize the sum of lower bounds on
+log likelihoods across the dataset.) The following identity
+regarding the marginal likelihood of data can be obtained as
+in [18]:
+log P(O|X; θ, ψ) =DKL(Q(Z|O; φ)||P(Z|O; θ, ψ))
+−DKL(Q(Z|O; φ)||P(Z|X; ψ))
++ EQ(Z|O;φ) log P(O|Z; θ)
+(8)
+and since the ﬁrst term is non-negative, being a KL diver-
+gence, the second and third term together represent a lower
+bound on the likelihood of the data.
+We therefore optimize ψ to minimize the following pair-
+wise KL loss, since the kernel function it parameterizes is
+only guaranteed to produce valid covariances during training
+for pairs of agents with our implementation (see Sec. V-B):
+KLψ =
+X
+i∈N
+X
+j̸=i∈N
+DKL(Q(Zi,j|Oi,j; φ)||P(Zi,j|Xi,j; ψ))
+(9)
+where Zi,j = [zi, zj]T , and similarly for Oi,j and Xi,j.
+This is equivalent to treating every pair of agents in Nj
+as an independent sample from the GP and is therefore an
+approximation.
+For θ and φ we deﬁne a KL loss
+KLφ = DKL(Q(ZNj|ONj; φ)||P(ZNj|XNj; ψ))
+(10)
+and a reconstruction loss
+R = −EQ(ZNj |ONj ;φ) log P(ONj|ZNj; θ)
+(11)
+where ZNj = [zi : i ∈Nj]T and similarly for O and
+X. We optimize θ and φ to minimize a sum (as in [33])
+βKLφ + R weighted by the hyperparameter β and fall
+back to
+β
+|Nj|−1KLψ + R if numerical problems occur early
+in training due to negative determinants of the covariance
+matrix required to calculate P(ZNj|XNj; ψ).
+B. Choice of Kernel
+In order to clearly demonstrate that our method is effective
+without knowledge of absolute position, we implement our
+kernel function so that covariances are explicitly depen-
+dent only on relative position. With our implementation
+this comes at the cost of occasional inconsistent generated
+covariance matrices early in training. (Implementation details
+in Appendix II.) We also restrict the single-agent internal
+feature distribution to be an isotropic Gaussian, similar to
+a VAE. We otherwise choose our kernel to be maximally
+expressive with regard to possible structures of correlation
+between the features of different agents.
+We use a naive implementation of the calculations involv-
+ing our GP and do not optimize its structure to maximize
+computational efﬁciency because this is unusually unim-
+portant in our case. This is because the main scalability
+challenge with GPs is that computation time naively scales
+cubically with the number of datapoints considered simulta-
+neously, but we only ever simultaneously consider the data
+from within an agent’s neighborhood, which is inherently
+limited by the communication radius rc.
+VI. MESSAGE FILTERING FOR ROBUST COOPERATION
+In this section we show how conﬁdence weighting can be
+introduced to the simple GNN layer of Sec. III-A in order
+to ﬁlter out inconsistent messages, and how such weights
+may be calculated using our model of communication from
+Sec. IV.
+A. Message Filtering through Conﬁdence Weighting
+Each agent i communicates its latent space posterior
+mi = q(z|o)i to every other agent within its communication
+range rc. Each agent then processes this information by
+sampling a set of latent space features from the posteriors
+and using them as the input of a simple GNN aggregation
+layer, producing a local set of features fi:
+fi = σ
+
+h0(z(s)
+i ) +
+X
+j∈Ni
+ci(j)
+s
+1
+|Ni||Nj|h1
+
+z(s)
+j
+
+
+
+(12)
+where z(s)
+i
+∼q(z|o)i is the sample from the posterior com-
+municated by agent i, h0 and h1 are linear transformations, σ
+is a pointwise nonlinearity and ci(j) is a weighting function
+yet to be deﬁned (see Sec. VI-B).
+It can easily be seen that this formulation is equivalent to
+the unmodiﬁed version, (1) introduced in Sec. III-A, in the
+case where cj(i) = 1. We set the conﬁdence weight ci(j) to
+be an approximate probability that agent j is being truthful,
+based on all other communication received by agent i. This
+approximate probability is calculated by comparing different
+hypotheses corresponding to truth or different varieties of lie
+as introduced in Sec. II-B, via a procedure described below
+in Sec. VI-B. For sufﬁciently high subjective conﬁdence of
+agent i in its neighbors j ∈Ni, all of the ci(j) then approach
+1 and we recover the initial unmodiﬁed GNN layer behavior.
+B. Computation of Conﬁdence Weights for Messages
+A neighborhood hypothesis h is an element of the set
+{H0, H1, H2}Nj, that is, some function assigning one of the
+single-agent hypotheses H0, H1 or H2 to every agent in some
+neighborhood Nj. The agents in Nj sharing a particular
+assignment according to some speciﬁc h together form a
+
+subset of Nj. Three such subsets Gh, Bh and Oh may thus
+be formed for H0, H1 and H2 respectively. The latent space
+prior corresponding to a hypothesis h is then
+P(Z|X; ψ, h) = P(ZGh|XGh; ψ)×
+Y
+i∈Bh
+P(zi; ψ, H1) ×
+Y
+i∈Oh
+P(zi; ψ, H2)
+(13)
+where ZGh = [zi : i ∈Gh] and XGh = [xi : i ∈Gh], and we
+have exploited the fact that H1 and H2 imply observation
+independence from other agents.
+We can then compare different hypotheses h via the
+approximate log likelihood:
+log P(O|X; ψ, θ, h) ≈
+−DKL(Q(Z|O; φ)||P(Z|X; ψ, h)) + C
+(14)
+where C is constant across hypotheses (derivation in Ap-
+pendix I). We assign priors to each neighborhood hypothesis
+based on priors for each single-agent hypothesis:
+log P(h) = |Gh| log P(H0)+
+|Bh| log P(H1) + |Oh| log P(H2)
+(15)
+We compare some set H ⊆{H0, H1, H2}Nj of such
+hypotheses, for example {h ∈{H0, H1, H2}Nj : |Gh| ≥
+|Nj| −1} if it is known that the total number of adversaries
+F is at most one. In combination with the log likelihood of
+(15), we obtain a posterior probability for each hypothesis
+P(h|O, X; ψ, θ) via Bayes’ theorem.
+P(h|O, X; ψ, θ) =
+exp (log P(O|X; h, ψ, θ) + log P(h))
+exp
+P
+ρ∈H log P(O|X; ρ, ψ, θ) + log P(ρ)
+
+(16)
+Marginalizing over H we then obtain the subjective prob-
+ability assigned by agent j to agent i being truthful, that
+is, the probability that i ∈Gh for whichever h reﬂects
+reality. We use this to deﬁne the conﬁdence weight cj(i) =
+Pj(i is truthful|O, X; ψ, θ) assigned by agent j to i:
+cj(i) = Pj(i is truthful|Oj, Xj; ψ, θ) =
+X
+h∈Hj s.t. i∈Gh
+P(h|Oj, Xj; ψ, θ)
+(17)
+where the newly introduced subscripts j re-emphasize de-
+pendence of some parameters on our initial choice of neigh-
+borhood Nj.
+Since for any single agent P(H0), P(H1) and P(H2) are
+assumed exhaustive and must therefore sum to 1, we retain
+only s1 = log P(H0) −log P(H1) and s2 = log P(H0) −
+log P(H2) as tunable sensitivity parameters.
+VII. EXPERIMENTS
+In this section, we present two experiments demonstrat-
+ing our conﬁdence weighting method. The ﬁrst experiment
+focuses on a cooperative perception task. Its purpose is to
+examine and compare the performance of our weighting
+method with alternatives. The second experiment introduces
+a
+i
+b
+c
+ma
+mb
+9
+9
+Ni = {a, b, i}
+rc
+ob
+xi
+xai
+xa
+Fig. 2.
+UAV swarm ﬂying over image with limited individual ﬁelds of
+view, resulting in an observation oj for each agent j. The positions xj can
+be expressed as relative positions, here visualized for agent i and a as xai.
+Nearby UAVs can communicate, as indicated by the waved lines.
+the time dimension, allowing agents to take sequential deci-
+sions based on the received messages. We assess the impact
+of our robust message aggregation scheme on performance,
+when compared with non-robust baselines, as well as an
+alternative robust benchmark method.
+A. Cooperative Image Classiﬁcation
+In our ﬁrst case study we consider a basic multi-agent
+communication scenario. The cooperative agents share their
+local observations with each other in order to each attempt
+to estimate a global categorical state. In practice this could
+be a swarm of UAVs observing the terrain they ﬂy over with
+cameras and sharing their observations with each other, as
+illustrated in Fig. 2.
+1) Setup: To emulate this setup, we choose the CIFAR-
+10 dataset of 32 × 32 pixel images to provide our global
+world, with the image category being the global state to
+be estimated. We restrict the dataset to only the ﬁrst two
+classes (airplanes and automobiles) for simplicity, giving
+us a training dataset of 10,000 images and a test dataset
+of 2000 images. We allow our agents to observe the lo-
+cal region of the image near them in a 9 × 9 grid, and
+distribute the N = 6 agents uniformly across the image,
+subject to the condition that their vision ﬁeld not extend
+past the image’s boundary. We allow agent position to be
+continuous by linearly interpolating between pixel values.
+We also simplify the communication topology by letting the
+maximum communication range be inﬁnite (leading to a fully
+connected communication graph).
+2) Training: Training of the cooperative agents consists of
+two stages. First we train the encoder (encC), decoder and
+kernel function to represent our dataset, using Convolutional
+Neural Networks (CNNs) for the encoder and decoder. We
+then train a GNN layer without any conﬁdence weighting and
+a policy layer consisting of an Multilayer Perceptron (MLP)
+using a cross-entropy classiﬁcation loss. We choose the
+sensitivity parameters of the conﬁdence weighting scheme
+s1 and s2 so that the mean conﬁdence weight assigned to
+a cooperative agent by the weighting scheme described in
+Sec. VI-B is 0.9.
+Our adversarial agents transform the authentic message
+mC they would communicate if they were cooperative to
+
+the message they actually transmit ma via an MLP1. We
+also train them in a two stage process. In the ﬁrst stage
+we include the mean squared error of the message ma with
+respect to mC as an extra loss term in order to prevent the
+MLP from failing to ﬁnd a region of the parameter space in
+which its messages are assigned non-negligible conﬁdence
+weights. We remove this extra term in the second phase of
+training.
+3) Alternative Conﬁdence Weighting Schemes: We intro-
+duce two, simpler, weighting schemes for the purpose of
+comparison with the conﬁdence weighting scheme described
+in section Sec. VI-B, referred to in the rest of this section
+as WGP. The alternative scheme WG is similar to WGP,
+but it asks whether each message received is individually
+plausible while ignoring inter-agent correlations. Since the
+prior distribution for a message considered independently
+is an zero-mean isotropic Gaussian in our model, we also
+introduce an even simpler scheme, WMAX: assign 1 to any
+message with squared magnitude < γ and 0 otherwise, for
+some threshold γ. We tune both of these methods to assign
+an average weight to authentic cooperative agents similar to
+our WGP method.
+4) Results: We evaluate the performance of the WGP
+scheme in the presence of four examples of non-cooperative
+agents from the knowledge classes introduced in Sec. II-B,
+Faulty, Naive, Cautious and Omniscient with respect to the
+WGP scheme. We consider a test scenario in which F, the
+number of non-cooperative agents, is either 0 or 1. Fig. 3
+shows the distribution and mean of the loss function of the
+cooperative agents, with each column corresponding to a
+different choice of non-cooperative agents knowledge class
+relative to the scheme in question, the top row corresponding
+to no weighting scheme, the middle rows corresponding to
+the alternative WMAX and WG schemes, and the bottom row
+showing the WGP scheme. Tab. I shows the corresponding
+classiﬁcation accuracy for these losses, and it can be seen
+that increases in loss are mirrored by decreases in accuracy.
+Fig. 4 shows the loss distribution of the cooperative agents in
+the presence of the non-cooperative agents from the bottom
+row of Fig. 3, but with no conﬁdence weighting instead of
+with WGP. This is different from the top row in the case of
+the Omniscient agent, since for Fig. 4 the non-cooperative
+agent’s knowledge class is still deﬁned relative to WGP, not
+no weighting. In Fig. 6 we again show the loss distribution
+of cooperative agents, but we ﬁx the weighting scheme as
+WGP and the non-cooperative agent class as Cautious and
+use a total number of agents N = 8 instead of N = 6. We
+then vary the total number of non-cooperative agents F, and
+the maximum number of non-cooperative agents considered
+possible by the conﬁdence weighting scheme, Fmax
+Fig. 3 shows that in the absence of any non-cooperative
+agents the WGP scheme causes a negligible 0.1% increase
+in shared loss. In the absence of a weighting scheme,
+adversaries Faulty, Naive, Cautious and Omniscient cause
+loss increases of 0.024 (4.7%), 2.934 (578%), 0.314 (61.8%)
+1This architecture choice means that the adversary need only learn the
+identity function in order to begin bypassing any ﬁltering system, since it
+is then indistinguishable from a cooperative agent, though harmless.
+0.508
+Cooperative
+0.532
+Faulty
+3.442∗
+Naive
+0.822
+Cautious
+None
+= Naive∗
+Omniscient
+0.525
+0.545
+0.534
+0.841
+WMAX
+N/A
+0.512
+0.532
+0.516
+N/A
+0.820
+WG
+0
+1
+2
+3
+0.509
+0
+1
+2
+3
+0.516
+0
+1
+2
+3
+0.516
+0
+1
+2
+3
+0.516
+0
+1
+2
+3
+0.656
+WGP
+Fig. 3.
+Cooperative loss distributions for combinations of weighting
+schemes and adversary knowledge classes, the mean of each loss distribution
+marked with a vertical red line. Where the deﬁnition of a knowledge class
+is relative to a particular weighting scheme (Cautious, Omniscient), the
+adversaries considered in each row are relative to the weighting scheme
+of that row. (*) Note that the distribution for the Naive adversary with no
+weighting is cropped so that only its mean is visible on the x axis, since it
+is substantially different in mean to the other distributions. Note also that
+the Omniscient adversary in the absence of any weighting is exactly the
+Naive adversary.
+0
+1
+2
+3
+0.508
+Cooperative
+0
+1
+2
+3
+0.532
+Faulty
+0
+1
+2
+3
+3.442
+Naive
+0
+1
+2
+3
+0.822
+Cautious
+0
+1
+2
+3
+0.682
+Omniscient
+Fig. 4.
+Loss distributions of cooperative agents in the presence of the
+adversaries compared against WGP in the bottom row of Fig. 3, but in the
+absence of a weighting scheme. The column names are relative to WGP.
+and 0.174 (34.2%) respectively, as seen by comparing the
+later columns of Fig. 4 with its ﬁrst. Comparing the bottom
+row of Fig. 3 with Fig. 4, we see that the introduction of the
+WGP scheme reduces these loss increases by 33%, 99.7%,
+97.5% and 15% respectively, almost entirely negating the
+effects of the Naive and Cautious adversaries.
+Fig. 5 is analogous to the lower three rows of Fig. 3, but
+shows the distribution of conﬁdence weights assigned by the
+cooperative agents to the non-cooperative agent instead of
+the loss of the cooperative agents. Examining these results,
+we can see that WGP assigns consistently low weights to
+adversaries Faulty, Naive and Cautious, but not to Omni-
+scient. We conclude that WGP detects the communication
+of the Faulty adversary but only reduces the extra loss by
+33% with respect to no weighting because the unmitigated
+extra loss is small, whereas WGP only reduces the extra loss
+of adversary Omniscient by 15% because it does not detect
+its communication as easily. Also noteworthy in Fig. 5 is
+0.890
+Cooperative
+0.945
+Faulty
+0.000
+Naive
+1.000
+Cautious
+WMAX
+N/A
+Omniscient
+0.946
+0.948
+0.000
+N/A
+0.707
+WG
+0
+1
+0.949
+0
+1
+0.004
+0
+1
+0.000
+0
+1
+0.000
+0
+1
+0.859
+WGP
+Fig. 5.
+Distributions of conﬁdence weights assigned by the three weighting
+schemes to all adversaries considered in Fig. 3.
+
+TABLE I
+COOPERATIVE CLASSIFICATION ACCURACY FOR FIG. 3.
+Cooperative
+Faulty
+Naive
+Cautious
+Omniscient
+None
+0.750
+0.742
+0.502
+0.549
+N/A
+WMAX
+0.720
+0.714
+0.723
+0.563
+N/A
+WG
+0.745
+0.727
+0.733
+N/A
+0.540
+WGP
+0.762
+0.746
+0.752
+0.735
+0.635
+the comparison between the weights assigned to Faulty and
+Cautious adversaries. While the differences in excess loss
+with Faulty adversaries were small between schemes due
+to the low impact of the Faulty adversary even completely
+unﬁltered, it can clearly be seen that WGP detects and ﬁlters
+out the Faulty and Cautious adversaries perfectly. In contrast
+WMAX and WG assign mean conﬁdence weights of 0.945
+and 0.948 to the Faulty adversary respectively, and WMAX
+assigns a mean weight of 1.00 to the Cautious adversary,
+equivalent to no weighting scheme at all.
+We now evaluate alternative weighting schemes WMAX
+and WG, referring to the second and third rows of Fig. 3.
+In the presence of adversary Faulty WMAX increased the
+extra loss by 54% and WG left it unchanged, as compared
+to the WGP’s 33% reduction. Against adversary Naive, all
+schemes were able to reduce the extra loss by > 99%. The
+results with Omniscient adversaries are more interesting, and
+we shall compare the two most effective schemes, WG and
+WGP in this respect. Against their respective Omniscient
+adversaries we can see from the ﬁnal column that WG and
+WGP incur excess losses with respect to the cooperative
+baseline loss (0.508) of 0.312 and 0.148 respectively, a
+difference of a factor of two in favor of WGP. We can also
+contrast these schemes’ performance against each other’s
+Omniscient adversaries, though this is less important. Since
+the Cautious agent we used for WGP is actually identical
+to the Omniscient agent of WG, we can see that WGP cuts
+down the excess loss with this adversary to 0.008, a reduction
+of 97.4% with respect to WG. In contrast, the WG scheme
+is only able to reduce the excess loss caused by WGP’s
+Omniscient adversary from 0.148 to 0.106 (not shown in
+ﬁgures) in comparison to WGP itself, a reduction of only
+28%, showing that WGP has broader effectiveness across
+adversaries than WG.
+Finally, we see in Fig. 6 the loss distribution (correspond-
+ing accuracies in Tab. II) when we generalize our method to
+various numbers of adversarial agents F and a different total
+number of agents N. The results are for WGP in the presence
+of the Cautious adversary with N = 8 with varying numbers
+of adversaries (F) and varying maximum F considered by
+the conﬁdence weighting scheme (Fmax). We see that so
+long as Fmax >= F the weighting scheme is able to
+substantially mitigate the effect of the Cautious adversaries.
+We expect that this consistency of performance across F
+values generalizes across adversaries, though performance
+with Fmax > 1 is unlikely to improve on that of Fmax = 1
+in cases where that original performance was less striking,
+e.g. with the Omniscient adversary.
+0.504
+Fmax = 1
+0.506
+Fmax = 2
+0.508
+F = 1
+Fmax = 3
+0.750
+0.520
+0.525
+F = 2
+0
+1
+2
+3
+1.080
+0
+1
+2
+3
+0.801
+0
+1
+2
+3
+0.544
+F = 3
+Fig. 6.
+Cooperative loss distributions for WGP in the presence of the
+Cautious adversary. In contrast to Fig. 3 we consider N = 8 for this
+comparison. Each row corresponds to a choice of the actual number F
+of adversaries present, while each column corresponds to the maximum
+number of adversaries Fmax considered possible by the weighting scheme.
+TABLE II
+COOPERATIVE CLASSIFICATION ACCURACY FOR FIG. 6.
+Fmax = 1
+Fmax = 2
+Fmax = 3
+F = 1
+0.768
+0.746
+0.751
+F = 2
+0.578
+0.748
+0.737
+F = 3
+0.522
+0.536
+0.707
+B. Cooperative Coverage
+In our second case study, we consider the multi-agent
+coverage path planning problem in a Reinforcement Learning
+(RL) setting as described in [6]. In this setting, a non-
+cooperative agent competes with cooperative agents for cov-
+erage. In contrast to the prior case study, the non-cooperative
+agent’s objective is the same cooperative agents’ objective
+(i.e., not its negation). Here, the non-cooperative agent is
+simply self-interested, meaning that it does not share the
+cooperative agents’ global reward. In [6], we showed how
+this reward structure enabled the self-interested agent to
+learn manipulative communication policies (beneﬁting its
+selﬁsh goal). In the following set of results, we aim to show
+that our message ﬁltering strategy is able to mitigate the
+impact of its adversarial communication policy. Speciﬁcally,
+we demonstrate how conﬁdence weighting can detect and
+mitigate manipulative communications for the Naive and
+Omniscient case.
+1) Setup: We consider a non-convex environment repre-
+sented as a binary grid world populated with agents that aim
+to cooperatively and as quickly as possible visit every cell.
+The environment of size 24 × 24 is populated with N = 6
+agents, each of which has a local ﬁeld of view of 16 × 16
+pixels separated in two channels representing obstacles and
+local coverage with a communication radius of rc = 16.
+An overview of the environment can be seen in Fig. 7. The
+agents’ communication topology changes over discrete time
+as the agents move and interact with the environment (i.e.,
+avoid obstacles).
+2) Training/Architecture Extensions: We extend the ar-
+chitecture described in [6] as follows both for the self-
+interested (from now on referred to as non-cooperative) and
+the cooperative policy: (i) replace the encoder with a VAE
+that outputs a multivariate Gaussian (ii) add a local encoder
+of the observation that skips the VAE and the GNN to the
+ﬁnal action MLP (iii) add an MLP transforming the output of
+the VAE before feeding it to the GNN (iv) add the conﬁdence
+
+Fig. 7.
+Coverage environment at two different time steps: Six agents
+(blue and red squares) are placed in a randomly generated grid-world with
+the goal to cover the free space (white) as quickly as possible. Agents can
+communicate if they are within communication range rc (indicated as green
+dashed lines). The red agent is non-cooperative with an adversarial (self-
+interested) goal, i.e., to cover as much area as possible, non-cooperatively.
+weighting mechanism that takes into consideration the VAE
+Gaussian of all agents and generates attention weights for
+the GNN layer. The training consists of the following steps:
+First, we train the cooperative policy with the modiﬁed
+architecture, but without training the VAE and GP. We use
+this policy to train the VAE and GP independently from the
+policy by collecting samples of observations and positions
+of agents. We then train the cooperative policy from scratch
+with the VAE parameters obtained in the previous step
+while keeping the VAE parameters unchanged. This yields
+a cooperative coverage policy that uses the VAE to encode
+the local observations of each agent, which is shared through
+the GNN with other agents.
+During training, we assume full connectivity for the conﬁ-
+dence weighting and compute the weights only for the non-
+cooperative agent. This makes learning manipulative commu-
+nications for the non-cooperative agents more difﬁcult and
+therefore emphasizes the success of conﬁdence weighting.
+During evaluation, we use the graph topology resulting from
+the speciﬁed rc for the conﬁdence weighting. Similar as
+described in Sec. VII-A, we penalize excessive deviation
+from mC via a squared error loss.
+3) Experiments: To demonstrate the effectiveness of con-
+ﬁdence weighting, we consider three reference experiments.
+First, we introduce a baseline policy (with N = 6) that ran-
+domly moves an agent to a neighboring cell with preference
+to uncovered cells, without making use of any communica-
+tion to other agents.
+Secondly, we consider training two different Cooperative
+models with N = 6 and F = 0. Both models use the same
+architecture, but the ﬁrst model is optimized without pre-
+trained VAE, while the second model uses a pre-trained
+VAE. This means that only the latter can be used with
+conﬁdence weighting. We evaluate the latter with and without
+conﬁdence weighting and with a drop-in median ﬁlter, for
+which we replace the element-wise sum over neighbors in
+(12) with a median over neighbors. The drop-in median ﬁlter
+corresponds to an alternate (benchmark) message ﬁltering
+strategy. Additionally, we also perform experiments without
+any communication.
+Lastly, we introduce a single non-cooperative agent so that
+N = 6 and F = 1. We train three models, two that cover
+the Naive case and one that covers the Omniscient case. For
+the Naive case, we train similar to the adversarial of [6]
+without conﬁdence weighting and evaluate with and without
+conﬁdence weighting. Additionally, we train a model for the
+Naive case with drop-in median. For the Omniscient case,
+we train with conﬁdence weighting and evaluate with and
+without conﬁdence weighting.
+4) Metrics: For comparison, we consider the percentual
+global coverage at two ﬁxed time steps t0 and t1, which
+are, respectively, the number of steps an ideal policy would
+require to cover the full area if all N = 6 agents cover a
+cell at every time-step (t0), or if only a single agent covers
+a cell at every time step (t1). We refer to the coverage
+(either per-agent or total) at these time steps as p0 and p1,
+respectively. Our experiments consider N = 6 agents in a
+world of size 24 × 24 with 60% coverable space, therefore,
+t0 = ⌈242·0.6
+6
+⌉= 58 and t1 = ⌈242·0.6
+1
+⌉= 345.
+5) Results: We summarize the results of all coverage
+experiments in Tab. III. This table separates different training
+runs, as explained in Sec. VII-B.3, with two thin lines
+or one thick vertical line and different evaluations of the
+same training run with one thin vertical line. We highlight
+the best results per experiment group (separated by thick
+lines) in bold for the p0 and p1 performance both for
+the cooperative agents and all agents together (higher is
+better), and non-cooperative agents (lower is better). Fig. 8
+compares the Naive and Omniscient case with and without
+conﬁdence weighting. For the Naive case without conﬁdence
+weighting, the non-cooperative agent covers 430% (p1) of
+the area of an average cooperative agent. The total team
+coverage performance drops to 64% of that of an entirely
+cooperative team (p0). In contrast, when applying conﬁdence
+weighting to the cooperative agents in the Naive case, the
+non-cooperative agent manages to cover only 82% of the
+area an average cooperative agent covers (p1) and the total
+performance is at 92% of the Cooperative performance.
+In the Omniscient case without conﬁdence weighting, the
+non-cooperative agent covers 269% of the area of an average
+cooperative agent, or 81% of the non-cooperative coverage
+for the Naive case (p1). With applied conﬁdence weighting,
+the performance is similar (i.e., it even drops slightly to 238%
+and 72%, respectively), indicating that the non-cooperative
+agent was not able to learn better adversarial communica-
+tions, despite the fact that it was trained with knowledge of
+the conﬁdence weighting. The total team coverage drops to
+80% of that of an entirely cooperative team (p0).
+Lastly, we compare the total performance of a subset
+of trials of Tab. III in Fig. 9. The plots on the left side
+compare the impact of conﬁdence weighting for the purely
+Cooperative case without non-cooperative agents and with
+drop-in median. The performance for the Cooperative case
+trained without VAE is similar to trained with and evalu-
+ated with and without conﬁdence weighting. This indicates
+no negative impact of conﬁdence weighting to an entirely
+cooperative team. In contrast, the drop-in median for the
+Cooperative case performs at 71% of the cooperative trained
+without VAE and therefore signiﬁcantly affects the coop-
+erative performance. In the middle, we compare the total
+
+25
+50
+75
+100
+Coverage %
+t0
+t1
+Naive
+t0
+t1
+w/o cw
+Omniscient
+100
+200
+300
+Episode Time Steps
+25
+50
+75
+100
+Coverage %
+t0
+t1
+100
+200
+300
+Episode Time Steps
+t0
+t1
+w/ cw
+Fig. 8. We show the impact of a single non-cooperative agent (F = 1) on a
+cooperative team (N = 6) for the Naive case (left column) and Omniscient
+case (right column) as area covered over episode time steps for 100 episodes
+for the non-cooperative agent (red), mean of cooperative agents (blue) or
+all agents (black) with a 1σ standard deviation over each individual agent.
+The ﬁrst row shows the results without and the second row with applied
+conﬁdence weighting (cw).
+performance for the Naive case without conﬁdence weighting
+to the Omniscient case with conﬁdence weighting. We see
+that for the Naive case without conﬁdence weighting, the
+performance is similar to the random baseline. In contrast,
+the Omniscient case with conﬁdence weighting is at 124%
+of the Naive case without conﬁdence weighting or random
+baseline, indicating a noticeable boost of performance for
+the cooperative objective to collectively cover the area de-
+spite adversarial communications. The plot on the right side
+compares the performance for the Naive case trained with
+drop-in median to the Cooperative with drop-in median and
+Cooperative without communication between agents. In the
+Cooperative case, the drop-in median performs slightly better
+than without communication, but signiﬁcantly worse than
+any Cooperative case with communication. The Naive case
+trained with drop-in median ﬁlter performs only slightly
+better. While the median aggregation scheme ﬁlters out
+adversarial messages, it also ﬁlters out most cooperative
+messages and therefore causes the performance to drop.
+The Naive case with drop-in median ﬁlter performs slightly
+better since the non-cooperative agent can take this into
+consideration and act greedily, in contrast to an average
+cooperative agent.
+VIII. DISCUSSION AND FURTHER WORK
+Summary. In this paper we developed a two-stage proba-
+bilistic model of agent observations consisting of a GP prior
+over the latent vectors of a per-agent auto-encoder, following
+the general AEVB framework [18]. By using the latent space
+posteriors produced by the encoder as messages between
+agents we thereby obtained a probabilistic model describing
+the joint distribution over agent messages conditional on
+their relative positions from the GP stage. This model of
+messages allows us to formulate and compare hypotheses
+regarding the generation mechanism for received messages,
+in particular regarding which agents are being truthful, and
+thereby assign conﬁdences to the messages received from
+different neighbors. Having introduced a taxonomy of non-
+cooperative agents according to their level of knowledge of
+any countermeasures employed by the cooperative agents,
+we integrated our conﬁdences into a GNN analogously to
+attention weights in order to ﬁlter out potentially harmful
+messages from non-cooperative neighbors.
+Discussion. Our conﬁdence weighting method clearly
+performs well against all adversaries considered that were
+optimized with imperfect knowledge of it. In both of our
+experiments we ﬁnd that it can easily detect the commu-
+nication of adversaries, and, having done so, cause the
+cooperative agents to disregard it and prevent substantial
+harm to their individual performance. Indeed, in our second
+experiment the remaining decrease in collective performance
+relative to purely cooperative agents when using conﬁdence
+weighting against a single Naive adversary is due to poor
+performance of the adversary individually at achieving the
+collective goal via its actions, rather than any effect it has
+via communication.
+We have seen that our method also has desirable per-
+formance characteristics outside of this ideal set of sce-
+narios, for example by having a negligible impact on the
+performance of the cooperative agents if there is in fact
+no adversary present. The performance in the presence of
+an Omniscient adversary is more subtle but still impressive.
+It is to be noted that no message ﬁltering strategy with a
+negligible impact on purely cooperative agents can reliably
+detect and ﬁlter out the communication of all possible
+adversaries since a sufﬁciently capable adversary can pro-
+duce communication which is arbitrarily similar to actual
+cooperative communication if necessary. The strength of a
+message ﬁltering strategy in the presence of a competent
+Omniscient adversary therefore should be measured in terms
+of the damage caused to the cooperative agents objective
+by the strongest attack which can bypass it. This indirect
+reduction in damage is clearly seen in both experiments,
+with overall collective performance in the second experiment
+being reduced by only 21% in an attack optimized against
+our message ﬁltering strategy compared to 37% against no
+ﬁltering. This effect was even stronger in the ﬁrst experiment,
+where we observed worst case loss increases for the cooper-
+ative agents of 29% with conﬁdence weighting as opposed
+to at least 678% without.
+We have also seen that our method compares favorably to
+other alternatives which we have considered. In the case of
+the alternative methods considered in the ﬁrst experiment,
+our method is superior at suppressing the impact of a wider
+range of adversaries, while, in the case of the median ﬁltering
+based method considered in the second experiment, our
+method has a far smaller negative impact on the performance
+of the cooperative agents when there are no adversaries
+present.
+Further Work. Our choice of GP kernel function was cho-
+sen to maximize expressiveness while being clearly station-
+ary, but introduced some inconveniences in training due to
+occasional invalid covariance matrices. These inconveniences
+could be avoided if stationarity was not required (e.g. because
+the agents had access to their absolute position), or by
+
+0
+50
+100
+150
+200
+250
+300
+Episode Time Step
+25
+50
+75
+100
+Coverage %
+t0
+t1
+F = 0 w/o VAE/GP
+F = 0 drop-in Median
+F = 0 w/o cw
+F = 0 w/ cw
+0
+50
+100
+150
+200
+250
+300
+Episode Time Step
+t0
+t1
+Random Baseline
+F = 1 Naive w/o cw
+F = 1 Omniscient w/ cw
+0
+50
+100
+150
+200
+250
+300
+Episode Time Step
+t0
+t1
+F = 1 Naive
+drop-in Median
+F = 0 drop-in Median
+F = 0 w/o comm
+Fig. 9.
+Coverage performance as globally covered area over episode time steps as a comparison of total (all agents) coverage performance for different
+experiment as mean over 100 episodes. Left: We compare a cooperative model trained with a pre-trained VAE without and with active conﬁdence weighting
+for all agents to a cooperative model with drop-in median. Middle: We compare the impact a single Naive and Omniscient agent (F = 1) has on a
+cooperative team (N = 6) with and without conﬁdence weighting for the cooperative agents. Right: Lastly, we compare a cooperative model with drop-in
+median Omniscient with conﬁdence weighting performs similar and Naive trained with drop-in median with and without communication perform similar.
+TABLE III
+SUMMARY OF ALL COVERAGE RESULTS. BEST RESULTS PER GROUP (BLOCK BETWEEN SOLID SEPARATORS) IN BOLD.
+N = 6
+All Cooperative (F = 0)
+w/ one non-cooperative (F = 1)
+Random
+Baseline
+w/o
+VAE/GP
+w/ VAE/GP
+Naive
+Naive w/
+drop-in
+Median
+Omniscient
+w/o
+cw
+w/
+cw
+drop-in
+Median
+w/o
+comm
+w/o
+cw
+w/
+cw
+w/o
+cw
+w/
+cw
+Cooperative
+(per agent)
+p0
+7.4 ± 4
+11.8 ± 3
+12.0 ± 3
+11.7 ± 3
+8.5 ± 4
+7.6 ± 5
+5.8 ± 3
+11.3 ± 3
+8.4 ± 4
+7.4 ± 3
+8.3 ± 3
+p1
+16.0 ± 8
+16.4 ± 4
+16.4 ± 4
+16.4 ± 4
+16.4 ± 8
+16.3 ± 8
+10.0 ± 5
+17.0 ± 5
+14.4 ± 6
+12.5 ± 6
+13.4 ± 5
+Non-
+Cooperative
+p0
+N/A
+N/A
+N/A
+N/A
+N/A
+N/A
+15.7 ± 1
+8.6 ± 3
+14.0 ± 2
+15.4 ± 1
+15.1 ± 2
+p1
+43.1 ± 11
+13.6 ± 5
+26.3 ± 7
+34.7 ± 6
+31.0 ± 7
+Total
+p0
+44.7 ± 9
+70.8 ± 8
+71.9 ± 7
+70.4 ± 7
+50.9 ± 10
+45.9 ± 11
+44.5 ± 10
+64.9 ± 7
+55.9 ± 8
+52.6 ± 7
+56.5 ± 7
+enforcing this stationarity approximately, e.g. by randomly
+translating the training data.
+Our method would permit extensions to take advantage of
+information which we have assumed (in Sec. II) to not be
+available. Examples would include considering all previous
+communication observed from neighboring agents for the
+purpose of determining conﬁdence weights, or checking
+for consistency between the behavior of other agents and
+their claimed observations given that the cooperative policy
+is known. Either of these extensions would substantially
+reduce the strategies available to an Omniscient adversary
+and further reduce the potential damage caused by such an
+adversary.
+APPENDIX I
+WEIGHTING DETAILS
+We have Q(Z|O; φ) and P(Z|X; ψ, h) and wish to com-
+pare hypotheses h. O is the same for all hypotheses, though
+it is unobserved. We compare log P(O|X; ψ, θ, h) via (8). It
+can be seen that the third term is constant across hypotheses,
+and we can calculate the second. The ﬁrst term is intractable,
+but to the extent that DKL(Q(O|Z; φ)||P(Z|O; ψ, θ, h))
+is approximately constant across hypotheses we can still
+compare the various h. Making this assumption we obtain
+the result
+log P(O|X; ψ, θ, h) ≈
+−DKL(Q(Z|O; φ)||P(Z|X; ψ, h)) + C
+(18)
+where C is constant across hypotheses h.
+The assumption is most clearly justiﬁed for the H0
+and H1 single-agent hypotheses, since Q(Z|O; φ) has been
+optimized to minimize this term during training, with the
+only difference in P(Z|O; ψ, θ, h) being the number of
+points drawn from the GP on which to condition, which
+Q(Z|O; φ) ignores anyway. It is less clearly justiﬁed for
+H2, but this hypothesis is already fairly crude, being a
+uniform distribution in latent space, and we ﬁnd that it still
+gets assigned a high marginal likelihood relative to other
+hypotheses in the case of extreme z values.
+APPENDIX II
+KERNEL FUNCTION IMPLEMENTATION
+Let us consider a neighborhood of N agents, whose latent
+spaces each have Z dimensions. We wish to deﬁne a kernel
+function which produces N × Z dimensional covariance
+matrices C describing the correlations of all of these latent
+variables as a function of the relative positions of these N
+agents. Let the indices i and j index over agents and the
+indices k and l index over latent variables, that is, let cijkl
+refer to the covariance of the kth and lth latent variables of
+the ith and jth agents respectively.
+Since we require our GP to be stationary, the Z dimen-
+sional covariance submatrix cij will always be the same
+if i = j. Since this is also the covariance matrix of the
+latent variables of an individual agent considered alone, we
+let these matrices equal γI similarly to a simple VAE. This
+means that our N × Z covariance matrix now has the form,
+shown here for N = 3:
+
+
+γI
+cT
+01
+cT
+02
+c01
+γI
+cT
+12
+c02
+c12
+γI
+
+
+We wish to deﬁne the covariances of cij by a differentiable
+function of relative position xij = xj −xi involving a neural
+network. We also require that these covariances form a valid
+
+covariance matrix for every pair of agents when combined
+with the intra-agent covariances γI. We start by deﬁning
+a NN function L(xij) from relative positions to 2Z × M
+matrices, where M ≤2Z, parameterized as an MLP. LLT
+is then guaranteed to be a valid 2Z dimensional covariance
+matrix, whose submatrices we shall denote as
+ tij
+mT
+ij
+mij
+bij
+
+For every off-diagonal element tijkl, k ̸= l of tij which
+is non-zero we can set it to zero by adding a matrix n
+whose elements are deﬁned as npq = −mijkl if p = i
+and q = j, npq = |mijkl| if p = q = i or p = q = j
+and 0 otherwise. This process preserves the validity of the
+overall 2Z dimensional matrix as a covariance matrix since
+these matrices n are positive semi-deﬁnite. Likewise, we can
+increase the values of each diagonal element of the modiﬁed
+LLT to equal the maximum element of the diagonal while
+retaining validity. We can thereby obtain a modiﬁed valid
+2Z dimensional covariance matrix with the form
+βijI
+mT
+ij
+mij
+βijI
+
+for some value βij. We can explicitly calculate βij as βij =
+max(βijt, βijb) where βijt = maxk
+P
+l |tijkl| and βijb =
+maxk
+P
+l |bijkl| . This covariance matrix can now be made
+compatible with the intra-agent covariance matrices of γI by
+multiplying the result by
+γ
+βij , giving us:
+cij = γ
+βij
+mij
+(19)
+This process guarantees that a C generated for any pair of
+agents is a valid covariance matrix, and is dependent only on
+relative position, but does not guarantee validity for N ≥3.
+For this we rely on the trained function becoming valid for
+almost all input once it converges while being trained on
+pairs only, an effect which we do in fact observe. (To make
+our method invariant in permutation of the agents, we take
+the further step of symmetrizing and use 1
+2(cij+cT
+ji) in place
+of just cij, where cT
+ji is calculated similarly to cij but with
+the relative position negated.)
+ACKNOWLEDGMENT
+We gratefully acknowledge the support of ARL grant
+DCIST CRA W911NF-17-2-0181. A. Prorok was supported
+by the Engineering and Physical Sciences Research Council
+(grant EP/S015493/1). J. Blumenkamp was supported in part
+through an Amazon Research Award.
+REFERENCES
+[1] N. Hyldmar, Y. He, and A. Prorok, “A ﬂeet of miniature cars for
+experiments in cooperative driving,” in 2019 International Conference
+on Robotics and Automation (ICRA).
+IEEE, 2019, pp. 3238–3244.
+[2] D. T. Nguyen, A. Kumar, and H. C. Lau, “Credit assignment for
+collective multiagent RL with global rewards,” in Advances in Neural
+Information Processing Systems, 2018, pp. 8102–8113.
+[3] J.
+D.
+Bjerknes
+and
+A.
+F.
+T.
+Winﬁeld,
+On
+Fault
+Tolerance
+and Scalability of Swarm Robotic Systems.
+Berlin, Heidelberg:
+Springer Berlin Heidelberg, 2013, pp. 431–444. [Online]. Available:
+https://doi.org/10.1007/978-3-642-32723-0 31
+[4] K. Saulnier, D. Salda˜na, A. Prorok, G. J. Pappas, and V. Kumar,
+“Resilient ﬂocking for mobile robot teams,” IEEE Robotics and
+Automation Letters, vol. 2, no. 2, pp. 1039–1046, 2017.
+[5] S.
+Gil,
+S.
+Kumar,
+M.
+Mazumder,
+D.
+Katabi,
+and
+D.
+Rus,
+“Guaranteeing spoof-resilient multi-robot networks,” Autonomous
+Robots, vol. 41, no. 6, pp. 1383–1400, Aug 2017. [Online]. Available:
+https://doi.org/10.1007/s10514-017-9621-5
+[6] J. Blumenkamp and A. Prorok, “The emergence of adversarial commu-
+nication in multi-agent reinforcement learning,” Conference on Robot
+Learning (CoRL), 2020.
+[7] D. Dolev, M. J. Fischer, R. Fowler, N. A. Lynch, and H. Raymond
+Strong, “An efﬁcient algorithm for byzantine agreement without
+authentication,” Information and Control, vol. 52, no. 3, pp. 257 –
+274, 1982. [Online]. Available: http://www.sciencedirect.com/science/
+article/pii/S0019995882907768
+[8] V. Strobel, E. Castell´o Ferrer, and M. Dorigo, “Managing byzantine
+robots via blockchain technology in a swarm robotics collective
+decision making scenario,” in Proceedings of the 17th International
+Conference on Autonomous Agents and MultiAgent Systems, ser. AA-
+MAS ’18.
+Richland, SC: International Foundation for Autonomous
+Agents and Multiagent Systems, 2018, p. 541–549.
+[9] J. Foerster, I. A. Assael, N. de Freitas, and S. Whiteson, “Learning
+to communicate with deep multi-agent reinforcement learning,” in
+Advances in Neural Information Processing Systems 29, D. D.
+Lee, M. Sugiyama, U. V. Luxburg, I. Guyon, and R. Garnett,
+Eds.
+Curran Associates, Inc., 2016, pp. 2137–2145. [Online].
+Available: http://papers.nips.cc/paper/6042-learning-to-communicate-
+with-deep-multi-agent-reinforcement-learning.pdf
+[10] Q. Li, F. Gama, A. Ribeiro, and A. Prorok, “Graph neural networks
+for decentralized multi-robot path planning,” IEEE/RSJ International
+Conference on Intelligent Robots and Systems (IROS), 2020.
+[11] E. Tolstaya, F. Gama, J. Paulos, G. Pappas, V. Kumar, and
+A. Ribeiro, “Learning decentralized controllers for robot swarms
+with graph neural networks,” in Proceedings of the Conference on
+Robot Learning, ser. Proceedings of Machine Learning Research,
+L. P. Kaelbling, D. Kragic, and K. Sugiura, Eds., vol. 100.
+PMLR, 30 Oct–01 Nov 2020, pp. 671–682. [Online]. Available:
+http://proceedings.mlr.press/v100/tolstaya20a.html
+[12] A. Khan, E. Tolstaya, A. Ribeiro, and V. Kumar, “Graph policy
+gradients for large scale robot control,” in Proceedings of the
+Conference on Robot Learning, ser. Proceedings of Machine Learning
+Research, L. P. Kaelbling, D. Kragic, and K. Sugiura, Eds., vol. 100.
+PMLR, 30 Oct–01 Nov 2020, pp. 823–834. [Online]. Available:
+http://proceedings.mlr.press/v100/khan20a.html
+[13] C. Richter and N. Roy, “Safe visual navigation via deep learning and
+novelty detection,” Robotics: Science and Systems XIII, Jul 2017.
+[14] M. Soelch, J. Bayer, M. Ludersdorfer, and P. van der Smagt, “Vari-
+ational inference for on-line anomaly detection in high-dimensional
+time series,” 2016.
+[15] L. V. Utkin, V. S. Zaborovskii, and S. G. Popov, “Detection
+of
+anomalous
+behavior
+in
+a
+robot
+system
+based
+on
+deep
+learning elements,” Automatic Control and Computer Sciences,
+vol. 50, no. 8, pp. 726–733, Dec 2016. [Online]. Available:
+https://doi.org/10.3103/S0146411616080319
+[16] M. Ribeiro, A. E. Lazzaretti, and H. S. Lopes, “A study of deep
+convolutional auto-encoders for anomaly detection in videos,” Pattern
+Recognition Letters, vol. 105, pp. 13 – 22, 2018, machine Learning
+and
+Applications in
+Artiﬁcial
+Intelligence. [Online].
+Available:
+http://www.sciencedirect.com/science/article/pii/S0167865517302489
+[17] X.
+Wang,
+Y.
+Du,
+S.
+Lin,
+P.
+Cui,
+Y.
+Shen,
+and
+Y.
+Yang,
+“adVAE: A self-adversarial variational autoencoder with gaussian
+anomaly
+prior
+knowledge
+for
+anomaly
+detection,”
+Knowledge-
+Based Systems, vol. 190, p. 105187, 2020. [Online]. Available:
+http://www.sciencedirect.com/science/article/pii/S0950705119305283
+[18] D. P. Kingma and M. Welling, “Auto-encoding variational bayes,”
+Proceedings of the 2nd International Conference on Learning Rep-
+resentations (ICLR), 2014.
+[19] P. Veliˇckovi´c, G. Cucurull, A. Casanova, A. Romero, P. Li`o, and
+Y. Bengio, “Graph Attention Networks,” International Conference
+on Learning Representations, 2018, accepted as poster. [Online].
+Available: https://openreview.net/forum?id=rJXMpikCZ
+[20] L. Guerrero-Bonilla, A. Prorok, and V. Kumar, “Formations for
+resilient robot teams,” IEEE Robotics and Automation Letters, vol. 2,
+no. 2, pp. 841–848, 2017.
+[21] D. Salda˜na, A. Prorok, S. Sundaram, M. F. M. Campos, and V. Kumar,
+“Resilient consensus for time-varying networks of dynamic agents,”
+in 2017 American Control Conference (ACC), 2017, pp. 252–258.
+
+[22] J. Usevitch and D. Panagou, “r-robustness and (r, s)-robustness of
+circulant graphs,” in 2017 IEEE 56th Annual Conference on Decision
+and Control (CDC), 2017, pp. 4416–4421.
+[23] L. Guerrero-Bonilla, D. Salda˜na, and V. Kumar, “Dense r-robust
+formations on lattices,” in 2020 IEEE International Conference on
+Robotics and Automation (ICRA), 2020, pp. 6633–6639.
+[24] M. A. Fischler and R. C. Bolles, “Random sample consensus:
+A paradigm for model ﬁtting with applications to image analysis
+and automated cartography,” Commun. ACM, vol. 24, no. 6, p.
+381–395, June 1981. [Online]. Available: https://doi.org/10.1145/
+358669.358692
+[25] P. Antonante, V. Tzoumas, H. Yang, and L. Carlone, “Outlier-robust
+estimation: Hardness, minimally-tuned algorithms, and applications,”
+2020.
+[26] H. Yang, P. Antonante, V. Tzoumas, and L. Carlone, “Graduated
+non-convexity for robust spatial perception: From non-minimal
+solvers to global outlier rejection,” IEEE Robotics and Automation
+Letters, vol. 5, no. 2, p. 1127–1134, Apr 2020. [Online]. Available:
+http://dx.doi.org/10.1109/LRA.2020.2965893
+[27] B. Schlotfeldt, V. Tzoumas, D. Thakur, and G. J. Pappas, “Resilient
+active information gathering with mobile robots,” in 2018 IEEE/RSJ
+International Conference on Intelligent Robots and Systems (IROS),
+2018, pp. 4309–4316.
+[28] L. Zhou, V. Tzoumas, G. J. Pappas, and P. Tokekar, “Distributed
+attack-robust submodular maximization for multi-robot planning,” in
+2020 IEEE International Conference on Robotics and Automation
+(ICRA), 2020, pp. 2479–2485.
+[29] V. Renganathan and T. Summers, “Spoof resilient coordination for
+distributed multi-robot systems,” in 2017 International Symposium on
+Multi-Robot and Multi-Agent Systems (MRS), 2017, pp. 135–141.
+[30] M. Porter, S. Dey, A. Joshi, P. Hespanhol, A. Aswani, M. Johnson-
+Roberson, and R. Vasudevan, “Detecting deception attacks on au-
+tonomous vehicles via linear time-varying dynamic watermarking,”
+in IEEE Conference on Control Technology and Applications, 2020,
+accepted.
+[31] F. Gama, E. Isuﬁ, G. Leus, and A. Ribeiro, “Graphs, convolutions, and
+neural networks: From graph ﬁlters to graph neural networks,” IEEE
+Signal Processing Magazine, vol. 37, no. 6, pp. 128–138, 2020.
+[32] F. P. Casale, A. Dalca, L. Saglietti, J. Listgarten, and N. Fusi,
+“Gaussian process prior variational autoencoders,” in Advances
+in
+Neural
+Information
+Processing
+Systems
+31,
+S.
+Bengio,
+H.
+Wallach,
+H.
+Larochelle,
+K.
+Grauman,
+N.
+Cesa-Bianchi,
+and
+R.
+Garnett,
+Eds.
+Curran
+Associates,
+Inc.,
+2018,
+pp.
+10 369–10 380. [Online]. Available: http://papers.nips.cc/paper/8238-
+gaussian-process-prior-variational-autoencoders.pdf
+[33] I. Higgins, L. Matthey, A. Pal, C. Burgess, X. Glorot, M. Botvinick,
+S. Mohamed, and A. Lerchner, “beta-vae: Learning basic visual
+concepts with a constrained variational framework,” Proceedings of
+the 5th International Conference on Learning Representations (ICLR),
+2017.

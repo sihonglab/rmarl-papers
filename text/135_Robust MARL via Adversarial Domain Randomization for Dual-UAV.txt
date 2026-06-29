@@ -1,0 +1,1475 @@
+IEEE TRANSACTIONS ON INTELLIGENT VEHICLES, VOL. 9, NO. 1, JANUARY 2024
+1615
+Robust Multi-Agent Reinforcement Learning Method
+Based on Adversarial Domain Randomization for
+Real-World Dual-UAV Cooperation
+Shutong Chen
+, Guanjun Liu
+, Senior Member, IEEE, Ziyuan Zhou
+, Kaiwen Zhang
+,
+and Jiacun Wang
+, Senior Member, IEEE
+Abstract—A control system of multiple unmanned aerial vehi-
+cles (multi-UAV) is generally very complex when they complete a
+task in a closely-cooperative manner, e.g. two UAVs cooperatively
+transport a package of goods. Multi-agent reinforcement learning
+(MARL) offers a promising solution for such a complex control.
+However, MARL heavily relies on trial-and-error explorations,
+facing a big challenge in gathering real-world training data. Simu-
+lation environments are commonly used to overcome this challenge,
+i.e., a control policy is trained in a simulation environment and then
+transferred into a real-world system. But there often exists a gap
+between simulation and reality and thus a successful transfer is not
+guaranteed easily. The domain randomization method provides a
+workable way to bridge this gap. Nevertheless, the traditional one
+used in a policy training often suffers from slow convergence and
+results in an unstable decision policy. To address these issues, this
+article proposes an adversarial domain randomization method. It
+utilizes an adversarial generator as a “nature player” to generate a
+more reasonable training environment so that the trained decision
+policy can deal with complex situations. Additionally, we improve
+the prioritized experience replay method by which we can sample
+those critical experiences, increasing the convergence speed of a
+training without decreasing the performance of the trained policy.
+We apply our method to a real-world task of dual-UAV cooperative
+transportation, and experiments illustrate its effectiveness com-
+pared to traditional ones.
+Index Terms—Multi-agent reinforcement learning, sim2real
+transfer,adversarialdomainrandomization,prioritizedexperience
+replay, dual-UAV cooperative transportation.
+Manuscript received 4 June 2023; revised 22 July 2023; accepted 13 August
+2023. Date of publication 22 August 2023; date of current version 23 February
+2024. This work was supported in part by the Shanghai Science and Technology
+Committee under Grant 22511105500, in part by the National Nature Science
+Foundation of China under Grants 62172299 and 62032019, and in part by the
+Fundamental Research Funds for the Central Universities under Grant 2023-4-
+YB-05. (Corresponding author: Guanjun Liu.)
+Shutong Chen, Guanjun Liu, Ziyuan Zhou, and Kaiwen Zhang are with the
+Department of Computer Science, Tongji University, Shanghai 201804, China
+(e-mail: 2132949@tongji.edu.cn; liuguanjun@tongji.edu.cn; ziyuanzhou@
+tongji.edu.cn; 2210133@tongji.edu.cn).
+Jiacun Wang is with the Department of Computer Science and Software
+Engineering, Monmouth University, West Long Branch, NJ 07764 USA (e-mail:
+jwang@monmouth.edu).
+Color versions of one or more ﬁgures in this article are available at
+https://doi.org/10.1109/TIV.2023.3307134.
+Digital Object Identiﬁer 10.1109/TIV.2023.3307134
+I. INTRODUCTION
+M
+ULTIPLE unmanned aerial vehicles (multi-UAV) ex-
+hibit a high complexity when they cooperatively com-
+plete a task. There are two types of control systems of multi-
+UAV: traditional and intelligent ones. The former relies on the
+known mathematical models and physical laws governing UAV
+motion [1], [2], [3], [4]. It often utilizes precise information
+about the state of UAVs to accomplish a speciﬁc task. As for
+the latter, multi-agent reinforcement learning (MARL) is an
+important method to generate a control policy of a multi-UAV
+system. Such a policy is trained through extensive trial-and-error
+explorations and decides the movements of these UAVs based
+on observable information.
+For multi-UAV cooperative tasks, intelligent control systems
+generally offer advantages over traditional ones. The latter relies
+on control algorithms that can only handle those known and
+predictable states. In contrast, the former has the ability to adapt
+to the change of situations and provide proper policies [5].
+Furthermore, compared to the latter’s heavy reliance on precise
+information about the state of UAVs, the former exhibits greater
+tolerance for errors in states. In addition, an intelligent control
+policy can be distributed to each UAV, avoiding centralized con-
+trol and obtaining great ﬂexibility on a multi-UAV cooperative
+task completion.
+Simulation environments are often used to train control poli-
+cies of multi-UAV systems, including cooperative navigation of
+path planning, target tracking, and cooperative visual coverage
+of target search [6], [7], [8], [9], [10]. Indeed, these studies focus
+on abstract problems in simulation environments in order to
+show the potential of MARL in enhancing the adaptability and
+efﬁciency of multi-UAV cooperation. However, the complexity
+and uncertainty in the real world, such as noise, sensor errors,
+and dynamic changes, pose signiﬁcant challenges when the
+MARL policies trained in simulation environments are applied
+in real-world environments. The aforementioned studies also
+highlight these challenges. Therefore, it is necessary to build a
+good bridge from simulation to the real world. According to the
+work in [11] and [12], the domain randomization method [13]
+is such an effective bridge.
+We can observe two shortcomings when applying the tra-
+ditional domain randomization method to MARL. Firstly, a
+control policy trained with it is often unstable when dealing
+2379-8858 © 2023 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:32 UTC from IEEE Xplore.  Restrictions apply. 
+
+1616
+IEEE TRANSACTIONS ON INTELLIGENT VEHICLES, VOL. 9, NO. 1, JANUARY 2024
+with tasks in environments generated with different degrees of
+domain randomization parameters. Secondly, a training process
+usually converges slowly, resulting in a high training cost. To
+overcome these shortcomings, we do the related study and obtain
+the following results:
+1) Weintroduceanadversarialdomainrandomization(ADR)
+method. The MARL with ADR is deﬁned as an adversarial
+stationary Markov game and we theoretically analyze the
+existence of Nash equilibrium in such a game. Moreover,
+we design an algorithm that utilizes a “nature player” to
+generate a high-quality training environment and thus can
+train a stable control policy.
+2) We improve the priority experience replay method that
+is used in our domain randomization method in order
+to increase the convergence speed of a training without
+decreasing the performance of a trained policy.
+3) We apply the proposed method to a dual-UAV cooperative
+transportation task, train the decision policy in a simula-
+tion environment and transfer the policy to our real-world
+dual-UAV control system. Our experiments illustrate the
+effectiveness of our method compared to traditional ones.
+The rest of this article is organized as follows: Section II
+introduces the related studies on MARL in multi-UAV tasks,
+including domain randomization and prioritized experience re-
+play. Section III recalls the underlying theoretical model and
+experimental methodology. Section IV provides a detailed ex-
+planation of the theoretical foundation of the proposed method,
+as well as its framework and speciﬁc details. Section V presents
+the experiments in a dual-UAV cooperative transportation task.
+Section VI concludes this article brieﬂy.
+II. RELATED WORK
+A. MARL for UAV Control
+In the ﬁeld of intelligent transportation, the problem of col-
+laborative goal optimization of multiple agents is important
+and challenging [14]. Compared with a single UAV system, a
+multi-UAV system shows superior performance in terms of time
+efﬁciency, cost-effectiveness, collaborative action, complemen-
+tary information, fault tolerance, and ﬂexibility [15]. MARL has
+been used to train their control policies which enable them to
+accomplish a cooperative task [16].
+MARL-based approaches for controlling clusters of multi-
+UAVinvarioustasksareinvestigated[17],[18],[19],[20].In[9],
+[21], [22], [23], [24], [25], MARL is introduced to train control
+policies of swarms of UAVs to perform speciﬁc tasks such as en-
+vironmental monitoring. These approaches include distributed
+reinforcementlearningandcommunicationreinforcementlearn-
+ing. A simulation scenario for UAVs transportation in a city and
+an improved Multi-Actor-Attention-Critic (MAAC) method to
+trainthecontrolpolicyformulti-UAVcooperativetransportation
+in a city are discussed in [26] and [27]. The study in [28] shows
+the advantages of hierarchical optimization for dealing with
+complex tasks in multi-UAV control systems.
+It is worth noting that the above studies are conducted in
+various simulation environments and not experimentally vali-
+dated in the real world. Bridging the gap between simulation and
+real-world environments to apply trained policies on real-world
+UAV control systems remains a signiﬁcant challenge.
+B. Domain Randomization
+Recently, a series of sim2real techniques [12] are proposed to
+bridge the gap between simulation and real-world environments.
+For example, Tobin et al. [13] propose a domain randomization
+method for the ﬁrst time such that the deep neural network
+trained with the simulated images can be transferred to the real
+world. In the ﬁeld of deep reinforcement learning, some stud-
+ies also employ the domain randomization method to transfer
+policies trained in simulation environments to the real world.
+By employing it, Andrychowicz et al. [29] simulate changes
+in the physical properties of the system within a simulation
+environment and transfer the trained policy to a physical robot,
+achieving dexterous manipulation in robotics. The study in [30]
+trains an MARL policy in a domain randomization experimental
+environment and transfers it to the real-world for controlling
+multiple autonomous vehicles.
+The traditional domain randomization method often employs
+a uniform selection of domain randomization parameters within
+predeﬁned ranges to generate a training environment. However,
+this method often results in an unstable reinforcement learning
+policy, characterized by high-variance performance when ap-
+plied to environments generated by different degrees of domain
+randomization parameters [31]. In particular, it has to struggle to
+deal with complex situations. An active domain randomization
+method [31] introduces a discriminator that evaluates whether
+the experience of the current episode is from a reference or
+a randomization environment and selects the value of domain
+randomization parameters to generate the environment during
+the next training. Raparthy et al. [32] further improves this active
+method by using meta-learning. However, both of them rely on a
+reference environment that is based on prior knowledge and thus
+perform poorly in environments with multiple randomization
+parameters. The method in [33] optimizes the selection process
+of domain randomization environments based on Bayesian opti-
+mization, which collects a sufﬁcient number of real experiences
+in a real-world environment. This method is more suitable for
+the controlled tasks such as mechanical arm control but is not
+too feasible for high-risk tasks such as multi-UAV cooperation.
+C. Sample-Efﬁcient Reinforcement Learning
+For reinforcement learning, the experience replay method
+is commonly utilized to enhance the efﬁciency of experience
+usage [34]. Agents can learn more effectively from speciﬁc
+experiences [35]. The prioritized experience replay method
+employs a biased importance sampling instead of a uniform
+sampling. Speciﬁcally, a temporal difference error is used to
+estimatetheimportanceofanexperience,andthismethodisvali-
+dated through experiments conducted with the Deep Q-Network
+(DQN) algorithm in the Atari environment. Furthermore, Prior-
+itized Sequence Experience Replay (PSER) [36] involves infor-
+mation from state transitions when estimating the importance
+of a temporal difference error. Emphasizing Recent Experience
+(ERE) [36] gives higher weights to recent experiences and shows
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:32 UTC from IEEE Xplore.  Restrictions apply. 
+
+CHEN et al.: ROBUST MARL METHOD BASED ON ADVERSARIAL DOMAIN RANDOMIZATION FOR REAL-WORLD DUAL-UAV COOPERATION
+1617
+better performance in continuous action space. Likelihood-Free
+Importance Weighting (LFIW) [37] uses the likelihood ratio
+method to estimate the importance of an experience.
+It is worth noting that these methods attempt to enhance
+the algorithm performance in general environments but can not
+directly be applied to a reinforcement learning training in an
+environment with domain randomization parameters.
+III. PRELIMINARIES
+A. Markov Games
+A Markov game [38] extends a Markov decision process to
+multi-agents and can be represented by the tuple:
+G := ⟨N, S, {Ai}i∈N , {Oi}i∈N , {Ri}i∈N , T, γ⟩
+where N is a ﬁnite set of N agents, S is the set of states and
+s ∈S represents a state. Each agent i has its own action set Ai
+and observation set Oi. Let ai ∈Ai and oi ∈Oi. The reward
+function for agent i is deﬁned as ri : S × A1 × . . . AN →Ri,
+where Ri represents the set of possible rewards for agent i.
+The state transition function T : S × A1 × . . . AN →S is de-
+termined by the current state and the actions taken by all agents.
+γ ∈[0, 1] is a discount factor.
+For each agent i in a Markov game, its optimal Bellman
+equation can be expressed as:
+V i
+∗(s) = max
+πi(·|s)
+
+a∈A
+N
+
+j=1
+πj(aj|s)
+
+ri(s, a)
++ γ
+
+s′∈S
+P(s′|s, a)V i
+∗(s′)
+
+(1)
+According to [39], one or multiple Nash equilibrium solutions
+exist in a Markov game.
+B. Nonstationary Markov Games
+In our previous work [40], a variant of the partially observ-
+able Markov game, namely a nonstationary Markov game, is
+proposed to describe real-world situations better, i.e.,
+G := ⟨N, S, {Ai}i∈N , {Oi}i∈N , {Ri}i∈N , T, U, γ⟩
+where U is a set of domain randomization parameters that
+parameterizes the randomization environment based on prior
+knowledge. It should be noted that in G, the state transition func-
+tion and reward function of each agent depends on the current
+state s, the joint action of all agents a = (a1, a2, . . . , aN), and a
+randomization parameter u ∈U. Speciﬁcally, the state transition
+function can be represented as T : S × A1 × . . . AN × U →
+S, and the reward function of agent i is represented as ri :
+S × A1 × . . . AN × U →Ri.
+C. Recurrent Multi-Agent Deep Deterministic Policy Gradient
+Recurrent multi-agent deep deterministic policy gradient (R-
+MADDPG) [41] is an extension of the multi-agent deep de-
+terministic policy gradient (MADDPG) [42] by improving the
+actor-network and critic-network of MADDPG. It is superior in
+addressing the challenges posed by partially observable envi-
+ronments and limited communications.
+In R-MADDPG, each agent i maintains a reply buffer Di
+that stores a batch of experience tuples in view of the form
+(oi,t, ai,t, o′
+i,t+1, ri,t, cp
+i,t, cp
+i,t+1, cq
+i,t, cq
+i,t+1), where oi denotes
+the observation of agent i, ai is the action taken by agent i
+based on oi, ri is the corresponding reward, and cp and cq
+refer to the cell state of the actor and critic networks before and
+after the selected action, respectively. Furthermore, each agent
+has a continuous policy π = πθi, a target policy π′ = π′
+θ′
+i, and
+a centralized action-value function Q = Qπ
+i . The placeholders
+x ∼U(Di) and a ∼U(Di) are used to represent the obser-
+vation and action information of all agents from the sampled
+experiences. Then, the policy gradient is calculated as follows:
+∇θiJ(π) = EU(Di)[∇θiπ(ai,t|oi,t, cp
+i,t)
+·∇ai,tQπ
+i (x, a, cq
+t)|ai,t=πi(oi,t,cp
+i,t)]
+(2)
+The action-value function Qπ
+i is updated based on
+L(θi) = EU(Di)[(ri + γQπ′
+i (x′, a′
+j, cq
+t+1)|a′
+j=π′
+j(oj,cp
+j )
+−Qπ
+i (x, a, cq
+t))2]
+(3)
+It is shown in [43] and [44] that R-MADDPG performs well for
+the following types of tasks: tasks with continuous action spaces,
+tasks involving temporal relationships, and tasks that need to in-
+fer the parameter distributions of domain randomization. Based
+on our previous experiments and analysis [40], we also ﬁnd that
+R-MADDPGsuitsourdual-UAVcooperativetransportationtask
+that will be introduced in Section V-A.
+IV. THEORY AND METHODOLOGY
+In this section, we conduct a theoretical analysis of the feasi-
+bility of the proposed methods. Subsequently, we provide a de-
+tailed overview of our proposed methods, including adversarial
+domain randomization (ADR), prioritized experience replay for
+domain randomization experiences, and distributed hierarchical
+sim2real transfer.
+A. Theoretical Foundations
+In a nonstationary Markov game model, we deﬁne the value
+function of agent i as vi
+π, and then the Bellman equation of vi
+π
+can be expressed as follows:
+vi
+π(s) =
+
+a∈A
+N
+
+j=1
+πj(aj|s)
+
+ri(s, a, u)
++ γ
+
+s′∈S
+P(s′|s, a, u)vi
+π(s′)
+
+(4)
+where s represents the current state, a represents the joint action
+of all agents except agent j and s′ represents the next state
+reached after agents take the action (aj, a) in the state s, where
+(aj, a) represents the joint action of all agents including agent
+j. And the detailed derivation of the value function vi
+π(s) can
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:32 UTC from IEEE Xplore.  Restrictions apply. 
+
+1618
+IEEE TRANSACTIONS ON INTELLIGENT VEHICLES, VOL. 9, NO. 1, JANUARY 2024
+be found in Appendix A. Clearly, the optimal Bellman equation
+can be formulated as follows:
+V i
+∗(s) = max
+πi(·|s)
+
+a∈A
+N
+
+j=1
+πj(aj|s)
+
+ri(s, a, u)
++ γ
+
+s′∈S
+P(s′|s, a, u)V i
+∗(s′)
+
+(5)
+Based on the deﬁnition of nonstationary Markov game, the inﬂu-
+ence of u ∈U on reward ri and the state transition probability P
+are both deterministic. Therefore, ri
+s and Ps belong to compact
+setsforalls ∈S andi ∈N.AccordingtoProposition2.2in[45]
+regarding the existence of Nash equilibrium in a robust Markov
+game with rewards and state transition perturbations, we can
+draw the following conclusion:
+Property 1: Suppose that state space S, domain randomiza-
+tion space U, and action space A are ﬁnite in a nonstationary
+MarkovgameG.Then,atleastonenonstationaryMarkovperfect
+Nash equilibrium exists in G.
+Speciﬁcally, for any state s ∈S and agent i ∈N, there exists
+a set of value functions V∗= (V 1
+∗, V 2
+∗, . . . , V N
+∗) such that for
+each V i
+∗:
+πi
+∗(·|s) ∈arg max
+πi(·|s)
+
+a∈A
+πi(ai|s)
+
+j̸=i
+πj
+∗(aj|s)
+
+ri(s, a, u)
++ γ
+
+s′∈S
+P(s′|s, a, u)V i
+∗(s′)
+
+(6)
+We refer to this joint policy π∗= (π1
+∗, π2
+∗, . . . , πN
+∗) as the per-
+fect Nash equilibrium of G.
+As mentioned in Section II-B, uniformly selecting the pa-
+rameter u during a training process is insufﬁcient to achieve
+a high-performance and stable policy that ﬁts various environ-
+mental situations. To address this issue, an agent should seek
+to maximize the expected reward under the worst-case situation
+resulting from the randomization parameters u such that a more
+stable policy can be trained (i.e., it can adapt better to various
+situations). The Bellman-type Equation can be represented in
+the following form:
+V
+i
+∗(s) = max
+πi(·|s) min
+u∈U
+
+a∈A
+N
+
+j=1
+πj(aj|s)
+
+ri(s, a, u)
++ γ
+
+s′∈S
+P(s′|s, a, u)V
+i
+∗(s′)
+
+(7)
+According to the fact that the inner loop can be minimized
+by a deterministic choice of u from randomization space U,
+we can optimize a policy μ : S →U to minimize the inner
+loop. This policy is named “nature player” for generating the
+randomization parameter u. We denote
+T i(s, a, u) = ri(s, a, u) + γ
+
+s′∈S
+P(s′|s, a, u)V
+i
+∗(s′)
+(8)
+Then, (7) can be rewritten as follows:
+V
+i
+∗(s)
+= max
+πi(·|s) min
+μ(·|s)
+
+a∈A
+N
+
+j=1
+πj(aj|s)
+
+ri(s, a, u)
++ γ
+
+s′∈S
+P(s′|s, a, u)V
+i
+∗(s′)
+
+= max
+πi(·|s) min
+μ(·|s)
+
+a∈A
+N
+
+j=1
+πj(aj|s)T i(s, a, u)
+= max
+πi(·|s) min
+μ(·|s) Eu∼μ(·|s),ai∼πi(·|s),a−i∼π−i(·|s)T i(s, a, u)
+(9)
+For convenience, a nonstationary Markov game with the nature
+player is called as an adversarial stationary Markov game that
+can be characterized by the following tuple:
+G := ⟨N, S, {Ai}i∈N , {Oi}i∈N , Oμ, {Ri}i∈N , U, T, γ⟩
+where oμ ∈Oμ denotes the observation of nature player μ and U
+denotes the bounded space of domain randomization parameters
+(i.e., the action space of μ). Notice that the nature player μ does
+not exist in a nonstationary Markov game.
+From (9), we can see that the form of the value function of an
+adversarial stationary Markov game is consistent with the form
+of the value function of a Markov game. Therefore, the Nash
+equilibrium of an adversarial stationary Markov game exists
+since the Nash equilibrium of any Markov game exists [39].
+Therefore, we have the following conclusion:
+Property 2: Suppose that state space S, domain randomiza-
+tion space U, and action space A are ﬁnite in an adversarial
+stationary Markov game G. Then, at least one perfect Nash
+equilibrium exists in G.
+Speciﬁcally, in an adversarial stationary Markov game, ∀s ∈
+S and ∀i ∈N, there exists a set of value functions V ∗=
+(V
+1
+∗, V
+2
+∗, . . . , V
+N
+∗) such that for each V
+i
+∗:
+
+μ∗(·|s), πi
+∗(·|s)
+
+∈arg max
+πi(·|s)
+min
+μ(·|s)
+
+u∈U
+μ(u|s)
+
+a∈A
+πi(ai|s)
+
+j̸=i
+πj
+∗(aj|s)T i(s, a, u)
+(10)
+The joint policy (μ∗, π∗) = (μ∗, π1
+∗, π2
+∗, . . . , πN
+∗) with the na-
+ture player is the perfect Nash equilibrium of this adversarial
+stationary Markov game.
+B. MARL With Adversarial Nature Player
+Fig. 1 illustrates the overall framework of training a control
+policy based on MARL and ADR. The training process of multi-
+agent policies is displayed in the left part. The agents interact
+withtheirenvironmenttoobtainthecurrentstates,generatejoint
+action a that affects the environment, and optimize their policies
+by computing rewards. For a partially observable environment,
+the paradigm of centralized training and decentralized execution
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:32 UTC from IEEE Xplore.  Restrictions apply. 
+
+CHEN et al.: ROBUST MARL METHOD BASED ON ADVERSARIAL DOMAIN RANDOMIZATION FOR REAL-WORLD DUAL-UAV COOPERATION
+1619
+Fig. 1.
+Framework for training MARL with adversarial nature player.
+is used. For a domain randomization environment, a long short-
+term memory (LSTM) network structure is employed to infer
+the distribution of the domain randomization parameter u and
+action sequences. According to (2) and (3), the policy gradient
+of R-MADDPG with domain randomization is:
+∇θiJ(π) = EU(Di)[∇θiπ(ai,t|oi,t, cp
+i,t)
+·∇ai,tQπ
+i (x, a, u, cq
+t)|ai,t=πi(oi,t,cp
+i,t)]
+(11)
+The action-value function Qπ
+i is updated based on:
+L(θi) = EU(Di)[(ri + γQπ′
+i (x′, a′
+j, u′, cq
+t+1)|a′
+j=π′
+j(oj,cp
+j )
+−Qπ
+i (x, a, u, cq
+t))2]
+(12)
+Ontheright-handsideofFig.1,thetrainingprocessofanature
+player policy, named Adversarial Environment Generator, is
+displayed. It generates domain randomization parameters for the
+ADR environment. The nature player obtains the current domain
+randomization parameter observation oμ from the current state
+s and generates the domain randomization parameter u for the
+next training step via an encoder-decoder network structure with
+parameter δ. The goal of updating δ is to minimize the loss value
+according to our loss function
+loss = α0 × r + β0 × kl −ω0 × mse
+(13)
+wherer denotestheaveragerewardobtainedbyagentsexecuting
+actions in the domain randomization environment generated by
+the parameter oμ. kl denotes the Kullback-Leibler divergence
+which measures the difference between the latent distribution of
+the output randomization parameter u and the normal distribu-
+tion of u. mse is the mean squared error, measuring the mean
+squared difference between observed oμ and generated u and
+ensuring the randomness of u. α0, β0 and ω0 are the scaling
+factors, and α0, β0, ω0 ∈[0, 1].
+Algorithm 1: MARL with Adversarial Nature Player.
+Initialize: Qσ: Critic network, πθi: Actor network for
+agent i, Q′
+σ′: Target Critic network, π′
+θ′
+i: Target Actor
+network for agent i, μδ: Nature player’s network, Di:
+Replay buffer for agent i, Z: Number of iterations;
+Reset the environment;
+for t = 1 →Z do
+Initialize Random process ϵ for action exploration;
+Generate randomization parameter u = μ(oμ);
+Update the environment based on u;
+for i = 1 →N do
+Obtain cp and cq;
+Select action ai = πi(oi) + ϵ;
+Obtain cp′ and cq′;
+end for
+Execute joint action a = (a1, a2, . . . , aN);
+Obtain reward r and new observation o′;
+Calculate Nature player’s loss based on (13);
+Update Nature player’s network μδ based on loss;
+for i = 1 →N do
+Store (oi, ai, r, o′
+i, u, cp, cq, cp′, cq′) in Di;
+Sample a batch from Di based on Algorithm 2;
+Update Qσ, πθi, Q′
+σ′, π′
+θ′
+i based on Eqs. (11) and (12);
+end for
+end for
+As α0 approaches 1, the nature player places greater emphasis
+on generating parameters for the ADR environment. As it ap-
+proaches 0, the nature player is used to generate parameters for
+generalrandomizationenvironments.Inpracticalexperiments,it
+is impossible to achieve inﬁnite training steps. To ensure a good
+performance of the trained policy in a limited number of training
+steps, it is essential to train a policy in an ADR environment and
+to ensure that the distribution of randomization parameters has
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:32 UTC from IEEE Xplore.  Restrictions apply. 
+
+1620
+IEEE TRANSACTIONS ON INTELLIGENT VEHICLES, VOL. 9, NO. 1, JANUARY 2024
+a randomness and approaches a normal distribution that ﬁts the
+real world. Algorithm 1 illustrates MARL with an adversarial
+nature player.
+C. Prioritized Experience Replay for Domain Randomization
+Experiences
+During our experiments, we observe that training a reinforce-
+ment learning model in a domain randomization environment
+often suffers from a slow convergence speed due to the general-
+ization of experiences caused by various domain randomization
+parameters. To improve the convergence efﬁciency of a training,
+we propose a prioritized experience replay method suitable for
+domain randomization experiences (PERDRE for short).
+We adopt the critic loss to measure the inﬂuence of each
+experience on updating the network. Besides, experiences with
+K-dimensional domain randomization parameters are divided
+into K subsets based on the sum of normalized domain random-
+ization parameters. Also, we create a list that records the times
+each subset has been sampled in the past training iterations.
+This list contains K rows of tuples (Subset, Counts). Then,
+the probability of an experience being sampled is calculated
+according to the following formula:
+P =
+
+Rank(Iw)
+M
+e Rank(Iw)
+αs
++ βs
+(14)
+Iw = Rank(L) + Rank′(C)
+(15)
+Here, for an experience e out of M experiences, Rank(L)
+represents its ranking based on the critic loss, while Rank′(C)
+represents the reverse ranking of the number of times that the
+corresponding subset E of e has been replayed. The impor-
+tance weight Iw is calculated for the experience based on these
+rankings and is then used to compute its sampling probability.
+Hyperparameters αs and βs are used to balance the inﬂuence of
+importance weights and random sampling. PERDRE is realized
+in Algorithm 2.
+D. Time Complexity of Algorithms
+Let the size of Batchupdate be d. Then the time complexity
+of Algorithm 2 is O(d). We assume that the time complexity
+of an agent selecting an action and the nature player generating
+randomization parameters is D1, the overall complexity of all
+agents interacting with the environment and resetting the en-
+vironment is D2, the complexity of calculating the loss value
+of the nature player and updating its network is D3, and the
+complexity of updating the critic, target critic, actor, and target
+actor networks for an agent is D4. The total time complexity of
+Algorithm 1 (when N agents execute Z iterations) is:
+O (Z (D1 + D2 + D3 + N(D1 + d + D4)))
+(16)
+E. Distributed Hierarchical Transfer
+A control system can be hierarchically and distributively
+deployed onto the onboard computer of a UAV, as illustrated
+in Fig. 2, and this method ensures the ﬂexibility of a system.
+Fig. 2.
+Distributed hierarchical Sim2Real transfer.
+Algorithm 2: PERDRE.
+Initialize: Batchupdate: a batch of experiences to update
+the networks, M: the number of random sampling size,
+K_list: a list storing subset types and their replay
+counts;
+while Batchupdate is not full do
+Randomly sample M experiences from replay buffer
+Di;
+for e = 0 →M do
+Determine the subset E the experience e belongs to;
+Get the replay count C for E based on K_list;
+Calculate the critic loss L of the experience e;
+Calculate P for each experience e based on (14);
+Generate a random number rd within [0,1];
+if rd < P then
+Insert experience e into the Batchupdate;
+Update the C for E;
+end if
+if Batchupdate is full then
+break;
+end if
+end for
+end while
+The software programs and hardware devices can be ho-
+mogeneously and distributively deployed on multiple UAVs,
+requiring only simple conﬁgurations to enable any two of them
+to cooperate on the task.
+Furthermore, the software program can be divided into three
+layers: (1) Data Perception, (2) Action Decision, and (3) Low-
+level Control. The last layer is responsible for executing complex
+ﬂight actions of UAV and obtaining video streams and sensor
+data. The 1st layer performs the target recognition on video
+stream data and processes GPS and other information. The 2nd
+layer makes top-level decisions of a UAV based on the data
+output by the data perception layer. To apply the intelligent
+policytrainedinasimulationenvironmenttoareal-worldcontrol
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:32 UTC from IEEE Xplore.  Restrictions apply. 
+
+CHEN et al.: ROBUST MARL METHOD BASED ON ADVERSARIAL DOMAIN RANDOMIZATION FOR REAL-WORLD DUAL-UAV COOPERATION
+1621
+Fig. 3.
+Diagram of dual-UAV cooperation transportation.
+system of UAVs, a target detection module and a GPS data
+processing program trained with real-world environment data
+should be used to replace the target detection module trained
+with simulation data and unreal engine global coordinate lo-
+cation information in the 1st layer. At the 2nd layer, the ADR
+method is used when training a policy in a simulation envi-
+ronment to improve the transferability of the policy. Thus, the
+trained MARL policy can be easily transferred to the real-world
+control system without additional modiﬁcations.
+V. EXPERIMENTS
+A. Test Tasks
+We use the following two environments to show the advan-
+tages of our method.
+1) LunarLander-V2: In this environment [46], the task ob-
+jective is to land a lunar lander by controlling its main engine
+and thrusters. The goal is to achieve a smooth landing, and ad-
+ditional rewards are given for landing precisely on a designated
+landing platform. Negative rewards are assigned for crashing
+the lander. The rewards are inﬂuenced by factors such as fuel
+consumption and landing velocity. In this task, there is a primary
+randomization factor, which is the variation of the main engine
+strength (MES).
+2) Dual-UAV Cooperative Transportation: The dual-UAV
+cooperative task in this article is deﬁned in our previous
+work [40], [47], [48]. As shown in Fig. 3, two UAVs work
+together to transport a payload, where the payload is secured
+by a rope. The UAVs are required to identify the target lo-
+cation, and then carry and release the payload to the target
+while ensuring the safety of the payload and maintaining a safe
+distance from each other. In order to accomplish this task, a
+transferable collaborative decision-making policy is required.
+In our previous work [40], we deploy a simulation environment
+using the AirSim simulator in Unreal Engine. We deﬁne agents,
+agent observations, rewards, and actions in the environment,
+as shown in Appendix B. In addition, as shown in Table I, six
+domain randomization parameters and their ranges are deﬁned
+TABLE I
+DOMAIN RANDOMIZATION PARAMETERS AND RANGES
+Fig. 4.
+Comparison of Mean Reward for three policies trained by ADRDQN
+(ours), UDRDQN, and DQN methods in the LunarLander-v2 environment
+considering various MES.
+based on prior knowledge. We conduct experiments in this en-
+vironment to evaluate the effectiveness of the proposed method.
+The hyperparameter settings can be found in Appendix C.
+B. Performance Analysis of Different Policies
+1) LunarLander-V2: Policies trained by the following three
+methods are evaluated in this environment with varied MES
+values.
+r ADRDQN (ours): the method that trains a policy in an
+adversarial domain randomization environment generated
+by a natural player.
+r UDRDQN: the method that trains a policy in a domain
+randomization environment generated by the traditional
+domain randomization method.
+r DQN: the baseline method that trains a policy in a ﬁxed
+environment without any randomization.
+In the LunarLander-v2 environment, the MES is viewed as a
+critical domain randomization parameter. We set its range to be
+[8, 13]. Intuitively, a smaller MES implies a more challenging
+task. We conduct experiments to test the performance of the
+policies trained by ADRDQN, UDRDQN, and DQN methods
+when MES varies arithmetically. The experimental results are
+shown in Fig. 4, indicating that the mean reward exceeding 200
+signiﬁes successful task completion.
+When MES is 12 or 13, all three policies successfully com-
+plete the task. However, as MES is decreased, the policy trained
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:32 UTC from IEEE Xplore.  Restrictions apply. 
+
+1622
+IEEE TRANSACTIONS ON INTELLIGENT VEHICLES, VOL. 9, NO. 1, JANUARY 2024
+Fig. 5.
+Comparison of completion rates for dual-UAV transportation among three policies by ADRMA (ours), UDRMA, and R-MADDPG methods.
+(a) Performance comparison across varying noise of GPS position. (b) Performance comparison in domain randomization environment.
+by DQN fails to adapt to the increasingly-challenging environ-
+ment. the policy trained by UDRDQN is still able to complete
+the task at the medium MES but struggles in environments with
+smaller MES. Ontheother hand, thepolicytrainedbyADRDQN
+shows stable performance in challenging environments while
+also effectively adapting to normal environments. This exper-
+iment conﬁrms the advantages of our method over traditional
+methods in training policies to adapt to these challenging situa-
+tions.
+2) Dual-UAV Cooperative Transportation: Policies trained
+by the following three methods are evaluated in the dual-UAV
+cooperative transportation environments.
+r ADRMA (ours): the method that trains a policy in an
+adversarial domain randomization environment generated
+by a natural player.
+r UDRMA: the method that trains a policy in a domain
+randomization environment generated by the traditional
+domain randomization method.
+r R-MADDPG: the baseline method that trains a policy in a
+ﬁxed environment without any randomization.
+Firstly, weconduct tests inanenvironment whereonlyasingle
+domain randomization parameter is changed. Additionally, we
+evaluate the performance of the policies in environments where
+all domain randomization parameters are uniformly selected
+within predeﬁned ranges.
+a) Impact of Varying a Single Domain Randomization Param-
+eter: While keeping other randomization parameters unchanged,
+we produce seven different degrees of noise on GPS position
+parameters in the predeﬁned range with equal intervals to gener-
+ate environments and conduct experiments in each environment
+for each trained policy to execute 200 episodes. The results are
+shown in Fig. 5(a). This can serve as an example for analyzing
+the speciﬁc performance of policies trained by the ADRMA,
+UDRMA, and R-MADDPG methods in domain randomization
+environments with varying degrees of randomization parame-
+ters.
+We ﬁnd that in low-noise situations, the three policies all
+perform well. As the noise increases, the baseline policy trained
+by R-MADDPG cannot adapt to a great noise. In comparison,
+the policy trained by UDRMA can maintain a task completion
+rate of around 65% in moderate noise situations. However, as
+noise increases further and the situation becomes more challeng-
+ing for completing tasks, it struggles to perform well in these
+challenging situations. On the other hand, the policy trained by
+ADRMA demonstrates stable performance to different degrees
+of noise, with a task success rate of over 75% in all situations.
+During a training, ADRMA utilizes an adversarial environ-
+ment generated by the nature player, while this environment
+tends to be more complex. As a result, under the same con-
+ditions of other factors (e.g., training iterations are the same),
+the policies trained by our method can better adapt to these
+challenging situations compared with those policies trained in an
+environment generated without the nature player. Additionally,
+Mehta et al. [31] also shows that different values of domain
+randomization parameters lead to different effects on a policy’s
+performance in an evaluated environment. When a policy adapts
+better to these challenging situations, it has better stability and
+robustness. Obviously, with the increasing of noise of GPS
+position in our application, the policy trained by our ADRMA
+shows a more stable and robust performance.
+In environments generated by high-dimensional domain ran-
+domization parameters, it is difﬁcult to intuitively deﬁne which
+environments are more challenging. We believe that the qualita-
+tive analysis of the performance of policies trained by ADRMA,
+UDRMA, and R-MADDPG methods in situations with domain
+randomization parameters along a single dimension can be
+generalized to high-dimensional.
+b) Performance in Domain Randomization Environment:
+Each policy is trained for 20000 episodes, and during each
+training, a policy is evaluated every 250 episodes by testing
+its completion rate in a fully uniform domain randomization
+environment. The results are shown in Fig. 5(b). After multiple
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:32 UTC from IEEE Xplore.  Restrictions apply. 
+
+CHEN et al.: ROBUST MARL METHOD BASED ON ADVERSARIAL DOMAIN RANDOMIZATION FOR REAL-WORLD DUAL-UAV COOPERATION
+1623
+TABLE II
+PERFORMANCE IN DOMAIN RANDOMIZATION ENVIRONMENT
+TABLE III
+COMPARISON UNDER DIFFERENT HYPERPARAMETERS
+iterations, the policy trained by ADRMA can adapt well to
+different situations and is relatively stable, with a test success
+rate of about 80%. The policy trained by UDRMA has a test
+success rate of about 73% but with higher variability. The base-
+line policy trained by R-MADDPG initially performs relatively
+well but eventually struggles to adapt to domain randomization
+environments and maintains a success rate of only about 45%
+with high variability.
+Further, we test the trained policies in a fully uniform domain
+randomization environment for 2000 episodes, and the results
+are shown in Table II. Among the 2000 episodes of testing,
+the baseline policy trained by R-MADDPG completes the task
+in less than half of the episodes. But the policies trained by
+ADRMA and UDRMA perform better and the former has a
+higher probability of completing the task obviously. It is also
+found that both policies trained by ADRMA and UDRMA have
+an improvement in completion timesteps. Therefore, it is evident
+that our method has advantages.
+c) Hyperparameter Analysis: In this section, we discuss the
+design of hyperparameters in (13). We perform experimental
+validations using three typical value settings, and the results are
+presented in Table III.
+In the ﬁrst case, the nature player is biased towards gener-
+ating adversarial environments, and the trained policy achieves
+optimal performance under this parameter setting, which is used
+as the ﬁnal conﬁguration. In contrast, the policy trained in the
+second case, where the nature player generates environments
+according to a normal distribution, exhibits poor performance.
+In the third case, where the nature player generates environments
+with random variations, the performance of the trained policy is
+comparable to that achieved by traditional domain randomiza-
+tion methods.
+C. EFFECTIVENESS OF PERDRE
+We compare the training rewards for our PERDRE and the
+traditional random experience replay (RER). As shown in Fig. 6,
+in the 20000 training episodes, the rewards obtained in the
+domain randomization environment by the policy trained by the
+Fig. 6.
+Training reward curves of PERDRE and RER.
+TABLE IV
+PERFORMANCE IN DOMAIN RANDOMIZATION ENVIRONMENT
+RER method start to converge after 10000 episodes, On the other
+hand, when using the PERDRE method, the rewards start to con-
+verge after around 6000 episodes. It can be observed that using
+PERDRE for experience replay in the domain randomization
+environments can increase the convergence speed of training
+the agent’s policy without decreasing the policy performance.
+Due to the time cost of serial interaction with the virtual engine
+environment, 20000 episodes of training take approximately
+45 hours. Therefore, improving the convergence speed of the
+rewards obtained by the training policy is valuable.
+D. SIM2REAL TRANSFER EXPERIMENT
+We successfully transfer the trained policy to the control
+system of our dual-UAV transportation task and conduct 5 ﬂight
+trials for each of the four types of initial states, as shown in
+Fig. 7. The task completion rates and completion time are shown
+in Table IV. It is evident that policy R-MADDPG, which is
+not trained in domain randomization environments, struggles to
+adapt to real-world situations. In Cases I and II, the ADRMA
+policy trained with adversarial nature player and the UDRMA
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:32 UTC from IEEE Xplore.  Restrictions apply. 
+
+1624
+IEEE TRANSACTIONS ON INTELLIGENT VEHICLES, VOL. 9, NO. 1, JANUARY 2024
+Fig. 7.
+Classiﬁcation of experiments in real-world environments. (a) Case I: Parallel. (b) Case II: Tilt. (c) Case III: Vertical. (b) Case IV: Displacement.
+policy trained with traditional domain randomization method
+both perform well. However, in Cases III and IV, ADRMA
+exhibits more stable performance compared to UDRMA, but
+completing the task in these cases often requires more time.
+Some videos about our dual-UAV transportation system can
+be found at https://ﬂml.tongji.edu.cn/TOOL.htm (please click
+the ﬁles: Co-Transportation System of Two UAVs v2-1 and Co-
+Transportation System of Two UAVs v2-2).
+VI. CONCLUSION
+In this article, we make several meaningful contributions to
+the ﬁeld of sim2real technology for MARL. Firstly, we introduce
+the adversarial domain randomization method. Deﬁne MARL
+with adversarial domain randomization as an adversarial sta-
+tionary Markov game, and provide a theoretical analysis of its
+solvability. Secondly, we propose the PERDRE algorithm to en-
+hance the convergence speed of rewards during a policy training
+in a domain randomization environment, which improves the
+training efﬁciency.
+Moreover, we apply the adversarial domain randomization
+method and PERDRE algorithm to our dual-UAV cooperative
+transportation task and demonstrate their effectiveness in im-
+proving the performance of the trained MARL policy in complex
+situations. Our methods can achieve a more stable performance
+than the traditional domain randomization method. In addition,
+we do experiments in the open environment of LunarLander-v2
+and obtain a better result, demonstrating its scalability in other
+tasks.
+Sim2real technology for MARL is a valuable study ﬁeld. In
+futurework,weplantocombinetheADRandPERDREmethods
+proposed in this article with different reinforcement learning
+algorithms to complete more practical tasks. Additionally, we
+aim to explore more valuable improvements in the domain ran-
+domization method. We hope that this article can inspire further
+study into sim2real technology for reinforcement learning.
+APPENDIX A
+DERIVATION OF BELLMAN EQUATION FOR VALUE FUNCTION IN
+NONSTATIONARY MARKOV GAMES
+In a nonstationary Markov games, the probability of s′ ∈S
+and ri ∈Ri occurring at time t for a particular agent i can be
+expressed as follows:
+pi(s′, ri|s, a, u)
+=Pr
+⎧
+⎨
+⎩St = s′, Ri
+t =ri|St−1 = s,
+N
+
+j=1
+Aj
+t−1 =a, Ut−1 = u
+⎫
+⎬
+⎭
+(17)
+According to (17), the state transition probability can be ex-
+pressed as the following function:
+P : S × S ×
+N
+
+j=1
+Aj × U →[0, 1]
+(18)
+i.e.
+P(s′|s, a, u)
+= Pr
+⎧
+⎨
+⎩St = s′|St−1 = s,
+N
+
+j=1
+Aj
+t−1 = a, Ut−1 = u
+⎫
+⎬
+⎭
+=
+
+r∈Ri
+pi(s′, ri|s, a, u)
+(19)
+Similarly, the expected reward can be deﬁned by State-Action-
+Randomization as follows:
+ri : S ×
+N
+
+j=1
+Aj × U →R
+(20)
+i.e.
+ri(s, a, u)
+= E
+⎧
+⎨
+⎩Ri
+t|St−1 = s,
+N
+
+j=1
+Aj
+t−1 = a, Ut−1 = u
+⎫
+⎬
+⎭
+=
+
+ri∈Ri
+ri 
+s′∈S
+pi(s′, ri|s, a, u)
+(21)
+Based on the basic property that the value function satisﬁes re-
+cursion, we can construct the recursive formula for the expected
+return: Gi
+t = Ri
+t+1 + γGi
+t+1. For any policy πi of agent i and
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:32 UTC from IEEE Xplore.  Restrictions apply. 
+
+CHEN et al.: ROBUST MARL METHOD BASED ON ADVERSARIAL DOMAIN RANDOMIZATION FOR REAL-WORLD DUAL-UAV COOPERATION
+1625
+any state s, there exists a relationship between the value of state
+s and the values of its possible successor states, which can be
+expressed as follows:
+vi
+π(s) = Eπ[Gt|St = s]
+= Eπ[Ri
+t+1 + γGi
+t+1|St = s]
+=
+
+a∈A
+N
+
+j=1
+πj(aj|s)
+
+s′∈S
+
+ri∈Ri
+pi(s′, ri|s, a, u)
+
+ri + γE[Gi
+t+1|St = s]
+
+=
+
+a∈A
+N
+
+j=1
+πj(aj|s)
+
+s′∈S
+
+ri∈Ri
+pi(s′, ri|s, a, u)
+
+ri + γvi
+π(s′)
+
+(22)
+The Bellman equation for the value function in a nonstationary
+Markovgamecanbefurtherexpressedaccordingto(19)and(21)
+as follows:
+vi
+π(s) =
+
+a∈A
+N
+
+j=1
+πj(aj|s)
+
+ri(s, a, u)
++ γ
+
+s′∈S
+P(s′|s, a, u)vi
+π(s′)
+
+(23)
+APPENDIX B
+ENVIRONMENT
+The Markov game model in our application is constructed as
+follows:
+1) Agent: Each UAV is considered as an agent, and the total
+number of agents is N = 2.
+2) Observation: Each agent’s observation includes the fol-
+lowing two parts:
+•(dx, dy): The relative positional coordinates of another
+agent with respect to itself.
+•(px1, py1, px2, py2):Thepositioncoordinatesofthetop-
+left and bottom-right corners of the target objects in the
+video stream. There are four sets of such coordinates
+for the two target objects detected by the forward and
+downward-facing cameras.
+3) Action: The two-dimensional linear velocity and yaw rate
+of a UAV in the horizontal plane (vx, vy, yaw).
+4) Reward: The agents share a team reward, and the reward
+function is deﬁned as:
+R = αrrd + βrcost + ωrrcom
+(24)
+where αr, βr and ωr are the scaling parameters.
+rt
+d =
+
+i
+dt−1
+i
+−dt
+i
+(25)
+where dt
+i represents the distance from UAV i to the nearest
+target object at time t.
+costt =
+
+−|dt−1
+c
+−dt
+c|,
+if not terminated
+pun(dt
+c, speed),
+otherwise
+(26)
+TABLE V
+EXPERIMENTAL PARAMETER
+For the following two cases: the distance between the two
+UAVs is not in the safe distance range or the execution
+step of an episode exceeds T steps, they are considered
+infeasible solutions, and then a signiﬁcant negative reward
+isassigned. dt
+c representstherelativedistancebetweentwo
+drones at time t. The speed of UAVs is deﬁned as:
+speed =
+
+i
+
+v2xi + v2yi
+(27)
+rt
+com =
+
+T −t,
+if completed
+0,
+otherwise
+(28)
+where T is the maximum episode length and we set T =
+30(step) in our experiments.
+APPENDIX C
+EXPERIMENTAL PARAMETER SETTINGS
+Table V lists the hyperparameters and their values used in our
+dual-UAV cooperative transportation.
+REFERENCES
+[1] Z. Zhang, X. Peng, and A. Zhang, “Trajectory tracking control for
+quadrotor slung load system with unknown load’s linear velocity and
+cable length,” IEEE Trans. Intell. Veh., early access, Apr. 25, 2023,
+doi: 10.1109/TIV.2023.3270165.
+[2] Y. Wang, G. Yu, W. Xie, W. Zhang, and C. Silvestre, “Cooperative
+path following control of a team of quadrotor-slung-load systems under
+disturbances,” IEEE Trans. Intell. Veh., early access, May 09, 2023,
+doi: 10.1109/TIV.2023.3274671.
+[3] Y. Zhao, F. Lin, and G. Guo, “Composite anti-disturbance dynamic posi-
+tioning for mass-switched unmanned marine vehicles,” IEEE Trans. Intell.
+Veh., early access, May 23, 2023, doi: 10.1109/TIV.2023.3279296.
+[4] J. Zhang et al., “PSO-based sparse source location in large-scale environ-
+ments with a UAV swarm,” IEEE Trans. Intell. Transp. Syst., vol. 24, no. 5,
+pp. 5249–5258, May 2023.
+[5] H. Li, Y. Wu, and M. Chen, “Adaptive fault-tolerant tracking control for
+discrete-time multiagent systems via reinforcement learning algorithm,”
+IEEE Trans. Cybern., vol. 51, no. 3, pp. 1163–1174, Mar. 2021.
+[6] C. Wang, J. Wang, Y. Shen, and X. Zhang, “Autonomous navigation of
+UAVsinlarge-scalecomplexenvironments:Adeepreinforcementlearning
+approach,” IEEE Trans. Veh. Technol., vol. 68, no. 3, pp. 2124–2136,
+Mar. 2019.
+[7] C. Wu et al., “UAV autonomous target search based on deep rein-
+forcement learning in complex disaster scene,” IEEE Access, vol. 7,
+pp. 117227–117245, 2019.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:32 UTC from IEEE Xplore.  Restrictions apply. 
+
+1626
+IEEE TRANSACTIONS ON INTELLIGENT VEHICLES, VOL. 9, NO. 1, JANUARY 2024
+[8] Y.-J. Chen, D.-K. Chang, and C. Zhang, “Autonomous tracking using
+a swarm of UAVs: A constrained multi-agent reinforcement learning
+approach,” IEEE Trans. Veh. Technol., vol. 69, no. 11, pp. 13702–13717,
+Nov. 2020.
+[9] Z. Mou, Y. Zhang, F. Gao, H. Wang, T. Zhang, and Z. Han, “Deep
+reinforcement learning based three-dimensional area coverage with uav
+swarm,” IEEE J. Sel. Areas Commun., vol. 39, no. 10, pp. 3160–3176,
+Oct. 2021.
+[10] F. Wang, J. Huang, K. H. Low, and T. Hu, “Collective navigation of aerial
+vehicle swarms: A ﬂocking inspired approach,” IEEE Trans. Intell. Veh.,
+early access, May 01, 2023, doi: 10.1109/TIV.2023.3271667.
+[11] W. Zhao, J. P. Queralta, and T. Westerlund, “Sim-to-real transfer in deep
+reinforcement learning for robotics: A survey,” in Proc. IEEE Symp. Ser.
+Comput. Intell., 2020, pp. 737–744.
+[12] W. Zhu, X. Guo, D. Owaki, K. Kutsuzawa, and M. Hayashibe, “A survey
+of sim-to-real transfer techniques applied to reinforcement learning for
+bioinspired robots,” IEEE Trans. Neural Netw. Learn. Syst., vol. 34, no. 7,
+pp. 3444–3459, Jul. 2023.
+[13] J. Tobin, R. Fong, A. Ray, J. Schneider, W. Zaremba, and P. Abbeel, “Do-
+main randomization for transferring deep neural networks from simulation
+to the real world,” in Proc. IEEE/RSJ Int. Conf. Intell. Robots Syst., 2017,
+pp. 23–30.
+[14] H. Liu, L. Yang, and H. Yang, “Cooperative optimal control of the fol-
+lowing operation of high-speed trains,” IEEE Trans. Intell. Transp. Syst.,
+vol. 23, no. 10, pp. 17744–17755, Oct. 2022.
+[15] G. Skorobogatov, C. Barrado, and E. Salamí, “Multiple UAV systems: A
+survey,” Unmanned Syst., vol. 8, no. 2, pp. 149–169, 2020.
+[16] Z. Zhou, G. Liu, and Y. Tang, “Multi-agent reinforcement learn-
+ing: Methods, applications, visionary prospects, and challenges,” 2023,
+doi: 10.48550/arXiv.2305.10091.
+[17] B. G. Maciel-Pearson, L. Marchegiani, S. Akcay, A. A. Abarghouei, J.
+Garforth, and T. P. Breckon, “Online deep reinforcement learning for
+autonomous UAV navigation and exploration of outdoor environments,”
+2019, arXiv:1912.05684.
+[18] D. Wang, T. Fan, T. Han, and J. Pan, “A two-stage reinforcement learning
+approach for multi-UAV collision avoidance under imperfect sensing,”
+IEEE Robot. Automat. Lett., vol. 5, no. 2, pp. 3098–3105, Apr. 2020.
+[19] L. Wang, K. Wang, C. Pan, W. Xu, N. Aslam, and L. Hanzo, “Multi-agent
+deep reinforcement learning-based trajectory planning for multi-UAV
+assisted mobile edge computing,” IEEE Trans. Cogn. Commun. Netw.,
+vol. 7, no. 1, pp. 73–84, Mar. 2021.
+[20] Z. Zhou, G. Liu, and M. Zhou, “A robust mean-ﬁeld actor-critic re-
+inforcement learning against adversarial perturbations on agent states,”
+IEEE Trans. Neural Netw. Learn. Syst., early access, Jun. 05, 2023,
+doi: 10.1109/TNNLS.2023.3278715.
+[21] K. D. Julian and M. J. Kochenderfer, “Distributed wildﬁre surveillance
+with autonomous aircraft using deep reinforcement learning,” J. Guid.,
+Control, Dyn., vol. 42, no. 8, pp. 1768–1778, 2019.
+[22] H. X. Pham, H. M. La, D. Feil-Seifer, and L. V. Nguyen, “Cooperative
+and distributed reinforcement learning of drones for ﬁeld coverage,” 2018,
+arXiv:1803.07250.
+[23] O. Walker, F. Vanegas, F. Gonzalez, and S. Koenig, “Multi-UAV target-
+ﬁnding in simulated indoor environments using deep reinforcement learn-
+ing,” in Proc. IEEE Aerosp. Conf., 2020, pp. 1–9.
+[24] M. Yang, G. Liu, Z. Zhou, and J. Wang, “Partially observable mean
+ﬁeld multi-agent reinforcement learning based on graph attention net-
+work for UAV swarms,” Drones, vol. 7, no. 7, 2023, Art. no. 476,
+doi: 10.3390/drones7070476.
+[25] Z. Zhou and G. Liu, “Robustness testing for multi-agent rein-
+forcement learning: State perturbations on critical agents,” 2023,
+doi: 10.48550/arXiv.2306.06136.
+[26] H. Jo et al., “Multi-agent reinforcement learning-based UAS control for
+logistics environments,” in Proc. Asia-Paciﬁc Int. Symp. Aerosp. Technol.,
+2021, pp. 963–972.
+[27] S. Jeon et al., “Multiagent reinforcement learning based on fusion-
+multiactor-attention-critic for multiple-unmanned-aerial-vehicle naviga-
+tion control,” Energies, vol. 15, no. 19, 2022, Art. no. 7426. [Online].
+Available: https://www.mdpi.com/1996-1073/15/19/7426
+[28] S. Han, K. Zhu, M. Zhou, and X. Liu, “Joint deployment optimization and
+ﬂight trajectory planning for UAV assisted IoT data collection: A bilevel
+optimization approach,” IEEE Trans. Intell. Transp. Syst., vol. 23, no. 11,
+pp. 21492–21504, Nov. 2022.
+[29] O. M. Andrychowicz et al., “Learning dexterous in-hand manipulation,”
+Int. J. Robot. Res., vol. 39, no. 1, pp. 3–20, 2020.
+[30] E. Candela, L. Parada, L. Marques, T.-A. Georgescu, Y. Demiris, and P.
+Angeloudis, “Transferring multi-agent reinforcement learning policies for
+autonomous driving using sim-to-real,” in Proc. IEEE/RSJ Int. Conf. Intell.
+Robots Syst., 2022, pp. 8814–8820.
+[31] B. Mehta, M. Diaz, F. Golemo, C. J. Pal, and L. Paull, “Active domain
+randomization,” in Proc. Conf. Robot Learn., 2020, pp. 1162–1176.
+[32] S. C. Raparthy, B. Mehta, F. Golemo, and L. Paull, “Generating auto-
+matic curricula via self-supervised active domain randomization,” 2020,
+arXiv:2002.07911.
+[33] F. Muratore, C. Eilers, M. Gienger, and J. Peters, “Data-efﬁcient domain
+randomization with bayesian optimization,” IEEE Robot. Automat. Lett.,
+vol. 6, no. 2, pp. 911–918, Apr. 2021.
+[34] L.-J. Lin, “Self-improving reactive agents based on reinforcement
+learning, planning and teaching,” Mach. Learn., vol. 8, pp. 293–321,
+1992.
+[35] T. Schaul, J. Quan, I. Antonoglou, and D. Silver, “Prioritized experience
+replay,” 2016, doi: 10.48550/arXiv.1511.05952.
+[36] M. Brittain, J. R. Bertram, X. Yang, and P. Wei, “Prioritized sequence
+experience replay,” 2019, arXiv:1905.12726.
+[37] S. Sinha, J. Song, A. Garg, and S. Ermon, “Experience replay with
+likelihood-free importance weights,” in Proc. 4th Annu. Conf. Learn. Dyn.
+Control, 2022, pp. 110–123.
+[38] W. W. Cohen and H. Hirsh, “Markov games as a framework for multi-agent
+reinforcement learning,” in Proc. Mach. Learn., 1994, pp. 157–163.
+[39] A. M. Fink, “Equilibrium in a stochastic n-person game,” J. Sci. Hiroshima
+Univ., Ser. AI (Math.), vol. 28, no. 1, pp. 89–93, 1964.
+[40] H. Shi, G. Liu, K. Zhang, Z. Zhou, and J. Wang, “Marl sim2real
+transfer: Merging physical reality with digital virtuality in metaverse,”
+IEEE Trans. Syst., Man, Cybern.: Syst., vol. 53, no. 4, pp. 2107–2117,
+Apr. 2023.
+[41] R. E. Wang, M. Everett, and J. P. How, “R-MADDPG for partially observ-
+able environments and limited communication,” 2020, arXiv:2002.06684.
+[42] R. Lowe, Y. WU, A. Tamar, J. Harb, O. Pieter Abbeel, and I. Mor-
+datch, “Multi-agent actor-critic for mixed cooperative-competitive en-
+vironments,” in Proc. 31st Int. Conf. Neural Inf. Process. Syst., 2017,
+pp. 6382–6393.
+[43] X. Wei, L. Yang, G. Cao, T. Lu, and B. Wang, “Recurrent maddpg for
+object detection and assignment in combat tasks,” IEEE Access, vol. 8,
+pp. 163334–163343, 2020.
+[44] T. Ibrahim, “Guided domain randomization with meta reinforcement
+learning,” Master Sci. Thesis, Tampere Univ., Tampere, Finland, 2022.
+[Online]. Available: https://trepo.tuni.ﬁ/bitstream/handle/10024/142061/
+IbrahimTarek.pdf?sequence=2
+[45] K. Zhang, T. Sun, Y. Tao, S. Genc, S. Mallya, and T. Basar, “Robust
+multi-agent reinforcement learning with model uncertainty,” in Proc. 34th
+Int. Conf. Neural Inf. Process. Syst., 2020, pp. 10571–10583.
+[46] G. Brockman et al., “Openai gym,” 2016, arXiv:1606.01540.
+[47] Q. L. Weng, G. J. Liu, P. Zhou, H. R. Shi, and K. W. Zhang, “Co-TS:
+Design and implementation of a 2-UAV cooperative transportation sys-
+tem,” Int. J. Micro Air Veh., vol. 15, 2023, Art. no. 17568293231158443,
+doi: 10.1177/17568293231158443.
+[48] P. Zhou, G. Liu, J. Wang, Q. Weng, K. Zhang, and Z. Zhou, “Lightweight
+unmanned aerial vehicle video object detection based on spatial-temporal
+correlation,” Int. J. Commun. Syst., vol. 35, no. 17, 2022, Art. no. e5334.
+[Online]. Available: https://doi.org/10.1002/dac.5334
+Shutong Chen received the B.S. degree in computer
+science and technology from Sichuan University,
+Chengdu, China, in 2021. She is currently working
+toward the M.S. degree in computer science and
+technology with Tongji University, Shanghai, China.
+Her research interests include reinforcement learning
+and intelligent control systems.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:32 UTC from IEEE Xplore.  Restrictions apply. 
+
+CHEN et al.: ROBUST MARL METHOD BASED ON ADVERSARIAL DOMAIN RANDOMIZATION FOR REAL-WORLD DUAL-UAV COOPERATION
+1627
+Guanjun Liu (Senior Member, IEEE) received the
+Ph.D. degree in computer software and theory from
+Tongji University, Shanghai, China, in 2011. He was
+a Postdoctoral Research Fellow with the Singapore
+University of Technology and Design, Singapore,
+from 2011 to 2013, and a Postdoctoral Research
+Fellow with the Humboldt University of Berlin,
+Berlin, Germany, from 2013 to 2014, supported by
+the Alexander von Humboldt Foundation. He is cur-
+rently a Professor with the Department of Computer
+Science, Tongji University. He has authored or coau-
+thored more than 150 papers and authored three books: Petri Nets: Theoretical
+Models and Analysis Methods for Concurrent Systems (Springer, 2022), Primary
+Unfolding of Petri Nets: A Model Checking Method for Concurrent Systems (in
+Chinese, Science Press, 2020), and Liveness of Petri Nets and Its Application
+(in Chinese, Tongji University Press, 2020). His research interests include Petri
+net theory, model checking, machine learning, cyber-physical systems, and
+multi-UAV cooperation. He was the Guest Editor of some journals including
+the IEEE TRANSACTIONS ON COMPUTATIONAL SOCIAL SYSTEMS, Mathematical
+Problems in Engineering, Drones, and Journal of Software (in Chinese), and
+also a Program Committee Member of many international conferences. He is
+currently an Associate Editor for the IEEE TRANSACTIONS ON COMPUTATIONAL
+SOCIAL SYSTEMS.
+Ziyuan Zhou received the B.S. degree from the
+ChinaUniversity of Mining and Technology,Xuzhou,
+China, in 2020. She is currently working toward
+the Ph.D. degree in computer software and theory
+with the Department of Computer Science, Tongji
+University, Shanghai, China. Her research interests
+include reinforcement learning, multi-agent system,
+and adversarial attacks.
+Kaiwen Zhang received the M.S. degree from the
+College of Automation Engineering, Shanghai Uni-
+versity of Electric Power, Shanghai, China, in 2021.
+He is currently working toward the Ph.D. degree in
+computer software and theory with the Department of
+Computer Science, Tongji University, Shanghai. His
+research interests include software analysis, petri net,
+and formal veriﬁcation.
+Jiacun Wang (Senior Member, IEEE) received the
+Ph.D. degree in computer engineering from the Nan-
+jing University of Science and Technology, Nanjing,
+China, in 1991. He was a Research Associate with the
+School of Computer Science, Florida International
+University, Miami, FL, USA. From 2001 to 2004,
+he was a Member of Scientiﬁc Staff with Nortel
+Networks, Richardson, TX, USA. He is currently a
+Professor of Software Engineering with Monmouth
+University, West Long Branch, NJ, USA. He has
+authored Timed Petri Nets: Theory and Application
+Kluwer (1998), Real-Time Embedded Systems (Wiley, 2018), and Formal Meth-
+ods in Computer Science (CRC, 2019), edited Handbook of Finite State Based
+Models and Applications (CRC, 2012), and published more than 130 research
+papers in journals and conferences. His research interests include software engi-
+neering,discreteeventsystems,formalmethods,machinelearning,andreal-time
+distributed systems. Dr. Wang was the General Chair, Program Chair, special
+session Chair, or Steering Committee Chair of many international conferences.
+He was an Associate Editor for the IEEE TRANSACTIONS ON SYSTEMS, MAN,
+AND CYBERNETICS–PART C: APPLICATIONS AND REVIEWS PUBLICATION INFOR-
+MATION. He is an Associate Editor for IEEE/CAA JOURNAL OF AUTOMATICA
+SINICA.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:32 UTC from IEEE Xplore.  Restrictions apply. 

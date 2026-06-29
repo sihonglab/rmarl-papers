@@ -1,0 +1,774 @@
+ROMUC: A Robust Policy Learning Method for
+Multi-USV Cooperative Tasks
+1st Peng Li
+College of Intelligence Science and Technology
+National University of Defense Technology
+Changsha, China
+lipeng@nudt.edu.cn
+2nd Shaofei Chen
+College of Intelligence Science and Technology
+National University of Defense Technology
+3rd Ao Ma
+College of Intelligence Science and Technology
+Changsha, China
+shaofeichen@nudt.edu.cn
+National University of Defense Technology
+Changsha, China
+maao@nudt.edu.cn
+4th Jing Chen*
+College of Intelligence Science and Technology
+National University of Defense Technology
+Changsha, China
+chenjing@nudt.edu.cn
+Abstract—Multiple unmanned surface vehicles (USV) have
+demonstrated signiﬁcant advantages through cooperation in com-
+plex maritime tasks. However, in open waters, multi-USV systems
+face dual risks arising from decision-making methodologies and
+environmental uncertainties, posing signiﬁcant challenges to the
+robustness of cooperative policies. To address this challenge,
+this paper proposes a robust policy learning method ROMUC
+based on multi-agent reinforcement learning (MARL). Firstly,
+ROMUC addresses environmental uncertainties by learning the
+complete distribution of action values rather than scalar expected
+values. Secondly, it employs value average and operator switching
+methods to mitigate risks caused by inherent overestimation
+errors in decision-making approaches, thereby enhancing the
+robustness of cooperative policies for multi-USV. Finally, through
+testing in two typical mission scenarios (pursuit and denial) and
+comparisons with mainstream MARL methods, results demon-
+strate that the ROMUC approach effectively addresses dual
+challenges of environmental uncertainties and overestimation
+errors, signiﬁcantly improving the robustness of cooperative
+policies.
+I. I
+Index Terms—multi-USV, multi-agent, distribution reinforce-
+ment learning, robustness, cooperative policies
+NTRODUCTION
+Unmanned surface vehicles (USV), as small unmanned
+maritime mission platforms, are characterized by ﬂexible ma-
+neuverability and high cost-effectiveness [1]. They have been
+widely applied in various maritime tasks such as maritime
+surveillance [2], resource exploration [3], and rescue/salvage
+operations [4]. Due to limitations of single USV in endurance,
+operational capabilities, and mission diversity, they struggle
+to meet increasingly complex environmental demands and
+highly adversarial mission requirements. Consequently, multi-
+USV cooperative mission execution have attracted signiﬁcant
+attention. However, in open waters, multi-USV not only face
+uncertainties such as ocean currents, wind speeds, and reefs
+that impact collaboration, but also confront uncertainties in
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+their own cooperative policies. These factors expose multi-
+USV cooperations to high risks, making the achievement
+of robust cooperation under risk conditions an extremely
+7KLVZRUNZDVVXSSRUWE\WKHNationaO1DWXUDOScience Foundation
+of China (62376280).
+challenging problem.
+In recent years, multi-agent reinforcement learning (MARL)
+has shown great potential by modeling the cooperative
+decision-making problem of multi-USV as a partially ob-
+servable Markov decision model [5]–[9], and has received
+widespread attention from researchers. For example, QMIX
+decomposes the global value function into local value func-
+tions for each agent through nonlinear mapping relationships
+under the assumption of monotonicity. It can learn good
+policies in complex environments and achieve excellent multi-
+agent cooperation performance in complex game scenarios
+such as Starcraft. The decomposition method of VDN is
+different from QMIX, as it uses a simple linear summation to
+represent the global value function, which can also play a good
+role in simple cooperative scenarios. Wang et al. [10] proposed
+an adaptive adjustment method based on MADDPG to solve
+the cooperative target intrusion problem in multi-USV. Li et
+al. [11] achieved the target tracking task of multi-USV through
+probabilistic data extraction and action constraint methods
+Gan et al. [12] proposed a MARL method based on MA-
+POCA and constructed an obstacle assisted pursuit framework
+to improve the collaborative pursuit efﬁciency of multi-USV.
+Wei et al. [13] proposed a multi-USV formation path planning
+algorithm based on target based hierarchical reinforcement
+learning to solve the planning conﬂicts within the formation,
+and designed an improved artiﬁcial potential ﬁeld algorithm
+during the training process to obtain the optimal path planning
+and obstacle avoidance learning scheme for multi-USV.
+However, the aforementioned MARL algorithms, while
+demonstrating excellent performance in multi-USV tasks such
+as target tracking and path planning, do not consider the impact
+of risks on the multi-agent cooperative policy learning process.
+To address the problem of robust multi-agent policy learning
+under risk conditions, some researchers have conducted studies
+from the perspective of robust MARL. For instance, Zhao
+
+
+
+$PSSFTQPOEJOH BVUIPS
+979-8-3315-8787-1/25/$31.00 © 2025 IEEE
+1294
+2025 Asian Conference on Artificial Intelligence Technology (ACAIT) | 979-8-3315-8787-1/25/$31.00 ©2025 IEEE | DOI: 10.1109/ACAIT67930.2025.11522108
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:34:17 UTC from IEEE Xplore.  Restrictions apply. 
+
+et al. [14] proposed a MARL method with random stopping
+mechanisms, achieving path tracking for underactuated multi-
+USV formations. Literatures [15], [16] simulated output per-
+turbations by adding noise to action outputs, enabling agents to
+access other states in the environment with a certain probabil-
+ity. Zhang et al. [17] addressed safety challenges in multi-USV
+mission planning by developing a method that employs deep
+neural networks to map the state spaces of task allocation
+and autonomous collision avoidance subproblems to each
+USV’s action space, while evaluating the generated policies
+through corresponding reward functions. Meanwhile, Ren et
+al. [18] proposed a novel noise-added multi-agent proximal
+policy pptimization method by injecting perturbations into the
+input of advantage functions to enhance their generalization
+capability, thereby improving the exploration efﬁciency of
+cooperative policies for multi-USV systems.
+Nevertheless, the approach of enhancing the robustness of
+MARL methods by adding perturbations has evident limita-
+tions: (1) it is difﬁcult to fully consider the risks brought
+by various uncertainties in the environment; (2) it fails to
+address risks caused by inherent errors in MARL methods
+themselves. Previous work like the VAOS [19] method em-
+ployed value averaging and operator switching to mitigate
+risks from methodological errors, which achieved signiﬁcant
+effectiveness in gaming scenarios. However, it only addressed
+methodological error risks without countering environmental
+risks. Perturbation-based approaches can only handle speciﬁc
+disturbances while lacking capability to address other environ-
+mental risks and risks stemming from decision-making method
+errors themselves.
+Therefore, this paper fully considers these two types of
+risks in MARL, proposing a robust policy learning method for
+multi-USV cooperative tasks, called ROMUC. ROMUC ﬁrst
+employs the quantile regression method to approximate the
+complete distribution information of action values, replacing
+the traditional Q-value represented by expected values in con-
+ventional MARL, thereby better learning various uncertainties
+in the environment. Second, to mitigate policy risks caused by
+inherent errors in MARL methods, ROMUC integrates value
+averaging and operator switching methods to reduce overesti-
+mation errors and improve algorithmic stability. Experimental
+results on two multi-USV cooperative tasks demonstrate that
+the robust performance of ROMUC method shows signiﬁcant
+improvement compared to current baseline algorithms.
+II. BACKGROUND
+This paper models the cooperative policy learning problem
+of multiple unmanned surface vessels as a Dec-POMDP
+model. The Dec-POMDP model is deﬁned as a tuple G =<
+S, A, P, r, Z, O, N, γ >, where s ∈S represents the true
+global state in the environment where agents are situated,
+and A is the set containing actions of all agents. At any
+timestep t, agent i ∈{1, 2, ..., n} selects an action ai ∈A
+according to its policy, thereby forming a joint action u =
+[a1, a2, ..., an] ∈An. Under the joint action u and state
+transition probability P (st+1|st, u) : S ×An ×S →[0, 1], the
+environment transitions from state st to the next state st+1,
+and the agent receives a reward r(st, u) : S × An →R
+(with |r(st, u)| ≤Rmax). In the Dec-POMDP model, each
+agent has a local observation o ∈O of the environment,
+determined by the function Z(s, i) : S × N →O. Each
+agent employs τi ∈T ≡(O × A)∗to represent the historical
+information of observation-action data. The stochastic policy
+πi(ai|τi) : T × A →[0, 1] represents the probability of
+agent i selecting action a under τ. γ ∈[0, 1) is the dis-
+count factor when calculating cumulative return. The learning
+objective of multi-USV is to ﬁnd a joint optimal policy
+π =< π1, π2, ..., πn > that maximizes the joint action value
+Qπ(st, u) = E[
+∞
+
+v=0
+γvrt+v].
+Value decomposition MARL has emerged as a mainstream
+framework for addressing cooperative multi-agent tasks by
+explicitly modeling the relationship between individual and
+global values. Its core idea lies in decomposing the global
+value function into local value functions of individual agents,
+thereby enabling efﬁcient joint policy learning to tackle critical
+challenges in multi-agent systems such as credit assignment
+and environmental non-stationarity. For example, VDN uses
+a linear function to represent the relationship between the
+two, i.e. Qtot(s, u) =
+N
+
+i=1
+Qi(o, a; θi), while QMIX uses
+a monotonic nonlinear function to represent it. It should
+be noted that QMIX assumes the validity of the Individual
+Global Max (IGM) principle, namely: arg max
+u
+Qtot(s, u) =
+
+arg max
+a1 Q1(o1, a1), ..., arg max
+aN QN(oN, aN)
+
+. The opti-
+mization objective in the value decomposition MARL method
+is to minimize the loss: L =  (ytot −Qtot)2, where ytot =
+r + γmaxu′Qtot.
+III. METHODOLOGY
+The ROMUC method adopts a framework of centralized
+training with decentralized execution. During the centralized
+training phase, it coordinates the learned action-value distri-
+butions of different agents by accessing the global state, en-
+abling agents to specify policies using their own observational
+information during decentralized deployment. We implement
+the mixing of policy value distributions for all agents through
+QMIX’s mixing network, which satisﬁes the monotonicity
+constraint. Furthermore, in this policy network, we employ
+an implicit quantile network to integrate environmental risk
+knowledge into policy learning, thereby enabling agents to
+generate risk-aware policies. The architecture of ROMUC
+method is shown in Figure 1.
+A. Distribution representation
+We employ methods from distributional RL [20]–[22] to
+represent the action value Qi as action value distribution
+information Zi, where E [Zi] = Qi. By approximating the
+agent’s action value using complete distributional information
+of action values, we can more comprehensively learn environ-
+mental uncertainty information contained in the action values,
+1295
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:34:17 UTC from IEEE Xplore.  Restrictions apply. 
+
+Fig. 1: ROMUC method architecture.
+thereby better addressing environmental risks. As shown on
+the right side of Figure 1, the agent’s policy network takes
+the current observation and action as input, then uses an
+implicit quantile function F −1
+z
+(s, u|ω) = f(ϕ(o) ⊙φ(ω))u to
+approximate the return distribution Zi, where F −1
+Z (ω) denotes
+the quantile function of distribution Zi on ω ∈[0, 1]. ϕ and
+φ respectively represent differentiable functions that integrate
+observation information o and environmental risk level ω, each
+represented by multi-layer perceptron (MLP) networks. f is a
+nonlinear mapping function that uses fully connected layers to
+map ϕ(o) ⊙φ(ω) onto the estimated action value distribution,
+where ⊙denotes element-wise product. And the MLP network
+structure and parameters remain consistent with the IQN [22].
+After
+the
+policy
+network
+obtains
+the
+action
+value
+distribution of each agent, we employ a mixing network to
+perform the credit assignment process. Drawing inspiration
+from
+QMIX’s
+monotonic
+mixing
+network
+architecture,
+we
+decompose
+the
+joint
+policy
+value
+distribution
+into
+individual agent policy value distributions (denoted as Ztot =
+
+Ztot|Ztot(s, u) = F (E (Z1) , ..., E (Zn)) ,
+∂F
+∂E(Zi) ≥0
+
+),
+thereby satisfying the distributional IGM principle:
+arg maxuE [Ztot (s, u)] =
+⎛
+⎜
+⎝
+arg maxa1E [Z1 (o1, a1)]
+...
+arg maxanE [ZN (oN, aN)]
+⎞
+⎟
+⎠
+(1)
+B. Value averaging and operator switching
+The concept of value averaging originates from the Av-
+eraged DQN [23]. The speciﬁc approach involves approxi-
+mating action values by averaging the outputs of multiple
+policy networks of agents, thereby enhancing the robustness of
+policy learning in multi-agent environments through variance
+reduction. Speciﬁcally, value averaging refers to computing
+the mean of the expected values from both the action value
+distributions output by the global target mixing network and
+the target policy networks of individual agents, as illustrated
+in Figure 1.
+ROMUC ﬁrst designs L target policy networks, then takes
+the average of the outputs from these L target policy networks
+as the input to the target mixing network, thereby reducing
+the impact of policy network parameter randomness on the
+output results, i.e., Zave
+i
+= 1
+L
+L
+l=1 Zl
+i. In the mixing network,
+ROMUC decomposes the joint policy value distribution Ztot
+and the target joint policy value distribution Zave
+tot
+into the
+outputs Zi of all agent policy networks and the outputs
+Zave
+i
+of target policy networks through a monotonic mix-
+ing network, i.e., Ztot(s, u) = F (E (Z1) , ..., E (Zn)). The
+target mixing network also averages the output values of
+the K networks, i.e., Zave
+tot (s, u) =
+1
+K
+K
+k=1 Zk
+tot, where
+Zk
+tot(s, u) = F (E (Zave
+1
+) , ..., E (Zave
+n
+)).
+The optimization objective of ROMUC is to ﬁnd a joint
+policy that satisﬁes the Bellman equation: T ∗Ztot(s, u) :=
+E [r + γmaxu′Zave
+tot (s′, u′)], such that the joint policy value
+distribution Ztot is optimal, where T ∗represents the Bellman
+optimality operator. However, although adopting the Max
+operator to select joint actions and iteratively optimizing the
+joint policy value distribution can quickly solve for the optimal
+joint policy, it may easily lead to algorithmic overestimation of
+the true joint policy value distribution [24]. Therefore, to re-
+duce this error, we employ the operator switching mechanism
+from VAOS, which switches between using the Mellowmax
+operator [25] and the Max operator when approximating the
+TD target. This combines the strong exploratory advantage
+of Max operator with the ability of Mellowmax operator to
+mitigate overestimation errors. Operator switching refers to
+alternating between the two operator selection policies at a
+speciﬁc frequency:
+ytot =
+
+r + γ · mellowmaxu′Zave
+tot (s′, u′)
+r + γ · maxu′Zave
+tot (s′, u′)
+(2)
+mellowmaxu′Zave
+tot (s′, u′)
+=
+1
+K
+K
+k=1 mellowmaxu′Zk
+tot,
+mellowmaxρZi = 1
+ρ log
+ 1
+c
+
+a′ exp [ρZi (a′)]
+
+and ρ is the
+temperature parameter, c denotes the number of available
+actions for the agent.
+C. Optimization objectives
+Under the distributional representation, the ROMUC method
+employs the Huber loss from the quantile regression approach
+1296
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:34:17 UTC from IEEE Xplore.  Restrictions apply. 
+
+to train the model, i.e.,
+L1 =
+
+|ω −I {δ < 0}| × 1
+2(δ)2, if δ ≤1
+|ω −I {δ < 0}| ×
+
+|δ| −1
+2
+
+, otherwise
+(3)
+where δ = ytot −Ztot(s, u) denotes the TD loss, and the
+environmental risk level ω is randomly sampled from a uni-
+form distribution U (0, 1). Additionally, the ROMUC method
+introduces regularization techniques that directly penalize the
+joint policy value distribution Ztot when it deviates excessively
+from the true value distribution. Speciﬁcally, an error term
+L2 = λ
+
+E (Ztot) −
+∞
+
+v=0
+γvrt+v
+
+is added to the optimiza-
+tion objective, where
+∞
+
+v=0
+γvrt+v represents the discounted
+reward at the t-th timestep as a baseline to control overes-
+timation errors, and λ denotes the regularization coefﬁcient.
+Consequently, the optimization objective of ROMUC method
+becomes L = L1 + L2, and the training process employs the
+conventional CTDE framework.
+IV. SIMULATION EXPERIMENTS
+This section primarily tests the robustness of ROMUC
+method on two types of multi-USV cooperative tasks. Through
+comparative experiments with current mainstream algorithms
+under both standard and risk conditions, along with ablation
+experiments, it validates that the ROMUC method can achieve
+multi-USV cooperative policies with higher robustness.
+A. Experimental setup
+Task description.
+Pursuit Mission. Three Red USVs carried out dynamic
+encirclement against a Blue USV in complex waters densely
+populated with artiﬁcial island reefs and subsea facilities,
+though the Blue craft maintained slightly higher speed than
+its Red counterparts. Leveraging a distributed detection net-
+work, the Red USVs established tactical coordination through
+collaborative pursuit operations. They facilitated the formation
+of an encirclement pattern by real-time sharing of hydrological
+data and obstacle coordinates.
+Denial mission. Two Blue force USVs breached Red force
+warning Line by leveraging complex hydrological conditions,
+employing coordinated breakthrough tactics to launch a sur-
+prise attack on two Red force fuel depots. Four Red USVs es-
+tablished a multi-domain awareness barrier through distributed
+detection networks, executing interception in narrow, reef-
+ﬁlled waterways. Exploiting two detection blind zones caused
+by geomagnetic anomalies in Red force’s coverage, Blue force
+USVs utilized obstacles for tactical coordination. Confronting
+electromagnetic interference and adverse sea conditions, Red
+USVs required efﬁcient cooperation to complete interception
+of high-speed Blue targets within a limited time window,
+validating the cooperative capabilities of multiple unmanned
+surface vessels under adversarial conditions.
+Environment settings.
+This paper employs the MPE environment [26] to simulate
+two types of missions, and veriﬁes the outstanding effective-
+ness of ROMUC method in multi-USV operations in maritime
+(a) Pursuit mission
+(b) Denial mission
+Fig. 2: Task.
+combat scenarios by modifying the MPE environment, as
+shown in Figure 2. To appropriately simplify the pursuit and
+denial missions, the following assumptions are made for USV
+modeling: (1) Neglect the inﬂuence of USV morphology, treat-
+ing them as point masses; (2) Each USV maintains identical
+kinematic performance parameters; (3) Consider collisions and
+incorporate them as a universal reward penalty.
+In the pursuit mission, three Red USVs cooperate to pursue
+a Blue USV, with two identical rectangular obstacle areas
+present in the environment. The observational for all USVs
+includes their own velocity, position coordinates, distance to
+obstacles, and distance to other USVs. The Blue USV’s ob-
+servational information excludes the velocities of Red USVs.
+The reward for Red USVs is represented by the sum of their
+distances to the Blue USV-the closer they are, the higher
+the reward. Conversely, the Blue USV’s reward is inversely
+proportional to the Red team’s reward. In a denial mission,
+four Red USVs cooperate to intercept two Blue USVs, with
+the environment containing one rectangular obstacle area, two
+circular detection blind zones, and two circular oil supply
+points. The Red USVs’ observation information includes their
+own speed, position coordinates, distance to obstacles, distance
+to other USVs, Blue USV speed, detection range status, and
+communication data. In contrast, the Blue USVs’ observations
+replace the ”Blue USV speed” in the Red’s observation list
+with ”teammate speed”. The reward for Red USVs is deter-
+mined by the sum of distances from all four Red USVs to the
+Blue USVs, with closer proximity yielding higher rewards.
+The Blue USVs’ reward is inversely proportional to the Red’s
+reward and additionally incorporates their distance to the oil
+supply points. In both tasks, the motion of the USV only
+considers velocity and acceleration in the x and y directions,
+thus any directional movement can be derived therefrom.
+Benchmark algorithm and algorithm parameters.
+This
+paper
+compares
+the
+ROMUC
+with
+state-of-the-
+art MARL algorithms (QMIX1), error reduction methods
+(VAOS [19] and Sub-Avg2 [27]), and risk-sensitive algorithms
+(DRIMA3 [28]). The hyperparameter settings of the compared
+algorithms follow their default conﬁgurations. In the ROMUC
+method, the hyperparameters are set as follows: the number
+of quantiles is 10, weight λ = 0.05, temperature parameter
+ρ = 10, and number of networks L = K = 10. We reported
+1https://github.com/oxwhirl/pymarl
+2https://github.com/Sub-AVG/Sub AVG
+3https://proceedings.mlr.press/v162/son22a.html
+1297
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:34:17 UTC from IEEE Xplore.  Restrictions apply. 
+
+
+
+
+
+
+
+	
+
+
+
+
+
+
+
+
+
+(a) Pursuit mission (standard)
+(b) Pursuit mission (exploration)
+(c) Pursuit mission (noise)
+(d) Denial mission (standard)
+
+
+
+
+
+
+	
+
+
+
+
+
+
+
+
+
+(e) Denial mission (exploration)
+
+
+
+
+
+
+	
+
+
+
+
+
+
+
+
+
+
+(f) Denial mission (noise)
+Fig. 3: Comparison of Algorithm Performance under standard and risk settings.
+the results of three random seeds and represented them as
+curves of expectation and variance. The code is executed on
+a machine equipped with an NVIDIA GeForce RTX 2080Ti
+GPU and a 32-core CPU. Typically, the training process of
+ROMUC for both tasks generally requires 10-13 hours.
+B. Comparison of Algorithm Performance
+We ﬁrst test the performance of different algorithms under
+standard settings. In the standard settings, the risks faced by
+USV mainly stem from inherent errors in decision-making
+methods themselves. Therefore, comparative tests on two
+missions were conducted to verify the performance differences
+among different algorithms in addressing risks caused by
+methodological errors. The results shown in Figure 3(a)(d)
+demonstrate that the ROMUC method exhibits highly compet-
+itive performance in both pursuit and denial tasks. It achieves
+higher testing rewards than other baseline algorithms. This
+proves that the ROMUC method can effectively reduce risks
+caused by methodological errors, stabilize the training process,
+and generate more robust cooperative policies.
+In addition, in the environment, we designed two risk fac-
+tors: exploration and noise, to validate the robust performance
+of ROMUC method. The exploration risk primarily involves
+reducing the decay rate of the exploration rate, enabling
+prolonged high-level exploration during the training phase to
+increase cooperation difﬁculty. The noise risk refers to the
+presence of a stochastic agent among teammates, which ran-
+domly selects actions with a 30% probability when choosing
+policies (a random cooperative policy). Under risk factors, the
+collaboration of multi-USV needs to consider not only the
+risks arising from their own method errors, but also the poten-
+tial impact of environmental risks on the robustness of policies.
+As shown in Figuree 3(bc)(ef), we ﬁnd that the ROMUC
+method achieves optimal performance both under exploration
+risk and in noise risk. This is because, compared to other
+baseline algorithms, only the ROMUC method simultaneously
+addresses decision-making error reduction and environmental
+risk mitigation. Consequently, the cooperative policies learned
+by ROMUC exhibit greater robustness when facing exploration
+and noise risks, ultimately yielding the highest returns.
+C. Experimental study on ablation
+To verify the impact of components and parameters in the
+ROMUC method on algorithm performance, we conducted
+ablation experiments. As shown in the results of ROMUC
+method and VAOS method in Figure 3(bc)(ef), we observe
+that ROMUC demonstrates superior performance compared to
+VAOS in both tasks under risk settings. This occurs because
+VAOS only reduces methodological errors. Although this can
+effectively mitigate the risk of overestimation, it struggles to
+address environmental risks, which further demonstrates the
+advantages of ROMUC method in enhancing the robustness
+of multi-USV cooperative policies by handling both types of
+risks. Additionally, we validated the inﬂuence of hyperpa-
+rameter settings on algorithm performance by adjusting the
+number of quantiles and neural networks. As illustrated in
+Figure 4(a), the performance of ROMUC maintains a certain
+degree of stability when the number of quantiles varies.
+Figure 4(b) shows that while ROMUC’s performance improves
+moderately with increased network quantity, the algorithm
+efﬁciency declines due to elevated computational load.
+V. CONCLUSION
+This paper addresses the issue of environmental risks and
+methodological errors affecting policy robustness during coop-
+1298
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:34:17 UTC from IEEE Xplore.  Restrictions apply. 
+
+(a) Number of quantiles
+(b) Number of neural networks
+Fig. 4: The impact of parameters in the ROMUC method on
+algorithm performance.
+erative policy learning for multi-USV, proposing the ROMUC
+method that integrates distributional reinforcement learning,
+value averaging, and operator switching. ROMUC learns the
+complete distribution of policy values to characterize envi-
+ronmental risk impacts on policies, while employing value
+averaging and operator switching to mitigate overestimation
+errors in MARL. Experimental sections construct two typical
+tasks with risk factors (including exploration and noise risk).
+Comparative analysis with mainstream methods demonstrates
+that ROMUC signiﬁcantly enhances the robustness of multi-
+USV cooperative policies. Future work may require addressing
+the efﬁciency of algorithms to enhance execution capability
+during deployment.
+REFERENCES
+[1] Z. Liu, Y. Zhang, X. Yu, and C. Yuan, “Unmanned surface vehicles: An
+overview of developments and challenges,” Annual Reviews in Control,
+vol. 41, pp. 71–93, 2016.
+[2] J. Li, G. Zhang, X. Zhang, and W. Zhang, “Integrating dynamic event-
+triggered and sensor-tolerant control: Application to usv-uavs coopera-
+tive formation system for maritime parallel search,” IEEE Transactions
+on Intelligent Transportation Systems, vol. 25, no. 5, pp. 3986–3998,
+2024.
+[3] Z. Zuo, C. Liu, Q.-L. Han, and J. Song, “Unmanned aerial vehicles: Con-
+trol methods and future challenges,” IEEE/CAA Journal of Automatica
+Sinica, vol. 9, no. 4, pp. 601–614, 2022.
+[4] J. Xie, R. Zhou, J. Luo, Y. Peng, Y. Liu, S. Xie, and H. Pu, “Hybrid
+partition-based patrolling scheme for maritime area patrol with multiple
+cooperative unmanned surface vehicles,” Journal of Marine Science and
+Engineering, vol. 8, no. 11, p. 936, 2020.
+[5] T. T. Nguyen, N. D. Nguyen, and S. Nahavandi, “Deep reinforcement
+learning for multiagent systems: a review of challenges, solutions, and
+applications,” IEEE Transactions on Cybernetics, vol. 50, no. 9, pp.
+3826–3839, 2020.
+[6] T. Rashid, M. Samvelyan, C. Schroeder, G. Farquhar, J. Foerster,
+and S. Whiteson, “Qmix: monotonic value function factorisation for
+deep multi-agent reinforcement learning,” in Proceedings of the 35th
+International Conference on Machine Learning, vol. 80, 2018, pp. 4295–
+4304.
+[7] P. Sunehag, G. Lever, A. Gruslys, W. M. Czarnecki, V. Zambaldi,
+M. Jaderberg, M. Lanctot, N. Sonnerat, J. Z. Leibo, K. Tuyls, and
+T. Graepel, “Value-decomposition networks for cooperative multi-agent
+learning based on team reward,” in Proceedings of the 17th International
+Conference on Autonomous Agents and MultiAgent Systems, 2018, pp.
+2085–2087.
+[8] C. Sun, W. Liu, and L. Dong, “Reinforcement learning with task
+decomposition for cooperative multiagent systems,” IEEE Transactions
+on Neural Networks and Learning Systems, vol. 32, no. 5, pp. 2054–
+2065, 2021.
+[9] L. Pan, T. Rashid, B. Peng, L. Huang, and S. Whiteson, “Regularized
+softmax deep multi-agent q-learning,” in Advances in Neural Informa-
+tion Processing Systems, vol. 34, 2021, pp. 1365–1377.
+[10] C.-C. Wang, Y.-L. Wang, P. Shi, and F. Wang, “Scalable-maddpg-based
+cooperative target invasion for a multi-usv system,” IEEE Transactions
+on Neural Networks and Learning Systems, vol. 35, no. 12, pp. 17 867–
+17 877, 2024.
+[11] F. Li, M. Yin, T. Wang, T. Huang, C. Yang, and W. Gui, “Distributed
+pursuit-evasion game of limited perception usv swarm based on mul-
+tiagent proximal policy optimization,” IEEE Transactions on Systems,
+Man, and Cybernetics: Systems, vol. 54, no. 10, pp. 6435–6446, 2024.
+[12] W. Gan, X. Qu, D. Song, and P. Yao, “Multi-usv cooperative chasing
+strategy based on obstacles assistance and deep reinforcement learning,”
+IEEE Transactions on Automation Science and Engineering, vol. 21,
+no. 4, pp. 5895–5910, 2024.
+[13] X. Wei, H. Wang, and Y. Tang, “Deep hierarchical reinforcement learn-
+ing based formation planning for multiple unmanned surface vehicles
+with experimental results,” Ocean Engineering, vol. 286, p. 115577,
+2023.
+[14] Y. Zhao, Y. Ma, and S. Hu, “Usv formation and path-following control
+via deep reinforcement learning with random braking,” IEEE Transac-
+tions on Neural Networks and Learning Systems, vol. 32, no. 12, pp.
+5468–5478, 2021.
+[15] O. Eberhard, J. Hollenstein, C. Pinneri, and G. Martius, “Pink noise is
+all you need: Colored noise exploration in deep reinforcement learning,”
+in The Eleventh International Conference on Learning Representations,
+2023.
+[16] A. Rafﬁn, A. Hill, A. Gleave, A. Kanervisto, M. Ernestus, and N. Dor-
+mann, “Stable-baselines3: Reliable reinforcement learning implementa-
+tions,” Journal of Machine Learning Research, vol. 22, no. 268, pp. 1–8,
+2021.
+[17] J. Zhang, J. Ren, Y. Cui, D. Fu, and J. Cong, “Multi-usv task planning
+method based on improved deep reinforcement learning,” IEEE Internet
+of Things Journal, vol. 11, no. 10, pp. 18 549–18 567, 2024.
+[18] W.-Z. L. C.-X. M. C.-Y. S. Lu REN, Ya-Nan KE, “Multi-usvs coopera-
+tive policy optimization method based on disturbed input of advantage
+function,” Acta Automatica Sinica, vol. 51, no. 4, pp. 824–834, 2025.
+[19] P. Li, S. Chen, W. Yuan, Z. Hu, and J. Chen, “Vaos: Enhancing the
+stability of cooperative multi-agent policy learning,” Knowledge-Based
+Systems, vol. 304, p. 112474, 2024.
+[20] B. Mavrin, H. Yao, L. Kong, K. Wu, and Y. Yu, “Distributional rein-
+forcement learning for efﬁcient exploration,” in International Conference
+on Machine Learning, vol. 97, 2019, pp. 4424–4434.
+[21] M. G. Bellemare, W. Dabney, and R. Munos, “A distributional perspec-
+tive on reinforcement learning,” in International Conference on Machine
+Learning, 2017, pp. 449–458.
+[22] W. Dabney, G. Ostrovski, D. Silver, and R. Munos, “Implicit quantile
+networks for distributional reinforcement learning,” in International
+Conference on Machine Learning, vol. 80, 2018, pp. 1096–1105.
+[23] O. Anschel, N. Baram, and N. Shimkin, “Averaged-dqn: variance reduc-
+tion and stabilization for deep reinforcement learning,” in Proceedings of
+the 34th International Conference on Machine Learning, vol. 70, 2017,
+pp. 176–185.
+[24] S. Thrun and A. Schwartz, “Issues in using function approximation for
+reinforcement learning,” in Proceedings of 4th Connectionist Models
+Summer School, 1993.
+[25] Y. Gan, Z. Zhang, and x. Tan, “Stabilizing q learning via soft mellowmax
+operator,” in Proceedings of the Thirtieth AAAI Conference on Artiﬁcial
+Intelligence, vol. 35, no. 9, 2021, pp. 7501–7509.
+[26] R. Lowe, Y. Wu, A. Tamar, J. Harb, P. Abbeel, and I. Mordatch,
+“Multi-agent actor-critic for mixed cooperative-competitive environ-
+ments,” 2020.
+[27] H. Wu, J. Zhang, Z. Wang, Y. Lin, and H. Li, “Sub-avg: Overestimation
+reduction for cooperative multi-agent reinforcement learning,” Neuro-
+computing, vol. 474, pp. 94–106, 2022.
+[28] K. Son, J. Kim, S. Ahn, R. D. D. Reyes, Y. Yi, and J. Shin, “Dis-
+entangling sources of risk for distributional multi-agent reinforcement
+learning,” in Proceedings of the 39th International Conference on
+Machine Learning, vol. 162, 2022, pp. 20 347–20 368.
+1299
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:34:17 UTC from IEEE Xplore.  Restrictions apply. 

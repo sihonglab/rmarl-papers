@@ -1,0 +1,643 @@
+Mava: a research library for distributed multi-agent
+reinforcement learning in JAX
+Ruan de Kock∗
+Omayma Mahjoub∗
+Sasha Abramowitz∗
+Wiem Khlifi
+Callum Rhys Tilbury
+Claude Formanek
+Andries Smit
+Arnu Pretorius
+InstaDeep
+Abstract
+Multi-agent reinforcement learning (MARL) research is inherently computationally ex-
+pensive and it is often difficult to obtain a sufficient number of experiment samples to
+test hypotheses and make robust statistical claims. Furthermore, MARL algorithms are
+typically complex in their design and can be tricky to implement correctly. These as-
+pects of MARL present a difficult challenge when it comes to creating useful software for
+advanced research. Our criteria for such software is that it should be simple enough to
+use to implement new ideas quickly, while at the same time be scalable and fast enough
+to test those ideas in a reasonable amount of time. In this preliminary technical report,
+we introduce Mava, a research library for MARL written purely in JAX, that aims to
+fulfill these criteria. We discuss the design and core features of Mava, and demonstrate
+its use and performance across a variety of environments. In particular, we show Mava’s
+substantial speed advantage, with improvements of 10-100x compared to other popular
+MARL frameworks, while maintaining strong performance. This allows for researchers
+to test ideas in a few minutes instead of several hours. Finally, Mava forms part of an
+ecosystem of libraries that seamlessly integrate with each other to help facilitate advanced
+research in MARL. We hope Mava will benefit the community and help drive scientifically
+sound and statistically robust research in the field. The open-source repository for Mava is
+available at https://github.com/instadeepai/Mava.
+1. Introduction
+To facilitate advanced research in MARL from an engineering perspective presents a difficult
+challenge: to strike a balance between code that is highly performant, to run computationally
+expensive experiments efficiently, and code that is easy to understand, to enable conceptual
+and algorithmic development in a reasonable time frame. Software that is very simple to
+understand may likely be too slow to pursue any meaningful enquiries, yet software that is
+highly scalable and fast may be too rigid or opaque to quickly develop and test new ideas.
+There remains a need for tools that strike a fine balance between these two extremes for the
+purposes of conducting advanced research at scale.
+Mava is a research library that aims to find such a balance, for online MARL research in
+particular. By leveraging the power of JAX as a machine learning framework (Bradbury
+et al., 2023), along with advances in distributed computing (Hessel et al., 2021), Mava is
+∗. Equal contribution. Correspondence: r.dekock@instadeep.com
+arXiv:2107.01460v2  [cs.LG]  15 Dec 2023
+
+Mava: distributed multi-agent reinforcement learning in JAX
+Stable & maintained
+software tools
+Easy starting point
+for research
+Community artefacts
+Impactful,
+reproducible
+research
+Statistically robust benchmarks & baselines
+Accelerated replay buffers in JAX
+Native JAX environments for RL
+Other community-owned RL environments
+e.g. JaxMARL
+Experiment data aggregation
+Distributed online MARL
+algorithms & benchmarks
+Offline MARL
+algorithms & benchmarks
+Vault
+Efficient storage of
+experience data
+Novel MARL algorithms
+Off-policy
+algorithms
+Data recording
+JSON experiment data
+Fully jittable training loops
+Wrapper
+MARL-eval
+Offline MARL
+datasets
+Figure 1: Depiction of how Mava fits into a broader multi-agent reinforcement learning
+ecosystem. Other components include OG-MARL, Jumanji, Flashbax, and MARL-eval.
+Further details for each of these components are given in Section 3.
+able to train over millions of timesteps in a matter of minutes, enabling highly efficient
+experiment iteration. Yet, simultaneously, by intentionally adopting and adhering to the best
+practices of simple and readable code, Mava remains easy to parse, debug, and extend.
+Importantly, Mava forms part of a broader ecosystem of research for MARL. Acting as an
+easy starting point for research ideas, Mava integrates naturally with a range of software
+libraries—spanning a corresponding framework for offline MARL (Formanek et al., 2023a)
+with accelerated replay buffers for off-policy and offline algorithms (Toledo et al., 2023),
+native RL environments written in JAX (Bonnet et al., 2023), and a robust and statistically
+reliable set of evaluation tools designed specifically for MARL (Gorsane et al., 2022). This
+ecosystem is depicted in Figure 1.
+In this brief technical report, we provide an overview of the design and core features of Mava,
+and how it integrates into the broader MARL research ecosystem. Moreover, we conduct
+basic experiments demonstrating Mava’s speed and performance on various tasks.
+2. Design and core features
+A clean code philosophy. Moving away from completely modular MARL frameworks
+(Samvelyan et al., 2019a; Papoudakis et al., 2021; Hu et al., 2023; Bettini et al., 2023),
+Mava instead adopts a code philosophy akin to recent works such as CleanRL (Huang et al.,
+2022) and PureJAXRL (Lu et al., 2022) where all core algorithmic logic should be contained
+in a single easy-to-read file. This enables researchers to debug code easily and to adapt
+Mava to their particular use case with little friction and overhead. A notable difference
+2
+
+Mava: distributed multi-agent reinforcement learning in JAX
+between CleanRL and Mava is that Mava has certain levels of abstraction; on environment
+initialisation, reusable type definitions and flexible algorithm and environment configuration
+management with Hydra (Yadan, 2019). This approach strikes a balance where code is easy
+to understand but unnecessary boilerplate code is abstracted away.
+Strong baseline algorithms and training architectures. Mava currently only supports
+environments that are written in JAX. This constraint enables the (just-in-time) jit-
+compilation of agent policy roll-outs and policy updates. In particular, Mava supports the
+Anakin architecture (Hessel et al., 2021) for scalable distributed system training on hardware
+accelerators, depicted in Figure 2. At the time of writing, Mava has implementations of
+both recurrent and feedforward policy versions of multi-agent PPO systems that follow the
+decentralised training with decentralised execution (DTDE) and centralised training with
+decentralised execution (CTDE) paradigms. Next in our roadmap is to include off-policy
+algorithms leveraging the Anakin architecture as well as both on and off-policy algorithms
+supporting distributed non-JAX environment training using the Sebulba architecture (Hessel
+et al., 2021).
+Multi-device training with easy checkpointing and logging. Mava offers some core
+benefits over recent MARL offerings in JAX (Rutherford et al., 2023). The first of which is
+out-of-the-box support for code to be pmap-ed over multiple devices on hardware accelerators
+like TPUs for faster training times. The second is support for robust evaluation, system
+checkpointing and continual metric logging. It is common in MARL systems to freeze
+training periodically in order to evaluate current agent policies (Gorsane et al., 2022). This
+is a challenge in end-to-end JAX-based RL since jit-compiling the agent training loop forces
+one to wait for training to be complete before any performance feedback can be obtained.
+Possible ways around this are to either (1) use JAX’s debug callback functionality, which
+tends to lead to significant increases in training wallclock time, (2) to evaluate systems
+once at the end of training, or (3) to forgo evaluation feedback altogether and only produce
+training curves - none of which is desirable. Mava solves this problem by interleaving
+evaluation blocks during system training. Here, both the training and evaluation blocks
+are pmap-ed and run sequentially in a normal Python for loop. This has the benefit that it
+maintains system performance while giving researchers continual insights into system training
+dynamics. Since system performance and parameters are continually exposed, metrics can
+be logged and policy parameters can be checkpointed continually throughout training. Mava
+has native support for logging to Tensorboard and Neptune and also supports logging to
+JSON files in a format that is supported by the MARL-eval (Gorsane et al., 2022) library
+for downstream statistical aggregation and plotting, discussed further below.
+3. Seamless integration between ecosystem libraries
+As shown in Figure 1, Mava forms part of a wider and evolving ecosystem of software for RL
+research. By design, this ecosystem allows for seamless integration between libraries.
+Accelerated JAX-native environments. One of the main challenges in RL and MARL
+is that algorithms tend to be sample inefficient, typically requiring millions of timesteps to
+converge. This means that the speed at which the environment can step has a substantial
+3
+
+Mava: distributed multi-agent reinforcement learning in JAX
+Device D
+Device 2
+roll out
+Collected Experience
+Gradient Calculation
+Device 1
+jax_utils.replicate
+jax_utils.unreplicate
+PMEAN
+PMEAN
+env 2
+env N
+...
+env 1
+seed 1
+seed 2
+seed N
+[1] update(   ) →  
+[2] update(   ) →  
+[J] update(   ) →  
+PMAP
+VMAP
+VMAP
+Figure 2: A diagram of the Anakin podracer architecture (Hessel et al., 2021) implemented in
+Mava for fast training on hardware accelerators, such as a GPU or TPU. A set of parameters
+θ is taken as input, and is replicated across D devices. On each device d ∈D (via jax.pmap),
+these parameters are further broadcast to J update functions (via jax.vmap). Each update
+function j ∈J rolls out independent experience from N copies of the environment (via
+jax.vmap), which is collected and given to a loss function, for which a gradient is computed.
+For device d and update function j, the gradient is ∇j
+d. On each device d, the gradients
+of the J update functions are averaged via a jax.pmean operation, yielding ¯∇d. These
+gradients are then averaged across devices, again via jax.pmean, yielding ¯¯∇, which is used
+to calculate the new parameters, θ′.
+4
+
+Mava: distributed multi-agent reinforcement learning in JAX
+impact on the time to convergence of algorithms. Recently, environments implemented
+directly in JAX have demonstrated significant speedups in environment interactions per
+second by effectively leveraging modern hardware accelerators such as GPUs and TPUs
+(Lange, 2022; Freeman et al., 2021). To take full advantage of this trend, Mava currently
+supports three suites of JAX-native multi-agent environments, namely Matrax (Pretorius,
+2023), Jumanji (Bonnet et al., 2023) and JaxMARL (Rutherford et al., 2023).
+• Matrax is a lightweight suite of common 2-player matrix games written in JAX.
+Matrix games are appealing for their simplicity and speed. As such, they provide a
+good starting point for testing new MARL algorithms and for discovering fundamental
+failure modes, even in simple settings.
+• Jumanji provides a suite of environments related to combinatorial optimisation
+problems. Several environments in Jumanji lend themselves well to being solved
+by MARL algorithms, for example, Multi-Robot Warehouse (RWARE) (Christianos
+et al., 2020), Level-Based Foraging (LBF) (Albrecht and Ramamoorthy, 2015) and the
+Multi-Agent Capacitated Vehicle Routing Problem (MA-CVRP). In Mava, we have
+developed flexible wrappers for Jumanji to make it simple to train Mava systems in
+these environments.
+• JaxMARL contains JAX implementations of many popular MARL benchmark envi-
+ronments, such as the StarCraft Multi-Agent Challenge (SMAC) (Samvelyan et al.,
+2019b), Overcooked (Carroll et al., 2019) and Multi-Agent MuJoCo (MAMuJoCo)
+(Peng et al., 2021). JaxMARL’s environment offering is appealing because of its close
+relationship with well-established non-JAX environments. However, while it may be
+tempting to directly compare results on JaxMARL environments to their non-JAX
+versions, it’s important to bear in mind that in some cases there can be subtle but
+important differences which make such comparisons invalid.
+As the ecosystem evolves, we plan to add support for additional environments. For researchers
+who are interested in using Mava on any currently unsupported environment, it should be
+quite easy to develop an environment wrapper similar to those for Jumanji or JaxMARL to
+make their new environment conform to the API Mava algorithms expect.
+Standardised and statistically robust evaluation reporting. To ensure a high level
+of standardisation and statistical rigour in the evaluation of experimental outcomes, Mava
+can log raw experimental data in such a way that it conforms to the format expected by
+MARL-eval (Gorsane et al., 2022). MARL-eval implements the data aggregation and
+reporting proposed by Gorsane et al. (2022), based on the principles established in (Agarwal
+et al., 2021). This equips MARL-eval with statistically sound plotting tools, enabling robust
+and reliable analysis of cooperative MARL experiments.
+Offline MARL. A promising and increasingly popular research direction in MARL is offline
+training (Yang et al., 2021; Tseng et al., 2022; Meng et al., 2023; Tian et al., 2023; Wang et al.,
+2023). In offline MARL, agents are trained on a static dataset of experience without any
+additional online interactions in the environment. Offline MARL is an appealing paradigm
+because it avoids online environment interactions which can be slow, expensive and dangerous
+if a simulator is not readily available. Another promising approach is combining offline with
+5
+
+Mava: distributed multi-agent reinforcement learning in JAX
+Mava FF IPPO
+OG-MARL Rec MAICQ
+0
+2
+4
+6
+8
+10
+Environment Timesteps (Millions)
+0
+5
+10
+15
+Evaluation Episode Return
+Online
+0
+5
+10
+15
+Training Steps (Thousands)
+Offline
+Figure 3: As a minimal demonstration of how Mava can be integrated into an offline MARL
+experiment pipeline, we trained an online Mava PPO system on RWARE and recorded its
+experience using a Flashbax Vault. We then reloaded the Vault in OG-MARL and trained
+the MAICQ algorithm completely offline on the Mava data. The entire online-to-offline
+experiment was repeated for 10 independent seeds. The mean and standard error across
+seeds are plotted.
+online training to make online training significantly more sample efficient(Nair et al., 2020;
+Wagenmaker and Pacchiano, 2023; Ball et al., 2023). Formanek et al. (2023b) demonstrated
+that a similar approach can significantly speed up online training in MARL.
+Recently, Off-the-Grid MARL (Formanek et al., 2023a) was proposed as a framework
+for offline MARL research. To demonstrate how Mava can be utilised in an offline research
+workflow, we recorded online transitions from a Mava PPO system on RWARE using a
+Flashbax Vault (see below) and reloaded these transitions as a dataset (directly into VRAM)
+to train a fully jit-compilable JAX version of the offline algorithm MAICQ (Yang et al.,
+2021) implemented in OG-MARL. A plot of the online and offline training curves is given in
+Figure 3.
+Flashbax Vault (Toledo et al., 2023) serves as the intermediary between Mava and OG-
+MARL. Vault offers an efficient mechanism to save Flashbax buffers, which essentially hold
+JAX arrays, to persistent data storage. Consider a Flashbax buffer which has experience
+data of dimensionality (B, T, ∗E), where B is a batch dimension (for the sake of recording
+independent trajectories synchronously), T is a temporal dimension, and ∗E indicates the
+multiple dimensions of the experience data. Since large quantities of data may be generated
+for a given environment, Vault extends the T dimension to a virtually unconstrained degree
+by reading and writing slices of buffers along this time axis. In doing so, gigantic buffer
+stores can reside on disk, from which sub-buffers can be loaded into RAM/VRAM for efficient
+offline training.
+6
+
+Mava: distributed multi-agent reinforcement learning in JAX
+Epymarl FF MAPPO 16 Envs- w/o collision
+Mava FF MAPPO 16 Envs - w/o collision
+Mava FF MAPPO 16 Envs - w collision
+Mava FF MAPPO 256 Envs - w collision
+Tiny-2ag
+0
+50
+100
+150
+200
+Run Time [Minutes]
+0
+5
+10
+15
+20
+Mean Episode Return
+Tiny-4ag
+0
+50
+100
+150
+200
+250
+Run Time [Minutes]
+0
+20
+40
+Mean Episode Return
+Small-4ag
+0
+50
+100
+150
+200
+250
+Run Time [Minutes]
+0
+5
+10
+15
+20
+Mean Episode Return
+Figure 4: Performance comparison between Mava and EPyMARL training a feedforward
+MAPPO on the tiny-2ag, tiny-4ag, and small-4ag tasks.
+Highlighting the comparable
+implementations between Jumanji’s non-collision RWARE and the original RWARE, Mava’s
+feedforward MAPPO shows equal or enhanced performance at significantly reduced wallclock
+time (from hours to minutes), with further speed gains observed when systems are scaled to
+use 256 vmap-ed achieving convergence in roughly 2 minutes.
+4. Speed and Performance
+This section outlines a series of early experiments conducted to demonstrate the use and
+effectiveness of Mava. We stress that these experiments are not meant to serve as an
+extensive investigation, and in several cases, we suspect significant improvements can still
+be obtained through proper hyperparameter tuning. Nonetheless, these simple experiments
+show how Mava scales with respect to the number of vectorized environments leading to a
+significant reduction in experiment wallclock time (from several hours to only a few minutes),
+while simultaneously maintaining good performance.
+We first compare Mava’s speed and performance with a popular PyTorch-based MARL
+framework EPyMARL (Papoudakis et al., 2021), which itself is an extension of Py-
+MARL (Samvelyan et al., 2019a), arguably one of the most popular frameworks in MARL.
+We conduct experiments in various Level-Based Foraging (LBF) (Albrecht and Ramamoor-
+thy, 2015) and Multi-Robotic Warehouse (RWARE) (Papoudakis et al., 2021) scenarios,
+utilizing both feedforward and recurrent architectures for Independent PPO (IPPO) and
+Multi-Agent PPO (MAPPO) with a centralised critic. Following these experiments, we
+provide a very preliminary comparison between Mava and the recently released JAX-based
+PPO baselines from JaxMARL on their StarCraft Multi-Agent Challenge in JAX (SMAX)
+environment (Rutherford et al., 2023). SMAX represents a JAX-based simplification of the
+original SMAC environment (Samvelyan et al., 2019a), streamlining its complexity for more
+flexible and fast experimentation. In all our experiments, we follow the evaluation guideline
+as proposed by Gorsane et al. (2022).
+Multi-Robot Warehouse (RWARE). We train on 2 and 4-agent tasks, using Jumanji’s
+RWARE for Mava and the original (non-JAX) RWARE for EPyMARL. We use the rec-
+ommended hyperparameters from (Papoudakis et al., 2021) for EPyMARL and conduct a
+basic grid search for Mava, training across 16 vectorized environments for up to 20 million
+steps. Notably, Jumanji’s RWARE variant used in Mava terminates the episode on collisions,
+7
+
+Mava: distributed multi-agent reinforcement learning in JAX
+(a)
+16 64 128
+256
+512
+1024
+Number of Vectorised Environments
+0.5 × 105
+1.0 × 105
+1.5 × 105
+2.0 × 105
+Steps per Second
+FF MAPPO
+Rec MAPPO
+Rec IPPO
+FF IPPO
+(b)
+tiny-2ag
+small-4ag
+tiny-4ag
+Rware Tasks
+0
+50
+100
+150
+200
+250
+Run Time [Minutes]
+20
+10.6x
+28
+8.4x
+24
+9.8x
+217
+240
+239
+Mava
+EPyMARL
+Figure 5: Scalability and training time analysis: (a) illustrates the steps per second achieved
+by recurrent and feedforward IPPO and MAPPO as the number of vectorised environments
+increases, and (b) The bar chart compares the run time of Mava’s implementations against
+EPyMARL’s across the experiments from Figure 4 for the case of 16 vmap-ed environments,
+showcasing Mava’s speed with about a 10x improvement across all tasks. At 256 vectorised
+environments we obtain improvements of more than 100x.
+EPyMARL Rec MAPPO 16 Envs (GPU)
+Mava Rec MAPPO 16 Envs (GPU)
+Mava Rec MAPPO 16 Envs (TPU)
+15x15-4p-3f
+0
+50
+100
+150
+200
+250
+Run Time [Minutes]
+0.25
+0.50
+0.75
+1.00
+Mean Episode Return
+2s-8x8-2p-2f
+0
+50
+100
+150
+200
+Run Time [Minutes]
+0.00
+0.25
+0.50
+0.75
+1.00
+Mean Episode Return
+Figure 6: Performance comparison between Mava and EPyMARL training a recurrent
+MAPPO on the 15x15-4p-3f and 2s-8x8-2p-2f tasks. Mava achieves superior performance
+at 10x the speed. Moreover, by leveraging specialised hardware accelerators (in this case a
+TPU-V3), Mava is able to train to convergence in under five minutes.
+adding complexity; to ensure a fair comparison, we include Mava’s performance with and
+without this feature. All experiments were conducted on an NVIDIA Quadro RTX 4000
+GPU with 8GB Memory, leading to the showcased performance of FF-MAPPO in Figure 4
+and the speed comparison in Figure 5. Mava’s speed is about 10x faster for the same number
+of parallel environments, and at 256 parallel environments, we obtain improvements of more
+than 100x in speed while maintaining good performance.
+Level-Based Foraging (LBF). We compare the performance of Mava’s MAPPO recurrent
+system with those from EPyMARL in two settings: one involving 2 agents and the other
+with 4 agents, over 20 million timesteps. We utilize Jumanji’s LBF for Mava and the
+original LBF for EPyMARL. Both setups are trained on 16 vectorized environments using a
+GPU (NVIDIA A-100 for EPyMARL and NVIDIA GeForce RTX 3050 with 4GB Memory
+for Mava). Additionally, Mava is tested with 16 parallel environments on a TPU-V3 to
+8
+
+Mava: distributed multi-agent reinforcement learning in JAX
+Rec IPPO
+JAXMarl Rec IPPO
+Rec MAPPO
+JAXMarl Rec MAPPO
+2s3z
+0
+2
+4
+6
+8
+10
+Number of timesteps (Millions)
+0
+25
+50
+75
+100
+Win Rate (%)
+3s5z
+0
+2
+4
+6
+8
+10
+Number of timesteps (Millions)
+0
+20
+40
+60
+80
+Win Rate (%)
+6h vs 8z
+0
+2
+4
+6
+8
+10
+Number of timesteps (Millions)
+0
+25
+50
+75
+100
+Win Rate (%)
+Figure 7: Performance of Recurrent IPPO and MAPPO from Mava and JaxMARL on
+SMAX Scenarios: 2s3z, 3s5z, and 6h vs 8z. Dashed lines indicate the estimated final win
+rates for JaxMARL taken from the plots in (Rutherford et al., 2023). In all experiments, we
+performed no hyperparameter tuning for Mava systems but simply used the hyperparameters
+from JaxMARL.
+demonstrate scalability on specialised hardware. EPyMARL’s hyperparameters are sourced
+from (Papoudakis et al., 2021), whereas we employ a basic grid search for Mava.
+StarCraft Multi-Agent Challenge in JAX (SMAX). We train Mava’s recurrent
+systems on a similar subset of SMAX scenarios as used in the main text of (Rutherford
+et al., 2023). We stress again that we do not consider these experiments to be extensive or
+sufficiently comprehensive to provide strong evidence to our claims, but only provide some
+preliminary results for interest. For all our experiments, we perform no hyperparameter
+tuning and simply use the hyperparameters from (Rutherford et al., 2023), training for 10
+million timesteps using 64 parallel environments. Figure 7 illustrates that Mava’s recurrent
+IPPO and MAPPO algorithms match the performance of JaxMARL’s baselines. However,
+we suspect additional performance gains could be achieved with proper hyperparameter
+tuning. In terms of speed, we note that our FF-IPPO trains to convergence, achieving
+around 85% win rate, on 2s3z in under a minute (54 seconds). From our interpretation of
+the speeds on 2s3z reported by Rutherford et al. (2023) (in their Figure 5 (d)), the authors
+seem to claim single-run training times of roughly 5 seconds. However, we are unsure if we
+are interpreting these results correctly. In future we plan to run Mava (using both on and
+off-policy algorithms) across all SMAX scenarios (the minimal set suggested for research by
+Rutherford et al. (2023) following the advice from Gorsane et al. (2022)).
+5. Conclusion
+Mava is a flexible and performant JAX-based library for MARL that integrates seamlessly
+with several other powerful libraries forming a broader and continuously evolving ecosystem
+for MARL. By open-sourcing Mava we hope it can benefit the research community and help
+drive progress in the field.
+9
+
+Mava: distributed multi-agent reinforcement learning in JAX
+Acknowledgements
+We would like to thank Achraf Garai for helping with the logo designs. This research was
+supported with Cloud TPUs from Google’s TPU Research Cloud (TRC).
+References
+Rishabh Agarwal, Max Schwarzer, Pablo Samuel Castro, Aaron C Courville, and Marc
+Bellemare. Deep reinforcement learning at the edge of the statistical precipice. Advances
+in neural information processing systems, 34:29304–29320, 2021.
+Stefano V Albrecht and Subramanian Ramamoorthy. A game-theoretic model and best-
+response learning method for ad hoc coordination in multiagent systems. arXiv preprint
+arXiv:1506.01170, 2015.
+Philip J Ball, Laura Smith, Ilya Kostrikov, and Sergey Levine. Efficient online reinforcement
+learning with offline data. In International Conference on Machine Learning. PMLR,
+2023.
+Matteo Bettini, Amanda Prorok, and Vincent Moens. Benchmarl: Benchmarking multi-agent
+reinforcement learning. arXiv preprint arXiv:2312.01472, 2023.
+Cl´ement Bonnet, Daniel Luo, Donal Byrne, Shikha Surana, Vincent Coyette, Paul Duckworth,
+Laurence I. Midgley, Tristan Kalloniatis, Sasha Abramowitz, Cemlyn N. Waters, Andries P.
+Smit, Nathan Grinsztajn, Ulrich A. Mbou Sob, Omayma Mahjoub, Elshadai Tegegn,
+Mohamed A. Mimouni, Raphael Boige, Ruan de Kock, Daniel Furelos-Blanco, Victor Le,
+Arnu Pretorius, and Alexandre Laterre. Jumanji: a diverse suite of scalable reinforcement
+learning environments in jax, 2023. URL https://arxiv.org/abs/2306.09884.
+James Bradbury, Roy Frostig, Peter Hawkins, Matthew James Johnson, Chris Leary, Dougal
+Maclaurin, George Necula, Adam Paszke, Jake VanderPlas, Skye Wanderman-Milne, and
+Qiao Zhang. JAX: composable transformations of Python+NumPy programs, 2023. URL
+http://github.com/google/jax.
+Micah Carroll, Rohin Shah, Mark K Ho, Tom Griffiths, Sanjit Seshia, Pieter Abbeel, and
+Anca Dragan. On the utility of learning about humans for human-ai coordination. Advances
+in neural information processing systems, 32, 2019.
+Filippos Christianos, Lukas Sch¨afer, and Stefano V Albrecht. Shared experience actor-critic
+for multi-agent reinforcement learning. In Advances in Neural Information Processing
+Systems (NeurIPS), 2020.
+Claude Formanek, Asad Jeewa, Jonathan Shock, and Arnu Pretorius. Off-the-grid marl:
+Datasets and baselines for offline multi-agent reinforcement learning. In Extended Abstract
+at the 2023 International Conference on Autonomous Agents and Multiagent Systems.
+AAMAS, 2023a.
+10
+
+Mava: distributed multi-agent reinforcement learning in JAX
+Juan Claude Formanek, Callum Rhys Tilbury, Jonathan Phillip Shock, Arnu Pretorius, et al.
+Reduce, reuse, recycle: Selective reincarnation in multi-agent reinforcement learning. In
+Workshop on Reincarnating Reinforcement Learning at ICLR 2023, 2023b.
+C. Daniel Freeman, Erik Frey, Anton Raichuk, Sertan Girgin, Igor Mordatch, and Olivier
+Bachem. Brax - a differentiable physics engine for large scale rigid body simulation, 2021.
+URL http://github.com/google/brax.
+Rihab Gorsane, Omayma Mahjoub, Ruan John de Kock, Roland Dubb, Siddarth Singh, and
+Arnu Pretorius. Towards a standardised performance evaluation protocol for cooperative
+marl. Advances in Neural Information Processing Systems, 35:5510–5521, 2022.
+Matteo Hessel, Manuel Kroiss, Aidan Clark, Iurii Kemaev, John Quan, Thomas Keck, Fabio
+Viola, and Hado van Hasselt. Podracer architectures for scalable reinforcement learning.
+arXiv preprint arXiv:2104.06272, 2021.
+Siyi Hu, Yifan Zhong, Minquan Gao, Weixun Wang, Hao Dong, Xiaodan Liang, Zhihui
+Li, Xiaojun Chang, and Yaodong Yang. Marllib: A scalable and efficient multi-agent
+reinforcement learning library. Journal of Machine Learning Research, 2023.
+Shengyi Huang, Rousslan Fernand Julien Dossa, Chang Ye, Jeff Braga, Dipam Chakraborty,
+Kinal Mehta, and Jo˜AG¸ o GM Ara˜Aˇsjo. Cleanrl: High-quality single-file implementations
+of deep reinforcement learning algorithms. Journal of Machine Learning Research, 23
+(274):1–18, 2022.
+Robert Tjarko Lange. gymnax: A JAX-based reinforcement learning environment library,
+2022. URL http://github.com/RobertTLange/gymnax.
+Chris Lu, Jakub Kuba, Alistair Letcher, Luke Metz, Christian Schroeder de Witt, and Jakob
+Foerster. Discovered policy optimisation. Advances in Neural Information Processing
+Systems, 35:16455–16468, 2022.
+Linghui Meng, Muning Wen, Chenyang Le, Xiyun Li, Dengpeng Xing, Weinan Zhang, Ying
+Wen, Haifeng Zhang, Jun Wang, Yaodong Yang, et al. Offline pre-trained multi-agent
+decision transformer. Machine Intelligence Research, 20(2):233–248, 2023.
+Ashvin Nair, Abhishek Gupta, Murtaza Dalal, and Sergey Levine. Awac: Accelerating online
+reinforcement learning with offline datasets. arXiv preprint arXiv:2006.09359, 2020.
+Georgios Papoudakis, Filippos Christianos, Lukas Sch¨afer, and Stefano V. Albrecht. Bench-
+marking multi-agent deep reinforcement learning algorithms in cooperative tasks. In
+Proceedings of the Neural Information Processing Systems Track on Datasets and Bench-
+marks (NeurIPS), 2021. URL http://arxiv.org/abs/2006.07869.
+Bei Peng, Tabish Rashid, Christian Schroeder de Witt, Pierre-Alexandre Kamienny, Philip
+Torr, Wendelin B¨ohmer, and Shimon Whiteson. Facmac: Factored multi-agent centralised
+policy gradients. Advances in Neural Information Processing Systems, 34:12208–12221,
+2021.
+11
+
+Mava: distributed multi-agent reinforcement learning in JAX
+Arnu Pretorius.
+Matrax:
+Matrix games in jax, 2023.
+URL http://github.com/
+instadeepai/matrax.
+Alexander Rutherford, Benjamin Ellis, Matteo Gallici, Jonathan Cook, Andrei Lupu, Gardar
+Ingvarsson, Timon Willi, Akbir Khan, Christian Schroeder de Witt, Alexandra Souly,
+et al. Jaxmarl: Multi-agent rl environments in jax. arXiv preprint arXiv:2311.10090,
+2023.
+Mikayel Samvelyan, Tabish Rashid, Christian Schroeder de Witt, Gregory Farquhar, Nantas
+Nardelli, Tim G. J. Rudner, Chia-Man Hung, Philiph H. S. Torr, Jakob Foerster, and
+Shimon Whiteson. The StarCraft Multi-Agent Challenge. CoRR, abs/1902.04043, 2019a.
+Mikayel Samvelyan, Tabish Rashid, Christian Schroeder De Witt, Gregory Farquhar, Nantas
+Nardelli, Tim GJ Rudner, Chia-Man Hung, Philip HS Torr, Jakob Foerster, and Shimon
+Whiteson. The starcraft multi-agent challenge. arXiv preprint arXiv:1902.04043, 2019b.
+Qi Tian, Kun Kuang, Furui Liu, and Baoxiang Wang. Learning from good trajectories in
+offline multi-agent reinforcement learning. In Proceedings of the AAAI Conference on
+Artificial Intelligence, volume 37, pages 11672–11680, 2023.
+Edan Toledo, Laurence Midgley, Donal Byrne, Callum Rhys Tilbury, Matthew Macfarlane,
+Cyprien Courtot, and Alexandre Laterre. Flashbax: Streamlining experience replay buffers
+for reinforcement learning with jax, 2023. URL https://github.com/instadeepai/
+flashbax/.
+Wei-Cheng Tseng, Tsun-Hsuan Johnson Wang, Yen-Chen Lin, and Phillip Isola. Offline
+multi-agent reinforcement learning with knowledge distillation. In Advances in Neural
+Information Processing Systems, volume 35, pages 226–237, 2022.
+Andrew Wagenmaker and Aldo Pacchiano. Leveraging offline data in online reinforcement
+learning. In International Conference on Machine Learning, pages 35300–35338. PMLR,
+2023.
+Xiangsen Wang, Haoran Xu, Yinan Zheng, and Xianyuan Zhan. Offline multi-agent rein-
+forcement learning with implicit global-to-local value regularization. In Thirty-seventh
+Conference on Neural Information Processing Systems, 2023.
+Omry Yadan. Hydra - a framework for elegantly configuring complex applications. Github,
+2019. URL https://github.com/facebookresearch/hydra.
+Yiqin Yang, Xiaoteng Ma, Chenghao Li, Zewu Zheng, Qiyuan Zhang, Gao Huang, Jun
+Yang, and Qianchuan Zhao. Believe what you see: Implicit constraint approach for offline
+multi-agent reinforcement learning. Advances in Neural Information Processing Systems,
+34:10299–10312, 2021.
+12

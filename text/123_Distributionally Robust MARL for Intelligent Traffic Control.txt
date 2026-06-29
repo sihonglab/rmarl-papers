@@ -1,0 +1,1166 @@
+Distributionally Robust Multi-Agent
+Reinforcement Learning for Intelligent
+Traffic Control
+Shuwei Pei ∗Joran Borger ∗Arda Kosay ∗∗
+Muhammed O. Sayin ∗∗Saeed Ahmed ∗
+∗Jan C. Willems Center for Systems and Control, ENTEG, Faculty of
+Science and Engineering, University of Groningen, 9747 AG
+Groningen, the Netherlands (e-mails: s.pei@rug.nl,
+j.borger.3@student.rug.nl, s.ahmed@rug.nl)
+∗∗Department of Electrical, Electronics Engineering, Bilkent
+University, TR-06800 Ankara, Turkey (e-mail:
+arda.kosay@bilkent.edu.tr, sayin@ee.bilkent.edu.tr)
+Abstract: Learning-based traffic signal control is typically optimized for average performance
+under a few nominal demand patterns, which can result in poor behavior under atypical traffic
+conditions. To address this, we develop a distributionally robust multi-agent reinforcement
+learning framework for signal control on a 3 × 3 urban grid calibrated from a contiguous 3 × 3
+subarea of central Athens covered by the pNEUMA trajectory dataset (Barmpounakis and
+Geroliminis, 2020). Our approach proceeds in three stages. First, we train a baseline multi-agent
+RL controller in which each intersection is governed by a proximal policy optimization agent with
+discrete signal phases, using a centralized training, decentralized execution paradigm. Second, to
+capture demand uncertainty, we construct eight heterogeneous origin–destination based traffic
+scenarios—one directly derived from pNEUMA and seven synthetically generated—to span
+a wide range of spatial and temporal demand patterns. Over this scenario set, we train a
+contextual-bandit worst-case estimator that assigns mixture weights to estimate adversarial
+demand distributions conditioned on context. Finally, without modifying the controller ar-
+chitecture, we fine-tune the baseline multi-agent reinforcement learning agents under these
+estimated worst-case mixtures to obtain a distributionally robust multi-agent reinforcement
+learning controller. Across all eight scenarios, as well as on an unseen validation network based
+on the Sioux Falls configuration, the distributionally robust multi-agent reinforcement learning
+controller consistently reduces horizon-averaged queues and increases average speeds relative to
+the baseline, achieving up to 51% shorter queues and 38% higher speeds on the worst-performing
+scenarios.
+Keywords: Reinforcement Learning; Distributionally Robust Optimization; Traffic Signal
+Control; Intelligent Transportation Systems.
+1. INTRODUCTION
+Urban intersections are major bottlenecks in road net-
+works and contribute disproportionately to delay, fuel con-
+sumption, and emissions. Congested signalized junctions
+cause substantial economic losses through wasted time and
+fuel (Faheem et al., 2024) and worsen urban air quality
+and public health (Cohen et al., 2005). Rapid urbanization
+further increases pressure on urban transport systems (Di-
+jkstra et al., 2021). Designing signal control strategies that
+remain effective under strongly time-varying and uncertain
+traffic conditions is therefore a central challenge for sus-
+tainable urban mobility and it is the main focus of this
+paper.
+Most existing signal-control systems are based on fixed-
+time, actuated, or rule-based adaptive control. Classical
+coordination schemes such as SCOOT and SCATS opti-
+mize cycle length, green splits, and offsets from historical
+volumes and limited detector data (Hunt et al., 1982; Luk,
+1984). These methods can provide efficient progression
+under their design conditions, but performance degrades
+when actual demand deviates from the assumed patterns,
+for example, during incidents or atypical flows. Fully actu-
+ated and adaptive schemes improve local responsiveness,
+yet remain largely myopic and can struggle in dense net-
+works where spillback, blocking, and safety constraints
+interact in complex ways (Stevanovic, 2010).
+Reinforcement learning (RL) offers a data-driven alter-
+native that can adapt signal timing directly from inter-
+action with traffic (Sutton and Barto, 1998). For single
+intersections, deep RL controllers with compact lane- or
+image-based encodings, discrete phase-switching actions,
+and delay-oriented rewards, have demonstrated improve-
+ments over fixed-time baselines in simulation (Huang et al.,
+2023). To handle networks, multi-agent reinforcement
+learning (MARL) assigns an agent to each intersection
+arXiv:2512.18558v1  [eess.SY]  21 Dec 2025
+
+Fig. 1. Schematic of DR-MARL controller for intelligent
+intersection management.
+and coordinates them via local observations and limited
+neighborhood context, achieving promising results on grid
+and arterial networks (Zhang et al., 2023). These methods,
+however, are typically trained on a small set of nominal
+demand patterns and optimized for expected return, with
+evaluation focused on average performance.
+In practice, operators care strongly about worst-case be-
+haviour across diverse traffic demand scenarios (e.g., peak-
+hours or disrupted conditions), not only average delay.
+Standard RL objectives provide no guarantees on tail
+performance, motivating robust and distributionally ro-
+bust formulations that bias learning toward hard cases by
+upweighting poorly performing scenario groups (Sagawa
+et al., 2020). To address this, in this paper, we adopt a
+contextual-bandit worst-case estimator (CB-WCE) (Liu
+et al., 2025), which adaptively reweights traffic scenarios
+during training and thus steers a standard MARL con-
+troller trained with proximal policy optimization (PPO)
+towards improved worst-case performance, while keep-
+ing the policy architecture and environment unchanged.
+While robust and distributionally robust RL methods have
+been developed and tested mainly on abstract bench-
+marks with simplified dynamics and unconstrained action
+spaces (Sagawa et al., 2020; Hashimoto et al., 2018), it is
+still unclear how well these techniques transfer to network-
+level traffic signal control, where demand is highly variable
+and signal phases must satisfy strict safety constraints.
+Contribution: As shown in Fig. 1, starting from a stan-
+dard MARL controller for signalized networks, we em-
+ploy a CB-WCE that reweights traffic scenarios during
+training, yielding a distributionally robust MARL (DR-
+MARL) variant without changing the underlying policy
+architecture or environment. Concretely, our contributions
+are:
+(1) We instantiate a MARL controller for a signalized
+3 × 3 grid in a centralized training decentralized
+execution (CTDE) framework as our baseline MARL
+controller. It uses compact lane-based observations
+and discrete phase actions in a high-fidelity SUMO
+simulation environment.
+(2) We propose a CB-WCE trained by OD-based demand
+patterns, enabling the generation of more variable
+and adversarial traffic scenarios for robust controller
+training.
+(3) We retrain the baseline MARL controller with a
+worst-case estimator, obtaining a DR-MARL policy,
+and compare its average and worst-case network
+performance (delay, queues, throughput) against the
+original MARL across various traffic scenarios.
+Organization: Section 2 formulates the multi-agent
+traffic-signal control problem on the calibrated 3 × 3 grid
+and introduces the baseline MARL controller. Section 3
+presents the scenario-based robustness objective, the CB-
+WCE, and the DR-MARL retraining procedure. Section 4
+describes the experimental setup, including the network,
+traffic demand construction, and training protocol. Sec-
+tion 5 discusses numerical results, and Section 6 concludes
+the findings and outlines future work.
+2. PROBLEM SETTING AND MARL BASELINE
+2.1 Traffic signal control as a multi-agent RL problem
+We model network-wide traffic signal control on a 3 ×
+3 urban grid as a MARL problem. The grid geome-
+try (link lengths, intersection spacing) is calibrated from
+a contiguous 3 × 3 subarea of central Athens covered
+by the pNEUMA trajectory dataset (Barmpounakis and
+Geroliminis, 2020), yielding realistic block lengths and
+intersection density. Traffic dynamics are simulated in
+SUMO (Krajzewicz et al., 2012) and interfaced via
+FLOW (Wu et al., 2022) as a Markov decision process
+(MDP) for RL training. Details of the simulator stack and
+network construction are given in Section 4.
+We model each signalized intersection as a single learning
+agent, with all agents treated as homogeneous and sharing
+a common policy that is updated together. Let I :=
+{1, . . . , 9} index the junctions, and let t ∈{0, . . . , H −1}
+denote discrete decision steps within an episode of length
+H. Denote by zt ∈Z the global traffic state at time
+t and by at := (ai
+t)i∈I, the joint signal action over all
+intersections. The traffic state then evolves according to
+the Markovian dynamics: zt+1 ∼Penv
+ · | zt, at
+
+, where the
+transition kernel Penv is induced by SUMO’s microscopic
+vehicle dynamics and the signal programs.
+Observation.For each intersection i ∈I, the observation
+oi
+t = fi(st) summarizes traffic and signal conditions in a lo-
+cal neighborhood. On the traffic side, we track eight aggre-
+gated lane movements (straight/right (SR), and left-turn
+(LT) for North/South/East/West) and, for each move-
+ment, record eight features: a movement identifier (SR vs.
+LT), distances and speeds of the closest and second-closest
+vehicle to the intersection, lane density, mean speed, and
+a queue fraction (fraction of vehicles with v < 0.1 m/s,
+normalized to a 10-vehicle queue). This yields 8 × 8 = 64
+traffic features. In addition, the agent obtains basic signal-
+state information for the controlled intersection and its
+four orthogonal neighbors: time since last phase change,
+current phase index, and a flag indicating whether the
+signal is in a yellow/all-red (clearance) interval, giving
+5×3 = 15 signal features. Together, these form a compact
+observation vector oi
+t ∈R79, designed to capture local
+pressure and limited neighborhood context.
+Action and safety. At each decision step, agent i se-
+lects a discrete action ai
+t ∈{0, . . . , 7}, choosing one of
+eight non-conflicting signal phases at that junction. The
+phase set covers straight/right movements for the north–
+south and east–west pairs, protected left turns for these
+pairs, and four single-approach phases where all move-
+ments (SR+LT) on one approach receive green. Safety
+is enforced via a fixed 5 s clearance interval (yellow plus
+
+all-red) applied whenever a phase changes, ensuring that
+vehicles clearing the intersection are never exposed to
+newly conflicting movements. When switching between
+phases, we allow “green carryover” for movements that
+are green in both the old and new phase, avoiding unnec-
+essary clearance for non-conflicting streams and improving
+throughput.
+Reward. The agents are homogeneous and share the same
+local reward specification. At every step t, each agent
+i receives a local reward ri
+t defined over vehicles on its
+incoming edges. The reward combines two components:
+(i) a normalized mean-speed term promoting throughput,
+and (ii) a penalty on normalized queue length. Concretely,
+we use ri
+t = κs si −κq ¯qi, where si is the normalized mean
+speed on incoming edges, ¯qi is a normalized queue measure,
+and the weights κs, κq are shared across all agents. To
+train the homogeneous shared policy, we use a single team
+reward given by the sum of local rewards, rt = P
+i∈I ri
+t,
+which provides a common learning signal for all agents.
+2.2 Traffic demand
+For initial training of the baseline policy, we use an
+even traffic distribution over the outer edges of the grid.
+Each outer edge acts as an origin, with a fixed inflow
+of 400 veh/h, resulting in a total demand of 4800 veh/h.
+For every vehicle spawned at origin o, the destination d
+is sampled uniformly from the remaining 11 outer edges,
+so that Pr{d | o} =
+1
+11,
+d ̸= o. Routes between
+each origin–destination pair follow shortest paths in edge
+count (breaking ties uniformly at random). This yields
+a balanced training distribution where all directions and
+origin–destination (OD) pairs are represented. This even
+OD pattern is the only demand configuration used during
+baseline training.
+2.3 PPO-based MARL controller (baseline)
+In the baseline MARL controller, we adopt a CTDE
+scheme with parameter sharing. All intersections use the
+same stochastic traffic-signal policy πθ : O →∆(A), where
+πθ(a | o) denotes the probability of selecting phase a ∈A
+given the local observation o ∈O and shared parameters θ.
+At time t, each agent i executes in a decentralized manner
+by sampling its phase ai
+t ∼πθ(· | oi
+t) based solely on
+its local observation oi
+t. The agents are homogeneous and
+share the same local reward. During training, trajectories
+and rewards collected from all intersections are aggregated
+to perform joint updates of the shared parameters θ. This
+parameter-sharing CTDE design exploits the homogene-
+ity between intersections, improves sample efficiency, and
+reduces the number of trainable parameters.
+Let τ = (s0, o1:|I|
+0
+, a1:|I|
+0
+, r0, . . . , sH) denote a trajectory
+induced by πθ and the environment dynamics, where
+o1:|I|
+t
+:= (o1
+t, . . . , o|I|
+t ) and similarly for a1:|I|
+t
+. The baseline
+objective maximizes the expected discounted return over
+the training distribution of traffic scenarios:
+J(θ) = Eτ∼πθ
+" H−1
+X
+t=0
+γt rt
+#
+,
+(1)
+with discount factor γ ∈(0, 1]. In this baseline, the demand
+pattern is fixed to the even distribution of Section 2.2; the
+controller is not yet biased toward worst-case conditions.
+We optimize (1) using PPO (Schulman et al., 2017), a
+clipped policy-gradient method that is widely used in
+continuous-control and multi-agent settings. Given a mini-
+batch B sampled from the replay buffer Dθ, we define the
+policy-gradient objective
+J(θ; B) :=
+1
+|B| |I|
+X
+(oi
+t,ai
+t,rt,oi
+t+1)∈B
+X
+i∈I
+rt log πθ(ai
+t | oi
+t).
+(2)
+The policy parameters are then updated by ascending
+the stochastic gradient ∇θJ(θ; B). Coordination emerges
+from local observations and the use of a homogeneous,
+parameter-shared policy. The resulting baseline MARL
+controller serves as a conventional, expectation-maximizing
+baseline on the calibrated 3×3 grid. In Section 3, we build
+on this baseline by introducing a CB-WCE that reweights
+or resamples demand scenarios during training, effectively
+biasing learning toward worst-case conditions, while keep-
+ing the underlying PPO objective (1) and update rule
+unchanged.
+3. DISTRIBUTIONALLY ROBUST MARL VIA
+WORST-CASE ESTIMATION
+3.1 Scenario-based robustness objective
+Variability in real world traffic distributions suggests that
+a traffic-signal controller should perform reliably across
+sets of demand patterns rather than being tuned to
+a single nominal case. In our setting, the data-driven
+preprocessing in Section 2.2 yields a finite set of K = 8
+representative traffic-demand scenarios, K = {0, . . . , 7},
+corresponding to synthetic data and a clustered pNEUMA
+time window with a distinct spatial flow pattern (e.g.,
+different directional imbalances or overall loading).
+For a fixed MARL policy πθ and a given scenario k ∈K,
+we define
+Jk(θ) = E
+
+R(τ)
+ scenario k, πθ
+
+,
+as the expected return when the network is operated under
+that scenario, where τ denotes a rollout trajectory and
+R(τ) its cumulative reward (a negative delay-based proxy).
+From these per-scenario returns we derive two evaluation
+metrics:
+Javg(θ) =
+1
+K
+X
+k∈K
+Jk(θ),
+Jworst(θ) = min
+k∈K Jk(θ).
+(3)
+Here Javg captures typical performance across the eight
+scenarios, while Jworst captures performance under the
+most challenging one.
+In our experiments, the baseline MARL controller is
+trained only under the synthetic, spatially balanced de-
+mand described in Section 2; its Jk(θ), Javg(θ), and
+Jworst(θ) on the traffic-demand scenarios are therefore
+purely evaluation quantities, not the objective it was opti-
+mized for. As a result, the baseline may perform well near
+its training distribution but degrade markedly on some of
+the data-driven scenarios, leading to a low Jworst.
+
+Our goal in the remainder of this section is to improve
+Jworst(θ) and, ideally, to also improve (or at least preserve)
+Javg(θ) by retraining the MARL policy under traffic-
+demand patterns that are deliberately chosen to be diffi-
+cult. To this end, we introduce a CB-WCE that adaptively
+reweights the traffic-demand scenarios so that training is
+increasingly focused on those that induce high delay. The
+estimator itself and its integration with PPO are described
+next in Sections 3.2–3.3.
+3.2 Contextual-bandit worst-case estimator
+To improve the worst-case performance in (3), we intro-
+duce a worst-case estimator that operates on a slower
+timescale than the traffic-signal MARL controller. Con-
+ceptually, this agent plays an adversarial role: for a fixed
+signal-control policy πθ, it tries to select traffic-demand
+patterns that maximize network-wide congestion, so that
+subsequent updates of πθ are biased toward difficult con-
+ditions.
+Observation. The estimator acts once every 600 s, i.e.,
+once per traffic “window”, while the traffic-light agents
+act every simulation second. At the end of window τ, we
+summarize the recent network state by an 18-dimensional
+feature vector sτ ∈R18, constructed from the average
+speed and average density at each of the nine intersections
+(two scalars per intersection). This compact summary pro-
+vides coarse information about where congestion currently
+occurs in the grid.
+Action. Given the window-level observation xτ, the esti-
+mator outputs a non-negative weight vector
+wτ ∈R8
+≥0,
+8
+X
+k=1
+wτ,k = 1.
+with one component wτ,k for each of the K = 8 traffic-
+demand scenarios. In practice, wτ is the output of the
+trained neural network. These weights define a mixed
+demand pattern for the next 600 s by combining the base
+inflow vectors {λ(k)}8
+k=1 extracted from the inflow data:
+λmix(wτ) =
+8
+X
+k=1
+wτ,k λ(k).
+The resulting mixed inflows are then applied in the
+SUMO/Flow environment for the duration of the next
+window.
+Reward. During window τ+1, the MARL traffic-light
+policy πθ is applied at every second while demand is
+generated according to λmix(wτ). Over this window, we
+accumulate the total waiting time of all vehicles in the
+network, rCB
+τ
+= P
+v wait timev, where wait timev is the
+time vehicle v spends queued in this time window τ. The
+CB-WCE seeks to maximize this cumulative waiting time,
+in contrast to the signal controller, which aims to minimize
+delay.
+The worst-case estimator’s policy πψ(w | s) is parameter-
+ized by a neural network and trained with a policy-gradient
+method. Here, πψ(wτ | sτ) denotes a probability distri-
+bution over a weight vector for different traffic-demand
+scenarios, conditioned on the current local observation. As
+shown in Algorithm 1, training is carried out with θ frozen
+at θ0, using tuples (sτ, wτ, rCB
+τ
+) collected over successive
+Algorithm 1 Contextual-bandit worst-case estimator
+1: Input:
+OD–based
+group
+distributions
+{λ(k)}8
+k=1;
+traffic-light controller policy πθ; window length Twin;
+learning rate lψ; episode horizon HW; replay buffer
+Dw.
+2: Output: Worst-case estimator policy πψ∗(w | s).
+3: Initialize policy parameters ψ and buffer Dw ←∅.
+4: for episode = 1, . . . , K do
+5:
+Reset SUMO/Flow network.
+6:
+Warm up under a random mixture of {λ(k)}.
+7:
+Compute initial observation s0
+8:
+for group window index τ = 0, . . . , until Dw do
+9:
+Sample weights wτ ∼πψ(· | sτ).
+10:
+Construct group λmix(wτ) = P8
+k=1 wτ,kλ(k).
+11:
+Apply λmix(wτ) for the next Twin seconds.
+12:
+Initialize window reward rCB
+τ
+←0.
+13:
+for t = 1, . . . , Twin do
+14:
+for each intersection i ∈I do
+15:
+Observe oi
+t and select ai
+t ∼πθ0(· | oi
+t).
+16:
+end for
+17:
+Apply (ai
+t)i∈I under demand λmix(wτ).
+18:
+Compute waiting time twait of each vehicle at t.
+19:
+Accumulate rCB
+τ
+←rCB
+τ
++ twait.
+20:
+end for
+21:
+Compute next estimator observation sτ+1.
+22:
+Store (sτ, wτ, rCB
+τ
+, sτ+1) in Dw.
+23:
+end for
+24:
+Sample mini-batch B ∼Dw.
+25:
+Update ψ ←ψ + lψ∇ψJCB(ψ; B).
+26: end for
+windows. Given a mini-batch B sampled from the replay
+buffer Dw, we define the contextual-bandit objective
+JCB(ψ; B) :=
+1
+|B|
+X
+(sτ ,wτ ,rCB
+τ
+,sτ+1)∈B
+rCB
+τ
+log πψ(wτ | sτ),
+(4)
+and update the estimator parameters via ascending the
+stochastic gradient ∇ψJCB(ψ; B)., yielding a policy πψ∗
+that focuses on adverse traffic-demand mixtures. In the
+subsequent DR-MARL phase (Section 3.3), the worst-
+case estimator’s policy πψ∗is kept fixed and used only
+to generate demand sequences.
+3.3 DR-MARL training with a frozen worst-case estimator
+We now describe how the CB-WCE is used to obtain a DR-
+MARL controller. As shown in Algorithm 2, after train-
+ing the baseline MARL controller πθ0 on the synthetic,
+spatially balanced demand (Section 2.2) and training the
+contextual-bandit estimator πψ∗(w | x) against this frozen
+baseline (Section 3.2), we initialize the DR-MARL con-
+troller with θ = θ0 and perform an additional PPO fine-
+tuning phase in which only θ is updated. The CB-WCE
+πψ∗is kept fixed and serves as a scheduler that selects
+mixed demand patterns during this retraining.
+During DR-MARL fine-tuning, each training episode is
+partitioned into windows of length Twin = 600 s. At the
+beginning of window τ, we compute the observation xτ
+(average speed and density at each intersection over the
+preceding window, or over an initial warm-up period for
+τ = 0) and query the frozen estimator to obtain demand
+
+Algorithm 2 DR-MARL with a worst-case estimator
+1: Input: Worst estimator πψ∗(w | x); baseline MARL
+policy parameters θ0; OD–based group distributions
+{λ(k)}8
+k=1 window length Twin; episode horizon HDR;
+PPO learning rate lθ.
+2: Output: Distributionally robust MARL policy πθ∗.
+3: Initialize policy parameters θ ←θ0 and replay buffer
+Dθ.
+4: for episode = 1, . . . , KDR do
+5:
+Reset SUMO/Flow network.
+6:
+Warm up using a random mixture of {λ(k)}.
+7:
+Compute initial estimator observation x0.
+8:
+for group window index τ = 0, . . . , until HDR do
+9:
+Sample actions wτ ∼πψ∗(· | xτ).
+10:
+Construct group λmix(wτ) = P8
+k=1 wτ,kλ(k).
+11:
+Apply λmix(wτ) for the next Twin seconds.
+12:
+for t = 1, . . . , Twin do
+13:
+for each intersection i ∈I do
+14:
+Observe oi
+t and sample ai
+t ∼πθ(· | oi
+t).
+15:
+end for
+16:
+Apply (ai
+t)i∈I under demand λmix(wτ).
+17:
+Compute rt and next observations {oi
+t+1}i∈I.
+18:
+Store
+ {oi
+t}i∈I, {ai
+t}i∈I, rt, {oi
+t+1}i∈I
+
+in Dθ.
+19:
+end for
+20:
+Compute next estimator observation xτ+1.
+21:
+end for
+22:
+Sample mini-batch B ∼Dθ.
+23:
+Update θ ←θ + lθ∇θJ(θ; B).
+24: end for
+weights wτ ∼πψ∗(· | xτ), which define the mixed demand
+pattern λmix(wτ) for the upcoming Twin seconds. Within
+this window, the MARL controller applies actions ai
+t ∼
+πθ(· | oi
+t) at every intersection i each simulation second,
+while vehicles are generated according to λmix(wτ) and
+rewards rt are collected exactly as in the baseline setup.
+After all windows of an episode have been simulated,
+the resulting trajectory contributes to a PPO update of
+θ following the same setting in Section 2.3. The policy
+parameters are then updated by ascending the stochastic
+gradient ∇θJ(θ; B). Episodes are repeatedly generated in
+this two-timescale fashion, so that the traffic-signal policy
+gradually adapts to the adversarially chosen mixture of
+demand scenarios.
+4. EXPERIMENTAL SETUP: 3X3 GRID WITH
+TRAFFIC DEMAND
+4.1 Network
+As described in Section 2, we use a 3 × 3 signalized grid
+as the testbed. The geometry is based on a contiguous
+subarea of central Athens covered by the pNEUMA tra-
+jectory dataset (Barmpounakis and Geroliminis, 2020):
+intersection coordinates are taken from the real network
+and connected by straight links so that block lengths and
+intersection spacing reflect typical urban values. The grid
+does not exactly match the true road layout (which in-
+cludes one-way streets, heterogeneous lane counts, and side
+roads), but preserves the overall scale and orientation. The
+construction of traffic demand is detailed in Section 4.2.
+Each bidirectional road segment is modeled with four lanes
+per direction to provide sufficient storage under congested
+conditions. The lane configuration follows a conventional
+urban design:
+• lane 0 (rightmost): straight or right turn (SR),
+• lane 1: straight only,
+• lanes 2–3: left turns, with lane 3 also allowing U-turns.
+In the RL interface, lanes 0–1 are aggregated into a
+single straight/right (SR) movement and lanes 2–3 into
+a single left-turn (LT) movement per approach, yielding
+two aggregated movements (SR, LT) for each of the four
+approaches (N, S, E, W).
+4.2 Traffic demand
+To train the worst-case estimator and the DR-MARL
+controller, we expose the network to a small but diverse
+set of OD demand patterns. All patterns are defined on
+the 12 outer edges of the 3×3 grid.
+pNEUMA-based pattern. We first construct a single
+data-driven OD pattern from the pNEUMA trajectory
+dataset for central Athens (Barmpounakis and Geroli-
+minis, 2020). Vehicle trajectories recorded at 24 fps are
+mapped to the nine-intersection study area, and for each
+recording window we count the number of trips between
+every origin–destination pair. Aggregating the 20 windows
+and converting counts to hourly rates yields an OD-rate
+vector that reflects typical flows in the subnetwork. This
+vector is then normalized to a total demand of 5000 veh/h
+and used as the pNEUMA-based scenario.
+Synthetic patterns. The aggregated pNEUMA pattern
+is relatively balanced and does not cover strongly direc-
+tional or highly congested cases by itself. To probe ro-
+bustness under a wider range of conditions, we therefore
+design seven additional synthetic OD patterns. Each pat-
+tern is a 12 × 12 OD matrix with the same total inflow
+of 5000 veh/h, but with different spatial structure: one
+nearly uniform pattern, inbound and outbound patterns
+concentrating flow toward or away from the central area,
+north–south and east–west corridor patterns, and two di-
+agonal “cross-town” patterns. Small random perturbations
+are added to avoid perfectly regular grids while keeping
+flows non-negative.
+Scenario set. Together, the one pNEUMA-based pattern
+and the seven synthetic patterns form eight base demand
+scenarios. This set constitutes the scenario index K used
+in Section 3: during worst-case estimator training and
+DR-MARL fine-tuning, the estimator selects or mixes
+these scenarios to generate the traffic demand applied in
+simulation.
+4.3 Training protocol
+For the baseline MARL controller, we use an episode
+horizon of H = 900 s, matching the pNEUMA window
+length. Each training iteration collects Nroll = 10 rollouts,
+yielding a total simulated time of H × Nroll = 9000 s per
+iteration. Training is ran for 3000 iterations. The policy is
+initialized randomly and learns from scratch, without any
+pre-training or imitation.
+
+For the CB-WCE, we use longer episodes that span mul-
+tiple 600 s windows so that the estimator can observe the
+effect of its scenario-selection decisions. An episode horizon
+of HWCE = 9600 s is used, with N WCE
+roll
+= 8 rollouts per
+training iteration and a total of 50 training iterations. In
+all cases, the per-window duration remains 600 s, and the
+eight traffic-demand scenarios are switched according to
+the estimator’s weights as described in Section 4.2.
+For the final DR-MARL model, we adopt the same multi-
+window structure as for the worst-case estimator so that
+the policy is trained under demand that can change every
+600 s. An episode horizon of HDR = 9600 s is used, with
+N DR
+roll = 2 rollouts per training iteration and a total of
+400 training iterations. The DR-MARL policy is initialized
+from the trained baseline MARL controller and further
+updated under the adaptive scenario selection described
+in Section 3.3.
+4.4 Baselines and Evaluation Metrics
+In our experiments we compare two controllers:
+• PPO MARL: the expectation-maximizing multi-
+agent PPO controller described in Section 2.
+• DR-MARL: the same PPO architecture retrained
+with the CB-WCE, using the eight traffic-demand
+scenarios.
+We evaluate performance using standard network-level
+traffic metrics:
+• Queue length: total number of queued vehicles.
+• Average speed: mean vehicle speed over all vehicles.
+To evaluate performance over the eight traffic-demand
+groups, we compute the horizon-average of each metric for
+every group and report the per-group improvement of DR-
+MARL over the baseline. The corresponding evaluation
+results will be presented in the following section.
+5. RESULTS AND DISCUSSION
+5.1 Results
+We compare the baseline MARL controller and the
+DR-MARL controller on the seven synthetic traffic-
+demand groups introduced in Section 3.1 (groups 0-6),
+the pNEUMA traffic demand introduction in Section 3.1
+(group 7), and on one additional group derived from the
+enriched Sioux Falls scenario (Chakirov and Fourie, 2014)
+(group 8). For the latter, we consider a subnetwork in
+Sioux Falls that is consistent with our 3 × 3 grid and
+normalize the total demand to 5000 veh/h. The DR-MARL
+controller is trained on the distribution groups defined
+in Section 4.2, whereas the baseline MARL controller is
+trained on the distribution defined in Section 2.2; the
+Sioux Falls-based group is used exclusively for evaluation
+as an independent, previously unseen demand pattern
+for both controllers. For each controller and each group
+k ∈{0, . . . , 8}, we run 10 independent evaluation rollouts
+of length Heval = 3600 s. During a rollout, the demand is
+fixed to group k for the full horizon, the learned policy is
+kept fixed, and only the stochasticity in vehicle generation
+and microscopic dynamics varies across rollouts. For every
+group and controller, we then compute the horizon-average
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+Simulation Step
+0
+50
+100
+150
+Queue Length [veh]
+Baseline MARL – Queue Length by Group
+Group 0
+Group 1
+Group 2
+Group 3
+Group 4
+Group 5
+Group 6
+Group 7
+Group 8
+Fig. 2. Network-wide queue length over time for each
+demand group under the baseline MARL controller.
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+Simulation Step
+0
+20
+40
+60
+Queue Length [veh]
+DR-MARL – Queue Length by Group
+Group 0
+Group 1
+Group 2
+Group 3
+Group 4
+Group 5
+Group 6
+Group 7
+Group 8
+Fig. 3. Network-wide queue length over time for each
+demand group under the DR-MARL controller.
+of the two metrics in Section 4.4: average queue length and
+average speed, averaged again over the 10 rollouts.
+Figures 2–3 show the evolution of network-wide queue
+length over time for all nine groups under the baseline
+MARL controller and the DR-MARL controller. Each
+coloured line corresponds to the per-timestep mean queue
+length (over 10 rollouts) for a single demand group. Un-
+der the baseline MARL controller, queues diverge sub-
+stantially across groups and reach the highest levels for
+group 7, with several other groups also sustaining long
+queues. Under DR-MARL, the curves are consistently
+shifted downward: all groups stabilize at noticeably lower
+queue levels, with group 5 being the heaviest but still
+far below the baseline MARL controllers worst case. The
+unseen Sioux Falls group (group 8) behaves similarly to
+the training groups and also exhibits a clear reduction in
+queues under DR-MARL.
+Figures 4 and 5 report the corresponding average speeds.
+Under the baseline MARL controller, steady-state speeds
+vary between roughly 4.5 m/s to 7 m/s depending on the
+group, with groups 6 and 7 performing worst. Under DR-
+MARL, all nine groups attain higher steady-state speeds,
+typically around 8 m/s or above, with only group 5 clearly
+below this level. The Sioux Falls group again follows this
+pattern, confirming that the DR-MARL policy generalises
+better than the baseline to an unseen demand distribution.
+Table 1 summarizes these results numerically by reporting,
+for each group, the horizon- and rollout-averaged queue
+length and average speed under both controllers. The DR-
+MARL controller substantially reduces the average queue
+length for all groups and at the same time increases the
+average speed in every group.
+
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+Simulation Step
+0
+5
+10
+15
+Average Speed [m/s]
+Baseline MARL – Average Speed by Group
+Group 0
+Group 1
+Group 2
+Group 3
+Group 4
+Group 5
+Group 6
+Group 7
+Group 8
+Fig. 4. Network-wide average speed over time for each
+demand group under the baseline MARL controller.
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+Simulation Step
+0
+5
+10
+15
+Average Speed [m/s]
+DR-MARL – Average Speed by Group
+Group 0
+Group 1
+Group 2
+Group 3
+Group 4
+Group 5
+Group 6
+Group 7
+Group 8
+Fig. 5. Network-wide average speed over time for each
+demand group under the DR-MARL controller.
+Table 1. Comparison of MARL and DR-MARL
+performance per group (horizon-and-rollout-
+averaged).
+queue length
+average speed
+groups
+MARL
+DR-MARL
+MARL
+DR-MARL
+0
+72.287
+40.137
+6.882
+8.411
+1
+70.318
+39.959
+6.925
+8.404
+2
+76.829
+35.250
+6.297
+8.571
+3
+76.062
+38.528
+5.429
+8.358
+4
+67.008
+40.250
+6.105
+8.347
+5
+64.620
+51.302
+5.647
+6.524
+6
+60.094
+39.914
+4.714
+8.330
+7
+105.153
+32.932
+4.910
+8.685
+8
+65.711
+38.372
+6.795
+8.353
+Table 2 reports the relative change of DR-MARL with
+respect to the baseline (percentage decrease in queue
+length and percentage increase in average speed). Queue
+length decreases by roughly 21–69 % across groups, with
+the largest reduction in group 7 (−68.68 %). Average speed
+increases by roughly 16–77 %, with the largest gains in
+groups 6 and 7 (about +76.7 %). For the unseen Sioux
+Falls group (group 8), DR-MARL reduces queues by about
+41.6 % and increases speed by about 22.9 %.
+As discussed in Section 3.1, our main interest lies in im-
+proving the worst-case performance Jworst across demand
+groups. From Table 1, we identify group 7 as the worst-
+performing group in terms of average queue length and
+group 6 as the worst for average speed under the baseline
+MARL controller, whereas group 5 is the worst group for
+both metrics under the DR-MARL controller. Comparing
+these worst cases, the DR-MARL controller reduces the
+worst observed average queue length by about 51.2 %
+(baseline group 7 vs. DR-MARL group 5) and increases
+Table 2. Relative decrease in queue length
+and increase in average speed of DR-MARL
+compared to MARL (in %).
+queue length
+average speed
+groups
+decrease
+increase
+0
+-44.475
+22.208
+1
+-43.173
+21.344
+2
+-54.119
+36.104
+3
+-49.346
+53.956
+4
+-39.933
+36.722
+5
+-20.611
+15.536
+6
+-33.581
+76.690
+7
+-68.682
+76.693
+8
+-41.605
+22.931
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+Simulation Step
+0
+50
+100
+150
+200
+250
+Queue Length [veh]
+Queue Length comparison (Baseline Group 7, DR Group 5)
+Baseline Worst Group
+DR-MARL Worst Group
+Fig. 6. Queue length over time for the worst-performing
+baseline group and the worst-performing DR-MARL
+group.
+0
+500
+1000
+1500
+2000
+2500
+3000
+3500
+Simulation Step
+0
+5
+10
+Average Speed [m/s]
+Average Speed Comparison (baseline Group 6, DR Group 5)
+Baseline Worst Group
+DR-MARL Worst Group
+Fig. 7. Average speed over time for the worst-performing
+baseline group and the worst-performing DR-MARL
+group.
+the worst observed average speed by about 38.4 % (base-
+line group 6 vs. DR-MARL group 5). Figures 6 and 7
+visualize the evolution of queues and speeds over time for
+these worst-case baseline and DR-MARL groups. The DR-
+MARL trajectories maintain substantially lower queues
+and higher speeds over most of the horizon, indicating
+that the contextual-bandit reweighting improves the policy
+precisely on its most challenging scenarios.
+5.2 Discussion
+The results show that distributionally robust retrain-
+ing with the contextual-bandit estimator improves both
+typical and worst-case performance: DR-MARL reduces
+queues and increases speeds across all nine demand groups,
+including the unseen Sioux Falls pattern, with large gains
+on the baseline’s most challenging groups. These improve-
+ments are obtained without modifying the MARL archi-
+
+tecture or reward, but solely by changing which demand
+patterns the policy encounters during fine-tuning. At the
+same time, Figures 6 and 7 show that the shaded regions
+for the two controllers overlap slightly, meaning that while
+DR-MARL is better for most rollouts and most of the
+horizon, some individual rollouts perform similarly to, or
+marginally worse than, the baseline MARL controller. This
+residual overlap is expected given the stochastic nature of
+the simulations and the finite set of demand groups used
+during training.
+6. CONCLUSION AND OUTLOOK
+We studied distributionally robust multi-agent reinforce-
+ment learning for traffic-signal control on a 3×3 grid cali-
+brated from the pNEUMA dataset. Building on a baseline
+MARL controller, we introduced a CB-WCE that runs on
+a slower time scale, observing aggregate speed and density
+and selecting mixture weights over eight demand scenarios.
+These mixtures are used during fine-tuning, improving
+robustness without changing the MARL architecture or
+reward in the SUMO/Flow environment.
+Numerical experiments on nine distinct traffic-demand
+patterns show that the DR-MARL controller improves
+both typical and worst-case performance compared to
+the baseline. Across nine demand patterns (including an
+unseen Sioux Falls-based distribution), DR-MARL reduces
+horizon-averaged queues and increases average speeds,
+with group-wise improvements of about 21–69, % in queue
+length and 16–77, % in speed, corresponding to a higher
+Javg and a clear improvement in Jworst. Some rollout-
+level overlap between the two controllers remains, but
+the overall distribution of outcomes shifts markedly in a
+favourable direction.
+The present study has several limitations. Robustness is
+assessed on a finite set of hand-crafted demand scenar-
+ios on a stylized 3 × 3 grid, which restricts the diver-
+sity of operating conditions and network structures that
+are represented. In addition, the worst-case estimator is
+trained only against the baseline MARL controller and
+then kept fixed during DR-MARL fine-tuning, so the de-
+mand patterns it selects reflect worst cases of the baseline
+rather than those of the improved controller. Extending
+the framework to larger and more heterogeneous networks,
+and allowing the worst-case estimator to adapt to the
+evolving DR-MARL policy, is left for future work.
+REFERENCES
+Barmpounakis, E.N. and Geroliminis, N. (2020). On the
+new era of urban traffic monitoring with massive drone
+data: The pNEUMA large-scale field experiment. Trans-
+portation Research Part C: Emerging Technologies, 111,
+50–71.
+Chakirov, A. and Fourie, P.J. (2014).
+Enriched sioux
+falls scenario with dynamic and disaggregate demand.
+Arbeitsberichte Verkehrs-und Raumplanung, 978.
+Cohen, A.J., Ross Anderson, H., Ostro, B., Pandey, K.D.,
+Krzyzanowski, M., K¨unzli, N., Gutschmidt, K., Pope,
+A., Romieu, I., Samet, J.M., et al. (2005). The global
+burden of disease due to outdoor air pollution. Journal
+of Toxicology and Environmental Health, Part A, 68(13-
+14), 1301–1307.
+Dijkstra, L., Florczyk, A.J., Freire, S., Kemper, T., Mel-
+chiorri, M., Pesaresi, M., and Schiavina, M. (2021).
+Applying the degree of urbanisation to the globe: A
+new harmonised definition reveals a different picture of
+global urbanisation. Journal of Urban Economics, 125,
+103312.
+Faheem, H.B., Shorbagy, A.M.E., and Gabr, M.E. (2024).
+Impact of traffic congestion on transportation system:
+Challenges and remediations-a review. Mansoura Engi-
+neering Journal, 49(2), 18.
+Hashimoto, T., Srivastava, M., Namkoong, H., and Liang,
+P. (2018). Fairness without demographics in repeated
+loss minimization. In Proceedings of the 35th Interna-
+tional Conference on Machine Learning (ICML), Stock-
+holm, Sweden, 1929–1938.
+Huang, S.C., Lin, K.E., Kuo, C.Y., Lin, L.H., Sayin,
+M.O., and Lin, C.W. (2023). Reinforcement-learning-
+based job-shop scheduling for intelligent intersection
+management. In Proceedings of the Design, Automation
+& Test in Europe Conference & Exhibition (DATE),
+Antwerp, Belgium, 1–6.
+Hunt, P., Robertson, D., Bretherton, R., and Royle, M.C.
+(1982). The SCOOT on-line traffic signal optimisation
+technique. Traffic Engineering & Control, 23(4), 190–
+192.
+Krajzewicz, D., Erdmann, J., Behrisch, M., and Bieker, L.
+(2012). Recent development and applications of SUMO
+– simulation of urban MObility. International Journal
+on Advances in Systems and Measurements, 5(3&4),
+128–138.
+Liu, G., Iloglu, S., Caldara, M., Durham, J.W., and Za-
+vlanos, M.M. (2025).
+Distributionally robust multi-
+agent reinforcement learning for dynamic chute map-
+ping. In Proceedings of the 42nd International Confer-
+ence on Machine Learning (ICML), Vancouver, Canada,
+38722–38743.
+Luk, J. (1984). Two traffic-responsive area traffic control
+methods: SCAT and SCOOT.
+Traffic Engineering &
+Control, 25(1), 14–22.
+Sagawa, S., Koh, P.W., Hashimoto, T., and Liang, P.
+(2020).
+Distributionally robust neural networks for
+group shifts: On the importance of regularization for
+worst-case generalization.
+In Proceedings of the 8th
+International Conference on Learning Representations
+(ICLR), Virtual.
+Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and
+Klimov, O. (2017). Proximal policy optimization algo-
+rithms. arXiv. ArXiv:1707.06347.
+Stevanovic, A. (2010). Adaptive traffic control systems:
+Domestic and foreign state of practice.
+Technical re-
+port, National Cooperative Highway Research Program
+(NCHRP) Synthesis 403.
+Sutton, R.S. and Barto, A.G. (1998).
+Reinforcement
+learning: An introduction. MIT Press, Cambridge, MA.
+Wu, C., Kreidieh, A.R., Parvate, K., Vinitsky, E., and
+Bayen, A.M. (2022). Flow: A modular learning frame-
+work for mixed autonomy traffic. IEEE Transactions on
+Robotics, 38(2), 1270–1286.
+Zhang, Y., Yu, Z., Zhang, J., Wang, L., Luan, T.H., Guo,
+B., and Yuen, C. (2023). Learning decentralized traffic
+signal controllers with multi-agent graph reinforcement
+learning.
+IEEE Transactions on Mobile Computing,
+23(6), 7180–7195.

@@ -1,0 +1,1917 @@
+1
+A Distributed Primal-Dual Method for Constrained Multi-agent
+Reinforcement Learning with General Parameterization
+Ali Kahe, Hamed Kebriaei∗, Senior Member, IEEE,
+Abstract— This paper proposes a novel distributed approach
+for solving a cooperative Constrained Multi-agent Reinforcement
+Learning (CMARL) problem, where agents seek to minimize a
+global objective function subject to shared constraints. Unlike
+existing methods that rely on centralized training or coordina-
+tion, our approach enables fully decentralized online learning,
+with each agent maintaining local estimates of both primal and
+dual variables. Specifically, we develop a distributed primal-dual
+algorithm based on actor-critic methods, leveraging local informa-
+tion to estimate Lagrangian multipliers. We establish consensus
+among the Lagrangian multipliers across agents and prove the
+convergence of our algorithm to an equilibrium point, analyzing the
+sub-optimality of this equilibrium compared to the exact solution
+of the unparameterized problem. Furthermore, we introduce a
+constrained cooperative Cournot game with stochastic dynamics
+as a test environment to evaluate the algorithm’s performance in
+complex, real-world scenarios.
+Index Terms— Constrained Multi-Agent Reinforcement
+Learning, Primal-Dual Algorithm, Actor-Critic Algorithm.
+I. INTRODUCTION
+Reinforcement Learning (RL) has shown remarkable success in
+complex decision-making tasks [1], [2]. While traditional RL focuses
+on single-agent optimization, many real-world applications like traffic
+control [3], and smart grids [4] require Multi-agent RL (MARL) to
+handle interacting agents in shared environments [5], [6]. A crucial
+requirement for practical deployment is agent independence during
+online operation, as centralized approaches often face scalability and
+communication challenges. This has motivated distributed MARL
+methods [7]–[10].
+While MARL holds great promise, many practical applications
+impose constraints that must be respected to ensure safety, fairness, or
+efficiency. For example, in networked microgrid management, main-
+taining power balance and preventing system overloads are critical
+for system stability [11]; similarly, in electric vehicle rebalancing
+systems, agents must consider factors such as battery life and access
+to charging stations [12]. Incorporating these types of constraints into
+reinforcement learning leads to the development of CMARL, which
+extends MARL frameworks to handle complex environments where
+satisfying constraints is as crucial as maximizing objective costs.
+CMARL is framed within the Constrained Markov Game (CMG)
+framework [13], where each agent has its own local constraints and
+objective costs. In this work, we address a cooperative CMARL
+problem in which all agents aim to minimize a global objective
+function subject to global constraints, which are composed of local
+costs. We propose and analyze a distributed online method for solving
+this cooperative CMARL problem.
+Although recent advancements in constrained single-agent re-
+inforcement learning have demonstrated a zero duality gap [14],
+∗Corresponding Author: Hamed Kebriaei.
+Ali Kahe and Hamed Kebriaei are with the School of ECE, Col-
+lege of Engineering, University of Tehran, Tehran, Iran. Emails:
+{ali.kahe@ut.ac.ir, kebriaei@ut.ac.ir}. H. Kebriaei is also with the
+School of Computer Science, Institute for Research in Fundamental
+Sciences (IPM), P.O. Box 19395-5746, Tehran, Iran. The work of Hamed
+Kebriaei was supported in part by the Institute for Research in Funda-
+mental Sciences (IPM) under Grant CS 1404-04-190.
+the duality gap for the cooperative CMARL problem can be non-
+zero [15]. This inherent complexity poses significant challenges for
+algorithms attempting to satisfy global constraints [15]. In our study,
+we provide an analysis on the feasibility and sub-optimality of the
+equilibrium point of the proposed online algorithm.
+Related Works:
+A widely used approach for solving single-
+agent constrained reinforcement learning problems is the primal-dual
+method, which demonstrates a zero duality gap by converting the
+original problem into an unconstrained Markov decision process with
+a Lagrangian cost [14], [16]. This relaxed MDP is solved through
+alternating updates of the primal and dual variables. This approach
+has been extended to cooperative CMARL by relaxing the constrained
+problem into an unconstrained cooperative MARL [17], [15], [18].
+Such relaxation enables the use of existing MARL algorithms, such
+as distributed actor-critic methods for networked agents [9].
+Although there are many works on CMARL, only a few address
+the general problem where agent’s local costs are coupled through
+global constraint functions. For instance, in the CMARL formulation
+of [19], each agent’s actions indirectly influence others through state
+transition dynamics, but the method requires some coordination,
+preventing full decentralization. In contrast, [18] achieves decentral-
+ization through parameter sharing among agents, though it solves
+a distributed constrained MDP with networked agents rather than a
+true CMARL problem. This approach assumes homogeneous agents,
+with policies converging to a consensus. A recent extension by [20]
+builds on this by reducing gradient estimation variance for improved
+scalability.
+For general CMARL formulation, [21] adopts the centralized train-
+ing, decentralized execution framework, improving computational
+efficiency and scalability in large-scale multi-agent environments.
+It separates an agent’s policy into two components: a base policy
+for reward maximization and a perturbation policy for constraint
+satisfaction. However, it requires communication between agents
+during execution, distinguishing it from fully distributed methods.
+Another notable work is [22], which operates in distributed
+settings. They propose a scalable method for general utility and
+constraint functions, modeled as nonlinear functions of the state-
+action occupancy measure. Their approach decomposes the state
+space for each agent, directly estimating local state-action occupancy
+measures while leveraging spatial correlation decay and truncated
+policy gradient estimators for scalability and convergence. However,
+despite its general policy parameterization, directly estimating local
+occupancy measures remains challenging in large state-action spaces.
+Contributions: In this work, we propose a distributed algorithm
+for the CMARL problem with networked agents, where each agent
+maintains its own local primal and dual variables. Specifically, we
+estimate the Lagrangian multipliers of the global CMARL problem
+using only local information, enabling a fully distributed policy
+update method. To the best of our knowledge, this problem has not
+been addressed previously. Our approach builds on the method of [9]
+for unconstrained MARL. As such, our method can be viewed as a
+constrained extension of [9]. The main contributions of the article
+are as follows.
+1) We propose a distributed formulation for Lagrange multipliers
+in the cooperative CMARL problem over networked agents.
+arXiv:2410.15335v2  [eess.SY]  7 May 2026
+
+2
+2) We develop a distributed online primal-dual algorithm based
+on actor-critic methods with general function approximation.
+3) We prove the consensus of the Lagrange multipliers and the
+convergence of the proposed algorithm to an equilibrium point.
+4) We analyze feasibility of constraints, and sub-optimality of the
+algorithm’s equilibrium point compared to the exact solution
+of the unparameterized primal CMARL problem.
+Notation: Let Rd denote the d-dimensional Euclidean space, with
+∥· ∥representing the Euclidean (vector) and spectral (matrix) norms,
+and ∥· ∥1 the L1 norm. Let ∇denote the gradient operator, 1 the
+all-ones vector, 1A the indicator of set A, and Id the d × d identity
+matrix. Define the consensus projection matrix as J := 1
+N 11⊤⊗Id,
+where ⊗denotes the Kronecker product, and its orthogonal comple-
+ment as J⊥:= INd −J. For any vector x ∈RNd, the consensus
+component is defined by ⟨x⟩:= 1
+N (1⊤⊗Id)x = 1
+N (x1+· · ·+xN),
+where xi ∈Rd for {i = 1, . . . , N}. The disagreement component of
+x relative to the consensus subspace is given by x⊥:= J⊥x. Thus,
+any vector x can be decomposed as x = 1⊗⟨x⟩+x⊥. Furthermore,
+we denote the projected dynamical system corresponding to the
+projection operator PC : Rm →C using ˙x = ˆPC[f(x)], where
+ˆPC[f(x)] = limε→0+
+h PC[x+εf(x)]−x
+ε
+i
+. R+ and R++ denote the
+set of non-negative and strictly positive real numbers, respectively.
+II. PROBLEM FORMULATION OF DISTRIBUTED CMARL
+We formally define the cooperative CMARL problem based on
+the CMG framework which is represented as a tuple CMG =
+{S, A, P, C, G, b}. This framework involves N agents, subject to
+K constraints, where agents and constraints are indexed by n ∈
+N = {1, · · · , N} and k ∈K = {1, · · · , K}, respectively. The
+components of the CMG tuple include the following: The set S is
+the finite state space. At each time step t, a random state st ∈S is
+drawn. The joint action space is denoted by A = QN
+n=1 An, where
+An is the finite action space of agent n. The joint action of all
+agents is denoted by a = (a1, a2, . . . , aN)⊤, where an is the action
+of agent n. The vector a−n = (a1, . . . , an−1, an+1, . . . , aN)⊤
+represents the joint actions of all agents except agent n, with
+a−n ∈A−n = Q
+j̸=n Aj. Thus, the joint action can be succinctly
+expressed as a = (an, a−n). P(s′|s, a) is the probability transition
+kernel, representing the probability of transitioning from state s ∈S
+to state s′ ∈S under the joint action a ∈A.
+The set C =
+{cn(s, a) | n ∈N} represents the local expected cost functions
+for each agent. Each function cn(s, a) : S × A →R defines the
+expected cost incurred by agent n at state s under the joint action
+a. Specifically, cn(s, a) = E[ct+1
+n
+| st = s, at = a], where ct+1
+n
+is the immediate cost incurred by agent n at time step t + 1. The
+set G = {gn,k(s, a) | n ∈N, k ∈K} denotes the local expected
+constraint cost functions. Each gn,k : S × A →R specifies the
+expected k-th constraint cost incurred by agent n at state s and joint
+action a, i.e., gn,k(s, a) = E[gt+1
+n,k | st = s, at = a], where gt+1
+n,k is
+the immediate cost at time t + 1. This formulation allows exogenous
+randomness in objective and constraint costs at each state–action pair.
+The vector b = (b1, . . . , bK)⊤defines the upper bounds, where bk
+limits the k-th constraint cost.
+CMARL is formulated within the CMG framework, where each
+agent n adopts an individual policy πn ∈Pn := ∆(An)S, with
+∆(An) denoting the probability simplex over An. As agents act
+independently, the joint policy factorizes as π = Q
+n∈N πn ∈P =
+Q
+n∈N Pn. We consider parameterized policies, where each agent n
+has parameters θn ∈Θn ⊆Rm, with Θn compact and convex, en-
+abling efficient representation in large state spaces. The global param-
+eter vector is θ = [θ⊤
+1 , · · · , θ⊤
+N]⊤∈Θ, where Θ = Q
+n∈N Θn, and
+the corresponding product policy is πθ(a|s) = Q
+n∈N πθn(an|s).
+Define θ−n = [θ⊤
+1 , · · · , θ⊤
+n−1, θ⊤
+n+1, · · · , θ⊤
+N]⊤∈Θ−n, where
+Θ−n = Q
+j̸=n Θj. Thus, θ = (θn, θ−n).
+Assumption 1: For any agent n ∈N, state s ∈S, and action
+an ∈An, the policy πθn(an|s) > 0 holds for all θn ∈Θn.
+Moreover, the policy πθn(an|s) is continuously twice differentiable
+with respect to θn.
+Assumption 2: Under any product parameterized policy, the
+Markov chain {st}∞
+t=0 is assumed to be irreducible and aperiodic.
+According to the previous assumptions, the Markov chain induced
+by any product parameterized policy πθ admits a unique stationary
+distribution, denoted by dπθ(s). Additionally, the class of param-
+eterized softmax policies is a rich policy class that can induce
+Markov chains satisfying Assumption 2 under appropriate transition
+probability functions.
+Assumption 3: The sequence {|ct+1
+n
+|, |gt+1
+n,k | | ∀n ∈N, ∀k ∈
+K}t≥0 is real-valued, uniformly bounded, and its elements mutually
+are conditionally independent given the state-action pairs at each time
+step t ≥0.
+This assumption allows the cost samples for each agent to be
+treated as bounded and i.i.d., which is standard in statistics settings.
+Remark 1: Without loss of generality, we assume that both the
+immediate and constraint costs are bounded in [0, 1].
+In CMARL, agents cooperatively seek an optimal feasible policy
+that minimizes the global objective cost, defined as the average of
+local objective costs across all agents. Although each agent acts
+independently using only local information, they jointly aim to
+minimize this global objective. The global objective cost J(πθ) is
+formally defined as:
+J(πθ) = lim
+T →∞
+1
+T Eπθ
+
+
+T −1
+X
+t=0
+
+1
+N
+X
+n∈N
+ct+1
+n
+
+
+
+
+(1)
+=
+X
+s∈S
+dπθ(s)
+X
+a∈A
+πθ(a|s)c(s, a)
+Here,
+the
+local
+cost
+function
+is
+defined
+as
+c(s, a)
+=
+1
+N
+P
+n∈N cn(s, a),
+representing
+the
+average
+cost
+across
+all
+agents. In a similar manner to the global objective cost, we define
+the global constraint functions, which agents are expected not to
+violate. The global constraint functions are given by:
+Gk(πθ) = lim
+T →∞
+1
+T Eπθ
+
+
+T −1
+X
+t=0
+
+1
+N
+X
+n∈N
+gt+1
+n,k
+
+
+
+
+(2)
+=
+X
+s∈S
+dπθ(s)
+X
+a∈A
+πθ(a|s)gk(s, a) ≤bk,
+∀k ∈K
+where gk(s, a) =
+1
+N
+P
+n∈N gn,k(s, a) represents the average con-
+straint cost across all agents for the k-th constraint. Additionally, we
+denote G(πθ) = (G1(πθ), · · · , GK(πθ))⊤. The second equality in
+(1) and (2) holds true under Assumptions 1-3 [23, Proof of (9.5)]. It is
+important to note that the global constraint functions must be satisfied
+collectively by all agents and are not specific to any single agent. In
+fact, the constraint functions in (2) impose implicit restrictions on the
+product parameter space Θ. Therefore, we define the feasible product
+parameter space as ΘC, where ΘC := {θ ∈Θ | Gk(πθ) ≤bk, ∀k ∈
+K}. The global Lagrangian function for this stochastic multi-agent
+optimization problem is then expressed as:
+L(πθ, λ) = J(πθ) +
+K
+X
+k=1
+λk (Gk(πθ) −bk)
+(3)
+=
+X
+s∈S
+dπθ(s)
+X
+a∈A
+πθ(a|s)L(s, a; λ)
+
+3
+where L(s, a; λ) = c(s, a)+PK
+k=1 λk (gk(s, a) −bk) represents the
+expected global Lagrangian cost, λ = (λ1, . . . , λK)⊤is the global
+Lagrange multiplier vector associated with the global constraint
+functions, and λk ≥0 for all k ∈K.
+Now, by introducing
+Ln(s, a; λ) = cn(s, a) + PK
+k=1 λkgn,k(s, a) we can rewrite (3)
+as follows:
+L(πθ, λ) =
+X
+s∈S
+dπθ(s)
+X
+a∈A
+πθ(a|s)
+
+1
+N
+X
+n∈N
+Ln(s, a; λ)
+
+
+(4)
+Consequently, the global Lagrangian function can be expressed as
+the summation of local Lagrangian functions as shown below.
+L(πθ, λ) = 1
+N
+X
+n∈N
+Ln(πθ, λ)
+(5)
+where Ln(πθ, λ) = P
+s∈S dπθ(s) P
+a∈A πθ(a|s)Ln(s, a; λ).
+Under this formulation, the cooperative CMARL problem is
+cast as the minimax problem infθ∈Θ supλ∈RK
++ L(πθ, λ), with dual
+supλ∈RK
++ infθ∈Θ L(πθ, λ). Due to a nonzero duality gap [15], the
+primal and dual may differ. We therefore solve the dual, which
+is better suited to distributed constrained optimization [24], [25].
+For fixed multipliers, the inner minimization reduces to an uncon-
+strained MARL problem [9], where agents cooperatively minimize
+the global Lagrangian using local information. Our algorithm alter-
+nates between policy updates and multiplier adjustments. Although
+L(πθ, λ) in (5) is decomposed, the shared Lagrange multipliers
+remain coupling variables, preventing fully distributed solutions. To
+enable distributed CMARL, we introduce locally estimated Lagrange
+multipliers {ˆλn,k | n ∈N, k ∈K}, where ˆλn,k is agent n’s estimate
+of the global multiplier λk. The local estimate vector for agent n is
+ˆλn = (ˆλn,1, · · · , ˆλn,K)⊤, and the joint vector across all agents is
+ˆλ = (ˆλ⊤
+1 , · · · , ˆλ⊤
+N)⊤.
+Definition 1 (Estimated Lagrangian Objective): Let
+{ˆλn}n∈N
+denote local estimates of the Lagrange multipliers. The estimated
+Lagrangian objective function associated with policy πθ is defined
+as:
+ˆL(πθ, ˆλ) :=
+X
+s∈S
+dπθ(s)
+X
+a∈A
+πθ(a|s)
+
+1
+N
+X
+n∈N
+Ln(s, a; ˆλn)
+
+
+= 1
+N
+X
+n∈N
+Ln(πθ, ˆλn)
+(6)
+Where Ln(s, a; ˆλn) = cn(s, a) + PK
+k=1 ˆλn,k
+ gn,k(s, a) −bk
+
+represents the expectation of estimated local Lagrangian cost with
+respect to ˆλ for agent n, E[lt+1
+n
+(ˆλn) | st = s, at = a]. Accordingly,
+we can define the immediate local Lagrangian cost for agent n at
+time step t + 1 as lt+1
+n
+(ˆλn) := ct+1
+n
++ ΣK
+k=1ˆλn,k(gt+1
+n,k −bk), and
+the immediate global Lagrangian cost at time step t + 1, aggregated
+over all agents, as lt+1(ˆλ) = 1
+N
+P
+n∈N lt+1
+n
+(ˆλn).
+For given locally estimated multipliers, ˆL(πθ, ˆλ) serves as an
+unconstrained objective, solvable via distributed actor–critic meth-
+ods [9]. Moreover, if the estimates satisfy the consensus condition
+ˆλn,k = λk for all n ∈N and k ∈K, then the estimated La-
+grangian coincides with the global Lagrangian in (3), i.e., ˆL(πθ, ˆλ) =
+L(πθ, λ). Theorem 1 will provide detailed convergence guarantees
+for this consensus condition.
+Accordingly, for a continuously differentiable policy πθ and given
+ˆλ, the gradient of ˆL(πθ, ˆλ) with respect to the parameters θn is given
+by the policy gradient theorem for MARL [9]:
+∇θn ˆL(πθ, ˆλ) = Eπθ 
+∇θn log πθnAπθ
+n (s, a)
+
+,
+(7)
+where Aπθ
+n (s, a) is the advantage function for agent n, defined as:
+Aπθ
+n (s, a) = Qπθ(s, a) −
+X
+an∈An
+πθn(an|s)Qπθ(s, (an, a−n)).
+The term Qπθ(s, a) refers to the global differential expected action-
+value function of ˆL(πθ, ˆλ), and is defined as follows:
+Qπθ(s, a) =
+∞
+X
+t=0
+Eπθ
+h
+lt+1(ˆλ) −ˆL(πθ, ˆλ) | st = s, at = a
+i
+.
+In this work, we linearly parameterize the state-action value function
+approximator Q(s, a) as Q(s, a; w) = w⊤ϕ(s, a), where ϕ(s, a)
+denotes the feature vector associated with the state-action pair. Also,
+we define ϕt := ϕ(st, at) for simplicity in notation. So, in the multi-
+agent framework, each agent n maintains its own local weight vector
+wn ∈R , which is used to approximate its individual value function.
+Indeed, the approximation of the Q-function may introduce an error
+relative to the true policy gradient in (7).
+III. ALGORITHM
+To solve the presented CMARL problem, a distributed primal-
+dual algorithm is proposed which works based on the actor-critic
+method. The actor updates parameter θn of parameterized stochastic
+policy πθn(· | s) that maps states to a distribution over actions to
+improve long-term performance using policy-gradient (7). The critic
+approximates the expected cumulative cost incurred when action a
+is taken in state s and the current policy is followed thereafter, This
+is done by updating parameters wn of local action-value function
+Q(s, a; wn). The critic parameters wn are updated using temporal-
+difference (TD) learning by minimizing the discrepancy between
+the current value estimate and a one-step target that combines the
+observed immediate cost with the estimated value of the subsequent
+state–action pair.
+The proposed algorithm is outlined in Algorithm 1. All agents
+initialize their policy parameters, critic weights, constraint estimates,
+and Lagrange multipliers (line 1). An initial joint action is sampled
+from the local policies (line 2), and the iteration counter is set (line
+3). Then we have the following two phases:
+Phase I — Sampling and Lagrangian cost update: At time step t,
+each agent observes the next state st+1, along with its local scalar
+objective cost ct+1
+n
+and vector-valued constraint cost gt+1
+n
+. (line
+6). These values are combined with the current Lagrange multiplier
+estimate to form an immediate local Lagrangian cost lt+1
+n
+(line 7).
+This immediate cost is used to update the value of locally estimated
+Lagrangian ˆLt+1
+n
+(line 8). The agent then samples and executes its
+next action using the current policy (line 9). After all, each agent can
+observe the next joint action at+1 = (at+1
+n
+, at+1
+−n ), which includes
+both its action and the actions of the other agents (line 11).
+Phase II — Learning parameters and consensus: In this phase, each
+agent updates its critic, actor, and dual variable parameters using local
+information to solve a decomposed multi-agent Lagrangian objective.
+During this step, each agent is required to share its local critic
+parameters with neighbors defined by the communication graph. The
+associated weight matrix of this communication graph at time step t
+is denoted by Ξt = [ξt
+n,n′] for all n, n′ ∈N. The critic update rule
+for each agent n in this phase is given by (lines 14 and 19):
+ˆLt+1
+n
+= ˆLt
+n + αt 
+lt+1
+n
+(ˆλt
+n) −ˆLt
+n
+
+,
+˜wt
+n = wt
+n + αtδt
+n∇wQλ(st, at; wt
+n),
+(8)
+wt+1
+n
+=
+X
+n′∈N
+ξt+1
+n,n′ ˜wt
+n′.
+
+4
+Here, αt represents the critic learning rate, and the temporal differ-
+ence (TD) error is updated using the following rule (line 13):
+δt
+n = lt+1
+n
+(ˆλt
+n)−ˆLn +Qλ(st+1, at+1; wt
+n)−Qλ(st, at; wt
+n). (9)
+Then, based on the policy gradient theorem (7), each agent updates
+its actor parameter θn locally using sample-based gradient estimation
+of Lagrangian objective cost as follows (lines 16-18):
+At
+n = Qλ(st, at; wt
+n)−
+X
+an∈An
+πθtn(an|st+1)Qλ(st, (at
+n, at
+−n); wt
+n),
+ψt
+n = ∇θn log πθtn(at|st),
+(10)
+θt+1
+n
+= PΘn
+h
+θt
+n −βtAt
+nψt
+n
+i
+.
+where βt is the actor learning rate. The parameter θn is updated
+via projected gradient descent, where PΘn projects onto set Θn.
+In the second phase, agents locally estimate both constraint costs
+and the Lagrange multipliers. Since global constraint information is
+unavailable, each agent n maintains local estimates updated (line 15):
+ˆGt+1
+n
+= ˆGt
+n + αt 
+gt+1
+n
+−ˆGt
+n
+
+,
+(11)
+where, gtn = (gt
+n,1, · · · , gt
+n,K)⊤, ˆGn = ( ˆGn,1, · · · , ˆGn,K)⊤and
+ˆG = ( ˆG⊤
+1 , · · · , ˆG⊤
+N)⊤are defined for notational simplicity. Finally,
+we present the update rule for the Lagrange multipliers, which
+involves taking a step in the ascent direction with respect to ˆL(πθ, ˆλ)
+for a fixed θ using the estimated values as follows (lines 20 and 21):
+˜λt+1
+n
+=
+X
+n′∈N
+ξt
+n,n′ ˆλt
+n′,
+ˆλt+1
+n
+= PΛ
+h
+˜λt
+n + γt( ˆGt
+n −b)
+i
+, (12)
+where, γt represents the learning rate for the Lagrange multipliers,
+and PΛ denotes the projection onto the compact and convex set Λ ⊆
+RK
++ .
+Algorithm 1 Distributed Primal–Dual Algorithm for CMARL
+1: Initialize: s0, ˆG0n, ˆL0n, w0n, θ0n, ˆλ0n for all n ∈N; step sizes
+{αt}t≥0, {βt}t≥0, {γt}t≥0.
+2: Each agent executes a0n ∼πθ0n(· | s0) and observes joint action
+a0 = (a0
+1, . . . , a0
+N).
+3: Set t ←0.
+4: repeat
+5:
+for all n ∈N do
+6:
+Observe st+1, scalar cost ct+1
+n
+, and constraint cost vector
+gt+1
+n
+.
+7:
+lt+1
+n
+(ˆλtn) ←ct+1
+n
++ (ˆλtn)⊤(gt+1
+n
+−b)
+8:
+ˆLt+1
+n
+←ˆLtn + αt
+lt+1
+n
+(ˆλtn) −ˆLtn
+
+9:
+Sample and execute at+1
+n
+∼πθtn(· | st+1).
+10:
+end for
+11:
+Observe joint action at+1 = (at+1
+1
+, . . . , at+1
+N
+).
+12:
+for all n ∈N do
+13:
+δt
+n ←
+−lt+1
+n
+(ˆλt
+n) −ˆ
+Lt
+n + Qλ(st+1, at+1; wt
+n) −Qλ(st, at; wt
+n)
+14:
+˜wtn ←wtn + αtδtn∇wQλ(st, at; wtn)
+15:
+ˆGt+1
+n
+←ˆGtn + αt(gt+1
+n
+−ˆGtn)
+16:
+At
+n ←
+−Qλ(st, at; wt
+n)−P
+an∈An πθtn(an|st+1)Qλ(st, at); wt
+n)
+17:
+ψtn ←∇θn log πθtn(atn | st)
+18:
+θt+1
+n
+←PΘn
+
+θtn −βtAtnψtn
+
+19:
+wt+1
+n
+←P
+n′∈N ξt
+n,n′ ˜wt
+n′
+20:
+˜λtn ←P
+n′∈N ξt
+n,n′ ˆλt
+n′
+21:
+ˆλt+1
+n
+←PΛ
+h
+˜λtn + γt( ˆGtn −b)
+i
+22:
+end for
+23:
+t ←t + 1
+24: until convergence
+IV. THEORETICAL RESULTS
+This section consists of two parts. In the first part, we prove the
+convergence of Algorithm 1 to a stationary point of the update rules
+in (8)-(12). In the second part, we analyze the sub-optimality of the
+convergent point by deriving an upper bound on the gap between the
+obtained solution and the optimal solution.
+A. Convergence of Algorithm
+Assumption 4: The learning rates αt, βt, and γt should satisfy
+the following conditions:
+∞
+X
+t=0
+αt + βt + γt = ∞,
+∞
+X
+t=0
+(αt)2 + (βt)2 + (γt)2 < ∞,
+lim
+t→∞
+βt
+αt = 0,
+lim
+t→∞
+γt
+βt = 0.
+Assumption 4 is standard to ensure the convergence of stochastic
+recursions in three different time scales [26, Assumption 10.6], for
+updating critic, actor and ˆλn.
+Assumption 5: (Slater’s condition). There exists some policy eπ ∈
+P and constants σk > 0 such that Gk(eπ) ≥bk + σk for all k ∈K.
+This assumption ensures that the interior of the feasible policy set
+is non-empty, a standard condition in optimization.
+Assumption 6: Consider the sequence of nonnegative random ma-
+trices {Ξt}t≥0, which satisfies the following conditions:
+1) Each matrix Ξt is doubly stochastic, i.e., Ξt1 = 1 and 1⊤Ξt =
+1⊤.
+2) There exists a constant η ∈(0, 1) such that for the matrix
+Ξt, all diagonal elements and any other positive entries satisfy
+ξt
+n,n′ ≥η.
+3) The spectral norm of the matrix E
+h
+Ξt⊤·
+
+IN −11⊤
+N
+
+· Ξti
+is denoted by ρ, and it is assumed that ρ ∈[0, 1).
+4) Given the σ-algebra generated by the random variables up
+to time t, the matrix Ξt is conditionally independent of the
+variables ct+1
+n
+and gt+1
+n
+for all n ∈N.
+Assumption 6 is a typical condition for ensuring the convergence of
+networked algorithms [9].
+Assumption 7: The set Θ is sufficiently large such that there exists
+at least one local minimum of ˆL(πθ, ˆλ) in its interior, given ˆλ ∈ΛN.
+This assumption is standard in the analysis of actor-critic algo-
+rithms, as it facilitates the convergence analysis of the algorithm. In
+practice, however, the parameter θ can be updated without the need
+for projection, as discussed in [9].
+Theorem 1: (Consensus of Locally Estimated Lagrange Multi-
+pliers). Under Assumptions 1-7, the disagreement component of
+the locally estimated Lagrange multipliers converges to zero almost
+surely, i.e., limt→∞ˆλt
+⊥= 0 a.s.
+Proof: The recursion for the ˆλ vector is given by:
+ˆλt+1 = PΛN
+h
+Ξt ⊗IK
+
+ˆλt + γt( ˆGt −b)
+i
+.
+(13)
+To analyze the disagreement component, define:
+Dt+1 :=
+PΛN
+h Ξt ⊗IK
+ ˆλt + γt( ˆGt −b)
+i
+−
+ Ξt ⊗IK
+ ˆλt
+γt
+.
+The disagreement component ˆλt+1
+⊥
+is then given by ˆλt+1
+⊥
+=
+J⊥
+h Ξt ⊗IK
+ ˆλt + γtDt+1i
+. Given that J⊥(1 ⊗⟨λ⟩) = 0, we
+can further simplify to obtain:
+ˆλt+1
+⊥
+=
+
+IN −11⊤
+N
+
+Ξt ⊗IK
+
+ˆλt
+⊥+γt
+
+IN −11⊤
+N
+
+⊗IK
+
+Dt+1.
+
+5
+Our goal is to show that E
+h
+∥(γt)−1ˆλt
+⊥∥2i
+is bounded. Consider
+the filtration Ft = σ
+
+{sτ, aτ, ˆλτ, gτn, ˆGτn, Ξτ−1}τ≤t,n∈N
+
+. Also,
+It should be noted that the expectations are taken of random variables
+defined the filtration in this proof. Then, we have:
+E
+h
+∥(γt+1)
+−1ˆλt+1
+⊥
+∥2 | Fti
+=
+ γt
+γt+1
+2 (
+E
+
+(γt)
+−1ˆλt
+⊥
+⊤
+Xt 
+(γt)
+−1ˆλt
+⊥
+
+| Ft
+
++ 2E
+
+(γt)
+−1ˆλt
+⊥
+⊤
+YtDt+1 | Ft
+
++ E
+
+Dt+1⊤
+ZtDt+1 | Ft
+ )
+,
+(14)
+where
+Xt
+=
+
+Ξt⊤
+IN −11⊤
+N
+
+Ξt
+⊗IK,
+Yt
+=
+Ξt⊤
+IN −11⊤
+N
+
+⊗IK, and Zt
+=
+
+IN −11⊤
+N
+
+⊗IK. It
+is straightforward to show that the maximum eigenvalue of Zt is
+less than or equal to 1. Utilizing Assumption 6, along with the
+Cauchy-Schwarz inequality and the Rayleigh quotient inequality,
+and considering the doubly stochastic property of Ξt, which ensures
+that ∥Yt∥2 ≤1, we obtain the following inequality:
+E
+h
+∥(γt+1)
+−1ˆλt+1
+⊥
+∥2 | Fti
+≤
+ γt
+γt+1
+2 
+ρ∥(γt)
+−1ˆλt
+⊥∥2
++ 2∥(γt)
+−1ˆλt
+⊥∥E
+h
+∥Dt+1∥2 | Fti 1
+2 + E
+h
+∥Dt+1∥2 | Fti 
+.
+(15)
+Now, we can show that supt E[∥Dt+1∥
+2|Ft] < ∞. At each iteration,
+ˆλtn for ∀n ∈N is a point in the convex set Λ. Additionally,
+the local consensus update for each agent P
+n′∈N ξt
+n,n′ ˆλtn is a
+convex combination of ˆλtn. Consequently, it holds that PΛN [(Ξt ⊗
+I)ˆλt] = (Ξt⊗I)ˆλt. Also, from the non-expansive property of convex
+projection:
+∥PΛN [(Ξt⊗I)ˆλt+γt( ˆGt−b)]−PΛN [(Ξt⊗I)ˆλt]∥≤γt∥ˆGt−b∥
+⇒∥Dt∥≤∥ˆGt −b∥⇒∥Dt∥2 ≤∥ˆGt∥2 + ∥b∥2.
+Using
+Lemma
+1,
+there
+exists
+some
+constant
+M1
+such
+that
+E[∥Dt+1∥
+2|Ft] ≤M1. Considering the bound M1 and taking
+expectations of both sides of (15), and applying Jensen’s inequality,
+we have:
+E
+h
+∥(γt+1)
+−1ˆλt+1
+⊥
+∥2i
+≤
+ γt
+γt+1
+2 
+ρE
+h
+∥(γt)
+−1ˆλt
+⊥∥2i
++ 2
+p
+M1
+r
+E
+h
+∥(γt)−1ˆλt
+⊥∥2
+i
++ M1
+
+.
+(16)
+Let xt = E
+h
+∥(γt)
+−1ˆλt
+⊥∥2i
+for simplicity. Since ρ < 1 and
+limt→∞
+
+γt
+γt+1
+2
+= 1, there exists a sufficiently large t0 such that
+
+γt
+γt+1
+2
+ρ ≤(1 −ϵ) for any t ≥t0 and for some ϵ > 0. Thus,
+xt+1 ≤(1 −ϵ)xt + 2
+p
+M1
+√
+xt + M1.
+(17)
+We define the function ψ : x →a√x + b. With straightforward
+analysis, it can be shown that for given parameters a, b, c ∈R++,
+there exist p, q ∈R++ such that ψ(x) ≤cx + p.1{x<q}, where
+1{·} is an indicator function. Accordingly, using the inequality in
+(17), there exist positive constants M2 and m that satisfy:
+xt+1 ≤(1−ϵ)xt+ ϵ
+2xt+m.1{xt<M2} = (1−ϵ
+2)xt+m.1{xt<M2}
+(18)
+for all t ≥t0. By recursively substituting (18)
+and induction, it
+holds that xt ≤(1 −ϵ
+2)t−t0xt0 + 2m
+ϵ
+for all t > t0. Thus, we
+can conclude E
+h
+∥(γt)
+−1ˆλt
+⊥∥2i
+≤M3 for a positive constant M3.
+Equivalently, E
+h
+∥λt
+⊥∥2i
+≤M3(γt)2. Summing over t, we obtain
+P
+t E
+h
+∥λt
+⊥∥2i
+≤M3
+P
+t(γt)2 < ∞. Finally, by Fubini’s theorem,
+we have E
+hP
+t ∥λt
+⊥∥2i
+< ∞. Hence, P
+t ∥λt
+⊥∥2 < ∞.
+■
+Proposition 1: (Convergence of Distributed Actor-Critic Algo-
+rithm). Under Assumptions 1–7, and for an estimate of the Lagrange
+multipliers ˆλn generated by (12), the distributed actor-critic algorithm
+employing linear function approximation and local update rules
+(8)–(10) guarantees that the policy parameters θn, for all agents
+n ∈N, converge almost surely to a point in the set of asymptotically
+stable equilibrium points of the projected dynamical system defined
+by
+˙θn = ˆPΘ
+h
+−∇θn ˆL(πθ, ˆλ) −Eπθ
+h
+w⊤
+θ ϕt −Qπθ
+
+st, ati
+ψt
+n
+i
+,
+(19)
+where wθ denotes the unique minimizer of the Mean Square Projected
+Bellman Error (MSPBE) associated with the policy πθ, representing
+the consensus value of the critic parameters.
+Proof: Using (2) from Assumption 6, there exists a constant ¯η ∈
+(0, 1) such that Ξt = IN + ¯η(¯Ξt −IN). Substituting this into (12),
+the update for each n ∈N can be rewritten from the actor timescale
+perspective as
+ˆλt+1
+n
+= PΛ
+
+ˆλt
+n+βt
+ γt
+βt ( ˆGt
+n −b) + ¯η
+βt
+X
+n′∈N
+¯ξt
+n,n′(ˆλt
+n′ −ˆλt
+n)
+|
+{z
+}
+(i)
+
+.
+(20)
+From Theorem 1, the consensus error vanishes almost surely:
+limt→∞(ˆλt
+n′ −ˆλtn) = 0, a.s., for all n, n′ ∈N. Therefore, for any
+ϵ > 0, there exists a sufficiently large time t′ such that, almost surely,
+supr≥t′
+Pr
+τ=t′ ¯η P
+n′∈N ¯ξτ
+n,n′(ˆλτ
+n′ −ˆλτn)
+ ≤ϵ. Equivalently,
+lim
+t→∞P
+
+sup
+r≥t
+
+r
+X
+τ=t
+¯η
+X
+n′∈N
+¯ξτ
+n,n′(ˆλτ
+n′ −ˆλτ
+n)
+
+≥ϵ
+
+= 0.
+(21)
+Furthermore, by boundedness of the estimates, we have supt ∥ˆGtn −
+b∥< ∞, and by Assumption 4, limt→∞γt
+βt = 0. Hence, both terms
+of (i) in the recursion vanish asymptotically.
+Therefore, the recursion satisfies the conditions of the Kush-
+ner–Clark lemma (Theorem 5.3.1 in [27]), and the interpolated
+trajectory of ˆλtn tracks the ordinary differential equation dˆλn
+dt
+= 0
+with rate βt, i.e. with the same timescale as the actor update in (10).
+This means that due to the condition γt/βt →0, the update of
+multiplier ˆλtn operates on a strictly slower timescale than the actor
+update. Consequently, ˆλtn can be treated as quasi-static (constant)
+from the perspective of the actor dynamics.
+Now, for a constant multiplier ˆλ, the estimated Lagrangian
+ˆL(πθ, ˆλ) reduces to an unconstrained multi-agent reinforcement
+learning objective. Therefore, by Theorems 4.6 and 4.7 of [9], which
+rely on βt/αt →0 to ensure convergence via a two-timescale
+argument, θn converges almost surely to a point in the set of
+asymptotically stable equilibria of (19).
+■
+Remark 2: According to Proposition 1, for a good choice of
+the basis function of the critic approximator, which satisfies
+
+6
+supθ Eπθ
+h
+wθ⊤ϕt −Qπθ  st, ati
+< ϵ, for a sufficiently small ϵ,
+the actor converges to the ϵ-neighborhood of the local minima of
+ˆL(θ, ˆλ).
+Assumption 8: There exists a unique and continuous function
+¯θ(ˆλ) : ΛN →Rdim(θ) that maps each multiplier estimate ˆλ to the
+fixed point of the actor dynamics defined in (19).
+Remark 3: According to Proposition 1 and Remark 2, the Jacobian
+∇θ ˆL is positive definite at
+a nearby neighborhood of the local
+minima of ˆL(θ, ˆλ) and hence, it can be concluded from the implicit
+function theorem that Assumption 8 is valid.
+Proposition 1 establishes the convergence of the actor-critic algo-
+rithm for a fixed ˆλ. Subsequently, Lemma 1 and Theorem 1 show
+that ˆλ reaches consensus across agents.
+Lemma 1: Under
+Assumptions
+1
+and
+3,
+it
+holds
+that
+supt ∥ˆGt∥2 < ∞almost surely for all n ∈N.
+Proof: The recursion (11) is driven only by immediate local costs,
+and these local costs are independent of each other’s constraints.
+By applying Lemma 5.2 from [9], which addresses the boundedness
+of updates for local
+ˆGt
+n,k independently, we can conclude that
+supt ˆGt
+n,k < ∞almost surely. Consequently, supt ∥ˆGt∥< ∞, and
+therefore supt ∥ˆGt∥2 < ∞.
+■
+Lemma 2: (Proposition 4.2 [16]) Under Assumption 3, for a fixed
+policy θ, every dual critic recursion (11) for all n ∈N converges
+almost surely to ¯Gn(πθ) := limT →∞1
+T Eπθ
+hPT
+t=0 gt+1
+n
+i
+.
+Let the projected dynamical system for ˆλ be defined as follows:
+dˆλ
+dt = ˆPΛN
+h
+¯G(π¯θ(ˆλ)) −1 ⊗b
+i
+,
+(22)
+where ¯G(πθ) =
+
+¯G1(πθ)⊤, . . . , ¯GN(πθ)⊤⊤
+.
+We define the set F ⊆ΛN as the compact set of all asymptotically
+stable equilibrium points of the projected dynamical system given in
+(22). Building on the definition of the set F, Theorem 2 shows that
+the consensus vector of the locally estimated Lagrange multipliers
+converges.
+Theorem 2: Under Assumptions 4, 6 and 8, it is established that
+limt→∞⟨λt⟩= ¯λ almost surely, where 1 ⊗¯λ ∈F.
+Proof: We rewrite (12) for each n ∈N by adding and subtracting
+¯Gn(πθ):
+ˆλt+1
+n
+= PΛ
+
+ˆλt
+n + γt
+
+( ¯Gn(πθ) −b) + ¯η
+γt
+X
+n′∈N
+¯ξt
+n,n′(ˆλt
+n′ −ˆλt
+n)
++ ( ˆGt
+n −¯Gn(πθ))
+
+.
+(23)
+By Theorem 1, (21) holds as well. Furthermore, by Lemma 2,
+limt→∞( ˆGtn −¯Gn(πθ)) = 0 almost surely. Therefore, by applying
+Kushner-Clark Lemma under Assumptions 4 and 8, the recursion (12)
+converges almost surely to a point in the set F. Consequently, as per
+Theorem 1, we conclude that limt→∞ˆλt = 1 ⊗¯λ almost surely. ■
+The following proposition introduces a condition under which the
+feasibility of the constraints is met at the consensus value of Lagrange
+multipliers, i.e., ¯λ.
+Proposition 2: Suppose ¯λ ∈Int(Λ). Then all constraints are
+satisfied.
+Proof: This can be proven by contradiction. Assume the claim is
+not true. Then, for a sufficiently small ε and for all n ∈N, we have
+PΛ
+h
+¯λ + ε
+
+Gn(πθ(¯λ)) −b
+i
+= ¯λ+ε
+
+Gn(πθ(¯λ)) −b
+
+. Using the
+definition of projected dynamical system for the equation (22), we
+obtain:
+ˆPΛN
+
+¯G(πθ(1⊗¯λ)) −1 ⊗b
+
+= lim
+ε→0+
+"
+1 ⊗¯λ + ε( ¯G(πθ(1⊗¯λ)) −1 ⊗b) −1 ⊗¯λ
+ε
+#
+= ¯G(πθ(1⊗¯λ)) −1 ⊗b > 0.
+(24)
+This leads to a contradiction since 1 ⊗¯λ is an interior equilibrium
+point for the dynamic (22). Hence, the original claim is true.
+■
+B. Duality Gap Evaluation at Equilibrium Point
+According to [15], CMARL problems without parameterization can
+exhibit a strictly positive duality gap ¯∆:= P∗−D∗, where P∗=
+infπ∈P supλ∈RK
++ L(π, λ) and D∗= supλ∈RK
++ infπ∈P L(π, λ).
+This gap persists in parameterized problems since parameterized
+policy class which is a subset of the policy space P forms a nonlinear
+optimization problem. We analyze errors from individual and product
+policy parameterizations, and how local convergence of Lagrange
+multipliers affects the primal-dual discrepancy. The parameterized
+duality gap is defined as ¯∆param := P∗−L(π¯θ, ¯λ), where (¯θ, ¯λ) are
+the algorithm’s convergence points.
+The following lemma bounds the optimal Lagrange multipliers λ∗
+k
+of the non-parameterized dual problem:
+Lemma 3: (Lemma 1 [15]) Any optimal Lagrange multiplier λ∗
+k ∈
+arg maxλ∈RK
++ infπ∈P L(π, λ) satisfies the range λ∗
+k ≤λmax
+k
+:=
+1+ ¯∆
+δk
+for all k ∈K.
+Definition 2: A parameterization πθn is an ϵn-individual param-
+eterization of policies in Pn if, for some ϵ > 0, there exists
+a parameter θn
+∈Θn for every policy πn
+∈Pn such that
+maxs∈S
+P
+a∈A
+πn(a|s) −πθn(a|s)
+ ≤ϵn.
+Definition 3: A parameterization πθ is an ϵ-product parameteriza-
+tion of policies in P if, for some ϵ > 0, there exists for any π ∈P a
+parameter θ ∈Θ such that maxs∈S
+P
+a∈A |π(a|s) −πθ(a|s)| ≤ϵ.
+The following lemma characterizes how the local policy parame-
+terization errors relates to the global policy parameterization error.
+Lemma 4: Assuming ϵn-individual parameterization for each
+agent n ∈N, then P
+n∈N ϵn is an upper bound for ϵ in the ϵ-
+product parameterization policy.
+Proof: By considering the difference between the policy π(a|s) and
+the parameterized policy πθ(a|s):
+max
+s∈S
+X
+a∈A
+|π(a|s) −πθ(a|s)| = max
+s∈S
+X
+a∈A
+πθ−n(a−n|s)
+
+πn(an|s)
+−πθn(an|s)
+
++ πn(an|s)
+
+π−n(a−n|s) −πθ−n(a−n|s)
+.
+(25)
+Using the triangle inequality and applying the point-wise maximum
+to the right- and left-hand sides of the inequality respectively, we can
+bound the above expression by:
+max
+s∈S
+X
+a∈A
+πθ−n(a−n|s)
+ πn(an|s) −πθn(an|s)
+
+|
+{z
+}
+(i)
++ max
+s∈S
+X
+a∈A
+πn(an|s)
+
+π−n(a−n|s) −πθ−n(a−n|s)
+
+|
+{z
+}
+(ii)
+.
+(26)
+For
+the
+term
+(i),
+we
+have
+that
+(i)
+≤
+maxs∈S
+P
+an∈An
+πn(an|s) −πθn(an|s)
+
+≤
+ϵn
+and
+For
+the
+term
+(ii),
+it
+follows
+that
+(ii)
+≤
+maxs∈S
+P
+a−n∈A−n
+π−n(a−n|s) −πθ−n(a−n|s)
+ .
+
+7
+Since
+πθ−n(a−n|s)
+is
+an
+ϵ-product
+parameterized
+policy
+for
+any
+product
+policy
+in
+Π−n,
+the
+inequality
+for
+term
+(ii)
+can
+be
+bounded
+via
+induction
+as
+follows:
+maxs∈S
+P
+a−n∈A−n
+π−n(a−n|s) −πθ−n(a−n|s)
+
+≤
+P
+n′∈N\{n} ϵn′.
+Combining
+these
+results,
+we
+obtain
+maxs∈S
+P
+a∈A |π(a|s) −πθ(a|s)| ≤P
+n∈N ϵn.
+■
+Lemmas 5 and 6 jointly establish an upper bound on the dis-
+crepancy between the stationary distributions of a policy and its
+parameterized version.
+Lemma 5: (Lemma 3 [28]): The L1 distance between the station-
+ary distributions dπ(s) and dπ′(s), which are induced by the policies
+π, π′ ∈P, can be upper bounded by:
+DL1(dπ(s), dπ′
+(s)) :=
+X
+s∈S
+dπ(s) −dπ′
+(s)
+
+≤
+ κ⋆−1
+
+max
+s∈S
+X
+a∈A
+π(a | s) −π′(a | s)
+ ,
+(27)
+where κ⋆= maxπ κπ and κπ represents the average number of steps
+required to reach a target state in the Markov chain induced by the
+policy π.
+Lemma 6: Let d(s, a) and dθ(s, a) be the occupation measure
+induced by any stationary policy π and πθ for θ ∈Θ, respectively,
+where πθ is an ϵ-product approximation of π. Then, it follows that:
+DL1(d(s, a), dθ(s, a)) =
+X
+s,a
+d(s, a) −dθ(s, a)
+ ≤κ⋆ϵ.
+(28)
+Proof: Expressing the total variation distance between the stationary
+distributions d(s, a) and dθ(s, a):
+X
+s,a
+d(s, a) −dθ(s, a)
+ =
+X
+s,a
+d(s)π(a|s) −dθ(s)πθ(a|s)
+ . (29)
+By adding and subtracting the term d(s)πθ(a|s) and using triangle
+inequality we obtain:
+X
+s,a
+d(s, a) −dθ(s, a)
+ ≤
+X
+s,a
+d(s) |π(a|s) −πθ(a|s)|
+|
+{z
+}
+(i′)
++
+X
+s,a
+πθ(a|s)
+d(s) −dθ(s)
+
+|
+{z
+}
+(ii′)
+.
+(30)
+Then have
+(i′)
+≤
+ϵ P
+s d(s)
+=
+ϵ, and from Lemma
+5,
+(ii′)
+=
+P
+s
+d(s) −dθ(s)
+
+≤
+(κ⋆−1) ϵ.
+Finally
+P
+s,a
+d(s, a) −dθ(s, a)
+ ≤ϵ + (κ⋆−1) ϵ = κ⋆ϵ.
+■
+The following Lemma provides a bound for the difference in the
+values of the Lagrangian functions with respect to the L1 norm of
+the Lagrangian multipliers and the L1 distance between the stationary
+distributions of the induced policies.
+Lemma 7: The difference in the values of the Lagrangian func-
+tions L(π, λ) and L(π′, λ′) for two pairs (π, λ) and (π′, λ′) is
+bounded by:
+L(π, λ)−L(π′, λ′) ≤∥λ−λ′∥1+ 1 + K∥λ′∥1
+
+DL1(dπ(s, a), dπ′(s, a)),
+(31)
+Proof: We can express the difference in the Lagrangian values as the
+sum of two terms:
+L(π, λ) −L(π′, λ′) =  L(π, λ) −L(π, λ′)
+|
+{z
+}
+(i′′)
++  L(π, λ′) −L(π′, λ′)
+|
+{z
+}
+(ii′′)
+.
+(32)
+Then have (i′′) = P
+s,a
+ P
+k∈K(λk −λ′
+k)gk(s, a)
+
+dπ(s, a) ≤
+P
+k∈K |λk
+−
+λ′
+k|
+=
+∥λ
+−
+λ′∥1.
+Also,
+(ii′′)
+=
+P
+s,a
+ c(s, a) + P
+k∈K λ′
+kgk(s, a)
+ 
+dπ(s, a) −dπ′(s, a)
+
+≤
+ 1 + K∥λ′∥1
+
+DL1(dπ(s, a), dπ′(s, a)). Combining the bounds for
+(i′′) and (ii′′), we obtain the desired result.
+■
+Let
+the
+pair
+(π∗, λ∗)
+be
+the
+solution
+to
+the
+problem
+maxλ∈Λ minπ∈P L(π, λ), and let θ∗be the solution to the problem
+maxλ∈Λ minθ∈Θ L(πθ, λ).
+Proposition 3: The duality gap for the parameterized problem is
+bounded as follows:
+¯∆param ≤∥λmax∥1 + (1 + K∥λmax∥1)
+
+κ∗X
+n∈N
+ϵn + ¯ϵ
+
++ ¯∆,
+(33)
+where
+¯ϵ
+=
+DL1(dπθ∗(s, a), dπ¯θ(s, a)),
+and
+λmax
+=
+(λmax
+1
+, · · · , λmax
+K
+)⊤.
+Proof: Using Lemma 7, we have:
+L(π∗, λ∗)−L(π¯θ, ¯λ) ≤∥λ∗−¯λ∥1+(1+K∥¯λ∥1)DL1(dπ∗(s, a), dπ¯
+θ(s, a)).
+Since DL1 is a distance metric, we can apply the triangle inequal-
+ity DL1(dπ∗(s, a), dπ¯θ(s, a))
+≤
+DL1(dπ∗(s, a), dπθ∗(s, a)) +
+DL1(dπθ∗(s, a), dπ¯θ(s, a)) where πθ∗is an ϵ-product parameter-
+ization of π∗. Finally, using Proposition 3, we have ∥λ∗−¯λ∥1 ≤
+∥λmax∥1 and ∥¯λ∥1 ≤∥λmax∥1. Substituting these bounds into the
+earlier inequality and using the relationship between the duality gap
+and the optimal values, D∗= P∗−¯∆, we conclude the proof.
+■
+V. EXPERIMENTS
+We define a cooperative, stochastic Cournot game to evaluate the
+algorithm in a complex economic setting. Each agent’s cost is given
+by cn(s, a) = −
+ x(s, a)an −han
+
+, where an ∈[0, 1] is the
+production level, h = 1 is the unit price, and the market price
+x(s, a) = N −s P
+n∈N an depends on the state s ∈(0, 1) and
+agents’ actions. This model captures time-varying demand, offering
+greater realism.
+In the above formulation, the original continuous Cournot model
+is discretized: states and actions are sampled uniformly (10 states
+from [0.1, 0.9], 10 actions per agent from [0, 1]), yielding 10 × 105
+state-action pairs. State transitions follow a binomial distribution,
+where higher total actions shift probability mass toward lower states,
+increasing stochasticity.
+Constraints are incorporated via agent-specific price bounds
+gn(s, a) = mn
+ N −s P
+n∈N an
+
+, with weights m1 = 0.1, m2 =
+0.3, m3 = 0.5, m4 = 0.1, m5 = 0, and a global bound b = 0.75.
+Agents use linear critics (20-dimensional parameters, [0, 1]-sampled
+shared features) and softmax policies with linear parameterization
+(10-dimensional parameters, agent-specific [0, 1]-sampled features).
+Learning rates follow αt = t−0.6 (critic), βt = t−0.75 (actor), and
+γt = t−0.9 (Lagrange multipliers).
+The experiment results are depicted in Figures 1 and 2. In Figure
+1, it is shown that the locally estimated Lagrange multipliers reach
+consensus and subsequently converge, as demonstrated by Theorems
+1 and 2. Additionally, Figure 2 illustrates the global objective cost
+J and the global constraint cost ˆG −b during training. This plot
+demonstrates how effectively the algorithm reduces the objective cost
+while maintaining constraint violations near zero.
+VI. CONCLUSION
+This paper introduced a distributed approach for solving cooper-
+ative CMARL problems, allowing agents to minimize a global ob-
+jective function while respecting shared constraints. By leveraging a
+
+8
+0
+2000
+4000
+6000
+8000
+10000
+12000
+step(t)
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+Locally Estimated Lagrangian Multipliers
+1
+2
+3
+4
+5
+0
+50
+100
+150
+200
+250
+300
+Fig. 1.
+Convergence of locally estimated Lagrangian multipliers during
+training.
+1.60
+1.52
+1.44
+1.36
+1.28
+1.20
+Global Objective Cost
+J
+0
+2000
+4000
+6000
+8000
+10000
+12000
+step(t)
+0.15
+0.10
+0.05
+0.00
+0.05
+Global Constrained Cost Violation
+G
+b
+Fig. 2.
+Global objective cost (J) and global constraint cost ( ˆ
+G −b)
+during training. The plot illustrates how the algorithm seeks to decrease
+the objective cost while maintaining constraint violations near zero.
+decentralized primal-dual algorithm based on the actor-critic method,
+our approach enables each agent to estimate Lagrangian multipliers
+locally, achieving consensus and ensuring convergence to an equi-
+librium. We validated the method through a constrained cooperative
+Cournot game with stochastic dynamics. The results highlight the
+potential of our method for scalable, decentralized solutions in real-
+world applications, such as smart grids and autonomous systems.
+Future work will explore adaptations for more complex environments
+and dynamic constraints.
+REFERENCES
+[1] D. Silver, A. Huang, C. J. Maddison, A. Guez, L. Sifre, G. Van
+Den Driessche, J. Schrittwieser, I. Antonoglou, V. Panneershelvam,
+M. Lanctot et al., “Mastering the game of go with deep neural networks
+and tree search,” Nature, vol. 529, no. 7587, pp. 484–489, 2016.
+[2] J. Kober, J. A. Bagnell, and J. Peters, “Reinforcement learning in
+robotics: A survey,” The International Journal of Robotics Research,
+vol. 32, no. 11, pp. 1238–1274, 2013.
+[3] T. Chu, J. Wang, L. Codec`a, and Z. Li, “Multi-agent deep reinforcement
+learning for large-scale traffic signal control,” IEEE Transactions on
+Intelligent Transportation Systems, vol. 21, no. 3, pp. 1086–1095, 2020.
+[4] M. Roesch, C. Linder, R. Zimmermann, A. Rudolf, A. Hohmann, and
+G. Reinhart, “Smart grid for industry using multi-agent reinforcement
+learning,” Applied Sciences, vol. 10, no. 19, p. 6900, 2020.
+[5] K. Zhang, Z. Yang, and T. Bas¸ar, “Multi-agent reinforcement learning:
+A selective overview of theories and algorithms,” Handbook of Rein-
+forcement Learning and Control, 2021.
+[6] T. T. Nguyen, N. D. Nguyen, and S. Nahavandi, “Deep reinforcement
+learning for multiagent systems: A review of challenges, solutions, and
+applications,” IEEE transactions on cybernetics, vol. 50, no. 9, pp. 3826–
+3839, 2020.
+[7] Y. Zhang and M. M. Zavlanos, “Cooperative multiagent reinforcement
+learning with partial observations,” IEEE Transactions on Automatic
+Control, vol. 69, no. 2, pp. 968–981, 2023.
+[8] L. Cassano, K. Yuan, and A. H. Sayed, “Multiagent fully decentralized
+value function learning with linear convergence rates,” IEEE Transac-
+tions on Automatic Control, vol. 66, no. 4, pp. 1497–1512, 2020.
+[9] K. Zhang, Z. Yang, H. Liu, T. Zhang, and T. Basar, “Fully decentralized
+multi-agent reinforcement learning with networked agents,” in Proceed-
+ings of the 35th International Conference on Machine Learning (ICML),
+vol. 80.
+PMLR, 2018, pp. 5872–5881.
+[10] B. Yongacoglu, G. Arslan, and S. Y¨uksel, “Decentralized learning for
+optimality in stochastic dynamic teams and games with local control
+and global state information,” IEEE Transactions on Automatic Control,
+vol. 67, no. 10, pp. 5230–5245, 2021.
+[11] Q. Zhang, K. Dehghanpour, Z. Wang, F. Qiu, and D. Zhao, “Multi-agent
+safe policy learning for power management of networked microgrids,”
+IEEE Transactions on Smart Grid, vol. 12, no. 2, pp. 1048–1062, 2021.
+[12] S. He, Y. Wang, S. Han, S. Zou, and F. Miao, “A robust and constrained
+multi-agent reinforcement learning electric vehicle rebalancing method
+in amod systems,” in 2023 IEEE/RSJ International Conference on
+Intelligent Robots and Systems (IROS), 2023, pp. 5637–5644.
+[13] E. Altman and A. Shwartz, “Constrained markov games: Nash equilib-
+ria,” in Advances in Dynamic Games and Applications. Springer, 2000,
+pp. 213–221.
+[14] S. Paternain, L. Chamon, M. Calvo-Fullana, and A. Ribeiro, “Con-
+strained reinforcement learning has zero duality gap,” in Advances in
+Neural Information Processing Systems (NeurIPS), vol. 32, 2019.
+[15] Z. Chen, Y. Zhou, and H. Huang, “On the hardness of constrained
+cooperative multi-agent reinforcement learning,” in Proceedings of the
+12th International Conference on Learning Representations (ICLR),
+2024.
+[16] S. Bhatnagar and K. Lakshmanan, “An online actor-critic algorithm
+with function approximation for constrained markov decision processes,”
+Journal of Optimization Theory and Applications, vol. 153, pp. 688–708,
+2012.
+[17] R. B. Diddigi, D. S. K. Reddy, P. KJ, and S. Bhatnagar, “Actor-
+critic algorithms for constrained multi-agent reinforcement learning,” in
+Proceedings of the 18th International Conference on Autonomous Agents
+and MultiAgent Systems, 2019, pp. 1931–1933.
+[18] S. Lu, K. Zhang, T. Chen, T. Bas¸ar, and L. Horesh, “Decentralized policy
+gradient descent ascent for safe multi-agent reinforcement learning,” in
+Proceedings of the AAAI Conference on Artificial Intelligence, vol. 35,
+no. 10, 2021, pp. 8767–8775.
+[19] Y. Zhao, Y. Yang, Z. Lu, W. Zhou, and H. Li, “Multi-agent first
+order constrained optimization in policy space,” in Advances in Neural
+Information Processing Systems (NeurIPS), vol. 36, 2023, pp. 39 189–
+39 211.
+[20] R. Hassan, K. S. Wadith, M. M. Rashid, and M. M. Khan, “Depaint:
+A decentralized safe multi-agent reinforcement learning algorithm con-
+sidering peak and average constraints,” Applied Intelligence, pp. 1–17,
+2024.
+[21] Z. Yang, H. Jin, R. Ding, H. You, G. Fan, X. Wang, and C. Zhou,
+“Decom: Decomposed policy for constrained cooperative multi-agent
+reinforcement learning,” in Proceedings of the AAAI Conference on
+Artificial Intelligence, vol. 37, no. 9, 2023, pp. 10 861–10 870.
+[22] D. Ying, Y. Zhang, Y. Ding, A. Koppel, and J. Lavaei, “Scalable primal-
+dual actor-critic method for safe multi-agent reinforcement learning with
+general utilities,” Advances in Neural Information Processing Systems
+(NeurIPS), vol. 36, 2024.
+[23] S.
+Zhao,
+Mathematical
+Foundations
+of
+Reinforcement
+Learning.
+Springer Verlag, Singapore, 2025.
+[24] T.-H. Chang, A. Nedi´c, and A. Scaglione, “Distributed constrained op-
+timization by consensus-based primal-dual perturbation method,” IEEE
+Transactions on Automatic Control, vol. 59, no. 6, pp. 1524–1538, 2014.
+[25] A. Nedic and A. Ozdaglar, “Distributed subgradient methods for multi-
+agent optimization,” IEEE Transactions on Automatic Control, vol. 54,
+no. 1, pp. 48–61, 2009.
+[26] S. Bhatnagar, H. L. Prasad, and L. A. Prashanth, Stochastic Recursive
+Algorithms for Optimization.
+Springer, 2012.
+[27] H. J. Kushner and D. S. Clark, Stochastic Approximation Methods for
+Constrained and Unconstrained Systems.
+Springer, 1978.
+[28] Y. Zhang and K. W. Ross, “On-policy deep reinforcement learning for
+the average-reward criterion,” in Proceedings of the 38th International
+Conference on Machine Learning (ICML), vol. 139.
+PMLR, 2021, pp.
+12 535–12 545.

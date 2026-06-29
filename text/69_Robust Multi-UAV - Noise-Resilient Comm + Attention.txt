@@ -1,0 +1,954 @@
+Towards Robust Multi-UAV Collaboration: MARL with Noise-Resilient
+Communication and Attention Mechanisms
+Zilin Zhao1, Chishui Chen1, Haotian Shi2, Jiale Chen3, Xuanlin Yue4, Zhejian Yang5,∗, and Yang Liu2,∗
+Abstract— Efficient path planning for unmanned aerial ve-
+hicles (UAVs) is crucial in remote sensing and information
+collection. As task scales expand, the cooperative deployment
+of multiple UAVs significantly improves information collection
+efficiency. However, collaborative communication and decision-
+making for multiple UAVs remain major challenges in path
+planning, especially in noisy environments. To efficiently ac-
+complish complex information collection tasks in 3D space
+and address robust communication issues, we propose a multi-
+agent reinforcement learning (MARL) framework for UAV
+path planning based on the Counterfactual Multi-Agent Policy
+Gradients (COMA) algorithm. The framework incorporates
+attention mechanism-based UAV communication protocol and
+training-deployment system, significantly improving communi-
+cation robustness and individual decision-making capabilities in
+noisy conditions. Experiments conducted on both synthetic and
+real-world datasets demonstrate that our method outperforms
+existing algorithms in terms of path planning efficiency and
+robustness, especially in noisy environments, achieving a 78%
+improvement in entropy reduction. The supplementary mate-
+rials are available at https://github.com/zilin-zhao/
+iros25-supp.
+I. INTRODUCTION
+In recent years, UAV technology has made significant
+advancements, with its applications expanding across various
+domains [1]. These developments have provided efficient and
+cost-effective solutions for numerous industries. Due to their
+high flexibility, high mobility, and low deployment costs,
+UAVs are increasingly employed for monitoring complex
+terrains [2], [3]. Moreover, in large-scale terrain monitoring
+tasks, deploying multiple UAVs to explore target areas and
+establish communication systems for information exchange
+can significantly enhance exploration efficiency and reduce
+overall costs [4], [5]. However, a major challenge in this
+context lies in designing robust communication protocols [6],
+[7] and developing effective decision-making strategies for
+multiple agents [8].
+The informative path planning (IPP) problem is a critical
+challenge in such scenarios [2]. IPP focuses on planning
+information-rich paths for each agent while considering con-
+strained resource budgets (i.e., time, energy, etc.) to achieve
+1 College of Software Engineering, Jilin University, Changchun, China
+(e-mail: zhaozl9921@mails.jlu.edu.cn; chencs5522@mails.jlu.edu.cn).
+2
+College
+of
+Instrumentation
+and
+Electrical
+Engineering,
+Jilin
+University,
+Changchun,
+China
+(e-mail:
+shiht9921@mails.jlu.edu.cn;
+liu_yang@jlu.edu.cn).
+3 School of Communication Engineering, Jilin University, Changchun,
+China (e-mail: cjl2022@mails.jlu.edu.cn).
+4 School of Electrical Engineering, China University of Mining and
+Technology, Xuzhou, China (e-mail: 202207020110@stumail.xsyu.edu.cn).
+5 School of Artificial Intelligence, Jilin University, Changchun, China
+(e-mail: zjyang22@mails.jlu.edu.cn).
+∗Corresponding authors: Zhejian Yang and Yang Liu.
+Fig. 1.
+Multiple drones collaborate to scan an area of interest. They
+communicate in a noisy environment, exchange data, perform sensor fusion
+with denoising, and plan paths independently. By working together, they
+enhance the understanding of the region.
+efficient collaborative data collection. Traditional algorithms
+for IPP problem have been extensively studied [9], such
+as non-adaptive methods [10], [11], which rely on static
+and pre-defined paths or assume uniform target distributions.
+However, real-world scenarios are often far more complex.
+Some studies have proposed adaptive algorithms [12], [13],
+enabling UAVs to make dynamic decisions in real time, but
+as the planning horizon expands, these algorithms suffer
+from exponentially increasing execution times due to the
+need to evaluate a vast number of candidate paths, rendering
+them infeasible for time-sensitive tasks. Meanwhile, GNN-
+based IPP methods [14], [15] have been studied. Although
+these methods can address the execution time issue, they
+still rely on supervised imitation learning and require expert
+demonstrations for training.
+Reinforcement learning (RL) methods have emerged as
+a promising approach for effective online decision-making
+in robotics [16]–[18]. By simulating interactions between
+UAVs and their environment, RL enables UAVs to learn
+and adapt in dynamic scenarios, progressively improving
+their path-planning strategies. In the context of the IPP
+problem, the advantage of RL methods lies in shifting
+the computational burden of decision-making from the de-
+ployment to the training [19]: with proper training, agents
+can make high-quality decisions during deployment with
+constant-time complexity. Furthermore, RL methods do not
+require supervised training or imitation of artificially defined
+expert targets. Therefore, Chen et al. [20] and Tan et al.
+[21] studied RL for IPP scenarios in 2D spaces, while other
+reachers’ works [22]–[26] investigated single-agent RL in
+3D environments. In work by Zeng et al. [27], single-agent
+autonomous exploration for acquiring spatial information
+arXiv:2503.02913v1  [cs.MA]  4 Mar 2025
+
+about crops in 3D agricultural environments was studied, and
+Bartolomei et al. [28] explored UAV scanning of regions of
+interest for semantic segmentation, but these works did not
+address multi-UAV scenarios. Thus, recent works [8], [29]
+have studied 3D but fixed-altitude IPP problems. Westheider
+et al. [30] and Wang et al. [31] focusd on solving the
+credit assignment problem in the multi-agent IPP problem.
+Between them, the former brought the MARL-IPP problem
+into full-3D environment for the first time. However, to
+the best of our knowledge, no existing research addresses
+the design of multi-UAV communication protocols in this
+context, particularly under conditions involving sensor fusion
+and communication noise. Moreover, no prior work has
+explored the integration of composite attention mechanisms
+within this framework.
+To address these gaps, we propose a novel IPP-MARL
+framework for full-3D environments, focusing sensor fu-
+sion, communication denoising, and attention mechanisms in
+training and deployment phases. Figure 1 provides a visual
+representation of our work. The main contributions of our
+work are as follows:
+1) We propose a novel MARL framework that focuses
+on multi-UAV sensor fusion and denoising, and incor-
+porating attention mechanisms into both the decision-
+making and training stages of MARL.
+2) We develop a multi-sensor denoising and fusion net-
+work, termed the SenDFuse Network, to establish a ro-
+bust communication protocol for multi-UAV systems.
+3) We utilize the COMA algorithm [32] to provide a
+credit assignment foundation for the proposed frame-
+work, and we validate its potential for engineering
+applications through training and deployment exper-
+iments in both synthetic and real-world data.
+Our paper is structured into five sections. The current
+section provides a brief overview of the research landscape
+and surveys related works. In Section II, we present a formal
+definition of the research problem. Section III details our pro-
+posed method through four subsections: the overall frame-
+work, the SenDFuse Network, Actor and Critic networks, and
+the training algorithm. Comprehensive experimental results
+using both synthetic and real-world data are presented in
+Section IV, and Section V concludes the paper.
+II. PRELIMINARY
+Our work focuses on a multi-UAV cooperative naviga-
+tion task, aiming to enable the system to generate high-
+information-density paths in noisy environments and con-
+strained communication budgets. The goal of the system to
+enhance the understanding of the region of interest (ROI).
+Consider deploying N UAVs that communicate in a noisy
+environment and independently plan their respective trajec-
+tories. Each UAV i maintains a local map belief Mi, which
+represents its current understanding of the ROI. The planned
+trajectory is represented as a sequence ψi = (p0, p1, . . . , pB),
+where p ∈R3 denotes the UAV’s sampling position over the
+ROI, and B ∈N+ represents the communication and sam-
+pling budget. The UAVs aim to maximize their understanding
+of the terrain, i.e., reduce belief uncertainty. According to
+Westheider et al. [30], the information gained from sampling
+along a trajectory can be quantified using an information-
+theoretic criterion:
+I(ψ) =
+B−1
+X
+j=0
+
+H(M | zj, pj) −H(M | zj+1, pj+1)
+
+,
+(1)
+where H denotes the Shannon entropy of the belief map.
+Thus, the final training objective is defined as follows:
+ψ∗= arg max
+ψ∈ΨN I(ψ),
+s.t. ∀i, Cost(ψi) ≤B.
+(2)
+This formula is a generalized description of the IPP problem.
+We use the MARL method to solve this problem and
+define the key parameters as follows.
+Global environment state: st = {M, pt
+1:N, b} ∈S,
+representing the global belief map, the positions of the N
+UAVs, and the task budget.
+Action space: U = {x+, x−, y+, y−, z+, z−}, represent-
+ing the 6 directions along the coordinate axes.
+Reward: Rt  st, ut, st+1
+= α
+H(Mt+1)−H(Mt)
+H(Mt)
++ β,
+representing the relative reduction in map entropy, which is
+our objective. α and β denote scaling factors.
+At each time step, the actions of all UAVs, i.e., their
+next sampling locations, are defined as a joint action ut =
+{ut
+1, . . . , ut
+N} ∈U N. The global reward is then distributed to
+individual UAVs using the COMA algorithm [32], which is a
+centralized learning, decentralized execution method detailed
+in Section III-D.
+III. METHODOLOGY
+In this section, we introduce our novel MARL-based
+UAV path planning framework. Subsection III-A provides an
+overview of the framework, followed by Subsections III-C
+and III-A, elaborating on its components. Finally, Subsection
+III-D details the training process.
+A. Overall Architecture
+In this subsection, we present the overall structure of our
+proposed framework illustrated in Figure 2, where multiple
+UAVs collaboratively perform sensor sampling over an ROI.
+These UAVs communicate within a constrained communica-
+tion and sampling budget in a noisy environment. The figure
+highlights the UAV marked with a star, which receives noisy
+communication data from three other UAVs. The received
+data is processed by the SenDFuse Network (i.e., Sensor
+Denoising and Fusion Network). Note that besides sensor
+data, drones also exchange position and altitude information
+as well as identifiers. Before performing SenDFuse Net, the
+sensor data needs to be aligned.
+All UAVs share a unified Actor network for decision-
+making. Multi-sensor data, after being denoised and fused by
+the SenDFuse Network, is combined with local information
+detailed. These inputs are preprocessed and transformed into
+an 8-channel input for the Actor network. The Actor network
+adopts a Convolutional Block Attention Module (CBAM)
+structure [33], which processes the input into a probability
+
+Fig. 2.
+The overall structure of our proposed framework primarily illustrates the data flow and processing modules. Multiple drones sample an area of
+interest, and each drone fuses the visual data from multiple agents using the SenDFuse Network. The fused visual perspective is then combined with other
+local information and stacked as input to the Actor network, which makes decisions. The input to the Critic network includes both the input to the Actor
+network and global information, serving to evaluate the performance of the Actor network.
+distribution over a 6-dimensional discrete action space to
+guide the UAVs decision-making at each step. The Critic
+network evaluates the actions taken by the Actor network.
+While sharing a similar CBAM structure with the Actor
+network, it additionally incorporates four dimensions of
+global information.
+B. SenDFuse Network
+In this subsection, we introduce the SenDFuse Network
+(i.e., Sensor Denoising and Fusion Network) illustrated in the
+lower part of the Figure 2. This network is used to denoise
+and fuse the sensor information of n UAVs, generating a
+globally fused vision map. We extend the NestFusion method
+[34] from fusing two pieces of information with the same
+mode but different modalities (e.g., visible light and infrared
+images taken at the same location) to fusing n pieces of
+information with the same modality but different modes
+(e.g., images of the same type taken at different locations).
+Additionally, we fully exploit the noise resistance capability
+of NestFusion as an autoencoder-like structure and integrate
+it into the framework.
+1) Fusion Strategy: We propose an attention-based fusion
+strategy to process inputs from multiple sensors. Let Φ
+represent the encoded sensor data set from n UAVs, where
+the sensor data s includes communication noise ϵ and ϕ(·)
+denotes the encoder of the network. Note that UAV 0
+represents the local UAV, and its data is unaffected by noise.
+The fusion strategy F(·) can be expressed as:
+Φ =
+
+ϕ(s0), ϕ(s1 + ϵ1), ..., ϕ(sn−1 + ϵn−1)
+	
+.
+(3)
+F(·) computes a weighted sum of spatial and channel
+attention over Φ:
+F(Φ) = α C(Φ) + β S(Φ),
+(4)
+where C(·) represents channel attention, S(·) represents
+spatial attention and α + β = 1. Given that Φ has a shape
+of [d1, d2, ..., dm], for any given channel c, the attention
+formulas are as follows:
+Channel Attention:
+C(Φ)[c, ∗] =
+exp
+ Pooling(Φ[c])
+
+Pm
+i=1 exp
+ Pooling(Φ[i])
+ · Φ[c, ∗],
+(5)
+Spatial Attention:
+S(Φ)[c, ∗] =
+exp
+ ∥Φ[:, ∗]∥1
+
+P
+∗exp
+ ∥Φ[:, ∗]∥1
+ · Φ[c, ∗].
+(6)
+Here, ∥Φ[:, ∗]∥1 represents the L1 norm of the channel vector
+at a fixed spatial position, and P
+∗denotes summation over
+all spatial dimensions. Let R represent the fused image and
+let Φ denotes the decoder. Then, the extended fusion and
+denoising process can be defined as:
+R = ψ
+ F(Φ)
+
+.
+(7)
+Notably, in the spatial attention formula, c does not directly
+participate in the computation but is used to index the output
+for each channel.
+
+Fig. 3.
+The SenDFuse Network operates in two phases: training and
+deployment. During training, artificial noise is added to the input data, and
+the network is trained to reconstruct noise-free images. In the deployment
+phase, an attention-based fusion strategy is applied to process deep-level
+features.
+2) Training & Deployment for SenDFuse: The SenDFuse
+Network is pre-trained offline by generated data and then
+deployed within subsequent architectures. During training,
+the fusion strategy is temporarily disabled, and the network
+is trained as a one-to-one AE. Specifically, the network is
+tasked with encoding and reconstructing single images to
+establish its capability for image representation and recon-
+struction.
+To address the noise in input images, we adopt the
+methodology of denoising autoencoder [35]. During training,
+artificial noise according to equation 11 is randomly added
+to the input images. The network is then trained to regress
+the output images toward the clean, noise-free versions, as
+illustrated in Figure 3. This two-phased procedure enhances
+the network’s robustness to noisy inputs.
+The loss function used in SenDFuse Network is a linear
+combination of pixel-level loss and structural loss. The pixel-
+level loss leverages both the Mean Squared Error (MSE)
+loss and the Mean Absolute Error (MAE) loss, while the
+structural loss employs the Structural Similarity Index Mea-
+sure (SSIM) loss. SSIM is a perceptual metric that quantifies
+the structural similarity between two images, with values
+ranging from [−1, 1], where a value closer to 1 indicates
+higher similarity between the images. The loss function is
+defined as:
+L(x, y) = αMSE(x, y) + βMAE(x, y) + γ(1 −SSIM(x, y)).
+(8)
+Here, α, β and γ are scaling parameters used to balance the
+magnitude of the three loss components.
+C. Actor & Critic Network
+In this section, we introduce our Actor & Critic networks.
+In RL, the Actor is responsible for learning and executing
+the policy, selecting actions based on the current state, and
+the Critic evaluates the quality of the actions chosen by
+the Actor. CBAM [33] is a convolutional neural network
+module designed to enhance feature representation by com-
+bining channel attention and spatial attention. It first uses
+the channel attention module to adaptively select important
+feature channels, followed by the spatial attention module
+to focus on critical feature locations. The structure of the
+Actor network is shown in the upper part of figure 2, while
+the Critic network has a similar architecture, differing only
+in the number of input channels.
+It is worth noting that the spatial-channel attention mech-
+anism in the CBAM module differs slightly from the fusion
+strategy used in the SenDFuse Network. Specifically, the
+channel attention in CBAM includes an additional shared,
+trainable MLP structure. For spatial attention, the SenDFuse
+Network typically employs a single pooling strategy, whereas
+the CBAM module combines two pooling strategies.
+After obtaining local information, the drone will process it
+to generate eight 11×11 submaps. These submaps will serve
+as the input to the Actor network. (a) Remaining Budget
+Map: Each element represents the ratio of the remaining
+budget to the total budget. (b) Drone Identifier Map: Each
+element represents the ratio of the current drone’s ID to the
+total number of drones. (c) Altitude Map: The altitude of
+all drones as a ratio to the total altitude. If a location has no
+drone, the value is 0. (d) Footprint Map: The positions visited
+by the drone on the map. (e) Local Sensor Observation Map
+(map-sensor-local): The results of local sensor sampling.
+(f) Local Map Belief: Mi from II, which represents the
+occupancy probability map. (g) Shannon Entropy of Local
+Belief Map: H(Mi | z, p). (e) Denoising-Fusion Map:
+The denoising and fusion map generalized by SenDFuse
+Network.
+The input to the Critic network, in addition to all the afore-
+mentioned submaps, also includes four global information
+maps: (a) Global Map Belief: The global map belief Mi.
+(b) Shannon Entropy of Global Map Belief: H(M | z, p).
+(c) Global Footprint Map: The map that marks all visited
+positions globally. (d) Actions of All Drones: This is crucial
+for the COMA algorithm introduced in Section III-D.
+By designing the network input in this way, the Actor-
+Critic network can achieve proper collaboration. We train
+the networks to process the input data from each channel
+and obtain appropriate results.
+D. Training Algorithm
+In this subsection, we introduce the train algorithm for our
+framework. COMA [30], [32] is a centralized training and
+decentralized execution algorithm for MARL. It computes
+counterfactual baselines through a centralized value function
+to evaluate the advantage of each agent’s actions, reducing
+the non-stationarity and signal mixing issues among agents.
+This enables efficient policy optimization and is suitable for
+cooperative scenarios.
+The Critic network evaluates the policy π by estimating
+the state-action value function Qt((st, ut)), where ut =
+(ut
+1, ..., ut
+n), and the actions of other agents, ut
+−i, are fixed.
+The Critic network is trained using TD(λ) function to
+estimate the discounted return Gt. During training, it uses
+the global state st, while the Actor network only uses local
+information ωt
+i, to predict decentralized actions.
+
+To measure the contribution of action ut
+i taken by agent
+i to the team, a counterfactual baseline is used to calculate
+the advantage function At
+i(st, ut):
+At
+i(st, ut) = Qt(st, ut) −
+X
+u′t
+i ∈U
+π(u′t
+i |ωt
+i)Qt(st, (ut
+−i, u′t
+i )).
+(9)
+When optimizing the policy π(· | ωt
+i), the policy gradient
+theorem and Equation 10 are used to minimize the following
+objective:
+L = −log
+ π(ut
+i|ωt
+i)At
+i(st, ut)
+
+.
+(10)
+We present the COMA pseudocode in Algorithm 1 to de-
+scribe the training process for our mission. Through the
+COMA algorithm, the system can reasonably allocate the
+global reward to each agent.
+IV. EXPERIMENT
+In this section, we present our experimental results. The
+proposed framework demonstrates superior performance in
+both the training phase of MARL and the deployment
+phase, particularly in noisy environments during multi-UAV
+scanning tasks over ROI.
+Fig. 4. Our experimental environments includes three types: Env1: synthetic
+data, Env2: thermal imaging data, and Env3: visible-light data. Note that
+in Env3 we stipulate that drones are not allowed to fly into building areas,
+and the sampling category for building areas is designated as valueless.
+A. Set-up
+We conducted experiments in three distinct environmental
+categories: (1) Env1: A manually drawn star-shaped region
+with a certain degree of random structure, where black pixels
+are defined as valuable areas. (2) Env2: A thermal imaging
+UAV image from the HIT-UAV dataset [36]. The UAV is
+equipped with a FLIR long-wave infrared thermal camera in
+white-hot mode. We define areas with relatively high surface
+temperatures as valuable regions. (3) Env3: An aerial view
+of Geology Palace at Chaoyang Campus, Jilin University,
+captured using a conventional visible-light camera. We define
+vegetation areas as valuable regions, meaning the green areas
+excluding rooftops are considered valuable. All environments
+are downsampled to appropriate resolutions to allow uniform
+partitioning into rectangular ROIs and The total number of
+sampled pixels should exceed 250,000 to ensure experimen-
+tal validity. A homogeneous fleet of drones is deployed in
+each environment for RL training, and the trained Actor
+networks are extracted for deployment and testing. Although
+it is stipulated that the drone will not fly out of the area of
+Algorithm 1 COMA Training
+Require: ROI P, UAV count N, actor πθ, critic Qϕ, learn-
+ing rates απ, αQ, discount factor γ, trace decay λ, batch
+size B,global map belief M, budget bgt, SenDFuse
+Network ψ, ϕ and F
+1: Initialize πθ, Qϕ and M, replay buffer B = ∅
+2: for each episode do
+3:
+Reset environment, initial state s0 = {M0, p0
+1:N, b0}
+4:
+for t = 0 to bgt −1 do
+5:
+for each UAV i do
+6:
+Perform SenDFuse R = ψ
+ F(Φ)
+
+{See III-B}
+7:
+Build observation ωt
+i {See III-C}
+8:
+Sample action ut
+i ∼πθ(ut
+i|ωt
+i)
+9:
+end for
+10:
+Execute ut = {ut
+1, . . . , ut
+N} and update M
+11:
+Get st+1 and compute reward rt
+12:
+Store transition (st, ut, rt, st+1) in B
+13:
+if |B| ≥B then
+14:
+Sample batch of transitions from B
+15:
+Initialize G = 0 {For TD(λ) calculation}
+16:
+for each transition (s, u, r, s′) in reversed batch
+order do
+17:
+Compute G = r + γG {Recursive TD(λ)}
+18:
+end for
+19:
+Update critic: Lcritic =
+1
+|B|
+P(Qϕ(s, u) −G)2
+20:
+for each UAV i do
+21:
+Compute advantage:
+bcf =
+X
+u′t
+i
+πθ(u′t
+i |ωt
+i)Qϕ(st, (ut
+−i, u′t
+i ))
+At
+i = Qϕ(st, ut) −bcf
+22:
+Update actor: Lactor = −Eπθ[log πθ(ut
+i|ωt
+i)At
+i]
+23:
+end for
+24:
+Perform gradient updates for θ and ϕ using απ
+and αQ
+25:
+Clear buffer B
+26:
+end if
+27:
+end for
+28: end for
+interest, it may still sample content from undefined regions.
+In this case, we define the sampling result as 0, representing
+a valueless category. For all experiments, we conducted 10
+trials and computed the mean and standard deviation for
+visualization and tabulation.
+We model the noise as a combination of distance-
+dependent multiplicative attenuation and additive Gaussian
+white noise, which is one of the most representative types
+of noise in nature [37], [38]. Let I(x, y) denote the original
+image channel, then the received image is given by
+Ir(x, y) = α(x, y)I(x, y) + n(x, y)
+(11)
+where x, y are the coordinates, α(x, y) is the distance-
+dependent attenuation factor, and n(x, y) ∼N(0, σ2) rep-
+resents Gaussian white noise. We define the moderate noise
+as α ∼U(0.8, 1) and σ = 0.02, while loud noise is
+
+characterized by α ∼U(0.6, 1) and σ = 0.06. These
+definitions will appear in the following text.
+B. MARL Training
+Our training process follows the algorithm 1 under the
+scenario outlined in IV-A and we present results in Env3.
+During training, we deploy 4 UAVs, with each mission
+starting from fixed initial positions and operating under a
+communication budget of b = 15. The total number of
+episodes is set to 1200, and the Actor and Critic networks
+are updated using the Adam optimizer, where the learning
+rate for the Actor is 1e-5, for the Critic is 1e-4, and the
+batch size is 512. We set λ = 0.8 and the discount factor
+γ = 0.99 for TD(λ). We let α = 10 and β = −0.17 in
+reward function in Section II.
+We highlight the progression of the global reward defined
+in II as training episodes advance and use this to analyze the
+effectiveness of the methods. In fully cooperative tasks such
+as UAV Swarming, the global reward effectively reflects the
+progress of system training.
+Fig. 5.
+Env3: Reward variations for each method over 1,200 training
+episodes. Among them, Base represents method with the absence of SenD-
+Fuse and CBAM. The method incorporating both major modules performs
+the best in terms of both convergence speed and final convergence value.
+Figure 5 shows how the reward varies over the course of
+training in Env3 . As training progresses, all methods eventu-
+ally converge. However, the model incorporating both CBAM
+and SenDFuse structures exhibits the best performance in
+terms of convergence speed and final convergence value.
+The effect of using Fusion alone is superior to that of using
+CBAM alone. This is because our training environment sim-
+ulates moderate noise, and the network designed for fusion
+and denoising demonstrates its effectiveness, particularly in
+the early stages of training (around 150-200 episodes). It is
+also worth noting that although CBAM does not exhibit the
+same noise-resistant capability as SenDFuse, it still performs
+better than the naive model. This could be attributed to
+the fact that the channel-spatial attention mechanism learns
+certain denoising and fusion capabilities through the RL
+learning process. This hypothesis is further supported by
+subsequent experiments.
+C. Deployment
+1) Ablation Study: We deploy the trained and converged
+models into the environment shown in Env3 for deployment
+Fig. 6.
+Env3: The variations of F1-Score and Entropy with respect to the
+steps of sampling. As the noise intensity increases, the importance of the
+two main modules becomes more evident.
+testing to evaluate their performance. We select F1-Score and
+shannon entropy of the system’s global map belief defined
+in II to measure the performance during deployment testing.
+Since the task is essentially a binary classification problem
+determining whether each pixel in the ROI is valuable or not,
+we also focus on the F1-Score to assess task performance.
+Entropy represents the confidence level of the system’s
+global map belief, reflecting the system’s understanding and
+certainty regarding the ROI. In the Env3 environment, we
+simulate three different noise conditions: no noise, moderate
+noise, and loud noise, to evaluate the module’s performance
+under varying levels of uncertainty.
+The analysis results indicate that in the no noise situation,
+except for the naive method (Base), which performs the
+worst in both F1-Score and Entropy, the other three methods
+show little difference in performance. Overall, the method
+incorporating both modules performs the best, while the
+methods with only one module perform similarly, slightly
+inferior to the one with both. In the moderate noise situation,
+
+TABLE I
+PERFORMANCE COMPARISON ACROSS DIFFERENT ENVIRONMENTS
+F1-Score ↑
+Entropy ↓
+Env
+Method
+33%
+67%
+100%
+33%
+67%
+100%
+Env1
+Ours
+0.5509 ± 0.0127
+0.7807 ± 0.0252
+0.8432 ± 0.0260
+0.7216 ± 0.0233
+0.3883 ± 0.0491
+0.2121 ± 0.0508
+AG
+0.4631 ± 0.0512
+0.6242 ± 0.0763
+0.6734 ± 0.0250
+0.7119 ± 0.0455
+0.4273 ± 0.0572
+0.2865 ± 0.0579
+NL
+0.3084 ± 0.0916
+0.5211 ± 0.0423
+0.6521 ± 0.0455
+0.7538 ± 0.0731
+0.4528 ± 0.0514
+0.3699 ± 0.0527
+Random
+0.3271 ± 0.1752
+0.4638 ± 0.1809
+0.5125 ± 0.1820
+0.8876 ± 0.0404
+0.6852 ± 0.0842
+0.5867 ± 0.1121
+Env2
+Ours
+0.5206 ± 0.0205
+0.7357 ± 0.0334
+0.8508 ± 0.0341
+0.7163 ± 0.0195
+0.3597 ± 0.0375
+0.2285 ± 0.0384
+AG
+0.3323 ± 0.0588
+0.6843 ± 0.0632
+0.8471 ± 0.0725
+0.8148 ± 0.0410
+0.5872 ± 0.0508
+0.4154 ± 0.0563
+NL
+0.2931 ± 0.1204
+0.5628 ± 0.0738
+0.6225 ± 0.0565
+0.8691 ± 0.0883
+0.6247 ± 0.0435
+0.5173 ± 0.0411
+Random
+0.2016 ± 0.1545
+0.4279 ± 0.1920
+0.5211 ± 0.1937
+0.8523 ± 0.0381
+0.6522 ± 0.0798
+0.5235 ± 0.0997
+the impact of the modules becomes more apparent. The
+model with both modules continues to dominate, followed
+closely by the model with only the Fusion module. However,
+the model with only the CBAM module falls further behind
+but still outperforms the naive method. In the loud noise
+situation, the performance gap between the models becomes
+even more pronounced, further validating our analysis. That
+is, in noisy environments, the Fusion module serves as
+an effective sensor denoising and fusion method, while
+the CBAM module, as an attention mechanism, can also
+learn certain denoising and fusion capabilities during the
+RL process. Although the CBAM module alone is not as
+effective as the Fusion module alone, it still performs better
+than the naive method. It is also worth noting that as noise
+increases, all methods exhibit instability (with increasing
+variance). However, the Fusion module helps mitigate this
+trend to some extent. Ultimately, these two modules can
+complement each other, and incorporating both achieves the
+best overall performance.
+2) Comparison against Other Approaches: We deploy
+other IPP methods in the Env3 environment and compare
+them with our method. These methods include: (1) “AG”
+(Adaptive Gain): An adaptive IPP method proposed by
+Carbone et al. [39]. This is a monitoring and mapping
+strategy that adaptively selects target areas based on ex-
+pected information gain, which measures the potential for
+uncertainty reduction through further observations. (2) “NL”
+(Non-adaptive Lawnmower): A non-adaptive lawnmower-
+like method that deploys UAVs uniformly at equal intervals
+to perform straight-line scanning. (3) “Random”: UAVs make
+completely random decisions. To simulate a more general-
+ized environment, the noise intensity is set to moderate. Note
+that for NL and random, which are non-communication-
+based algorithms, environmental noise does not affect their
+performance.
+The experiments demonstrate the superiority of our
+method compared to the three baselines, achieving the best
+performance and stability in both F1-Score and Entropy
+metrics. Notably, the AG method also performs well in terms
+of F1-Score but performs worse in Entropy. We speculate that
+this is because AG adopts a relatively conservative strategy:
+it tends to make clear predictions about the explored areas,
+Fig. 7.
+Env3: Comparison of the deployment test results of our method
+between other 3 methods in the same scenario. The two adaptive methods
+outperform the two non-adaptive methods, with our method achieving the
+best overall performance.
+which helps with accurate classification and benefits the F1-
+Score. However, this also leaves many unexplored regions,
+causing the entropy to decrease slowly.
+We conduct the same experiments on Env1 (synthetic
+data) and Env2 (thermal imaging data) and compare the
+deployment performance of the four methods. We keep the
+training parameters unchanged and trained the model until
+convergence, then fixed the noise intensity to a moderate
+level. The experimental results including mean and standard
+deviation of F1-score and entropy are shown in Table I.
+Experiments show that our method demonstrates superiority
+across various ROI structures. Best results are highlighted in
+bold.
+V. CONCLUSION
+In our paper, we propose a novel MARL framework with
+a robust communication protocol and composite attention
+mechanism to solve the problem of multi-UAV coopera-
+tive information collection in a full-3D environment. We
+develop the SenDFuse Network for multi-sensor denoising
+and fusion, and employ an attention-enhanced Actor-Critic
+network, significantly improving multi-UAV collaboration
+efficiency, especially in noisy environments. We utilize the
+COMA algorithm for credit assignment within the framework
+and demonstrate that it outperforms existing algorithms in
+both the training and deployment phases.
+
+REFERENCES
+[1] G. Muchiri and S. Kimathi, “A review of applications and potential
+applications of uav,” in Proceedings of the Sustainable Research and
+Innovation Conference, 2022, pp. 280–283.
+[2] M. Popovi´c, T. Vidal-Calleja, G. Hitz, J. J. Chung, I. Sa, R. Siegwart,
+and J. Nieto, “An informative path planning framework for uav-based
+terrain monitoring,” Autonomous Robots, vol. 44, no. 6, pp. 889–911,
+2020.
+[3] S. I. Jiménez-Jiménez, W. Ojeda-Bustamante, M. d. J. Marcial-Pablo,
+and J. Enciso, “Digital terrain models generated with low-cost uav
+photogrammetry: Methodology and accuracy,” ISPRS International
+Journal of Geo-Information, vol. 10, no. 5, p. 285, 2021.
+[4] X. Liu, B. Lai, B. Lin, and V. C. Leung, “Joint communication
+and trajectory optimization for multi-uav enabled mobile internet of
+vehicles,” IEEE Transactions on Intelligent Transportation Systems,
+vol. 23, no. 9, pp. 15 354–15 366, 2022.
+[5] M. Werner, T. Báˇca, P. Štibinger, D. Doubravová, J. Šolc, J. Rusˇnák,
+and M. Saska, “Autonomous localization of multiple ionizing radiation
+sources using miniature single-layer compton cameras onboard a group
+of micro aerial vehicles,” in 2024 IEEE/RSJ International Conference
+on Intelligent Robots and Systems (IROS).
+IEEE, 2024, pp. 5710–
+5717.
+[6] K. Meng, X. He, Q. Wu, and D. Li, “Multi-uav collaborative sensing
+and communication: Joint task allocation and power optimization,”
+IEEE Transactions on Wireless Communications, vol. 22, no. 6, pp.
+4232–4246, 2022.
+[7] F. M. Rockenbauer, J. Lim, M. G. Müller, R. Siegwart, and L. Schmid,
+“Traversing mars: Cooperative informative path planning to efficiently
+navigate unknown scenes,” IEEE Robotics and Automation Letters,
+2024.
+[8] H. Bayerlein, M. Theile, M. Caccamo, and D. Gesbert, “Multi-uav
+path planning for wireless data harvesting with deep reinforcement
+learning,” IEEE Open Journal of the Communications Society, vol. 2,
+pp. 1171–1187, 2021.
+[9] S. Aggarwal and N. Kumar, “Path planning techniques for unmanned
+aerial vehicles: A review, solutions, and challenges,” Computer com-
+munications, vol. 149, pp. 270–299, 2020.
+[10] R. Bähnemann, D. Schindler, M. Kamel, R. Siegwart, and J. Nieto,
+“A decentralized multi-agent unmanned aerial system to search, pick
+up, and relocate objects,” in 2017 IEEE International Symposium on
+Safety, Security and Rescue Robotics (SSRR).
+IEEE, 2017, pp. 123–
+128.
+[11] A. Meliou, A. Krause, C. Guestrin, and J. M. Hellerstein, “Nonmy-
+opic informative path planning in spatio-temporal models,” in AAAI,
+vol. 10, no. 4, 2007, pp. 16–7.
+[12] G. A. Hollinger, B. Englot, F. S. Hover, U. Mitra, and G. S. Sukhatme,
+“Active planning for underwater inspection and the benefit of adaptiv-
+ity,” The International Journal of Robotics Research, vol. 32, no. 1,
+pp. 3–18, 2013.
+[13] A. Blanchard and T. Sapsis, “Informative path planning for anomaly
+detection in environment exploration and monitoring,” Ocean Engi-
+neering, vol. 243, p. 110242, 2022.
+[14] M. Tzes, N. Bousias, E. Chatzipantazis, and G. J. Pappas, “Graph
+neural networks for multi-robot active information acquisition,” in
+2023 IEEE International Conference on Robotics and Automation
+(ICRA).
+IEEE, 2023, pp. 3497–3503.
+[15] Q. Li, F. Gama, A. Ribeiro, and A. Prorok, “Graph neural networks
+for decentralized multi-robot path planning,” in 2020 IEEE/RSJ inter-
+national conference on intelligent robots and systems (IROS).
+IEEE,
+2020, pp. 11 785–11 792.
+[16] B. Singh, R. Kumar, and V. P. Singh, “Reinforcement learning in
+robotic applications: a comprehensive survey,” Artificial Intelligence
+Review, vol. 55, no. 2, pp. 945–990, 2022.
+[17] Y. Ao, L. Chen, F. Tschopp, M. Breyer, R. Siegwart, and A. Cramariuc,
+“Unified data collection for visual-inertial calibration via deep rein-
+forcement learning,” in 2022 International Conference on Robotics
+and Automation (ICRA).
+IEEE, 2022, pp. 1646–1652.
+[18] Y. Cao, R. Zhao, Y. Wang, B. Xiang, and G. Sartoretti, “Deep
+reinforcement learning-based large-scale robot exploration,” IEEE
+Robotics and Automation Letters, vol. 9, no. 5, pp. 4631–4638, 2024.
+[19] M. Popovi´c, J. Ott, J. Rückin, and M. J. Kochenderfer, “Learning-
+based methods for adaptive informative path planning,” Robotics and
+Autonomous Systems, vol. 179, p. 104727, 2024.
+[20] F. Chen, J. D. Martin, Y. Huang, J. Wang, and B. Englot, “Autonomous
+exploration under uncertainty via deep reinforcement learning on
+graphs,” in 2020 IEEE/RSJ International Conference on Intelligent
+Robots and Systems (IROS).
+IEEE, 2020, pp. 6140–6147.
+[21] D. M. S. Tan, Y. Ma, J. Liang, Y. C. Chng, Y. Cao, and G. Sartoretti,
+“Ir 2: Implicit rendezvous for robotic exploration teams under sparse
+intermittent connectivity,” in 2024 IEEE/RSJ International Conference
+on Intelligent Robots and Systems (IROS).
+IEEE, 2024, pp. 13 245–
+13 252.
+[22] M. Lodel, B. Brito, A. Serra-Gómez, L. Ferranti, R. Babuška, and
+J. Alonso-Mora, “Where to look next: Learning viewpoint recom-
+mendations for informative trajectory planning,” in 2022 International
+Conference on Robotics and Automation (ICRA).
+IEEE, 2022, pp.
+4466–4472.
+[23] Y. Cao, Y. Wang, A. Vashisth, H. Fan, and G. A. Sartoretti, “Catnipp:
+Context-aware attention-based network for informative path planning,”
+in Conference on Robot Learning.
+PMLR, 2023, pp. 1928–1937.
+[24] Y. Wei and R. Zheng, “Informative path planning for mobile sensing
+with reinforcement learning,” in IEEE INFOCOM 2020-IEEE Confer-
+ence on Computer Communications.
+IEEE, 2020, pp. 864–873.
+[25] A. Vashisth, J. Rückin, F. Magistri, C. Stachniss, and M. Popovi´c,
+“Deep reinforcement learning with dynamic graphs for adaptive infor-
+mative path planning,” IEEE Robotics and Automation Letters, vol. 9,
+no. 9, pp. 7747–7754, 2024.
+[26] Y. Cao, Y. Wang, A. Vashisth, H. Fan, and G. A. Sartoretti, “Catnipp:
+Context-aware attention-based network for informative path planning,”
+in Proceedings of The 6th Conference on Robot Learning, ser.
+Proceedings of Machine Learning Research, K. Liu, D. Kulic, and
+J. Ichnowski, Eds., vol. 205.
+PMLR, 14–18 Dec 2023, pp. 1928–
+1937.
+[27] X. Zeng, T. Zaenker, and M. Bennewitz, “Deep reinforcement learning
+for next-best-view planning in agricultural applications,” in 2022
+International Conference on Robotics and Automation (ICRA), 2022,
+pp. 2323–2329.
+[28] L. Bartolomei, L. Teixeira, and M. Chli, “Semantic-aware active
+perception for uavs using deep reinforcement learning,” in 2021
+IEEE/RSJ International Conference on Intelligent Robots and Systems
+(IROS), 2021, pp. 3101–3108.
+[29] A. Viseras and R. Garcia, “Deepig: Multi-robot information gathering
+with deep reinforcement learning,” IEEE Robotics and Automation
+Letters, vol. 4, no. 3, pp. 3059–3066, 2019.
+[30] J. Westheider, J. Rückin, and M. Popovi´c, “Multi-uav adaptive path
+planning using deep reinforcement learning,” in 2023 IEEE/RSJ Inter-
+national Conference on Intelligent Robots and Systems (IROS), 2023,
+pp. 649–656.
+[31] Y. Wang, B. Xiang, S. Huang, and G. Sartoretti, “Scrimp: Scalable
+communication for reinforcement- and imitation-learning-based multi-
+agent pathfinding,” in 2023 IEEE/RSJ International Conference on
+Intelligent Robots and Systems (IROS), 2023, pp. 9301–9308.
+[32] J. Foerster, G. Farquhar, T. Afouras, N. Nardelli, and S. Whiteson,
+“Counterfactual multi-agent policy gradients,” in Proceedings of the
+AAAI conference on artificial intelligence, vol. 32, no. 1, 2018.
+[33] S. Woo, J. Park, J.-Y. Lee, and I. S. Kweon, “Cbam: Convolutional
+block attention module,” in Proceedings of the European conference
+on computer vision (ECCV), 2018, pp. 3–19.
+[34] H. Li, X.-J. Wu, and T. Durrani, “Nestfuse: An infrared and visible
+image fusion architecture based on nest connection and spatial/channel
+attention models,” IEEE Transactions on Instrumentation and Mea-
+surement, vol. 69, no. 12, pp. 9645–9656, 2020.
+[35] P. Vincent, H. Larochelle, I. Lajoie, Y. Bengio, P.-A. Manzagol,
+and L. Bottou, “Stacked denoising autoencoders: Learning useful
+representations in a deep network with a local denoising criterion.”
+Journal of machine learning research, vol. 11, no. 12, 2010.
+[36] J. Suo, T. Wang, X. Zhang, H. Chen, W. Zhou, and W. Shi, “Hit-uav:
+A high-altitude infrared thermal dataset for unmanned aerial vehicle-
+based object detection,” Scientific Data, vol. 10, no. 1, p. 227, 2023.
+[37] C. Boncelet, “Image noise models,” in The essential guide to image
+processing.
+Elsevier, 2009, pp. 143–167.
+[38] A. Goldsmith, Wireless communications. Cambridge university press,
+2005.
+[39] C. Carbone, D. Albani, F. Magistri, D. Ognibene, C. Stachniss,
+G. Kootstra, D. Nardi, and V. Trianni, “Monitoring and mapping
+of crop fields with uav swarms based on information gain,” in Dis-
+tributed Autonomous Robotic Systems: 15th International Symposium.
+Springer, 2022, pp. 306–319.

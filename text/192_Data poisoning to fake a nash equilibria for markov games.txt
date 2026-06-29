@@ -1,0 +1,1346 @@
+Data Poisoning to Fake a Nash Equilibrium in Markov Games
+Young Wu, Jeremy McMahan, Xiaojin Zhu, Qiaomin Xie
+University of Wisconsin - Madison
+yw@cs.wisc.edu, jmcmahan@wisc.edu, jerryzhu@cs.wisc.edu, qiaomin.xie@wisc.edu
+Abstract
+We characterize offline data poisoning attacks on Multi-
+Agent Reinforcement Learning (MARL), where an attacker
+may change a data set in an attempt to install a (potentially
+fictitious) unique Markov-perfect Nash equilibrium for a two-
+player zero-sum Markov game. We propose the unique Nash
+set, namely the set of games, specified by their Q functions,
+with a specific joint policy being the unique Nash equilib-
+rium. The unique Nash set is central to poisoning attacks
+because the attack is successful if and only if data poison-
+ing pushes all plausible games inside the set. The unique
+Nash set generalizes the reward polytope commonly used
+in inverse reinforcement learning to MARL. For zero-sum
+Markov games, both the inverse Nash set and the set of plau-
+sible games induced by data are polytopes in the Q function
+space. We exhibit a linear program to efficiently compute the
+optimal poisoning attack. Our work sheds light on the struc-
+ture of data poisoning attacks on offline MARL, a necessary
+step before one can design more robust MARL algorithms.
+Introduction
+Data poisoning attacks have been well studied in supervised
+learning (intentionally forcing the learner to train a wrong
+classifier) and reinforcement learning (wrong policy) (Bani-
+hashem et al. 2022; Huang and Zhu 2019; Liu and Lai 2021;
+Rakhsha et al. 2021a,b, 2020; Sun, Huo, and Huang 2020;
+Zhang et al. 2020; Ma et al. 2019; Rangi et al. 2022; Zhang
+and Parkes 2008; Zhang, Parkes, and Chen 2009). Can data
+poisoning attacks be a threat to Markov Games, too? This
+paper answers this question in the affirmative: Under mild
+conditions, an attacker can force two game-playing agents to
+adopt any fictitious Nash Equilibrium (NE), which does not
+need to be a true NE of the original Markov Game. Further-
+more, the attacker can achieve this goal while minimizing
+its attack cost, which we define below. Clearly, such power
+poses a threat to the security of Multi-Agent Reinforcement
+Learning (MARL).
+Formally, we study two-player zero-sum Markov game
+offline data poisoning, stated as the following.
+Problem Statement: Offline Data Poisoning. Let D be a
+dataset tpspkq, apkq, rpkqquK
+k“1 with K tuples of state s, joint
+action a “ pa1, a2q, rewards pr, ´rq. The attacker’s target
+Copyright © 2024, Association for the Advancement of Artificial
+Intelligence (www.aaai.org). All rights reserved.
+NE is an arbitrary pure strategy pair π: :“ pπ:
+1, π:
+2q. The
+attacker can poison D into another dataset D: by paying
+cost CpD, D:q. Two MARL agents then receive D: instead
+of D. The attacker aims to enforce that the agents learn the
+target NE π: from D: while minimizing C.
+This problem is not well studied in the literature. Naive
+approaches – such as modifying all the actions in the dataset
+to those specified by the target policy pπ:
+1, π:
+2q – might
+not achieve the attack goal for MARL learners who assign
+penalties due to the lack of data coverage. Modifying all the
+rewards in the dataset that coincide with the target policy to
+the reward upper bound might be feasible, but would not be
+optimal in terms of attack cost C. Results on data poison-
+ing against single-agent RL cannot be directly applied to the
+multi-agent case. In particular, there are no optimal policies
+in MARL, and equilibrium policies are computed instead.
+There could be multiple equilibria that are significantly dif-
+ferent, and consequently, installing a target policy as the
+unique equilibrium is difficult. To resolve this issue, we pro-
+vide a novel characterization of when a zero-sum Markov
+game has a unique Markov perfect Nash equilibrium.
+Our framework can be summarized by the mnemonic
+“ToM moves to the UN”. (i) UN stands for the Unique Nash
+set, which is the set of Q functions that make the target π:
+the unique NE. Uniqueness is crucial for the attacker to en-
+sure that MARL agents choose the target NE with certainty,
+without breaking ties arbitrarily among multiple NEs. (ii)
+ToM stands for the attacker’s Theory of Mind of the MARL
+agents, namely the plausible set of Q functions that the at-
+tacker believes the agents will entertain upon receiving the
+poisoned dataset D:. (iii) The attack is successful if, by con-
+trolling D:, the ToM set is moved inside the UN set. A suc-
+cessful attack with the smallest cost CpD, D:q is optimal.
+Adversarial attacks on MARL have been studied in some
+recent work (Ma, Wu, and Zhu 2021; Gleave et al. 2019;
+Guo et al. 2021), but we are only aware of one previous
+work (Wu et al. 2023) on offline reward poisoning against
+MARL. Nonetheless, they require a strong assumption of
+full data coverage, and that the learners compute the Dom-
+inant Strategy Markov Perfect Equilibrium (DSMPE). In
+contrast, we do not require full coverage, and we con-
+sider a weaker solution concept, Markov Perfect Equilib-
+rium (MPE). Our general attack framework also accommo-
+dates other forms of data poisoning.
+The Thirty-Eighth AAAI Conference on Artiﬁcial Intelligence (AAAI-24)
+15979
+
+Understanding adversarial attacks in the multi-agent set-
+ting is critical since many real-life applications of MARL
+problems are susceptible to adversarial attacks. Examples
+of two-player zero-sum games include board games such as
+GO and Chess (Silver et al. 2017, 2016), where the learn-
+ers use historical game plays as training data and an attacker
+can potentially alter the data to change the behavior of the
+trained agents. In the case of competitive robotics, for ex-
+ample, robot soccer (Gu et al. 2017; Riedmiller et al. 2009;
+Kober, Bagnell, and Peters 2013), they are trained on of-
+fline datasets and the attacker can mislead the trained poli-
+cies by modifying the training sets. For finance applica-
+tion, especially algorithmic or high-frequency stock or op-
+tion trading (Lee et al. 2007; Lee and O 2002) that are usu-
+ally trained on historical prices, if the database is corrupted
+by an attacker, the learned trading strategies can be sub-
+optimal as well. There are also examples of multi-player
+games that have two-player games as special cases, for ex-
+ample, video games (Vinyals et al. 2019; Jaderberg et al.
+2019; Berner et al. 2019), card games (Brown and Sandholm
+2019; Brown, Sandholm, and Machine 2017), autonomous
+driving (Shalev-Shwartz, Shammah, and Shashua 2016), au-
+tomated warehouses (Yang, Juntao, and Lingling 2020), and
+economic policymaking, which can all be trained on offline
+datasets and become vulnerable to adversarial attacks. In all
+of the above MARL applications, the threat of adversarial
+attacks has not been investigated.
+Our contributions include a unified framework for of-
+fline data poisoning attacks, and in particular, a linear pro-
+gram formulation that efficiently solves the reward poison-
+ing problem for two-player zero-sum Markov games. On
+the technical side, we present a geometric characterization
+of a deterministic policy being the unique Markov perfect
+Nash equilibrium of zero-sum Markov games. In addition,
+we demonstrate that for a class of MARL learners that com-
+pute equilibrium policies based on games within confidence
+regions around a point estimate of the Q function of the
+Markov game, an attack with appropriate parameters on
+these learners would success on most of the model-based
+and model-free offline MARL learners proposed in the liter-
+ature.
+Offline Attack on a Normal-form Game
+The Unique Nash Set (UN) of a Normal-form Game
+We present the main components of our approach with
+a normal-form game, in particular, a two-player zero-sum
+game is a tuple pA, Rq, where A “ A1 ˆ A2 is the joint
+action space and R : A Ñ r´b, bs is the mean reward
+function. We use b “ 8 in the case of unbounded re-
+wards. Given A, we denote the set of reward functions by
+R “ tR : A Ñ Ru.
+A pure strategy profile π
+“
+pπ1, π2q is a pair of
+actions, where πi
+P
+Ai specifies the action for agent
+i
+P
+t1, 2u. We focus on pure strategies, but we al-
+low mixed strategies in which case we use the notation
+πi paiq to represent the probability of i using the action
+ai P Ai, and R computes the expected reward R pπq :“
+ÿ
+a1PA1,a2PA2
+π1 pa1q π2 pa2q R ppa1, a2qq.
+Definition 1 (Nash Equilibrium). A Nash equilibrium (NE)
+of a normal-form game pA, Rq is a mixed strategy profile π
+that satisfies,
+R ppπ1, a2qq “ R pπq “ R ppa1, π2qq ,
+@ a1 : π1 pa1q ą 0, a2 : π2 pa2q ą 0,
+R ppπ1, a2qq ď R pπq ď R ppa1, π2qq ,
+@ a1 : π2 pa1q “ 0, a2 : π2 pa1q “ 0,
+in particular, for a pure strategy profile π, it is a Nash equi-
+librium if,
+R ppπ1, a2qq ď R pπq ď R ppa1, π2qq ,
+(1)
+@ a1 ‰ π1, a2 ‰ π2.
+We define N pRq :“ tπ : π is an NE of pA, Rqu to be the
+set of all Nash equilibria of a normal-form game pA, Rq.
+Now, we define the inverse image of N from a single pure
+strategy profile π back to the space of reward functions to be
+the unique Nash set.
+Definition 2 (Unique Nash). The unique Nash set of a pure
+strategy profile π is the set of reward functions R such that
+pA, Rq has a unique Nash equilibrium π,
+U pπq :“ N ´1 ptπuq “ tR P R : N pRq “ tπuu .
+(2)
+To characterize U pπq, we note that for normal-form
+games, a pure strategy profile π is the unique Nash equilib-
+rium of a game if and only if it is a strict Nash equilibrium,
+which is defined as a policy π that satisfies (1) with strict
+inequalities.
+Proposition 1 (Unique Nash Polytope). For any pure strat-
+egy profile π,
+U pπq “ tR P R : π is a strict NE of pA, Rqu
+“ tR P R : R ppπ1, a2qq ă R pπq ă R ppa1, π2qq ,
+@ a1 ‰ π1, a2 ‰ π2u .
+(3)
+Here, the uniqueness is among all Nash equilibria includ-
+ing mixed-strategy Nash equilibria. The proof of the equiva-
+lence between (2) and (3) is in the appendix. We restrict our
+attention to pure-strategy equilibria and defer the discussion
+of mixed strategy profiles to the last section.
+To avoid working with strict inequalities, we define a
+closed subset of U pπq of reward functions that lead to strict
+Nash equilibria with an ι reward gap, which means all strict
+inequalities in (3) are satisfied with a gap of at least ι, for
+some ι ą 0.
+Definition 3 (Iota Strict Unique Nash). For ι ą 0, the ι strict
+unique Nash set of a pure strategy profile π is, U pπ; ιq :“
+tR P R : R ppπ1, a2qq ` ι ď R pπq ď R ppa1, π2qq ´ ι,
+@ a1 ‰ π1, a2 ‰ π2u .
+(4)
+For every pure strategy profile π and ι ą 0, we have
+U pπ; ιq Ă U pπq, and the set is a polytope in R.
+The Thirty-Eighth AAAI Conference on Artiﬁcial Intelligence (AAAI-24)
+15980
+
+The Attacker’s Theory of Mind (ToM) for Offline
+Normal-form Game Learners
+We provide a model of the attacker’s theory of mind of the
+victim, which is the attacker’s belief about the learning al-
+gorithm the victim uses. In particular, the attacker is not re-
+quired to have complete knowledge of the victims’ learn-
+ing algorithms: only an approximation (of theory of mind)
+is needed. Formally, we define the theory-of-mind set as the
+set of plausible rewards that the victim uses based on the
+given training dataset, and we assume that the victims com-
+pute the Nash equilibria based on the reward functions esti-
+mated from a dataset D P D, where D is the set of possi-
+ble datasets with K episodes in the form
+␣`
+apkq, rpkq˘(K
+k“1
+, with apkq P A and rpkq P r´b, bs for every k P rKs.
+Definition 4 (Theory of Mind). Given a dataset D P D, the
+theory-of-mind set T pDq Ď R is the set of plausible reward
+functions that the victims estimate based on D to compute
+their equilibria. In particular, if the victims learn an action
+profile π, then π P
+ď
+RPT pDq
+N pRq.
+The theory-of-mind sets can be arbitrary and could be dif-
+ficult to work with. We define an outer approximation the set
+that is a hypercube in R.
+Definition 5 (Outer Approximation of Theory of Mind). An
+outer approximation of T pDq is a set denoted by T pDq that
+satisfies T pDq Ď T pDq for every D P D, and can be writ-
+ten in the form, T pDq :“
+!
+R P R :
+ˇˇˇR paq ´ ˆR paq
+ˇˇˇ ď ρpRq paq , @ a P A
+)
+,
+(5)
+for some point estimate ˆR and radius ρpRq.
+We call T pDq a linear outer approximation if ˆR is linear
+in
+␣
+rpkq(K.
+k“1
+We present a few examples of the theory-of-mind sets as
+follows.
+Example 1 (Theory of Mind for Maximum Likelihood Vic-
+tims). Given a dataset D P D, if the attacker believes the
+victims are maximum likelihood learners, then T pDq is a
+singleton R MLE , where, for every a P A,
+R MLE pa|rq :“
+$
+’
+&
+’
+%
+1
+N paq
+K
+ÿ
+k“1
+rpkqItapkq“au
+if N paq ą 0
+0
+if N paq “ 0
+N paq :“
+K
+ÿ
+k“1
+Itapkq“au.
+(6)
+The smallest outer approximation T pDq can be specified
+using ˆR “ R MLE and ρpRq “ 0, and T is linear since (6) is
+linear in
+␣
+rpkq(K
+k“1 .
+Example 2 (Theory of Mind for Pessimistic Optimistic Vic-
+tims). Given a dataset D P D, if the attacker believes the
+victims are learners that use pessimism and optimism by
+adding and subtracting bonus terms and estimating one or
+two games, as in (Cui and Du 2022), then T pDq may con-
+tain two reward functions R and R, where for every a P A,
+R pa|rq :“ R MLE pa|rq ´ β paq
+R pa|rq :“ R MLE pa|rq ` β paq ,
+(7)
+with β paq “
+c
+a
+N paq
+being the bonus term, for some con-
+stant c.
+The smallest outer approximation T pDq can be specified
+using ˆR “ R MLE and ρpRq paq “ β paq for every a P A, and
+T is linear since (6) and (7) are both linear in
+␣
+rpkq(K
+k“1 .
+Example 3 (Theory of Mind for Data Splitting Victims).
+Given a dataset D P D, if the attacker believes the victims
+use maximum likelihood estimates on a subsample of the D,
+similar to the data-splitting procedure in (Cui and Du 2022),
+then T pDq could be viewed as a high-probability set of re-
+wards that the victims are estimating and ρpRq would be half
+of the confidence interval width for the mean of the subsam-
+ple around the mean of the complete dataset R MLE .
+The Cheapest Way to Move ToM into UN for
+Normal-form Games
+The goal of the attacker is to install a specific action profile
+as the unique Nash equilibrium of the game learned by the
+victim while minimally modifying the training data. We con-
+sider a general attacker’s cost as a function C : DˆD Ñ R`
+where C
+`
+D, D:˘
+is the cost of modifying the dataset from
+D to D:. Given the original data set D P D, the attacker’s
+attack modality D pDq is the set of datasets the attacker is
+allowed to modify the original dataset to. For the reward poi-
+soning problem, where DpRq pDq is all possible datasets in
+which only rewards are modified from rpkq to r:,pkq, we con-
+sider the following cost function.
+Example 4 (L1 Cost Function). For reward poisoning prob-
+lems, we define the L1 cost of modifying the dataset from
+D “
+␣`
+apkq, rpkq˘(K
+k“1 to D: “
+␣`
+apkq, r:,pkq˘(K
+k“1 by
+Cp1q `
+D, D:˘ :“
+K
+ÿ
+k“1
+ˇˇˇrpkq ´ r:,pkqˇˇˇ.
+Remark 1. In our framework, the attacker’s cost function
+can be an arbitrary convex function, which can accommo-
+date various settings, for example, when the attacker has a
+limited budget or when the attacker can only change a lim-
+ited number of entries: the optimization will remain a convex
+program with linear constraints. L1 loss is used for simplic-
+ity so that our attack optimization is a linear program, it
+could be relaxed, although then the optimization would be
+harder to solve.
+Now, given the original dataset D and the attacker’s target
+action profile π:, we formally state the attacker’s problem as
+finding the cheapest (minimal cost) way to move T pDq into
+U
+`
+π:˘
+.
+Definition 6 (Attacker’s Problem). The attacker’s problem
+with the target action profile π: is,
+inf
+D:PDpDqC
+`
+D, D:˘
+(8)
+The Thirty-Eighth AAAI Conference on Artiﬁcial Intelligence (AAAI-24)
+15981
+
+s.t. T
+`
+D:˘
+Ď U
+`
+π:˘
+.
+In general, (8) cannot be solved efficiently, but for reward
+poisoning problems with L1 cost objective, we can relax the
+attacker’s problem using ι strict unique Nash sets, which is
+a polytope described by (4), and a linear outer approxima-
+tion of the theory-of-mind set, a hypercube described by (5),
+which can be converted into a linear program and solved ef-
+ficiently. We state this observation as the following proposi-
+tion and depict the relationship between the sets in Figure 1.
+Proposition 2 (Reward Poisoning Linear Program). Given
+ι ą 0 and a linear T , the following problem is a relaxation
+of the attacker’s reward poisoning problem and can be con-
+verted into a linear program,
+min
+D:PDpRqpDqCp1q `
+D, D:˘
+(9)
+s.t. T
+`
+D:˘
+Ď U
+`
+π:; ι
+˘
+.
+In Figure 1, given a dataset D, the general attacker’s prob-
+lem (8) of moving T pDq (light green) to T
+`
+D:˘
+(light red)
+such that it is inside U
+`
+π:˘
+(light blue) while minimizing
+the distance from D to D: is often intractable. We construct
+a relaxed problem (9) of moving T pDq (green) to T
+`
+D:˘
+(red) such that it is inside U
+`
+π:˘
+(blue), in which all sets are
+polytopes and thus can be converted to a linear program for
+linear costs and linear theory-of-mind mappings.
+In the appendix, we provide the complete linear program
+and show that the solution of (9) is feasible for (8). The opti-
+mality of the linear program solution depends on how close
+the outer approximation of the theory-of-mind set is, and
+in the case when the theory-of-mind set is already a hyper-
+cube, the infimum in (8) can be achieved by taking the limit
+as ι Ñ 0.
+Example 5 (Maximum Likelihood Centered Linear Pro-
+gram). In the case ˆR “ R MLE in the theory-of-mind set, (9)
+is given by,
+min
+r:Pr´b,bsK
+K
+ÿ
+k“1
+ˇˇˇrpkq ´ r:,pkqˇˇˇ
+(10)
+s.t. R MLE `
+r:˘
+is linear in r: satisfying (6)
+R
+`
+r:˘
+and R
+`
+r:˘
+satisfying (5)
+are upper and lower bounds of T
+`
+r:˘
+“
+R
+`
+r:˘
+, R
+`
+r:˘‰
+is in U
+`
+π:˘
+satisfying (4)
+Since T
+`
+r:˘
+is a hypercube and U
+`
+π:˘
+is a polytope, the
+fact that the corners of the hypercube are inside the unique
+Nash set if and only if every element in the hypercube is
+in the unique Nash set implies that the constraint in (9) is
+satisfied. Technically, we only require one corner of the hy-
+percube to be inside the unique Nash polytope, as shown in
+Figure 1, and we leave the details to the proof of Proposi-
+tion 2 in the appendix. Then, because the objective and all
+of the constraints in (10) are linear in r:, R, R and R MLE ,
+this problem is a linear program.
+Offline Attack on a Markov Game
+The Unique Nash Set (UN) of a Markov Game
+We now consider the attacker’s problem for Markov games.
+A finite-horizon two-player zero-sum Markov game G
+is a tuple pS, A, P, R, Hq, where S is the finite state
+space; A “ A1 ˆ A2 is the joint action space; P
+“
+tPh : S ˆ A Ñ ∆SuH
+h“1 is the transition function with
+the initial state distribution P0
+P
+∆S; and R
+“
+tRh : S ˆ A Ñ r´b, bsuH
+h“1 is the mean reward function;
+and H is the finite time horizon.
+A deterministic Markovian policy π “ pπ1, π2q is a pair
+of policies, where πi “ tπi,h : S Ñ AiuH
+h“1 for i P t1, 2u,
+and πi,h psq specifies the action used in period h and state
+s. Again, we focus on deterministic policies, but we al-
+low stochastic policies in which case we use the notation
+πi “ tπi,h : S Ñ ∆AiuH
+h“1 for i P t1, 2u, and πi,h psq paiq
+represent the probability of i using the action ai P Ai in
+period h state s.
+The Q function is defined as, for every h P rHs , s P
+S, a P A, we write
+Qh ps, aq :“ Rh ps, aq
+`
+ÿ
+s1PS
+Ph
+`
+s1|s, a
+˘
+max
+π1P∆A1
+min
+π2P∆A2 Qh`1
+`
+s1, π
+˘
+, (11)
+with the convention QH`1 ps, aq “ 0, and in the case π is
+stochastic, we write, Qh ps, πh psqq :“
+ÿ
+a1PA1
+ÿ
+a2PA2
+π1,h psq pa1q π2,h psq pa2q Qh ps, pa1, a2qq .
+Given S, A, H, we denote the set of Q functions by Q “
+!
+tQh : S ˆ A Ñ RuH
+h“1
+)
+. Technically, Q is not the set of
+proper Q functions of Markov games since both the re-
+ward functions and the transition functions do not have to
+be proper, and given Q P Q, we may not be able to con-
+struct a Markov game that induces Q. This choice is made
+to accommodate both model-based and model-free victims
+who may or may not estimate the rewards and transitions
+explicitly from the dataset.
+A stage game of a Markov game G in period h
+P
+rHs, state s P S under policy π is a normal form game
+pA, Qh psqq, where A is the joint action space of G; and
+Qh psq is the mean reward function, meaning the reward
+from action profile a P A is Qh ps, aq. We define Markov
+perfect equilibria as policies in which the action profile used
+in every stage game is a Nash equilibrium.
+Definition 7 (Markov Perfect Equilibrium). A Markov per-
+fect equilibrium (MPE) policy π is a policy such that πh psq
+is a Nash equilibrium in the stage game pA, Qh psqq .
+We define the set of all Markov perfect equilibria policies
+of a Markov game that induces Q P Q by M pQq “
+tπ : π is an MPE of a Markov game with Q function Qu .
+We note that Nash equilibria for Markov games can also
+be defined by converting the Markov game into a single
+normal-form game, but we only consider Markov perfect
+equilibria since Nash equilibria that are not Markov perfect
+The Thirty-Eighth AAAI Conference on Artiﬁcial Intelligence (AAAI-24)
+15982
+
+D : Space of Datasets
+R : Space of Rewards
+U
+`
+π:˘
+Unique Nash
+U
+`
+π:˘
+D
+D:
+Theory of Mind
+Theory of Mind
+min C
+`
+D, D:˘
+T pDq
+T pDq
+ToM moves to the UN
+T
+`
+D:˘
+T
+`
+D:˘
+Figure 1: Attacker’s Problem
+require coordination and commitment to policies in stage
+games that are not visited along equilibrium paths, which
+is not realistic in the MARL setting.
+We define the unique Nash set for Markov games as fol-
+lows.
+Definition 8 (Unique Nash). The unique Nash set of a de-
+terministic Markovian policy π for a Markov game G is the
+set of Q functions such that π is the unique Markov perfect
+equilibrium under policy π,
+U pπq :“ M´1 ptπuq “ tQ P Q : M pQq “ tπuu .
+(12)
+Next, we extend the characterization of the unique Nash
+set for normal-form games to the Markov game setting.
+Theorem 1 (Unique Nash Polytope). For any deterministic
+policy π,
+U pπq “ tQ P Q : πh psq is a strict NE of pA, Qh psqq ,
+@ h P rHs , s P Su
+“ tQ P Q : Qh ps, pπ1,h psq , a2qq ă Qh ps, π psqq
+ă Qh ps, pa1, π2,h psqqq , @ a1 ‰ π1,h psq ,
+, a2 ‰ π2,h psq , h P rHs , s P Su ,
+(13)
+We show the equivalence between (12) and (13) in the
+proof of Theorem 1 in the appendix. To avoid working with
+strict inequalities in (13), we again define the ι strict version
+of the unique Nash polytope.
+Definition 9 (Iota Strict Unique Nash). For ι ą 0, the ι strict
+unique Nash set of a deterministic policy π is, U pπ; ιq :“
+:“ tQ P Q : Qh ps, pπ1,h psq , a2qq ` ι ď Qh ps, π psqq
+ď Qh ps, pa1, π2,h psqqq ´ ι, @ a1 ‰ π1,h psq ,
+a2 ‰ π2,h psq , h P rHs , s P Su .
+(14)
+For every deterministic policy π and ι ą 0, we have
+U pπ; ιq Ă U pπq, and the set is a polytope in Q.
+The Attacker’s Theory of Mind (ToM) for Offline
+Multi-Agent Reinforcement Learners
+Similar to the theory-of-mind set for normal-form game
+learners, we define the set for Markov game learners in the Q
+space. Here, D is the set of datasets with K episodes in the
+form
+"!´
+spkq
+h , apkq
+h , rpkq
+h
+¯)H
+h“1
+*K
+k“1
+with spkq
+h
+P S, apkq
+h
+P
+A and rpkq
+h
+P r´b, bs for every k P rKs, and the victims
+compute the Markov perfect equilibria based on the Q func-
+tions estimated from such datasets.
+Definition 10 (Theory of Mind). Given a dataset D P D,
+the theory-of-mind set T pDq Ď Q is the set of Q func-
+tions that the victims estimate based on D to compute their
+equilibria. In particular, if the victims learn a policy π, then
+π P
+ď
+QPT pDq
+M pQq .
+Example 6 (Theory of Mind for Maximum Likelihood Vic-
+tims). To extend Example 1 in the Markov game setting,
+we define R MLE the same way and P MLE as follows, if
+Nh ps, aq :“
+K
+ÿ
+k“1
+I!
+spkq
+h
+“s,apkq
+h
+“a
+) ą 0,
+R MLE
+h
+ps, a|rq :“
+K
+ÿ
+k“1
+rpkq
+h I!
+spkq
+h
+“s,apkq
+h
+“a
+)
+Nh ps, aq
+(15)
+P MLE
+h
+`
+s1|s, a
+˘ :“
+K
+ÿ
+k“1
+I!
+spkq
+h`1“s1,spkq
+h
+“s,apkq
+h
+“a
+)
+Nh ps, aq
+(16)
+P MLE
+0
+psq :“ 1
+K
+K
+ÿ
+k“1
+I!
+spkq
+1
+“s
+),
+and if Nh ps, aq “ 0, we define R MLE
+h
+ps, a|rq :“ 0 and
+P MLE
+h
+ps1|s, aq :“
+1
+|S|.
+We can construct Q MLE based on R MLE and P MLE ac-
+cording to (11), and since all Nash equilibria have the same
+value for zero-sum games, Q MLE is unique for every Markov
+perfect equilibrium of the Markov game with rewards R MLE
+and transitions P MLE . Then we have that T pDq is a single-
+ton Q MLE .
+The Thirty-Eighth AAAI Conference on Artiﬁcial Intelligence (AAAI-24)
+15983
+
+Example 7 (Theory of Mind for Confidence Bound Vic-
+tims). Given a dataset D P D, if the attacker believes
+the victims estimate the Markov game by estimating the re-
+wards and transitions within some confidence region around
+some point estimates such as the maximum likelihood esti-
+mates, as described in (Wu et al. 2023), then T pDq would
+be a polytope with Q functions induced by the Markov
+games pS, A, P, R, Hq with P and R satisfying, for every
+h P rHs , s P S, a P A,
+Rh ps, a|rq P CpRq
+h
+ps, a|rq
+(17)
+:“
+!
+R P R :
+ˇˇˇR ´ ˆRh ps, a|rq
+ˇˇˇ ď ρpRq
+h
+ps, aq
+)
+,
+Ph ps, aq P CpP q
+h
+ps, aq
+(18)
+:“
+!
+P P ∆S :
+›››P ´ ˆPh ps, aq
+›››
+1 ď ρpP q
+h
+ps, aq
+)
+,
+for some point estimates ˆP, ˆR, and radii ρpRq and ρpP q. We
+note that T pDq is a polytope in Q, but it has an exponen-
+tial number of vertices. We can construct a tight hypercube
+around this polytope and call it the outer approximation of
+T pDq. It contains all the Q functions in the following set,
+for every h P rHs , s P S, a P A,
+Qh ps, a|rq P
+”
+Qh ps, a|rq , Qh ps, a|rq
+ı
+,
+(19)
+Qh ps, a|rq :“
+min
+RPCpRq
+h
+ps,a|rq
+R
+`
+min
+P PCpP q
+h
+ps,aq
+ÿ
+s1PS
+P
+`
+s1˘
+max
+π1P∆A1
+min
+π2P∆A2 Qh`1
+`
+s1, π
+˘
+,
+Qh ps, a|rq :“
+max
+RPCpRq
+h
+ps,a|rq
+R
+`
+max
+P PCpP q
+h
+ps,aq
+ÿ
+s1PS
+P
+`
+s1˘
+max
+π1P∆A1
+min
+π2P∆A2 Qh`1
+`
+s1, π
+˘
+.
+We omit Example 2 and Example 3 for Markov games
+since the constructions are identical, except it is done
+for every stage game. As described in Example 7, we
+define ˆQh ps, a|rq :“
+1
+2
+´
+Qh ps, a|rq ` Qh ps, a|rq
+¯
+and
+ρpQq
+h
+ps, a|rq :“ 1
+2
+´
+Qh ps, a|rq ´ Qh ps, a|rq
+¯
+, and we for-
+mally define the outer approximation of the theory-of-mind
+set for Markov games as follows.
+Definition 11 (Outer Approximation of Theory of Mind).
+An outer approximation of T pDq is a set denoted by T pDq
+that satisfies T pDq Ď T pDq for every D P D, and can be
+written in the form,
+T pDq “
+!
+Q P Q :
+ˇˇˇQh ps, aq ´ ˆQh ps, a|rq
+ˇˇˇ ď ρpQq
+h
+ps, a|rq ,
+@ a P A, h P rHs , s P Su ,
+(20)
+for some point estimate ˆQ and radius ρpQq.
+We call T pDq a linear outer approximation if ˆQ is linear
+in
+"!
+rpkq
+h
+)H
+h“1
+*K
+k“1
+.
+The Cheapest Way to Move ToM into UN for
+Markov Games
+In this subsection, we restate the attacker’s problem for
+multi-agent reinforcement learners.
+Definition 12 (Attacker’s Problem). The attacker’s problem
+with target policy π: is,
+inf
+D:PDpDqC
+`
+D, D:˘
+(21)
+s.t. T
+`
+D:˘
+Ď U
+`
+π:˘
+.
+For reward poisoning problems, we consider the follow-
+ing L1 cost.
+Example 8 (L1 Cost Function). For reward poisoning prob-
+lem, where DpRq pDq is all possible datasets in the form
+D: “
+"!´
+spkq
+h , apkq
+h , r:,pkq
+h
+¯)H
+h“1
+*K
+k“1
+that are modified
+from D “
+"!´
+spkq
+h , apkq
+h , rpkq
+h
+¯)H
+h“1
+*K
+k“1
+, we define the
+L1 cost by Cp1q `
+D, D:˘
+“
+K
+ÿ
+k“1
+H
+ÿ
+h“1
+ˇˇˇrpkq
+h
+´ r:,pkq
+h
+ˇˇˇ .
+We use the same ι strictness relaxation of the unique Nash
+set and the linear outer approximation of the theory-of-mind
+set to convert (21) into a linear program, which can be solved
+efficiently. We state this observation as the following theo-
+rem.
+Theorem 2 (Reward Poisoning Linear Program). Given ι ą
+0 and a linear T , the following problem is a relaxation of the
+attacker’s reward poisoning problem and can be converted
+into a linear program,
+min
+D:PDpRqpDqCp1q `
+D, D:˘
+(22)
+s.t. T
+`
+D:˘
+Ď U
+`
+π:; ι
+˘
+.
+Example 9 (Maximum Likelihood Centered Linear Pro-
+gram). In the case ˆR “ R MLE and ˆP “ P MLE , and we
+construct T pDq as described in Example 7, (22) can be
+converted into a linear program even without explicitly con-
+structing the T pDq set. We provide an intuition here and the
+formal construction in the proof of Theorem 2,
+min
+r:Pr´b,bsK
+K
+ÿ
+k“1
+H
+ÿ
+h“1
+ˇˇˇrpkq
+h
+´ r:,pkq
+h
+ˇˇˇ
+(23)
+s.t. R MLE `
+r:˘
+is linear in r: satisfying (15)
+P MLE is independent of r: satisfying (16)
+Q MLE `
+r:˘
+satisfying (11)
+is linear in R MLE `
+r:˘
+thus r:
+Q
+`
+r:˘
+and Q
+`
+r:˘
+satisfying (19)
+are upper and lower bounds of T
+`
+r:˘
+“
+Q
+`
+r:˘
+, Q
+`
+r:˘‰
+is in U
+`
+π:˘
+satisfying (14)
+We move the hypercube T
+`
+r:˘
+into the polytope U
+`
+π:˘
+by
+moving one of the corners into the polytope. Note that if Q
+The Thirty-Eighth AAAI Conference on Artiﬁcial Intelligence (AAAI-24)
+15984
+
+A1zA2
+1:
+2
+3
+1:
+0
+b
+b
+2
+´b
+-
+-
+3
+´b
+-
+-
+Table 1: A Feasible Attack
+A
+H
+T
+H
+U r0, 1s
+U r´1, 0s
+T
+U r´1, 0s
+U r0, 1s
+Table 2: The original dataset
+generation distributions
+and Q are not constructed directly as linear functions of r:,
+and are computed by (19), then these constraints are not lin-
+ear in r:. We avoid this problem by using the dual linear
+program of (19). We present the details in the appendix in
+the proof of Theorem 2. All other constraints are linear in
+r:, and as a result, (23) is a linear program.
+In the end, we present a sufficient but not necessary con-
+dition for the feasibility of (22) and (21). This condition ap-
+plies directly to normal-form games with H “ 1.
+Theorem 3 (Reward Poisoning Linear Program Feasibility).
+For ι ą 0, T pDq with ˆQ “ Q MLE , and Nhps, aq ą 0 for
+every h P rHs , s P S, a P A where either a1 “ π:
+1,h psq or
+a2 “ π:
+2,h psq, the attacker’s reward poisoning problem is
+feasible if for every h P rHs , s P S, a P A,
+ρpRq
+h
+ps, aq ď b ´ ι
+4H .
+(24)
+To construct a feasible attack under (24), we use the poi-
+soned rewards similar to the one shown in Table 1, which is
+an example where each agent has three actions and the tar-
+get action profile being action p1, 1q. With this r:, the max-
+imum likelihood estimate of the game has a unique Nash
+equilibrium π:
+h psq with a value of 0 in every stage ph, sq.
+Furthermore, if either the radius of rewards or the radius of
+Q functions for the theory-of-mind set is less than b´ι
+4H , we
+can show inductively that π:
+h psq remains the unique Nash
+equilibrium in every stage ph, sq, thus showing that every Q
+function in the theory-of-mind set is also in the unique Nash
+set, which means the attack is feasible. The complete proof
+is in the appendix.
+Experiments
+Rock Paper Scissors
+We start with a simple toy dataset for the Rock Paper Scis-
+sors (RPS) game, shown in Table 3 with partial coverage,
+where each entry appears once in the dataset, and the target
+action profile is π: “ pR, Rq, leading to a tie.
+R
+P
+S
+R
+0
+´1
+1
+P
+1
+0
+´1
+S
+´1
+1
+0
+Table 3: RPS Game
+R
+P
+S
+0
+´1
+1
+1
+-
+-
+´1
+-
+-
+Table 4: Original
+R
+P
+S
+0
+ι
+1
+´ι
+-
+-
+´1
+-
+-
+Table 5: Poisoned
+Given the original dataset with 5 entries described in Ta-
+ble 4, our algorithm with ρ “ 0 and ι “ 0.01 leads to
+HH
+HT
+TH
+TT
+´1
+0
+1
+(a) Original
+HH
+HT
+TH
+TT
+´2
+0
+2
+(b) Poisoned
+Figure 2: Distribution of rewards
+Average costs
+n “ 1
+n “ 10
+n “ 100
+Our attack
+1.06
+9.09
+99.47
+Feasible attack
+2.12
+16.08
+250.46
+DSE attack
+2.06
+18.31
+198.38
+Table 6: Cost comparison between different attacks
+the poisoned dataset described in Table 5. The attack cost
+is 2.02, whereas the attack cost from the feasible attack de-
+scribed in Table 1 with b “ 1 is 4. In addition, note that
+given the partial coverage, the attack described in (Wu et al.
+2023) is not feasible due to their full coverage requirement.
+Stochastic Matching Penny
+We follow up with the matching penny game, which is also
+the penalty kick game in soccer, and the rewards are usually
+estimated by random data points. We generate the datasets
+randomly with Uniform distributions summarized in Ta-
+ble 2. The attacker would like to install a target action profile
+of pH, Hq, and in the context of the penalty kick game, the
+attacker’s motivation might be to increase or decrease the
+total number of goals.
+We summarize the before-vs-after box plots in Figure 2a
+for the n “ 100 case. The cost comparison of our attack,
+the feasible attack in Table 1 with b “ 1, and the Dominant
+Strategy Equilibrium (DSE) attack in (Wu et al. 2023), is
+given in Table 6.
+Discussions
+We discuss a few extensions. Faking a unique mixed strategy
+Nash equilibrium is in general impossible due to the sensi-
+tivity of mixing probabilities from small perturbations of the
+reward function, and as long as the theory-of-mind set has
+non-zero volume, it is impossible to install a mixed strategy
+profile (or stochastic policy for Markov games) as the unique
+equilibrium. Faking a unique optimal policy for single-agent
+reinforcement learners can be easily adapted from our linear
+program (22). Faking a unique coarse correlated equilibrium
+in every stage game is equivalent to our problem as well
+since for a two-player zero-sum game, a policy is the unique
+Markov perfect coarse correlated equilibrium if and only if
+it is the unique Markov perfect Nash equilibrium.
+The Thirty-Eighth AAAI Conference on Artiﬁcial Intelligence (AAAI-24)
+15985
+
+Acknowledgments
+This project is supported in part by NSF grants 1545481,
+1704117, 1836978, 1955997, 2023239, 2041428, 2202457,
+ARO MURI W911NF2110317, and AF CoE FA9550-18-1-
+0166, and we thank Yudong Chen for his useful comments
+and discussions.
+References
+Banihashem, K.; Singla, A.; Gan, J.; and Radanovic, G.
+2022. Admissible Policy Teaching through Reward Design.
+arXiv preprint arXiv:2201.02185.
+Berner, C.; Brockman, G.; Chan, B.; Cheung, V.; Dkebiak,
+P.; Dennison, C.; Farhi, D.; Fischer, Q.; Hashme, S.; Hesse,
+C.; et al. 2019. Dota 2 with large scale deep reinforcement
+learning. arXiv preprint arXiv:1912.06680.
+Brown, N.; and Sandholm, T. 2019. Superhuman AI for mul-
+tiplayer poker. Science, 365(6456): 885–890.
+Brown, N.; Sandholm, T.; and Machine, S. 2017. Libratus:
+The Superhuman AI for No-Limit Poker. In IJCAI, 5226–
+5228.
+Cui, Q.; and Du, S. S. 2022.
+When is Offline Two-
+Player Zero-Sum Markov Game Solvable? arXiv preprint
+arXiv:2201.03522.
+Gleave, A.; Dennis, M.; Wild, C.; Kant, N.; Levine, S.; and
+Russell, S. 2019. Adversarial policies: Attacking deep rein-
+forcement learning. arXiv preprint arXiv:1905.10615.
+Gu, S.; Holly, E.; Lillicrap, T.; and Levine, S. 2017. Deep
+reinforcement learning for robotic manipulation with asyn-
+chronous off-policy updates.
+In 2017 IEEE international
+conference on robotics and automation (ICRA), 3389–3396.
+IEEE.
+Guo, W.; Wu, X.; Huang, S.; and Xing, X. 2021. Adversar-
+ial policy learning in two-player competitive games. In In-
+ternational Conference on Machine Learning, 3910–3919.
+PMLR.
+Huang, Y.; and Zhu, Q. 2019.
+Deceptive reinforcement
+learning under adversarial manipulations on cost signals. In
+International Conference on Decision and Game Theory for
+Security, 217–237. Springer.
+Jaderberg, M.; Czarnecki, W. M.; Dunning, I.; Marris, L.;
+Lever, G.; Castaneda, A. G.; Beattie, C.; Rabinowitz, N. C.;
+Morcos, A. S.; Ruderman, A.; et al. 2019. Human-level per-
+formance in 3D multiplayer games with population-based
+reinforcement learning. Science, 364(6443): 859–865.
+Kober, J.; Bagnell, J. A.; and Peters, J. 2013. Reinforcement
+learning in robotics: A survey. The International Journal of
+Robotics Research, 32(11): 1238–1274.
+Lee, J. W.; and O, J. 2002. A multi-agent Q-learning frame-
+work for optimizing stock trading systems. In International
+Conference on Database and Expert Systems Applications,
+153–162. Springer.
+Lee, J. W.; Park, J.; Jangmin, O.; Lee, J.; and Hong, E. 2007.
+A multiagent approach to q-learning for daily stock trading.
+IEEE Transactions on Systems, Man, and Cybernetics-Part
+A: Systems and Humans, 37(6): 864–877.
+Liu, G.; and Lai, L. 2021.
+Provably Efficient Black-Box
+Action Poisoning Attacks Against Reinforcement Learning.
+Advances in Neural Information Processing Systems, 34.
+Ma, Y.; Wu, Y.; and Zhu, X. 2021. Game Redesign in No-
+regret Game Playing. arXiv preprint arXiv:2110.11763.
+Ma, Y.; Zhang, X.; Sun, W.; and Zhu, J. 2019. Policy poison-
+ing in batch reinforcement learning and control. Advances in
+Neural Information Processing Systems, 32: 14570–14580.
+Rakhsha, A.; Radanovic, G.; Devidze, R.; Zhu, X.; and
+Singla, A. 2020. Policy teaching via environment poison-
+ing: Training-time adversarial attacks against reinforcement
+learning. In International Conference on Machine Learning,
+7974–7984. PMLR.
+Rakhsha, A.; Radanovic, G.; Devidze, R.; Zhu, X.; and
+Singla, A. 2021a. Policy teaching in reinforcement learn-
+ing via environment poisoning attacks. Journal of Machine
+Learning Research, 22(210): 1–45.
+Rakhsha, A.; Zhang, X.; Zhu, X.; and Singla, A. 2021b. Re-
+ward poisoning in reinforcement learning: Attacks against
+unknown learners in unknown environments. arXiv preprint
+arXiv:2102.08492.
+Rangi, A.; Xu, H.; Tran-Thanh, L.; and Franceschetti, M.
+2022.
+Understanding the Limits of Poisoning Attacks in
+Episodic Reinforcement Learning.
+In Raedt, L. D., ed.,
+Proceedings of the Thirty-First International Joint Confer-
+ence on Artificial Intelligence, IJCAI-22, 3394–3400. Inter-
+national Joint Conferences on Artificial Intelligence Organi-
+zation. Main Track.
+Riedmiller, M.; Gabel, T.; Hafner, R.; and Lange, S. 2009.
+Reinforcement learning for robot soccer.
+Autonomous
+Robots, 27: 55–73.
+Shalev-Shwartz, S.; Shammah, S.; and Shashua, A. 2016.
+Safe, multi-agent, reinforcement learning for autonomous
+driving. arXiv preprint arXiv:1610.03295.
+Silver, D.; Huang, A.; Maddison, C. J.; Guez, A.; Sifre, L.;
+Van Den Driessche, G.; Schrittwieser, J.; Antonoglou, I.;
+Panneershelvam, V.; Lanctot, M.; et al. 2016. Mastering the
+game of Go with deep neural networks and tree search. na-
+ture, 529(7587): 484–489.
+Silver, D.; Schrittwieser, J.; Simonyan, K.; Antonoglou, I.;
+Huang, A.; Guez, A.; Hubert, T.; Baker, L.; Lai, M.; and
+Bolton, A. 2017. Mastering the game of go without human
+knowledge. nature, 550(7676): 354–359.
+Sun, Y.; Huo, D.; and Huang, F. 2020. Vulnerability-aware
+poisoning mechanism for online rl with unknown dynamics.
+arXiv preprint arXiv:2009.00774.
+Vinyals, O.; Babuschkin, I.; Czarnecki, W. M.; Mathieu, M.;
+Dudzik, A.; Chung, J.; Choi, D. H.; Powell, R.; Ewalds, T.;
+and Georgiev, P. 2019. Grandmaster level in StarCraft II us-
+ing multi-agent reinforcement learning. Nature, 575(7782):
+350–354.
+Wu, Y.; McMahan, J.; Zhu, X.; and Xie, Q. 2023. Reward
+Poisoning Attacks on Offline Multi-Agent Reinforcement
+Learning. In The Thirty-Seventh AAAI Conference on Ar-
+tificial Intelligence (AAAI).
+The Thirty-Eighth AAAI Conference on Artiﬁcial Intelligence (AAAI-24)
+15986
+
+Yang, Y.; Juntao, L.; and Lingling, P. 2020. Multi-robot path
+planning based on a deep reinforcement learning DQN algo-
+rithm. CAAI Transactions on Intelligence Technology, 5(3):
+177–183.
+Zhang, H.; and Parkes, D. C. 2008.
+Value-Based Policy
+Teaching with Active Indirect Elicitation.
+In AAAI, vol-
+ume 8, 208–214.
+Zhang, H.; Parkes, D. C.; and Chen, Y. 2009. Policy teaching
+through reward function learning. In Proceedings of the 10th
+ACM conference on Electronic commerce, 295–304.
+Zhang, X.; Ma, Y.; Singla, A.; and Zhu, X. 2020. Adap-
+tive reward-poisoning attacks against reinforcement learn-
+ing.
+In International Conference on Machine Learning,
+11225–11234. PMLR.
+The Thirty-Eighth AAAI Conference on Artiﬁcial Intelligence (AAAI-24)
+15987

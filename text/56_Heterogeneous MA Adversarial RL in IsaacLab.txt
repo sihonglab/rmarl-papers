@@ -1,0 +1,665 @@
+A Framework for Scalable Heterogeneous Multi-Agent Adversarial
+Reinforcement Learning in IsaacLab
+Isaac Peterson*1
+Christopher Allred*12
+Jacob Morrey1
+Mario Harper1
+Abstract—Multi-Agent Reinforcement Learning (MARL) is
+central to robotic systems cooperating in dynamic environments.
+While prior work has focused on these collaborative settings,
+adversarial interactions are equally critical for real-world ap-
+plications such as pursuit-evasion, security, and competitive
+manipulation. In this work, we extend the IsaacLab framework
+to support scalable training of adversarial policies in high-fidelity
+physics simulations. We introduce a suite of adversarial MARL
+environments featuring heterogeneous agents with asymmetric
+goals and capabilities. Our platform integrates a competitive
+variant of Heterogeneous Agent Reinforcement Learning with
+Proximal Policy Optimization (HAPPO), enabling efficient train-
+ing and evaluation under adversarial dynamics. Experiments
+across several benchmark scenarios demonstrate the framework’s
+ability to model and train robust policies for morphologically di-
+verse multi-agent competition while maintaining high throughput
+and simulation realism. Code and benchmarks are available at:
+https://directlab.github.io/IsaacLab-HARL/.
+I. INTRODUCTION
+Reinforcement learning (RL) has emerged as a leading
+paradigm for training robots to acquire complex skills [1],
+[2]. From locomotion in humanoids [3] and quadrupeds [4] to
+advanced behaviors such as parkour [5], [6], RL has repeatedly
+demonstrated its effectiveness in solving high-dimensional
+control problems.
+Building on these advances, multi-agent reinforcement
+learning (MARL) has shown strong potential for coordination
+and control in robotics [7], and the advent of GPU-parallelized
+simulators such as IsaacLab [8] and MuJoCo [9] has made
+large-scale training feasible. However, as mentioned in [10],
+several important challenges remain, including heterogeneous
+teaming and physics-based training, which were recently ex-
+plored in cooperative settings by [11].
+We present heterogeneous adversarial learning in high-
+fidelity contexts as another gap in adversarial multi-agent rein-
+forcement learning. We define heterogeneous teaming as situ-
+ations where teams can have different numbers of agents, with
+differences in morphologies, observations, and actions. Many
+real-world robotics applications involve competition rather
+than pure cooperation. Scenarios such as pursuit–evasion,
+security, and competitive manipulation all require potentially
+different agents to anticipate and counter the strategies of
+opponents. Unlike simplified grid worlds or abstract games,
+these domains demand contact-rich dynamics where accu-
+rate physics simulation is critical. Moreover, heterogeneous
+robots—such as legged and wheeled platforms competing
+* Equal Contributions.
+1 Allred, Peterson, Morrey, and Harper are affiliated with Utah State
+University.
+2 Allred is affiliated with US DEVCOM Army Research Laboratory.
+Fig. 1: Heterogeneous Agent Reinforcement Learning Ad-
+versarial (HARL-A) environments in IsaacLab showcasing
+adversarial heterogeneous multi-agent settings in competition
+learning tasks. (Top) Two quadruped teams compete in a Sumo
+task with two Leatherback Rovers. (Bottom) Mixed-agent
+teams of humanoids and robots in the HARL-A framwork.
+together—introduce additional complexity, as physical differ-
+ences can lead to specialized strategies.
+Adversarial learning in this setting raises several challenges.
+First, competitive training can be unstable, as both agents
+are evolving over time. Second, heterogeneous teams require
+team-specific critics under centralized training and decentral-
+ized execution, as standard parameter-sharing approaches are
+insufficient. Third, reward design in physics-based tasks must
+balance dense shaping with sparse success signals to prevent
+unintended strategies.
+In this paper, we address these challenges by extending the
+IsaacLab simulator with Heterogeneous Agent Reinforcement
+Learning (HARL) algorithms to support scalable multi-team
+adversarial training. We present HARL-Adversarial (HARL-
+A), a framework for the implementation of multi-agent adver-
+sarial reinforcement learning with benchmark environments,
+allowing others to easily develop and test their own scenarios.
+We introduce benchmark environments (shown in Figure 1)
+arXiv:2510.01264v1  [cs.LG]  26 Sep 2025
+
+Author (Year)
+Environment
+Adversarial
+High-Fidelity Physics
+Multi-Agent
+Heterogeneous
+Framework
+Bansal et al. (2018) [12]
+Mujoco
+✓
+Gleave et al. (2020) [13]
+Mujoco
+✓
+Lowe et al. (2020) [14]
+Particle Env.
+✓
+✓
+Baker et al. (2020) [15]
+Mujoco
+✓
+✓
+Schwarting et al. (2021) [16]
+Visual RL Env.
+✓
+✓
+Liu et al. (2021) [17]
+Mujoco
+✓
+✓
+Li et al. (2025) [18]
+IsaacLab
+✓
+✓
+✓
+Our Work
+IsaacLab
+✓
+✓
+✓
+✓
+✓
+TABLE I: Comparison of related works along environment type, adversarial, high-fidelity physics, multi-agent, heterogeneous,
+and framework/generalizability dimensions.
+that highlight the unique challenges of adversarial play across
+morphologies, and demonstrate the effectiveness of our frame-
+work through large-scale experiments.
+The main contributions of this work are:
+1) Modification of both HARL and IsaacLab to enable
+multi-agent heterogeneous adversarial learning at scale.
+2) Implementation of functional environments and trained
+policies for heterogeneous adversarial learning, facilitat-
+ing accelerated research in this domain.
+3) Introduction of new benchmarks for testing MARL
+algorithms in high-fidelity adversarial settings, enabling
+the development of more robust algorithms under com-
+petitive dynamics.
+II. RELATED WORKS
+Research on adversarial reinforcement learning has devel-
+oped along several trajectories, from early demonstrations of
+self-play to large-scale competitive frameworks and physics-
+based multi-agent domains.
+A. Early Adversarial Self-Play
+One of the first demonstrations of emergent competition
+in physics-based environments introduced competitive tasks
+in MuJoCo [9], [12]. They demonstrated that self-play can
+naturally induce curricula, with agents developing increasingly
+complex behaviors. Extension of this work [13] highlighted
+new aspects of adversarial training that exploited brittle poli-
+cies, those which appeared robust under standard evaluation,
+to improve agent performance.
+B. Multi-Agent Extensions
+As adversarial learning moved toward multi-agent settings,
+algorithmic advances became central. New work [19] intro-
+duced multi-agent deep deterministic policy gradient (MAD-
+DPG), enabling agents to condition on others’ policies and
+improving coordination in both cooperative and competitive
+tasks. Large-scale competitive systems such as OpenAI Five
+in Dota 2 [20] and AlphaStar in StarCraft II [21] demonstrated
+that population-based training and league-style play could
+produce human-level strategies. Similarly, the MuJoCo hide-
+and-seek environment [15] showed emergent tool use and
+strategy that could come from repeated self-play. Another
+example proposed deep latent competition, where self-play on
+visual input produced competitive driving policies [16].
+Subsequent works explored alternative objectives and do-
+mains oriented towards targeted environment tuning to guide
+training towards areas of low learning and performance. Pro-
+cedural content generation approaches such as PAIRED [22]
+and adversarial PCG [23] dynamically adjusted task difficulty.
+Other studies focused on robustness, including adversarial
+perturbations [24], and adversarial regularization [25].
+C. Toward High-Fidelity Physics
+More recent work has emphasized realism and team play
+in continuous control environments. One method combined
+imitation learning, MARL, and population-based training to
+produce humanoid soccer players with strategies closely re-
+sembling those of human athletes [17]. In the robotics domain,
+[18] applied MARL in IsaacLab for robot soccer, where
+learned agents outperformed heuristic baselines. These ad-
+vances illustrate a growing trend toward using high-fidelity
+simulators to bridge the gap between abstract MARL bench-
+marks and embodied multi-robot systems.
+Despite these advances, a unified framework for scalable,
+heterogeneous, adversarial MARL in high-fidelity simulators
+is still lacking. Many prior works focus on either cooperation
+or simplified adversarial tasks without heterogeneous mor-
+phologies. Others provide isolated implementations rather than
+extensible frameworks. As summarized in Table I, our work
+addresses this gap by extending IsaacLab with heterogeneous
+adversarial environments and providing benchmarks that sup-
+port future research in robustness, scalability, and emergent
+multi-agent competition.
+III. ADVERSARIAL LEARNING FRAMEWORK
+A. The Framework
+The developed framework expands on an HARL implemen-
+tation in IsaacLab [11] where cooperative heterogeneous mult-
+agent policies were demonstrated by integrating algorithms
+implemented in the HARL library [26]. This training paradigm
+is outlined in Figure 2c. This extended IsaacLab to allow for
+robots of different morphologies to be trained in a cooperative
+manner in the same environment. Prior to this, the only
+developed multi-agent cooperative environment in IsaacLab
+was that of bi-dexterous hands [7].
+In our framework, we extend the cooperative heterogeneous
+setting to adversarial domains. A key limitation of the prior
+integration was the use of a single critic shared across all
+agents. In cooperative tasks this is sufficient, as the critic
+
+Fig. 2: Outline of different actor-critic training paradigms in adversarial reinforcement learning. With the addition of this
+framework, training paradigms B) and D) are now possible.
+estimates the state value V (s) with respect to a common team
+reward. However, in adversarial zero-sum settings, rewards
+between teams are strictly coupled, e.g. r(0)
+t
+= −r(1)
+t . If
+a single critic is used, its estimate collapses to the average
+outcome, effectively
+V (st) ≈1
+2
+ r(0)
+t
++ r(1)
+t
+
+= 0,
+even when one team succeeds. This leads to vanishing advan-
+tage estimates
+At = Rt −V (st),
+which in turn causes the PPO surrogate loss
+LPPO(θ) = Et
+
+min
+ rt(θ)At, clip(rt(θ), 1 −ϵ, 1 + ϵ)At
+
+to degenerate, providing no meaningful gradient signal for
+either policy. To address this, we extend IsaacLab with team-
+specific critics, consistent with the HAPPO formulation [26].
+Each team’s critic learns a value function V (i)(s) aligned with
+its own reward r(i), ensuring that heterogeneous agents in
+competitive environments receive non-trivial advantage signals
+and can learn robust adversarial strategies. This new addition
+to IsaacLab enables the training of both single agent and multi-
+agent adversarial policies, which are highlighted in figure 2b
+and figure 2d respectively.
+B. The Environment
+To evaluate the proposed framework, we developed a set
+of adversarial environments in IsaacLab that incorporate het-
+erogeneous robots, competitive objectives, and curriculum
+learning. Drawing inspiration from prior adversarial self-play
+domains [12], [13], we first implemented a Sumo environment
+with both homogeneous and heterogeneous teams. We selected
+the Anymal C quadruped and the Leatherback rover to em-
+phasize adversarial interactions between robots with distinct
+morphologies and control spaces. While the experiments in
+this paper focus on two agents per team, the framework
+supports arbitrary team sizes and agent counts as seen in
+figure 1.
+C. Curriculum Learning for Adversarial Training
+RL training is often unstable when agents are initialized
+directly in complex tasks [12], [28]. To stabilize learning,
+we employ curriculum learning [28], decomposing the final
+adversarial task into progressively harder stages. To maintain
+a consistent observation space across tasks, we use a zero-
+buffer strategy, padding initial observations with placeholder
+zeros that are later replaced with meaningful features as the
+task complexity increases, as done in [27]. This allows for
+seamless policy transfer across curriculum stages. To better
+explain the process of HARL-A with curriculum learning,
+we illustrate the process using the sumo environment (see
+
+Fig. 3: Evolution of the state space for the curriculum learning
+for the anymal c robot in the sumo adversarial environment.
+The state vector of the anymal includes velocity, joint positions
+etc., xval is the position of val with respect to the robot, 0
+represent the 0 vectors that hold place for the observations
+later on, as demonstrated in [27] for cirriculum learning, r
+represents the radius of the ring, and d represents the distance
+of anymal to the center of the ring.
+Figure 3).
+Sumo Stage 1: Walk To Point
+Before the Anymal C
+robots can successfully navigate in the sumo environment,
+the agent needs to learn to walk. This simple environment
+has the reward function
+R(St) =
+|W |
+X
+i=0
+Wi + δ1reached goal + γ(1 −tanh(αd))
+where W is the set of scaled shaping parameters to ensure
+stable walking, 1reached goal is a boolean vector representing
+whether the robot reached its goal, d is the distance of the
+robot from the goal, and δ, γ, and α represent reward scalars.
+Sumo Stage 2: Block Pushing In the next stage, each
+robot learns to push a block out of the arena. The reward at
+time t is defined as
+R(St) = (ˆrt + ˆdt) ∆t + T + δ
+ 1push out block −1left ring
+
+,
+with the following components:
+• Block distance reward:
+ˆrt = tanh
+ rt
+rmax
+
+,
+where rt is the block’s distance from the arena center at
+time t, and rmax is the arena radius.
+• Robot–block distance reward:
+ˆdt = 1 −tanh
+ dt
+rmax
+
+,
+where dt is the robot–block distance.
+• Step penalty: T is a fixed negative reward encouraging
+faster block removal.
+• Event-based terms: 1push out block = 1 if the block is
+pushed out, 1left ring = 1 if the robot leaves the arena.
+The scalar δ scales these sparse events.
+Sumo Stage 3: Adversarial Sumo In the last stage, the block
+is removed and the robots compete directly in a sumo-style
+match. Each team i ∈{0, 1} receives a reward:
+Ri(St) = τ ·
+ Lj −Li −ϕ
+
+· κ,
+(1)
+where j denotes the opposing team. The terms are:
+• Team elimination:
+Li =
+(
+1
+if any robot on team i leaves the ring at time t,
+0
+otherwise.
+• Tie indicator: τ
+= 0 if both teams are eliminated
+simultaneously; otherwise τ = 1.
+• Timeout indicator: ϕ = 1 if the episode ends due to
+reaching the maximum length; otherwise ϕ = 0.
+• Scaling: κ controls reward magnitude.
+This formulation rewards a team for eliminating its oppo-
+nent while remaining in the arena, penalizes self-elimination,
+and yields no reward in ties or timeouts. As a result, the
+primary incentive is to develop strategies that force opponents
+out while maintaining stability inside the ring.
+D. Other Benchmark Environments
+Beyond Sumo, our framework also supports adversarial
+tasks such as Soccer and 3D Galaga (Figures 4 and 5), empha-
+sizing ball manipulation and long-horizon pursuit/targeting,
+respectively. This demonstrates that the framework generalizes
+beyond contact-rich pushing to diverse adversarial settings.
+Soccer. This environment exposes per-team dictionaries of
+observations (robot–ball and ball–goal vectors, agent veloci-
+ties, teammate/opponent poses, arena context) and lightweight,
+morphology-appropriate actions (e.g., wheel or joint veloci-
+ties). Episodes follow a two-stage curriculum: Stage 1 shapes
+single-robot skills to approach and drive the ball (dense
+distance terms plus sparse goal events); Stage 2 lifts the policy
+into a two-team adversarial match with scoring rewards, and
+concede/leave penalties. Termination occurs on goals or a
+timeout. We trained a 1 v 1 heterogeneous scenario (1 anymal
+vs 1 leatherback). Figure 4 highlights some of the competitive
+behaviors learned, and Figure 7 shows that the leatherbacks
+learned effective strategies against the initially more dominant
+Anymal robots. In contrast with the heterogeneous sumo
+environments, this scenario was trained with the alternating
+’leapfrog’ strategy, where we train one actor while freezing
+the other, and then switch.
+3D Galaga. Our aerial–ground interception task is imple-
+mented as with a team of two MiniTanks and two Crazy Fly
+quadrotor drones spawned in a 20×10 m arena (see Figure 5).
+Tanks use 3-D positional targets; drones use throttle + torque
+inputs mapped to external force/torque. At every step, drones
+
+Fig. 4: Top image, Leatherback possession and bottom goal,
+Leatherback possession followed by turnover and Anymal goal
+Fig. 5: 3D Galaga: Anti-Aircraft Defense. Green MiniTanks
+fire arm-aligned laser-tag rays (2 and 3) every control step. A
+drone (flight path shown in 1) is knocked out when its position
+comes within a radius of any active ray (4), or if it drops below
+the minimum flight height.
+aim for the goal 2 m above their paired tank, while tanks
+“laser-tag” drones using arm-aligned ray casts. This environ-
+ment illustrates the HARL-A framework’s abilities to work
+with teams comprised of homogeneous morphologies within
+their own teams, while playing a heterogeneous adversarial
+teaming task.
+The 3D Galaga task is a single stage adversarial play envi-
+ronment. We use the 3D Galaga task to showcase simple adver-
+sarial baselines: policies trained without any opponent-aware
+fine-tuning are deployed directly into adversarial matches and
+nonetheless exhibit coherent, effective play. The environment
+successfully exhibits adversarial interaction, not true adver-
+sarial training—policies do not adapt online to an opponent’s
+strategy. They should be interpreted as evidence of transfer
+and emergent competence, rather than opponent-conditioned
+play.
+IV. SOFTWARE SIMULATION EVALUATION
+All simulations were trained on NVIDIA GeForce RTX
+30- and 40-series GPUs. For adversarial training, we adopted
+two regimes. First, following [24], we alternated training by
+freezing one team’s actor for a fixed number of timesteps while
+updating the other, then switching roles until convergence.
+Second, we explored simultaneous training of both teams.
+While alternating updates generally stabilized learning curves,
+we found that simultaneous training also produced meaningful
+behaviors, suggesting that the framework is robust to multiple
+adversarial optimization strategies.
+As is a common methodology for demonstrating progress in
+adversarial training [20], [12], we evaluate improvement using
+the win rate of the trained policy compared to its initialization.
+Figure 8 demonstrates that across environments, adversarial
+policies consistently achieved higher win rates over time,
+confirming that the agents learned effective strategies beyond
+their starting behavior. These team strategies were trained
+in parallel, meaning all actors on all teams were updated
+simultaneously.
+A. Emergent Adversarial Behaviors
+Fig. 7: Results of the adversarial training in the 1 v 1 soccer
+scenario of the anymal vs the leatherback rover.
+Beyond quantitative improvements, training produced di-
+verse emergent behaviors. Figure 6 highlights two such strate-
+gies in the heterogeneous Sumo environment. Leatherback
+rovers frequently learned to destabilize the opposing Anymal
+robot by targeting its legs, while Anymal robots developed
+dragging maneuvers to pull rovers outside the arena. The
+prevalence of these behaviors depended on the random ini-
+tialization, underscoring the stochastic nature of adversarial
+learning. These behaviors parallel phenomena observed in
+large-scale self-play systems such as hide-and-seek [15], but
+emerge here in a high-fidelity robotic setting.
+
+Fig. 6: Examples of learned emergent behaviors in the heterogeneous teams sumo environment (1 Anymal C robot and 1
+Leatherback rover on each team). Robots learned specific roles, such as the Leatherback learning to destabilize the opposing
+Anymal C robot by pulling out its leg (Top), and the Anymal C robot learning a method for dragging the opposing Leatherback
+robot out of the arena (Bottom).
+Interestingly, heterogeneous teams exhibited role special-
+ization, with each morphology exploiting its unique strengths
+(e.g., rovers as disruptors, Anymals as grapplers). This sug-
+gests that adversarial learning naturally induces division of
+labor even without explicit role assignment, a phenomenon of
+interest for both robotics and multi-agent learning.
+B. Policy Performance Over Time
+Figure 8 presents the win rate of trained policies against
+their initial versions. With the exception of the trained
+leatherbacks vs untrained Anymals, the sumo scenario un-
+derscores the framework’s ability to win rates across runs,
+demonstrating the effectiveness of the framework.
+C. Curriculum Learning and Zero-Buffer Analysis
+Finally, we analyze the effect of curriculum learning and
+the zero-buffer mechanism. Figure 9 compares convergence
+with and without the zero-buffer. While padding observations
+with unused features slowed early convergence, it enabled
+seamless extension of the state space in later curriculum
+stages. Although initial learning is slower, the buffer enables
+incremental task expansion without requiring retraining from
+scratch, thereby accelerating the overall curriculum. This val-
+idates the design choice of modular observation spaces for
+scalable adversarial training.
+D. Summary of Findings
+Across tasks, HARL-A demonstrates successful implemen-
+tation and training of adversarial heterogeneous teams. We also
+show that several important components improved the training:
+• Both alternating and simultaneous training produce effec-
+tive adversarial strategies, though with different stability
+profiles.
+• Heterogeneous teams display emergent role specializa-
+tion, leveraging their morphological differences.
+• Curriculum learning with zero-buffer observations pro-
+vides a practical mechanism for iterative adversarial
+training across tasks.
+Together, these findings highlight that adversarial training in
+high-fidelity heterogeneous environments not only improves
+raw performance but also gives rise to non-trivial behaviors
+and coordination patterns, illustrating the novelty and utility
+of the proposed framework.
+Fig. 9: Effect of the zero buffer during curriculum learning.
+Training with a buffer of 50 zero-valued features initially slows
+convergence but enables seamless addition of new observations
+later in the curriculum.
+V. CONCLUSION & FUTURE WORK
+We introduced HARL-A, a unified framework for scalable
+heterogeneous adversarial reinforcement learning in IsaacLab.
+
+Fig. 8: The win rate of the different adversarial training
+environments. For each episode of the trained policy, 1000
+environment instances were populated. The increasing win rate
+of trained agents and decreasing win rate of untrained agents
+demonstrates effective adversarial learning within the HARL-
+A framework.
+By extending cooperative heterogeneous pipelines with team-
+specific critics, we enabled efficient training of both homoge-
+neous and heterogeneous agents under competitive dynamics.
+Through environments such as Sumo and Soccer we demon-
+strated that HARL-A reliably produces emergent adversar-
+ial strategies, role specialization, and curriculum-driven skill
+transfer, establishing the first high-fidelity platform for study-
+ing morphology-diverse multi-agent adversarial competition.
+Our findings highlight that adversarial training in physics-
+rich, heterogeneous settings not only improves raw perfor-
+mance but also fosters non-trivial behaviors and coordination
+patterns. This underscores the importance of benchmarking
+adversarial MARL beyond abstract domains, toward embodied
+robotics contexts where asymmetry, contact dynamics, and role
+differentiation are intrinsic.
+Looking forward, integrating additional MARL algorithms
+such as value-decomposition methods [29] and graph atten-
+tion networks [30] may improve scalability and stability.
+Algorithmic innovations explicitly designed for adversarial
+domains, including off-policy methods [24], could further
+enhance robustness. Richer evaluation methodologies—such
+as exploitability, cross-play, and robustness against novel op-
+ponents—would provide a more comprehensive measure of
+policy quality. Curriculum learning remains another fertile
+direction: beyond the zero-buffer approach [27], strategies
+such as value disagreement [31] or gradual domain adaptation
+[32] could improve training efficiency and transferability.
+Finally, extending HARL-A to new modalities (aerial, aquatic,
+or swarm agents) and multi-scale interactions (e.g., team vs.
+swarm) offers opportunities for advancing the realism and
+generality of adversarial learning, with potential applications
+in security, defense, and human–robot interaction.
+By lowering the barrier to scalable adversarial training in
+high-fidelity simulation, HARL-A provides both a research
+tool and a benchmark suite. We hope it catalyzes the de-
+velopment of robust, generalizable algorithms that ultimately
+advance the safety, adaptability, and deployment of multi-agent
+learning in the real world.
+REFERENCES
+[1] J. Kober, J. A. Bagnell, and J. Peters, “Reinforcement learning in
+robotics: A survey,” Int. J. Rob. Res., vol. 32, p. 1238–1274, Sept. 2013.
+[2] D. Han, B. Mulyana, V. Stankovic, and S. Cheng, “A survey on deep
+reinforcement learning algorithms for robotic manipulation,” Sensors,
+vol. 23, no. 7, 2023.
+[3] I. Radosavovic, T. Xiao, B. Zhang, T. Darrell, J. Malik, and K. Sreenath,
+“Real-world humanoid locomotion with reinforcement learning,” Sci-
+ence Robotics, vol. 9, no. 89, p. eadi9579, 2024.
+[4] S. Choi, G. Ji, J. Park, H. Kim, J. Mun, J. H. Lee, and J. Hwangbo,
+“Learning quadrupedal locomotion on deformable terrain,” Science
+Robotics, vol. 8, no. 74, p. eade2256, 2023.
+[5] Z. Zhuang, S. Yao, and H. Zhao, “Humanoid parkour learning,” in 8th
+Annual Conference on Robot Learning, 2024.
+[6] D. Hoeller, N. Rudin, D. Sako, and M. Hutter, “Anymal parkour:
+Learning agile navigation for quadrupedal robots,” Science Robotics,
+vol. 9, no. 88, p. eadi7566, 2024.
+[7] Y. Chen, T. Wu, S. Wang, X. Feng, J. Jiang, S. M. McAleer, H. Dong,
+Z. Lu, S. C. Zhu, and Y. Yang, “Towards human-level bimanual dex-
+terous manipulation with reinforcement learning,” Advances in Neural
+Information Processing Systems, vol. 35, 6 2022.
+[8] M. Mittal, C. Yu, Q. Yu, J. Liu, N. Rudin, D. Hoeller, J. L. Yuan,
+R. Singh, Y. Guo, H. Mazhar, A. Mandlekar, B. Babich, G. State,
+M. Hutter, and A. Garg, “Orbit: A unified simulation framework for
+interactive robot learning environments,” IEEE Robotics and Automation
+Letters, vol. 8, no. 6, pp. 3740–3747, 2023.
+[9] E. Todorov, T. Erez, and Y. Tassa, “Mujoco: A physics engine for
+model-based control,” in 2012 IEEE/RSJ International Conference on
+Intelligent Robots and Systems, pp. 5026–5033, IEEE, 2012.
+[10] Z. Ning and L. Xie, “A survey on multi-agent reinforcement learning and
+its application,” Journal of Automation and Intelligence, vol. 3, no. 2,
+pp. 73–91, 2024.
+[11] J. Haight, I. Peterson, C. Allred, and M. Harper, “Heterogeneous multi-
+agent learning in isaac lab: Scalable simulation for robotic collabo-
+ration,” in Proceedings of the IEEE/RSJ International Conference on
+Intelligent Robots and Systems (IROS), (Hangzhou, China), pp. xx–xx,
+IEEE, 2025.
+[12] T. Bansal, J. Pachocki, S. Sidor, I. Sutskever, and I. Mordatch, “Emergent
+complexity via multi-agent competition,” in International Conference on
+Learning Representations, 2018.
+[13] A. Gleave, M. Dennis, C. Wild, N. Kant, S. Levine, and S. Russell,
+“Adversarial policies: Attacking deep reinforcement learning,” in Inter-
+national Conference on Learning Representations, 2020.
+[14] R. Lowe, Y. Wu, A. Tamar, J. Harb, P. Abbeel, and I. Mordatch, “Multi-
+agent actor-critic for mixed cooperative-competitive environments,” in
+Proceedings of the 31st International Conference on Neural Information
+Processing Systems, NIPS’17, (Red Hook, NY, USA), p. 6382–6393,
+Curran Associates Inc., 2017.
+
+[15] B. Baker, I. Kanitscheider, T. Markov, Y. Wu, G. Powell, B. McGrew,
+and I. Mordatch, “Emergent tool use from multi-agent autocurricula,” 2
+2020.
+[16] W. Schwarting, T. Seyde, I. Gilitschenski, L. Liebenwein, R. M. Sander,
+S. Karaman, and D. Rus, “Deep latent competition: Learning to race
+using visual control policies in latent space,” in Conference on Robot
+Learning, 2021.
+[17] S. Liu, G. Lever, Z. Wang, J. Merel, S. M. A. Eslami, D. Hennes,
+W. M. Czarnecki, Y. Tassa, S. Omidshafiei, A. Abdolmaleki, N. Y.
+Siegel, L. Hasenclever, L. Marris, S. Tunyasuvunakool, H. F. Song,
+M. Wulfmeier, P. Muller, T. Haarnoja, B. D. Tracey, K. Tuyls, T. Graepel,
+N. Heess, and E. contributions, “From motor control to team play in
+simulated humanoid football,”
+[18] Z. Li, F. Bjelonic, V. Klemm, and M. Hutter, “Marladona – towards
+cooperative team play using multi-agent reinforcement learning,” 3 2025.
+[19] R. Lowe, Y. Wu, A. Tamar, J. Harb, P. Abbeel, and I. Mordatch, “Multi-
+agent actor-critic for mixed cooperative-competitive environments,” in
+Advances in Neural Information Processing Systems (NeurIPS), vol. 30,
+pp. 6382–6393, 2017.
+[20] C. Berner, G. Brockman, B. Chan, V. Cheung, P. Debiak, C. Dennison,
+D. Farhi, Q. Fischer, S. Hashme, C. Hesse, R. J´ozefowicz, S. Gray,
+C. Olsson, J. W. Pachocki, M. Petrov, H. P. de Oliveira Pinto, J. Raiman,
+T. Salimans, J. Schlatter, J. Schneider, S. Sidor, I. Sutskever, J. Tang,
+F. Wolski, and S. Zhang, “Dota 2 with large scale deep reinforcement
+learning,” ArXiv, vol. abs/1912.06680, 2019.
+[21] O. Vinyals, I. Babuschkin, W. M. Czarnecki, M. Mathieu, A. Dudzik,
+J. Chung, D. H. Choi, R. Powell, T. Ewalds, P. Georgiev, J. Oh, D. Hor-
+gan, M. Kroiss, I. Danihelka, A. Huang, L. Sifre, T. Cai, J. P. Agapiou,
+M. Jaderberg, A. S. Vezhnevets, R. Leblond, T. Pohlen, V. Dalibard,
+D. Budden, Y. Sulsky, J. Molloy, T. L. Paine, C. Gulcehre, Z. Wang,
+T. Pfaff, Y. Wu, R. Ring, D. Yogatama, D. W¨unsch, K. McKinney,
+O. Smith, T. Schaul, T. Lillicrap, K. Kavukcuoglu, D. Hassabis, C. Apps,
+and D. Silver, “Grandmaster level in starcraft ii using multi-agent
+reinforcement learning,” Nature, vol. 575, pp. 350–354, Nov. 2019.
+[22] M. Dennis, N. Jaques, E. Vinitsky, A. Bayen, S. Russell, A. Critch,
+and S. Levine, “Emergent complexity and zero-shot transfer via unsu-
+pervised environment design,” in Proceedings of the 34th International
+Conference on Neural Information Processing Systems, NIPS ’20, (Red
+Hook, NY, USA), Curran Associates Inc., 2020.
+[23] L. Gissl´en, A. Eakins, C. Gordillo, J. Bergdahl, and K. Tollmar,
+“Adversarial reinforcement learning for procedural content generation,”
+in 2021 IEEE Conference on Games (CoG), p. 1–8, IEEE Press, 2021.
+[24] L. Pinto, J. Davidson, R. Sukthankar, and A. Gupta, “Robust adversarial
+reinforcement learning,” in Proceedings of the 34th International Con-
+ference on Machine Learning (D. Precup and Y. W. Teh, eds.), vol. 70
+of Proceedings of Machine Learning Research, pp. 2817–2826, PMLR,
+06–11 Aug 2017.
+[25] A. Bukharin, Y. Li, Y. Yu, Q. Zhang, Z. Chen, S. Zuo, C. Zhang,
+S. Zhang, and T. Zhao, “Robust multi-agent reinforcement learning via
+adversarial regularization: theoretical foundation and stable algorithms,”
+in Proceedings of the 37th International Conference on Neural Infor-
+mation Processing Systems, NIPS ’23, (Red Hook, NY, USA), Curran
+Associates Inc., 2023.
+[26] Y. Zhong, J. G. Kuba, X. Feng, S. Hu, J. Ji, and Y. Yang,
+“Heterogeneous-agent reinforcement learning,” J. Mach. Learn. Res.,
+vol. 25, Jan. 2024.
+[27] W. Wang, T. Yang, Y. Liu, J. Hao, X. Hao, Y. Hu, Y. Chen, C. Fan,
+and Y. Gao, “From few to more: Large-scale dynamic multiagent
+curriculum learning,” in Proceedings of the AAAI conference on artificial
+intelligence, vol. 34, pp. 7293–7300, 2020.
+[28] S. Narvekar, B. Peng, M. Leonetti, J. Sinapov, M. E. Taylor, and P. Stone,
+“Curriculum learning for reinforcement learning domains: a framework
+and survey,” J. Mach. Learn. Res., vol. 21, Jan. 2020.
+[29] K. Son, D. Kim, W. J. Kang, D. E. Hostallero, and Y. Yi, “QTRAN:
+Learning to factorize with transformation for cooperative multi-agent
+reinforcement learning,” in Proceedings of the 36th International Con-
+ference on Machine Learning (K. Chaudhuri and R. Salakhutdinov, eds.),
+vol. 97 of Proceedings of Machine Learning Research, pp. 5887–5896,
+PMLR, 09–15 Jun 2019.
+[30] Q. Wei, Y. Li, J. Zhang, and F.-Y. Wang, “Vgn: Value decomposition
+with graph attention networks for multiagent reinforcement learning,”
+IEEE Transactions on Neural Networks and Learning Systems, vol. 35,
+no. 1, pp. 182–195, 2024.
+[31] Y. Zhang, P. Abbeel, and L. Pinto, “Automatic curriculum learning
+through value disagreement,” in Proceedings of the 34th International
+Conference on Neural Information Processing Systems, NIPS ’20, (Red
+Hook, NY, USA), Curran Associates Inc., 2020.
+[32] P. Huang, M. Xu, J. Zhu, L. Shi, F. Fang, and D. Zhao, “Curriculum
+reinforcement learning using optimal transport via gradual domain
+adaptation,” in Proceedings of the 36th International Conference on
+Neural Information Processing Systems, NIPS ’22, (Red Hook, NY,
+USA), Curran Associates Inc., 2022.

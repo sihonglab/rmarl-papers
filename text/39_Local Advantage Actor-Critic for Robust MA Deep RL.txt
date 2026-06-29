@@ -1,0 +1,1307 @@
+Local Advantage Actor-Critic for Robust Multi-Agent
+Deep Reinforcement Learning
+Yuchen Xiao, Xueguang Lyu, Christopher Amato
+Abstract— Policy gradient methods have become popular in
+multi-agent reinforcement learning, but they suffer from high
+variance due to the presence of environmental stochasticity and
+exploring agents (i.e., non-stationarity), which is potentially
+worsened by the difﬁculty in credit assignment. As a result,
+there is a need for a method that is not only capable of
+efﬁciently solving the above two problems but also robust
+enough to solve a variety of tasks. To this end, we propose
+a new multi-agent policy gradient method, called Robust Local
+Advantage (ROLA) Actor-Critic. ROLA allows each agent to
+learn an individual action-value function as a local critic as
+well as ameliorating environment non-stationarity via a novel
+centralized training approach based on a centralized critic.
+By using this local critic, each agent calculates a baseline
+to reduce variance on its policy gradient estimation, which
+results in an expected advantage action-value over other agents’
+choices that implicitly improves credit assignment. We evaluate
+ROLA across diverse benchmarks and show its robustness
+and effectiveness over a number of state-of-the-art multi-agent
+policy gradient algorithms.
+I. INTRODUCTION
+Multi-agent reinforcement learning
+(MARL) has shown
+many successes in solving real-world multi-robot tasks, such
+as hallway navigation [1], autonomous vehicles in merging
+trafﬁc [2], warehouse tool delivery [3] and unmanned aerial
+vehicle coordination [4]. Recently, MARL has made signiﬁ-
+cant progress on learning decentralized policies for a group
+of agents to achieve collaborative behaviors by operating
+based on only local information under uncertainty [5]–[8].
+In practice, having decentralized policies for each robot is
+preferable since fast and perfect online communication is
+often hard to guarantee in many real-world applications.
+MARL methods often build off of single-agent RL meth-
+ods. In terms of taking advantage of single-agent reinforce-
+ment learning techniques, the independent learning (IL)
+framework is the simplest solution, allowing each agent to
+learn an individual policy in such environments [9]. Although
+IL may sometimes work in practice, it encounters a crucial
+theoretical issue: the environment becomes non-stationary
+from each agent’s perspective as other agents explore and up-
+date policies. This so-called environmental non-stationarity
+is known to generate a high variance on value and gradient
+estimations and impedes agents from collaborating well.
+Centralized
+training
+with
+decentralized
+execution
+(CTDE) [10], [11] has been a very promising learning
+framework for improving solution quality while maintaining
+decentralized
+execution
+in
+MARL.
+CTDE
+has
+been
+Khoury College of Computer Sciences, Northeastern University, Boston,
+MA 02115, USA {xiao.yuch, lu.xue, c.amato}@northeastern.edu
+implemented with both value-based [12]–[15] and policy-
+gradient-based approaches [16]–[21]. In particular, policy
+gradient algorithms based on an actor-critic framework have
+become prominent for implementing the CTDE paradigm.
+The key idea is to train a centralized critic conditioned
+on
+accessible
+global
+information
+for
+directing
+each
+decentralized actor’s optimization. This centralized critic
+is favored for its stationary learning targets, overcoming
+the major theoretical problem in IL, and has become the
+basis of many recent advances. However, with a global
+reward
+function
+in
+multi-agent
+cooperative
+problems,
+simply applying a shared centralized critic to compute the
+gradient for each agent’s action still causes a severe credit
+assignment issue. It introduces extra variance on gradient
+estimation for each agent’s policy since the critic conditions
+on joint observations and actions, where the joint space is
+of exponential size.
+COMA [16], as a representative multi-agent actor-critic-
+based method, achieves variance reduction by using a coun-
+terfactual baseline, inspired from difference rewards [22], to
+credit each agent. The counterfactual baseline is a promising
+idea, but it estimates the contribution of each agent’s action
+by marginalizing over only the corresponding agent’s coun-
+terfactual action choices while keeping other agents’ actions
+ﬁxed. As a result, the estimation variance caused by other
+agents’ explorations still exists, which leads to noisy credit
+assignments. SQDDPG [19] extends COMA’s idea to capture
+the average contribution of an agent’s action by sequentially
+adding the agent into a set of sampled coalitions. Although
+it theoretically improves the effectiveness of resolving the
+two problems mentioned above, it has a strong requirement
+on a prior distribution over the coalition space, which is
+often not available without having good knowledge of a
+given domain’s properties. MAAC [20] utilizes a centralized
+attention mechanism to solve tasks that require agents to
+selectively focus on different things in order to produce
+rich collaborations. However, it still suffers from inefﬁcient
+credit assignment and variance reduction due to the pure
+dependency on COMA’s counterfactual scheme. LIIR [21]
+explicitly approximates each agent’s individual reward based
+on global reward signals, and its performance highly depends
+on the underlying complexity of the ground truth credit
+assignment shaped by the domain reward function.
+Value function factorization has also become popular
+in MARL for learning individual Q-functions [12]–[15].
+Such methods have recently been introduced into actor-
+critic frameworks [23], [24] to learn critics. However, these
+factorization methods have an inherent limitation caused by
+2021 International Symposium on Multi-Robot and Multi-Agent Systems (MRS)
+November 4-5, University of Cambridge, United Kingdom
+978-1-6654-2926-9/21/$31.00 ©2021 IEEE
+155
+2021 International Symposium on Multi-Robot and Multi-Agent Systems (MRS) | 978-1-6654-2926-9/21/$31.00 ©2021 IEEE | DOI: 10.1109/MRS50823.2021.9620607
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+restricting the relationship between the joint Q-values and
+decentralized Q-values, such as assuming a linear summa-
+tion constraint, a non-linear monotonic constraint, or other
+weighted constraints. These constraints prevent the methods
+from learning the true joint action-value function in general
+and potentially limit each method to work well in particular
+tasks (such as the SMAC domains [6] in most related papers)
+but perform worse in some other domains [25].
+In this paper, we propose a novel policy gradient actor-
+critic framework that not only is able to efﬁciently address
+both credit assignment and learning variance problems but
+also possesses high robustness, where the ‘robustness’ means
+that the proposed method always gains outstanding perfor-
+mance over multiple domains. To this end, we introduce a
+Robust Local Advantage (ROLA) Actor-Critic policy gradi-
+ent algorithm to learn decentralized policies.
+ROLA features a new centralized training approach that
+incorporates a centralized critic into each agent’s local critic
+optimization with the beneﬁts including: a) alleviating the
+effectiveness of environmental non-stationarity; b) counter-
+acting the overestimation often existing in learning with a
+single value approximator; c) generating extra joint-action
+selections from the centralized perspective as training data
+rather than using only decentralized trajectories in exist-
+ing CTDE-based policy gradient approaches. d) facilitating
+agents to avoid local optima to learn good collaborations. The
+local critic is also allowed to access extra global information
+but only conditions on each agent’s own action. The resulting
+critic provides an estimated action-value over other agents’
+behaviors, implicitly completing the credit assignment. Fur-
+thermore, by using this local critic, each agent can obtain a
+low-variance and unbiased advantage action-value estimation
+that can be used for policy updates.
+II. BACKGROUND
+We start by formalizing our fully cooperative multi-agent
+reinforcement learning problem and then introduce the fun-
+damental reinforcement learning algorithms that our new
+approach builds on.
+A. Dec-POMDPs
+In a fully cooperative task, a team of agents behaves
+in a decentralized operating manner, individually choosing
+actions purely based on local observations, with state and
+outcome uncertainties can be described as a decentral-
+ized partially observable Markov decision process (Dec-
+POMDP) [26], deﬁned as a tuple ⟨I, S, A, Ω, T, O, R⟩. I ≡
+{1, ..., n} represents a ﬁnite set of agents; S is a ﬁnite set
+of environment true states; A ≡×iAi and Ω≡×iΩi stand
+for the joint action space and the joint observation space
+over agents respectively. At every time-step, each agent i
+synchronously executes its own action ai, which induces
+that the environment transits from the current state s to
+a new state s′ according to the state transition function
+T(s,⃗a, s′) = P(s′|s,⃗a), where a joint action formed as
+⃗a = ×iai ∈A; meanwhile, an immediate reward r(s,⃗a)
+shared over agents is generated by the global reward function
+R : S×A →R; successively, due to the partial observability,
+agents can only obtain a joint observation ⃗o = ×ioi ∈Ω
+under the new state s′, drawn according to the observation
+function O(⃗o,⃗a, s′) = P(⃗o|⃗a, s′), and each agent’s policy
+πi(ai|τi) is thus modeled as a mapping from individual
+action-observation history τi to actions. The objective is
+to optimize a joint policy ⃗π = ×iπi that maximizes the
+expectation of a long-term discounted return from an initial
+state s0, V ⃗π(s0) = E⃗π
+ Ph−1
+t=0 γtr(st,⃗at)|s0
+
+, where h is the
+horizon of the task and γ ∈[0, 1] is a discount factor.
+B. Advantage Actor-Critic (A2C)
+Policy gradient is one popular reinforcement learning
+technique with the aim to directly optimize a parame-
+terized policy πθ by performing gradient ascent on the
+expectation of discounted returns Eπθ[G]. Based on the
+single-agent policy gradient theorem [27], the gradient with
+respect to policy’s parameters in POMDPs can be writ-
+ten as ∇θJ(θ) = Eπθ[∇θ log πθ(a|τ)Qπθ(a, τ)]. In actor-
+critic framework [28], the on-policy action-value Qπθ is
+approximated by using an action-value function Qπθ
+φ (critic)
+learned via temporal-difference (TD) learning. As a common
+choice, people often train a state-value function in MDPs but
+history-value function V πθ
+w (τ) in POMDPs as the critic and
+incorporate it into the policy gradient in a variance reduction
+format [27] ending up with an advantage actor-critic (A2C)
+policy gradient that can be written as:
+∇θJ(θ) = Eπθ
+h
+∇θ log πθ(a|τ)A(τ, a)
+i
+(1)
+where, A(τ, a) = r(τ, a) + γV πθ
+w (τ ′) −V πθ
+w (τ).
+C. Independent Advantage Actor-Critic (IA2C)
+In the light of independent Q-learning [9], independent
+advantage actor-critic (IA2C) [16] is a straightforward ex-
+tension of single-agent A2C to multi-agent scenarios. The
+speciﬁc version of IA2C considered in this paper is formu-
+lated as:
+∇θiJ(θi) = E⃗πθ
+h
+∇θi log πθi(ai|τi)A(τi, ai)
+i
+(2)
+where, A(τi, ai) = r + γV
+πθi
+wi (τ ′
+i) −V
+πθi
+wi (τi) with a shared
+reward r assigned by the global reward function R. Agents
+independently optimize each own actor πθi and critic V
+πθi
+wi
+purely based on local experiences. While decentralized poli-
+cies can be directly learned in this simple decomposition
+manner, each independent learner suffers from several innate
+limitations: the difﬁculty in distinguishing environmental
+natural stochasticity from other agents’ explorations; the
+dilemma of the environmental non-stationarity from a local
+perspective caused by the existence of other learning agents;
+the tendency of settling at a local optimum due to rare
+information sharing over agents.
+D. Counterfactual Multi-Agent Policy Gradients
+With the mission of addressing the aforementioned limi-
+tations in IA2C, Counterfactual multi-agent (COMA) policy
+gradients [16], as the ﬁrst A2C-based method adopting
+156
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+centralized training with decentralized execution (CTDE),
+proposes to learn a centralized critic, Q⃗πθ
+φ (s,⃗a), conditioning
+on full state information and all agents’ actions to annihilate
+the non-stationary environment issue, and achieves variance
+reduction and credit assignment by designing a counter-
+factual baseline with respect to each agent’s policy in an
+advantage function. The corresponding policy gradient for
+each agent is then deﬁned as:
+∇θiJ(θi) = E⃗πθ
+
+∇θi log πθi(ai|τi)Ai(s,⃗a)
+
+(3)
+Ai(s,⃗a) = Q⃗πθ
+φ (s,⃗a) −
+X
+˙ai
+πθi( ˙ai|τi)Q⃗πθ
+φ (s, ˙ai,⃗a−i)
+(4)
+We notice that, in Eq. 4, the counterfactual baseline is
+calculated by marginalizing the action of agent i while keep-
+ing others’ ﬁxed. However, it is inefﬁcient on both variance
+reduction and credit assignment due to the freeze of other
+agents’ actions in the counterfactual baseline computation
+such that: (a) from agent i’s perspective, this counterfactual
+variance reduction trick will malfunction when the variance
+is caused by the explorations of other agents rather than agent
+i; (b) the credit assignment attained by Eq.4 then becomes
+just a sampled advantage value for the agent’s action ai under
+a speciﬁc joint-action taken by teammates, which potentially
+still leads to high variance on the agent’s policy gradient
+related to the action ai in Eq. 3. It is a variant of the
+multi-action variance that lives in vanilla multi-agent policy
+gradients with a single centralized critic [24], [29].
+The above two underlying ﬂaws in COMA’s counterfactual
+design can also be visualized by taking a further derivation
+from Eq. 3 as follows:
+∇θiJ(πθi) = E⃗πθ
+h
+∇θi log πθi(ai|τi)Ai(s,⃗a)
+i
+= Eπθi,⃗πθ−i
+h
+∇θi log πθi(ai|τi)Ai(s, ai,⃗a−i)
+i
+(5)
+= Eπθi
+
+E⃗πθ−i
+h
+∇θi log πθi(ai|τi)Ai(s, ai,⃗a−i)
+i
+(6)
+= Eπθi
+
+∇θi log πθi(ai|τi)E⃗πθ−i
+h
+Ai(s, ai,⃗a−i)
+i
+(7)
+Eventually, we reach an expected counterfactual advan-
+tage policy gradient (ECA) as shown in Eq. 7, which can
+be considered as an extension of the single-agent expected
+policy gradient [30] to multi-agent CTDE framework.
+Eq. 7 indicates that, in order to obtain a more accurate
+value estimation on agent i’s action ai with low variance, we
+are supposed to either explicitly compute the expected ad-
+vantage value of ai or approximate it. It is a straightforward
+marginalization process in the centralized training paradigm
+with a centralized critic, where we can directly compute
+the expectation using the policies and the critic. However,
+it introduces signiﬁcant computational costs exponentially
+increasing with the number of agents and each agent’s action
+space. Also, note that obtaining an approximation of ECA is
+exactly what IA2C is trying to do, but several fatal defects
+exist as mentioned in section II-C.
+In this paper, we propose an approach to tackle the
+above issues by letting each agent learn an individual local
+critic only conditioning on its local action but in a novel
+on-policy centralized training procedure which relieves the
+environmental non-stationarity as well as achieving credit
+assignment implicitly. Furthermore, the local critic is then
+used to calculate a local advantage value for each agent to
+reduce gradient variance more efﬁciently.
+III. APPROACH
+This section presents a new CTDE algorithm called Robust
+Local Advantage (ROLA) Actor-Critic. The main idea of
+ROLA is to learn a local action-value function as the critic of
+each agent but inheriting a centralized insight that facilitates
+agents to discover good coordinative behaviors. ROLA also
+implicitly carries out multi-agent credit assignment and uses
+this local critic in advantage action-value estimation to
+produce variance reduction on each agent’s policy gradients.
+Speciﬁcally, at the ﬁrst step, ROLA learns a fully central-
+ized critic, Q⃗πθ
+φ (x,⃗a). As an on-policy evaluation of joint
+actions, it is updated by minimizing the square TD-error loss:
+L(φ) = E⃗πθ
+ Q⃗πθ
+φ (x,⃗a) −y
+2
+
+(8)
+y = r + γQ
+⃗πθ−
+φ−(x′, a′
+1, ..., a′
+n) |a′
+i∼πθ−
+i
+(τ ′
+i)
+(9)
+where, each agent’s target policy πθ−
+i
+with delayed pa-
+rameters θ−
+i
+is used to sample the following action for
+calculating the target prediction to further stabilizing the
+learning. x denotes the accessible global signals such as joint
+observations, joint action-observation histories, or the true
+environmental state.
+Secondly, ROLA deﬁnes a semi-centralized action-value
+function, Qπθi(x, ai), for each agent i, that conditions only
+on the corresponding agent’s action but is allowed to ac-
+cess additional centralized information. This implies that
+Qπθi(x, ai) satisﬁes the Bellman equation of either Dec-
+MDP [26] or Dec-POMDP depending on if the information
+encoded in x is the ground truth environment state or action-
+observation histories. We, therefore, are able to use a neural
+network function approximator with weights ψi to esti-
+mate Qπθi(x, ai) via sample-based model-free reinforcement
+learning approaches. This function approximator is referred
+to as each agent’s local critic, represented as Qloc
+ψi (x, ai).
+Training this local critic to provide an accurate value
+estimation on each agent’s action for assisting the decen-
+tralized actor optimization via policy gradients is a non-
+trivial problem, as it does not have access to other agents’
+actions. As a result, it still confronts the curse of the envi-
+ronmental non-stationarity and may diverge the cooperative
+objective’s policies. To deal with this issue, we develop
+a novel centralized-double-critic training framework taking
+advantage of a fully centralized critic to update individual
+local critics.
+157
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+Fig. 1: Architecture of ROLA.
+More concretely, in order to let each agent’s local critic,
+Qloc
+ψi (x, ai), precisely measure the value of a given action ai
+under global information x, it has to be capable to capture the
+expected effect of other agent action selections. We achieve
+this by ﬁrst using the centralized critic, Q⃗πθ
+φ (x,⃗a), to sample
+a joint next action ⃗a ′ via ‘softmax’ operation, from which
+the corresponding agent’s next action a′
+i is then extracted
+and passed into the target value calculation for computing a
+local square TD-error being minimized during training:
+L(ψi) = E⃗πθ
+ Qloc
+ψi (x, ai) −y
+2
+
+(10)
+y = r + γQloc
+ψ−
+i (x′, a′
+i) |a′
+i←⃗a ′∼softmax
+ Q
+⃗πθ
+φ (x′,⃗a ′)
+
+(11)
+In Eq. 11, sampling a joint action from the perspective of
+the centralized critic incorporates other agents’ concurrent
+behaviors into each agent’s local critic updating. It endows
+each agent’s local critic with the capability of evaluating the
+utility of the agent’s action over teammates’ options under
+a given x, which is how the credit assignment proceeds.
+Furthermore, another strength by applying the sampling in
+Eq. 11 is that each agent’s local critic intrinsically inherits
+the beneﬁt from a centralized control attitude, being able
+to facilitate the decentralized actor to be updated towards
+the cooperative direction even though it only has the agent’s
+own action as input. Additionally, the global information
+considered in the local critic does not have to be the same as
+the one in the centralized critic. There could be many variants
+in practice depending on the domains’ properties. Without
+loss of generality, we use environment state information in
+experiments.
+A natural limitation of conventional CTDE-based methods
+is that the training depends on the actions generated via
+only decentralized execution. Therefore, it is also important
+to note that this new idea for learning local critic offers
+centralized action-selection data as extra assets, which breaks
+through the above limitation of CTDE framework.
+In the end, we fuse each agent’s local critic into the cor-
+responding policy gradient with a local advantage function
+for each agent’s action, which can be expressed as:
+∇θiJ(θi) = E⃗πθ
+
+∇θi log πθi(ai|τi)Ai(x, ai)
+
+(12)
+Ai(x, ai) = Qloc
+ψi (x, ai) −
+X
+˙ai
+πθi( ˙ai|τi)Qloc
+ψi (x, ˙ai)
+(13)
+Now, to each agent, the expected advantage of taking a
+particular action under a speciﬁc state over whatever other
+agents behave is assessed in Eq. 13, so that the poten-
+tial punishment caused by other agents can be alleviated.
+Moreover, ROLA calculates a separate baseline using each
+agent individual local critic, serving as a recipe to reduce
+the variance on policy gradient estimation provoked by the
+explorations of its own and other agents during training.
+Fig. 1 displays the architecture of ROLA. Although we
+only describe an on-policy version of ROLA above, the off-
+policy training can be easily done by implementing a replay
+buffer and importance sampling weights.
+IV. EXPERIMENTS
+A. Domains Setup
+To investigate the robustness and effectiveness of ROLA
+versus existing multi-agent policy gradient algorithms, we se-
+lect four popular benchmark problems: Capture Target [31],
+a variant version of Box Pushing [32], OpenAI Cooperative
+Navigation [17] and Antipodal Navigation [25] with partial
+observability. The properties of these domains differ from
+each other in terms of reward density, environmental stochas-
+ticity, collaborative format, and the number of agents.
+Capture Target. Two agents move around in a toroidal
+grid world by executing actions: up, down, left, right and
+stay, with the transition dynamics as 0.1 probability of
+arriving at an unintended adjacent cell. Only a terminal
+reward +1 can be received when two agents capture the
+target together by simultaneously locating the cell where the
+target is. Agents can perfectly observe their own positions
+but cannot receive teammate’s location, and they see the
+(a) Capture Target
+(b) Box Pushing
+(c) Cooperative Navigation
+(d) Antipodal Navigation
+Fig. 2: Experimental domains.
+158
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+TABLE I: Multi-Agent Actor-Critic Baselines.
+Algorithm
+Feature Description
+CTDE
+VDN-Based
+On-Policy
+Learning
+Off-Policy
+Learning
+IA2C
+Refer to Section II-C
+-
+-
+Yes
+-
+Central-V [16]
+Decentralized actors with a state-value function as the centralized critic
+Yes
+-
+Yes
+-
+COMA [16]
+Counterfactual advantage value
+Yes
+-
+Yes
+-
+LIIR [21]
+Learn intrinsic reward for each agent
+Yes
+-
+Yes
+-
+SQDDPG [19]
+Approximate marginal contribution of agent’s action as local critic
+Yes
+-
+-
+Yes
+using sampled coalitions
+MAAC [20]
+Learn local critics with a centralized attention mechanism
+Yes
+-
+-
+Yes
+DOP [24]
+Centralized critic is a linear weighted summation of individual critics
+Yes
+Yes
+Yes
+Yes
+optimized by minimizing a mixing of on-policy and off-policy losses
+VDAC-mix [23]
+Centralized critic is a non-linear mixing of individual critics
+Yes
+Yes
+Yes
+-
+VDAC-sum [23]
+Centralized critic is a linear summation of individual critics
+Yes
+Yes
+Yes
+-
+ECA
+Explicitly compute expected counterfactual advantage value
+Yes
+-
+Yes
+-
+target with a probability of 0.7. Thus it is a high noisy
+domain in terms of the environmental stochasticity and the
+aliased information in the observation, selected for studying
+the utility of ROLA on variance reduction.
+Box Pushing. The available actions to each agent include:
+move forward, turn left, turn right and stay; and the objective
+is to push two boxes to the top goal area. Each agent can
+move any box towards the north by executing move forward
+while facing it. When any agent successfully pushes one box
+to the goal, the entire team receives a shared reward +100,
+and the episode also immediately terminates. We design this
+domain on purpose to check if ROLA beneﬁts each agent to
+quickly deduce its own contribution to a reward, especially
+when the box is pushed to the goal by the teammate.
+Cooperative Navigation. We extend OpenAI cooperative
+navigation task with partial observability by imposing a view
+range, as the shallow circle in Fig. 2c, that restricts each
+agent from capturing the information of other agents and
+landmarks out of the view. Agents have to cooperatively
+spread out to cover all the landmarks by applying physical
+force actions (equally discretized into eight directions) to
+move, where the entire 2-D working space is continuous
+and unbounded, but agents and landmarks are initialized in
+a (−1, 1)2 region as shown in Fig. 2c. At each timestep, the
+shared penalty is the negative sum of the landmark-nearest-
+agent-distances plus extra penalties for collisions. We use
+this domain to examine ROLA’s performance when dealing
+with dense reward signals rather than the sparse case in the
+above two.
+Antipodal Navigation. We make this environment to be
+partially observable in the same way as described above
+while keeping anything else as the default in [25], where
+each agent aims to cover an allocated target landmark (shown
+with the same color as the agent in Fig. 2d and receives
+an individual reward equaling to the negative distance to
+its target. The initial position of agents and their target
+landmarks are sampled in an antipodal conﬁguration with
+a probability of 0.7, rather than always randomly initialized
+as in the above cooperative case. We want to check whether
+ROLA is still competitive under such a less collaborative
+scenario without global reward or not.
+B. Algorithm Implementations
+We investigate ROLA’s advantages against a broad set
+of state-of-the-art multi-agent actor-critic methods that are
+summarized in Table I.
+All methods use the same actor-net architecture consisting
+of one fully connected (FC) layer with Leaky-Relu as the
+activation function, one LSTM layer [33] and one more FC
+layer as the output, where each layer has 64 units. Our
+critic-net implementation uses the same architecture across
+all methods, which contains two 64-unit FC layers with
+Leaky-Relu activation function and one FC output layer in
+the end, except, for IAC, an LSTM module replaces the
+middle layer due to its condition on local observations. For
+MAAC and VDN-based algorithms, we keep the critic’s
+architecture as the original design. ROLA, IA2C, Central-
+V, and ECA handle explorations via a linear decaying ϵ-soft
+policy and use n-step TD prediction, while other methods use
+the default exploration schemes and TD(λ) in their published
+implementations.
+Different methods have different properties so that each
+method may require a particular set of hyper-parameters
+to achieve the best performance. Therefore, in training, we
+perform decent hyper-parameter tuning for each method over
+a wide range of hyper-parameters via exhaustive grid search
+and pick out the best performance of each method depending
+on its ﬁnal converged value as the ﬁrst priority and the
+learning speed as the second.
+C. Experimental Scheme
+We conduct experiments under each domain with modiﬁ-
+cations on task difﬁculty by either increasing the grid world
+size or decreasing the agent’s observation range. For each
+method, we perform 20 independent training trials to solve
+all the tasks. Each training trial suspends every 100 episodes
+to evaluate the learned policies at the moment across another
+10 episodes, which generates an averaged discounted return
+received by the multi-agent team over the evaluating episodes
+as one testing result. Finally, we calculate the mean testing
+performance of each method over the 20 trials and plot
+the curves (smoothed by a window size 10) with a 95%
+conﬁdence interval.
+159
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+0K
+25K
+50K
+75K
+100K
+Episode
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Mean Test Return
+6 x 6
+(a) Capture Target
+0K
+50K
+100K
+150K
+200K
+Episode
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Mean Test Return
+8 x 8
+(b) Capture Target
+0K
+1K
+2K
+3K
+4K
+Episode
+0
+50
+100
+150
+200
+Mean Test Return
+6 x 6
+(c) Box Pushing
+0K
+1K
+2K
+3K
+4K
+Episode
+0
+50
+100
+150
+200
+Mean Test Return
+10 x 10
+(d) Box Pushing
+0K
+30K
+60K
+90K
+Episode
+−90
+−75
+−60
+−45
+−30
+Mean Test Return
+obs_radius 1.4
+(e) Cooperative Navigation
+0K
+30K
+60K
+90K
+Episode
+−90
+−75
+−60
+−45
+−30
+Mean Test Return
+obs_radius 1.6
+(f) Cooperative Navigation
+0K
+10K
+20K
+30K
+Episode
+−160
+−140
+−120
+−100
+−80
+Mean Test Return
+obs_radius 1.4
+(g) Antipodal Navigation
+0K
+10K
+20K
+30K
+Episode
+−160
+−140
+−120
+−100
+−80
+Mean Test Return
+obs_radius 1.6
+(h) Antipodal Navigation
+Fig. 3: Comparison against baseline algorithms in two scenarios of each domain.
+V. RESULTS AND DISCUSSIONS
+In this section, we report the performance of ROLA
+against all the baselines on two environmental conﬁgurations
+under each domain. The comparisons between ROLA and the
+baselines are organized as the following pattern:
+Comparison 1 (Fig. 3). We ﬁrst compare ROLA with
+IA2C, Central-V, COMA, LIIR, SQDDPG, and MAAC, in
+order to: (a) examine the effectiveness of ROLA on credit
+assignment and variance reduction; (b) check if ROLA has
+strong robustness such that it can consistently outstand the
+baselines across different domains.
+Comparison 2 (Fig. 4). Here, we compare ROLA with
+DOP, VDAC-mix, and VDAC-sum, intending to study
+ROLA’s advance on learning local critics against value
+decomposition-based manners.
+Comparison 3 (Fig. 5). In the end, we want to validate
+ROLA’s superiorities over the ECA algorithm (explicitly
+compute the expectation over other agents’ joint action
+space) and highlight the differences between the two ap-
+proaches.
+A. Overall Effectiveness and Robustness of ROLA
+In this section, we provide an analysis of the results shown
+in Fig. 3.
+Capture Target is a classical Dec-POMDP benchmark,
+in which the transition uncertainties, noisy observation setup
+and the extremely sparse reward potentially lead to high
+learning variance [31]. As an on-policy method, under such
+an environment, ROLA achieves the highest performance
+with much lower variance on evaluations than Central-
+V and IA2C (shown in Fig 3a-b) in various grid world
+sizes, which manifests the signiﬁcant strength of ROLA
+on variance reduction. As an off-policy learning approach
+with a replay buffer, SQDDPG is more sample-efﬁcient
+than other on-policy methods. It is why SQDDPG can learn
+quickly with low variance in the early stage; however, it is
+troubled with a local optimum as the world space gets large.
+We blame this on the shortcoming of its credit assignment
+mechanism, depending on difference rewards, to deal with
+such scenarios with sparse reward and unique coalition.
+LIIR certainly suffers from the challenge of approximating
+intrinsic reward with inadequate external reward. In this
+task, the optimal strategy for each agent is to focus on
+the target to discern its dynamics while moving towards
+it, rather than concentrating on the teammate’s movements.
+MAAC’s failure thus makes sense because it brings extra
+puzzles to agents by encouraging them to pay attention to
+each other. Additionally, COMA’s defects are also exposed
+in this domain.
+In Box Pushing, in order to quickly learn the optimal
+collaboration, each agent has to reason about its responsi-
+bility for a global reward accurately. Otherwise, it is likely
+to reach a sub-optimum where only one agent pushes a
+small box to the goal. In both the small grid world and
+the bigger one, ROLA always converges to the optimal
+values (dash line in Fig. 3c-d) at the fastest speed over
+other baselines, which proves ROLA’s efﬁciency on credit
+assignment. Furthermore, when the grid world becomes
+larger, almost all other baselines’ performance ﬂuctuations
+increase while ROLA can keep it relatively low, which
+shows the advantage of its baseline calculated using the local
+160
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+0K
+25K
+50K
+75K
+100K
+Episode
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Mean Test Return
+6 x 6
+(a) Capture Target
+0K
+50K
+100K
+150K
+200K
+Episode
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Mean Test Return
+8 x 8
+(b) Capture Target
+0K
+1K
+2K
+3K
+4K
+Episode
+0
+50
+100
+150
+200
+Mean Test Return
+6 x 6
+(c) Box Pushing
+0K
+1K
+2K
+3K
+4K
+Episode
+0
+50
+100
+150
+200
+Mean Test Return
+10 x 10
+(d) Box Pushing
+0K
+30K
+60K
+90K
+Episode
+−180
+−150
+−120
+−90
+−60
+−30
+Mean Test Return
+obs_radius 1.4
+(e) Cooperative Navigation
+0K
+30K
+60K
+90K
+Episode
+−180
+−150
+−120
+−90
+−60
+−30
+Mean Test Return
+obs_radius 1.6
+(f) Cooperative Navigation
+0K
+10K
+20K
+30K
+Episode
+−280
+−240
+−200
+−160
+−120
+−80
+Mean Test Return
+obs_radius 1.4
+(g) Antipodal Navigation
+0K
+10K
+20K
+30K
+Episode
+−280
+−240
+−200
+−160
+−120
+−80
+Mean Test Return
+obs_radius 1.6
+(h) Antipodal Navigation
+Fig. 4: Comparison against VDN-based algorithms in two scenarios of each domain.
+critic on variance reduction. Also, IA2C outperforms other
+centralized baselines because the optimal behaviors require
+each agent to only focus on pushing the nearest box rather
+than the other agent’s actions, which is also the main reason
+why both MAAC and SQDDPG perform such poorly due
+to the attention bias and the strong assumption on coalitions
+respectively. The low efﬁciency of LIIR and COMA on credit
+assignment is shown by the slower learning speed even than
+Central-V.
+Unlike the above two domains, Cooperative Navigation
+generates very dense reward signals throughout the entire
+episode. At the same time, ROLA still outstands other
+baselines with a minor performance variance, the fastest
+convergence speed, and the highest averaged testing return,
+shown in Fig. 3e-f, which is one solid evidence for ROLA’s
+robustness. We also notice that the smaller each agent’s view
+ﬁeld, the more difﬁcult the task is, and the more pronounced
+ROLA’s advantages will be compared to other baselines. This
+domain requires agents to reach an agreement on the target
+landmarks allocation. IA2C traps at a local optimum due
+to the lack of information sharing over agents under this
+partially observable scenario. Even having a replay buffer,
+MAAC learns slowly and tends to converge to a suboptimal
+solution because it enforces each agent to pay attention to
+other agents more or less at every step, which is unneces-
+sary for this task and can potentially result in inaccurate
+credit assignment. Same to LIIR, it measures each agent’s
+marginalized contribution over possible coalitions at every
+time-step, which violates a truth in this domain that agents
+may only need to coordinate in a few time-steps depending
+on their positions and landmarks’ conﬁguration. As the lim-
+itations of LIIR and COMA mentioned in the introduction,
+the shaped reward designed in this domain certainly causes
+big trouble for LIIR to learn a correct individual reward for
+each agent and make COMA’s counterfactual mechanism out
+of operation. Central-V avoids the sub-optimum due to the
+less biased underlying uniform credit assignment model.
+Antipodal Navigation is a less cooperative task; this
+is why SQDDPG performs the worst due to the redun-
+dant consideration over all possible coalitions as shown in
+Fig. 3g-h. Thanks to the individual reward function design,
+LIIR’s training improves signiﬁcantly, and IA2C achieves the
+second-best performance. The inefﬁciency of COMA’s credit
+assignment design is again afﬁrmed by the phenomenon
+that both MAAC and COMA run into sub-optimums. Even
+though ROLA’s learning is just slightly faster than IA2C and
+Central-V here, ROLA still performs the best under such a
+domain where agents have independent goals, demonstrating
+ROLA’s robustness from another degree.
+B. Advantages of ROLA’s Learning for Local Critics
+VDAC-sum, VDAC-mix, and DOP all implicitly learn
+local critics via value decomposition networks. VDAC-sum
+represents the centralized critic as a summation of local
+critics that severely limits the complexity of the learned
+centralized value function. The local critics in VDAC-sum
+thus often cannot provide reliable value estimations for
+policies updates so that VDAC-sum performs the worst in
+the comparison shown in Fig. 4. Despite the fact that the
+centralized critic of VDAC-mix uses a hyper-network to
+provide a non-linear mixing of local critics, it is still limited
+161
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+0K
+25K
+50K
+75K
+100K
+Episode
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Mean Test Return
+6 x 6
+(a) Capture Target
+0K
+50K
+100K
+150K
+200K
+Episode
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Mean Test Return
+8 x 8
+(b) Capture Target
+0K
+1K
+2K
+3K
+4K
+Episode
+0
+50
+100
+150
+200
+Mean Test Return
+6 x 6
+(c) Box Pushing
+0K
+1K
+2K
+3K
+4K
+Episode
+0
+50
+100
+150
+200
+Mean Test Return
+10 x 10
+(d) Box Pushing
+0K
+30K
+60K
+90K
+Episode
+−90
+−75
+−60
+−45
+−30
+Mean Test Return
+obs_radius 1.4
+(e) Cooperative Navigation
+0K
+30K
+60K
+90K
+Episode
+−90
+−75
+−60
+−45
+−30
+Mean Test Return
+obs_radius 1.6
+(f) Cooperative Navigation
+0K
+10K
+20K
+30K
+Episode
+−160
+−140
+−120
+−100
+−80
+Mean Test Return
+obs_radius 1.4
+(g) Antipodal Navigation
+0K
+10K
+20K
+30K
+Episode
+−160
+−140
+−120
+−100
+−80
+Mean Test Return
+obs_radius 1.6
+(h) Antipodal Navigation
+Fig. 5: Comparison against ECA algorithm in two scenarios of each domain.
+by the monotonicity constraint of the mixing weights learned
+from global state information. Also, the hyper-network takes
+a longer time to train, so that it delays the decentral-
+ized policy optimizations, which explains why VDAC-mix
+converges slower than ROLA in all considered domains.
+DOP factorizes the centralized critic as a weighted linear
+summation of individual critics. With a replay buffer, DOP’s
+loss for training critics is a mechanism that balances off-
+policy TD and on-policy TD. It is why DOP outputs better
+sample efﬁciency and has less variance than the two versions
+of VDAC. Nevertheless, DOP’s entire performance is still not
+competitive to ROLA due to the decomposition constraint
+enforced there. Unlike the above VDN-based methods, the
+centralized critic learned in ROLA approximates the true
+state-joint-action value function without any constraint. We
+believe, as the results shown in Fig. 4, ROLA’s outperfor-
+mance over the three VDN-based policy gradient algorithms
+signiﬁcantly proves the beneﬁt of training local critics via
+sampling target-actions from the joint Q-value function,
+which provides necessary data from a centralized perspective
+to promote learning high-quality decentralized policies.
+C. Superiorities of ROLA over ECA
+The comparison between ROLA and ECA is shown in
+Fig. 5, where the performance of ROLA exceeds ECA’s
+a lot in terms of both ﬁnal converged return and sample
+efﬁciency under all environments. We notice that explicitly
+calculating the ECA-value using the learned centralized Q-
+value function actually leads to a strong single approximator
+bias when the centralized Q-value function has not been fully
+trained for all agents’ joint actions, which is the main reason
+why ECA performs such poorly. Instead, ROLA avoids this
+bias by learning a global action-value approximator with
+separate local action-value approximators. Moreover, as an
+on-policy CTDE algorithm, the advantage value estimation
+in ECA is still with respect to decentralized policies, while
+ROLA, again, takes extra beneﬁts from the centralized sam-
+pling operation. In addition, ECA’s calculation encounters
+an exponentially increased computational cost, while ROLA
+learns each local critic in the new sampling way that is much
+more practical.
+VI. CONCLUSION
+This paper introduces a new multi-agent actor-critic policy
+gradient algorithm, named ROLA, to learn decentralized
+policies with two types of critics. ROLA implicitly delivers
+credit assignment over agents by using each agent’s local
+critic that is trained by taking advantage of a centralized
+critic in a novel sampling process, which enables the CTDE
+paradigm to utilize action data from centralized selections
+rather than purely depending on decentralized execution
+data. Variance reduction on each agent’s decentralized policy
+gradient estimation is then accomplished by computing local
+advantage action-values based on the local critic. The overall
+robustness and effectiveness of ROLA is empirically estab-
+lished by attaining faster learning, higher returns, and lower
+variance than a set of state-of-the-art actor-critic methods in
+diverse multi-agent domains.
+Acknowledgements This research is supported in part
+by the U.S. Ofﬁce of Naval Research under award number
+N00014-19-1-2131, Army Research Ofﬁce award W911NF-
+20-1-0265 and NSF CAREER Award 2044993.
+162
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:38 UTC from IEEE Xplore.  Restrictions apply. 
+
+REFERENCES
+[1] J.-S. Park, B. Tsang, H. Yedidsion, G. Warnell, D. Kyoung, and
+P. Stone, “Learning to improve multi-robot hallway navigation,” in
+Proceedings of the Conference on Robot Learning, November 2020.
+[2] Y. C. Tang, “Towards learning multi-agent negotiations via self-play,”
+in Autonomous Driving Workshop, IEEE International Conference on
+Computer Vision, 2019.
+[3] Y. Xiao, J. Hoffman, T. Xia, and C. Amato, “Learning multi-robot
+decentralized macro-action-based policies via a centralized q-net,”
+in Proceedings of the International Conference on Robotics and
+Automation, 2020.
+[4] Y. Alon and H. Zhou, “Multi-agent reinforcement learning for un-
+manned aerial vehicle coordination by multi-critic policy gradient
+optimization,” arXiv:2012.15472, 2020.
+[5] L. Busoniu, R. Babuska, and B. D. Schutter, “A comprehensive survey
+of multiagent reinforcement learning,” IEEE Trans. Syst. Man Cybern.
+Part C, vol. 38, no. 2, pp. 156–172, 2008.
+[6] M. Samvelyan, T. Rashid, C. S. de Witt, G. Farquhar, N. Nardelli,
+T. G. J. Rudner, C.-M. Hung, P. H. S. Torr, J. Foerster, and S. White-
+son, “The StarCraft Multi-Agent Challenge,” arXiv:1902.04043, 2019.
+[7] B. Baker, I. Kanitscheider, T. Markov, Y. Wu, G. Powell, B. McGrew,
+and I. Mordatch, “Emergent tool use from multi-agent autocurricula,”
+in Proceedings of the International Conference on Learning Repre-
+sentations, 2020.
+[8] S. Liu, G. Lever, N. Heess, J. Merel, S. Tunyasuvunakool, and T. Grae-
+pel, “Emergent coordination through competition,” in Proceedings of
+the International Conference on Learning Representations, 2019.
+[9] M. Tan, “Multi-agent reinforcement learning: Independent vs. coop-
+erative agents,” in Proceedings of the International Conference on
+Machine Learning, 1993, pp. 330–337.
+[10] F. A. Oliehoek, M. T. J. Spaan, and N. A. Vlassis, “Optimal and
+approximate q-value functions for decentralized pomdps,” Journal of
+Artiﬁcial Intelligence Research, vol. 32, pp. 289–353, 2008.
+[11] L. Kraemer and B. Banerjee, “Multi-agent reinforcement learning as
+a rehearsal for decentralized planning,” Neurocomputing, vol. 190, pp.
+82–94, 2016.
+[12] T. Rashid, M. Samvelyan, C. S. de Witt, G. Farquhar, J. Foerster,
+and S. Whiteson, “Qmix: Monotonic value function factorisation
+for deep multi-agent reinforcement learning,” in Proceedings of the
+International Conference on Machine Learning, July 2018.
+[13] T. Rashid, G. Farquhar, B. Peng, and S. Whiteson, “Weighted qmix:
+Expanding monotonic value function factorisation,” in Proceedings of
+the Conference on Neural Information Processing Systems, 2020.
+[14] A. Mahajan, T. Rashid, M. Samvelyan, and S. Whiteson, “Maven:
+Multi-agent variational exploration,” in Proceedings of the Conference
+on Neural Information Processing Systems, 2019, pp. 7611–7622.
+[15] T. Wang, H. Dong, and C. Z. Victor Lesser, “Roma: Multi-agent
+reinforcement learning with emergent roles,” in Proceedings of the
+International Conference on Machine Learning, July 2020.
+[16] J. Foerster, G. Farquhar, T. Afouras, N. Nardelli, and S. Whiteson,
+“Counterfactual multi-agent policy gradients,” in Proceedings of the
+AAAI Conference on Artiﬁcial Intelligence, February 2018.
+[17] R. Lowe, Y. Wu, A. Tamar, J. Harb, P. Abbeel, and I. Mordatch,
+“Multi-agent actor-critic for mixed cooperative-competitive environ-
+ments,” Proceedings of the Conference on Neural Information Pro-
+cessing Systems, 2017.
+[18] S. Li, Y. Wu, X. Cui, H. Dong, F. Fang, and S. Russell, “Robust
+multi-agent reinforcement learning via minimax deep deterministic
+policy gradient,” Proceedings of the AAAI Conference on Artiﬁcial
+Intelligence, vol. 33, pp. 4213–4220, 07 2019.
+[19] J. Wang, Y. Zhang, T.-K. Kim, and Y. Gu, “Shapley q-value: A local
+reward approach to solve global reward games,” 2020.
+[20] S. Iqbal and F. Sha, “Actor-attention-critic for multi-agent reinforce-
+ment learning,” in Proceedings of the International Conference on
+Machine Learning, vol. 97, 2019, pp. 2961–2970.
+[21] Y. Du, L. Han, M. Fang, T. Dai, J. Liu, and D. Tao, “Liir: Learning
+individual intrinsic reward in multi-agent reinforcement learning.” in
+Proceedings of the Conference on Neural Information Processing
+Systems, 2019.
+[22] D. H. Wolpert and K. Tumer, “Optimal payoff functions for members
+of collectives,” Advances in Complex Systems, vol. 4, no. 2/3, pp.
+265–279, 2001.
+[23] J. Su, S. Adams, and P. A. Beling, “Value-decomposition multi-agent
+actor-critics,” in Proceedings of the AAAI Conference on Artiﬁcial
+Intelligence, 2021.
+[24] Y. Wang, B. Han, T. Wang, H. Dong, and C. Zhang, “DOP: Off-
+policy multi-agent decomposed policy gradients,” in Proceedings of
+the International Conference on Learning Representations, 2021.
+[25] J. Yang, A. Nakhaei, D. Isele, K. Fujimura, and H. Zha, “Cm3:
+Cooperative multi-goal multi-stage multi-agent reinforcement learn-
+ing,” in Proceedings of the International Conference on Learning
+Representations, 2020.
+[26] F. A. Oliehoek and C. Amato, A Concise Introduction to Decentralized
+POMDPs.
+Springer Publishing Company, Incorporated, 2016.
+[27] R. Sutton, D. Precup, and S. Singh, “Between MDPs and semi-MDPs:
+A framework for temporal abstraction in reinforcement learning,”
+Artiﬁcial Intelligence, vol. 112, pp. 181–211, 1999.
+[28] V. R. Konda and J. N. Tsitsiklis, “Actor-critic algorithms,” in Proceed-
+ings of the Conference on Neural Information Processing Systems,
+2000, pp. 1008–1014.
+[29] X. Lyu, Y. Xiao, B. Daley, and C. Amato, “Contrasting centralized
+and decentralized critics in multi-agent reinforcement learning,” in
+Proceedings of the International Conference on Autonomous Agents
+and Multiagent Systems, 2021.
+[30] K. Ciosek and S. Whiteson, “Expected policy gradients for reinforce-
+ment learning,” Journal of Machine Learning Research, vol. 21, no. 52,
+pp. 1–51, 2020.
+[31] S. Omidshaﬁei, J. Pazis, C. Amato, J. P. How, and J. Vian, “Deep
+decentralized multi-task multi-agent reinforcement learning under par-
+tial observability,” in Proceedings of the International Conference on
+Machine Learning, 2017, pp. 2681–2690.
+[32] S. Seuken and S. Zilberstein, “Improved memory-bounded dynamic
+programming for decentralized pomdps,” in Proceedings of the Con-
+ference on Uncertainty in Artiﬁcial Intelligence, 2007, pp. 344–351.
+[33] S. Hochreiter and J. Schmidhuber, “Long short-term memory,” Neural
+Computation, vol. 9, no. 8, pp. 1735–1780, 1997.
+163
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:38 UTC from IEEE Xplore.  Restrictions apply. 

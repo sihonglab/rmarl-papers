@@ -1,0 +1,7795 @@
+Sample-Efficient Robust Multi-Agent Reinforcement Learning
+in the Face of Environmental Uncertainty
+Laixi Shi∗
+Caltech
+Eric Mazumdar∗
+Caltech
+Yuejie Chi†
+CMU
+Adam Wierman∗
+Caltech
+May 10, 2024
+Abstract
+To overcome the sim-to-real gap in reinforcement learning (RL), learned policies must maintain ro-
+bustness against environmental uncertainties. While robust RL has been widely studied in single-agent
+regimes, in multi-agent environments, the problem remains understudied—despite the fact that the prob-
+lems posed by environmental uncertainties are often exacerbated by strategic interactions. This work
+focuses on learning in distributionally robust Markov games (RMGs), a robust variant of standard Markov
+games, wherein each agent aims to learn a policy that maximizes its own worst-case performance when
+the deployed environment deviates within its own prescribed uncertainty set. This results in a set of
+robust equilibrium strategies for all agents that align with classic notions of game-theoretic equilibria.
+Assuming a non-adaptive sampling mechanism from a generative model, we propose a sample-efficient
+model-based algorithm (DR-NVI) with finite-sample complexity guarantees for learning robust variants of
+various notions of game-theoretic equilibria. We also establish an information-theoretic lower bound for
+solving RMGs, which confirms the near-optimal sample complexity of DR-NVI with respect to problem-
+dependent factors such as the size of the state space, the target accuracy, and the horizon length.
+Keywords: model uncertainty, distribution shift, multi-agent reinforcement learning, robust Markov games.
+Contents
+1
+Introduction
+2
+1.1
+Environmental uncertainty in MARL . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+2
+1.2
+Main contributions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+3
+2
+Background: Standard Markov Games
+4
+3
+Distributionally Robust Markov Games
+6
+3.1
+Distributionally robust Markov games . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+6
+3.2
+Solution concepts for robust Markov games
+. . . . . . . . . . . . . . . . . . . . . . . . . . . .
+8
+3.3
+Non-adaptive sampling from a generative model . . . . . . . . . . . . . . . . . . . . . . . . . .
+8
+4
+Algorithm and Theory
+9
+4.1
+Distributionally robust Nash value iteration . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+9
+4.2
+Sample complexity: upper and lower bounds
+. . . . . . . . . . . . . . . . . . . . . . . . . . .
+10
+5
+Related Works
+12
+6
+Conclusion
+14
+∗Department of Computing Mathematical Sciences, California Institute of Technology, CA 91125, USA.
+†Department of Electrical and Computer Engineering, Carnegie Mellon University, Pittsburgh, PA 15213, USA.
+1
+arXiv:2404.18909v3  [cs.LG]  9 May 2024
+
+A Preliminaries
+22
+A.1 Details of the example shown in Figure 1
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+22
+A.2 Additional notation and basic facts . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+26
+A.3 Preliminary facts of RMGs and empirical RMGs
+. . . . . . . . . . . . . . . . . . . . . . . . .
+27
+B Proof of Theorem 1
+28
+B.1
+Proof of learning robust NE/robust CCE
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+29
+B.2
+Proof of learning robust CE . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+36
+B.3
+Proof of the auxiliary lemmas . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+37
+C Proof of Theorem 2
+44
+C.1 Constructing hard robust MDP instances
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+45
+C.2 Establishing the lower bound . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+47
+C.3 Proof of the auxiliary facts
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+51
+1
+Introduction
+Many real-world applications of artificial intelligence naturally involve multiple agents in dynamically evolv-
+ing environments. Examples include ecosystem protection (Fang et al., 2015), board games (Silver et al.,
+2017), strategic management (Saloner, 1991), and autonomous driving (Zhou et al., 2020) among many
+others. One of the most promising algorithmic paradigms for addressing these problems is that of (deep)
+multi-agent reinforcement learning (MARL) (Lanctot et al., 2019; Silver et al., 2017; Vinyals et al., 2019)
+through a decision-making perspective. In full generality, it allows for agents with misaligned and possibly
+conflicting interests to optimize their own long-term rewards in an unknown dynamic environment, while
+taking one another into account. As such, MARL can often be modeled as learning in Markov games (MGs)
+(Littman, 1994; Shapley, 1953).
+Due to the game-theoretic nature of MGs, one often relies on solution
+concepts which take the form of equilibria — strategies/policies that are stable under rational deviations for
+all agents — like Nash equilibria (NE) (Nash, 1951; Shapley, 1953), correlated equilibria (CE) (Aumann,
+1987), and coarse correlated equilibra (CCE) (Aumann, 1987; Moulin and Vial, 1978).
+1.1
+Environmental uncertainty in MARL
+However, the equilibria of MGs can be very sensitive to environmental perturbations. Environmental uncer-
+tainties caused by system noise, model mismatch, and sim-to-real gaps can cause dramatic changes to both
+the qualitative outcomes of the game as well as agents’ payoffs. While this problem is present in single-agent
+RL, the need for robustness is even more acute in the multi-agent setting where the game-theoretic interac-
+tions can cause instabilities (Slumbers et al., 2023). Indeed, playing an equilibrium solution learned in the
+simulated environment might lead to a catastrophic drop in a single agent’s payoff or even all agents’ payoffs
+when the deployed environment deviates slightly from what is expected (Balaji et al., 2019; Yeh et al., 2021;
+Zeng et al., 2022; Zhang et al., 2020c), a point we illustrate in the following example.
+Example: fishing protection.
+To emphasize the impact of model uncertainty in MARL, in Figure 1,
+we present a concrete example of a simple two-player game that models the interaction between a fisherman
+and law enforcement trying to prevent illegal fishing. The state s ∈{0, 1, · · · , 100} represents the number
+of punishments received by the fisherman, with the license being revoked at s = 100. The environment is
+governed by a model parameter p. We observe from Figure 1(b) that for slightly perturbed environments, city
+A (p = 0.049) and city B (p = 0.051), the solutions of the MGs are two Nash equilibria with drastically
+different outcomes: no punishment under policy πB learned from city B (in red) and a revoked license under
+policy πA learned from city A (in blue). More details are presented in Appendix A.1.
+The example above
+illustrates how the standard formulation of a MG can be vulnerable to model uncertainties and result in
+unstable solutions with divergent outcomes. As such, robustness and stability become a pressing need and
+key challenge for the deployment of MARL algorithms.
+To address this, we consider robust MARL problems as (distributionally) robust Markov games (RMGs)
+— a robust counterpart of standard MGs (Kardeş et al., 2011; Zhang et al., 2020c). The natural solution
+2
+
+Patrols
+No patrols
+Legal
+ﬁshing
+City A / City B:
+Robust Nash .+,-
+Illegal
+ﬁshing
+Patrols
+No patrols
+Legal
+fishing
+City B: Nash 7)
+Illegal
+ﬁshing
+City A: Nash 7*
+Consistent solution: robust Nash !&'(
+learned from city A/city B (for all states)
+0
+!
+!
+...
+fishing license revoked
+after 100 punishment
+" ∈{0,1, ⋯100} : times of punishment
+(a) Markov game: fishing protection
+Agent 1: fisherman
+Actions: Legal/Illegal fishing
+Agent 2: police
+Actions: Patrols/No patrols
+MARL
+(b) Nash equilibria of standard and robust MARL
+Robust MARL
+2
+100
+!
+Opposite solution: Nash !% and Nash !$
+learned from city A and city B (for all states)
+1
+0
+100
+No punishment
+Fishing license revoked
+Nash *=
+1 −!
+1 −!
+1 −!
+City A:
++ = 0.049
+City B:
++ = 0.051
+Illegal fishing 
+Legal fishing
+1
+1
+1
+Nash *>
+Robust Nash *?@A
+Figure 1: A two-player general-sum Markov game modeling preventing illegal fishing. (a) shows the state
+space (circles) and the simplified transitions; the fisherman arrives at distinct states by executing different
+Nash equilibrium solutions πA (from city A) or πB (from city B). (b) in two slightly different environments
+(city A versus city B), it shows the solutions πA, πB of the standard game, and the consistent solution robust
+Nash πrob of a robust variant of the game (detailed in Appendix A.1).
+concepts for RMGs are equilibria not only between agents, but also between multiple natural adversaries
+that choose the worst-case environments within some prescribed uncertainty set for each agent. By design,
+they exhibit more robustness and consistency in the face of unmodeled disturbances. To illustrate this,
+consider the example in Figure 1, where one can observe that the solutions of a RMG (πrob in gray) remains
+consistent and stable across similar environments city A and city B.
+Despite some recent efforts (Blanchet et al., 2023; Kardeş et al., 2011; Ma et al., 2023; Zhang et al.,
+2020c), a fundamental understanding of learning in RMGs is lacking. Indeed, while the robust formulation
+of single-agent RL has been well studied (Iyengar, 2005; Nilim and El Ghaoui, 2005; Shi et al., 2023; Xu
+et al., 2023), understanding how to efficiently learn equilibrium policies in robust Markov games remains
+an open question. We focus on understanding and achieving near-optimal sample efficiency in robust MGs,
+reflecting the fact that in many large-scale applications, agents must learn from samples from an unknown
+but potentially extremely large environment (Achiam et al., 2023; Silver et al., 2016; Vinyals et al., 2019).
+While some attempts have been made to design sample-efficient algorithms for robust MARL (Blanchet
+et al., 2023; Wang et al., 2023a), the current solutions are still far from optimal. With that in mind, we
+investigate the following open question:
+Can we achieve robustness and near-optimal sample efficiency in MARL simultaneously?
+1.2
+Main contributions
+To address the open question, this work concentrates on designing algorithms for robust MGs with near-
+optimal sample complexity guarantees. We consider three solution concepts for RMGs, which are robust
+variants of standard equilibria — robust NE, robust CE, and robust CCE. We focus on a class of RMGs,
+where the uncertainty sets of the environment are constructed following an agent-wise (s,a)-rectangularity
+condition for computational tractability (Iyengar, 2005; Wiesemann et al., 2013) (see Section 3). Such a
+condition allows each agent to independently consider its uncertainty set according to their personal interest.
+We consider total variation (TV) distance as the distance metric for the uncertainty set, motivated by its
+practical (Lee et al., 2021; Pan et al., 2023) and theoretical appeal (Blanchet et al., 2023; Panaganti and
+Kalathil, 2022; Shi et al., 2023).
+Concretely, our study focuses on finite-horizon RMGs with n agents. We denote the episode length by H,
+the size of the state space by S, the size of the i-th agent’s action space by Ai, and use σi ∈(0, 1] to represent
+the uncertainty level of the i-th agent. We assume access to a generative model that can draw samples from
+the nominal environment in a non-adaptive manner. The goal is to find an ε-approximate equilibrium for
+3
+
+RMGs — a joint policy such that each agent’s benefit is at most ε away under rational deviations. The main
+contributions are summarized as follows.
+• Near-optimal sample complexity upper bound. We design a model-based algorithm — distributionally
+robust Nash value iteration (DR-NVI), which can provably find any solution among ε-approximate
+robust-{NE, CCE, CE} with high probability, when the sample size exceeds
+eO
+SH3 Qn
+i=1 Ai
+ε2
+min
+n
+H,
+1
+min1≤i≤n σi
+o
+.
+(1)
+This significantly improves upon prior art (Blanchet et al., 2023) eO
+ S4 (Qn
+i=1 Ai)3 H4/ε21 (Blanchet
+et al., 2023) by at least a factor of eO
+ S3 (Qn
+i=1 Ai)2 
+, and further delineates the impact of the un-
+certainty levels. Our results are derived by addressing the intricate statistical dependencies arising
+from game-theoretical interactions among agents, a challenge not present in robust single-agent RL.
+Additionally, we employ distributionally robust optimization to address the nonlinear payoffs of agents
+in RMGs, which lack a closed form.
+• Information-theoretic lower bound. To understand the optimality of our algorithm we establish a lower
+bound for solving RMGs, showing that no algorithm can learn any of ε-approximate robust-{NE, CCE,
+CE} with fewer samples than
+eO
+SH3 max1≤i≤n Ai
+ε2
+min
+n
+H,
+1
+min1≤i≤n σi
+o
+.
+(2)
+To the best of our knowledge, this is the first information-theoretic lower bound for RMGs, regardless
+of the distance metric in use. We construct new hard scenarios for tightness, differing from existing
+ones in both robust single-agent RL and standard MGs, which may be of independent interest. This in
+turn establishes that the sample complexity of DR-NVI is optimal for all RMGs with respect to many
+critical problem-dependent parameters such as S, H, {σi}1≤i≤n, making DR-NVI the first near-optimal
+finite-sample guarantee for robust MGs, regardless of the divergence metric in use.
+Notation.
+Throughout this paper, we introduce the notation [T] := {1, · · · , T} for any positive integer
+T > 0. We denote by ∆(S) the probability simplex over a set S and x =
+
+x(s, a)
+
+(s,a)∈S×A ∈RSA (resp. x =
+
+x(s)
+
+s∈S ∈RS) as any vector that constitutes certain values for each state-action pair (resp. state).
+2
+Background: Standard Markov Games
+We begin by covering the foundational aspects of multi-agent general-sum standard Markov games in a
+finite-horizon setting.
+Standard Markov games.
+A finite-horizon multi-agent general-sum Markov game can be represented as
+MG =
+
+S, {Ai}1≤i≤n, P, r, H
+	
+. This game involves n agents who optimizes their own benefits in a shared
+environment, consisting of the following key components.
+• State space S = {1, · · · , S} of the shared environment with S different states.
+• Joint action space A: for each 1 ≤i ≤n, we represent Ai = {1, · · · , Ai} as the action space of the i-th
+agent that contains Ai different actions. In addition, we denote the joint action space for all agents (or
+a subset of agents) as A := A1 × · · · × Am (or A−i := Q
+j:j̸=i Aj for all 1 ≤i ≤n). For convenience,
+we denote the boldface letter a ∈A (resp. a−i ∈A−i) as a joint action profile for all agents (resp. all
+agents excluding the i-th agent).
+1Note that Blanchet et al. (2023) targets a different (and more challenging) setting with offline data. We translate the results
+of Blanchet et al. (2023) to the generative setting we consider.
+4
+
+• Probability transition kernel P = {Ph}1≤h≤H with Ph : S × A 7→∆(S).
+Specifically, Ph(s′ | s, a)
+represents the probability of MG transitioning from current state s ∈S to the next state s′ ∈S at
+time step h, given the agents choose the joint action profile a ∈A.
+• Reward function r = {ri,h}1≤i≤n,1≤h≤H with ri,h : S × A 7→[0, 1]. Specifically, for any (i, h, s, a) ∈
+[n] × [H] × S × A, let ri,h(s, a) be the immediate (deterministic) reward received by the i-th agent in
+state s when the joint action profile is a, which is normalized to [0, 1] without loss of generality.
+• H is the horizon length of the standard MG.
+Markov policies and value functions.
+Throughout the paper, we focus on the class of Markov policies,
+namely, the action selection rule is solely determined by the current state s, independent from previous
+trajectories (including visited states, executed actions, and received rewards) of all agents. Specifically, for
+any 1 ≤i ≤n, the i-th agent executes actions according to a policy πi = {πi,h : S 7→∆(Ai)}1≤h≤H, with
+πi,h(a | s) the probability of selecting action a in state s at time step h. The joint Markov policy of all agents
+can be defined as π = (π1, . . . , πn) : S ×[H] 7→∆(A), namely, the joint action profile a of all agents is chosen
+according to the distribution specified by πh(· | s) = (π1,h, π2,h . . . , πn,h)(· | s) ∈∆(A) conditioned on state s
+at time step h.
+With the above notation in mind, for any given joint policy π and transition kernel P of the MG, we
+characterize the long-term cumulative reward by defining the value function V π,P
+i,h
+: S 7→R (resp. Q-function
+Qπ,P
+i,h : S × A 7→R) of the i-th agent as follows: for all (h, s, a) ∈[H] × S × A,
+V π,P
+i,h (s) := Eπ,P
+" H
+X
+t=h
+γtri,t
+ st, at
+
+| sh = s
+#
+,
+Qπ,P
+i,h (s, a) := Eπ,P
+" H
+X
+t=h
+γtri,t
+ st, at
+
+| sh = s, ah = a
+#
+,
+(3)
+where the expectation is taken over the Markovian trajectory {(st, at)}h≤t≤H by executing the joint policy
+π under the transition kernel P, i.e., at ∼πt(· | st) and st+1 ∼P(· | st, at).
+Best-response policy.
+For any given joint policy π, we employ π−i to represent the policies of all agents
+excluding the i-th agent. We define the maximum value function of the i-th agent at time step h against the
+joint policy π−i of the other agents as
+V ⋆,π−i,P
+i,h
+(s) :=
+max
+π′
+i:S×[H]→∆(Ai) V π′
+i×π−i,P
+i,h
+(s),
+(4)
+where π′
+i × π−i represents the joint policy of all agents when the i-th agent executes policy π′
+i. It is well-
+known (Filar and Vrieze, 2012) that there exists at least one Markovian policy, the best-response policy, that
+achieves V ⋆,π−i,P
+i,h
+(s) for all s ∈S and all h ∈[H] simultaneously. We denote the best-response policy using
+π⋆,P
+i
+ π−i
+
+: S × [H] 7→∆(Ai).
+Solution concepts: equilibria.
+In MGs, strategic agents are modeled in a possibly competitive frame-
+work and focus on finding some sort of equilibrium strategies. Here, we consider three common types of
+equilibria — NE, CE, and CCE for MGs.
+• Nash equilibrium (NE). A product policy π = π1 × · · · × πn ∈∆(A1) × ∆(A2) × · · · × ∆(An) is said to
+be a (mixed-strategy Markov) NE if
+for all (s, i) ∈S × [n] : V π,P
+i,1 (s) = V ⋆,π−i,P
+i,1
+(s).
+(5)
+Namely, as long as all players act independently, no player can benefit by unilaterally diverging from
+its present policy, given the current policies of the opponents.
+5
+
+• Coarse correlated equilibrium (CCE). A joint policy π ∈∆(A) is said to be a CCE (Aumann, 1987;
+Moulin and Vial, 1978) if it holds that
+for all (s, i) ∈S × [n] : V π,P
+i,1 (s) ≥V ⋆,π−i,P
+i,1
+(s).
+(6)
+As a relaxation of NE, CCE also guarantees that no player has incentive to unilaterally deviated
+from the current policy. The key difference from the NE definition is that it permits policies to be
+interrelated among players.
+• Correlated equilibrium (CE). Before proceeding, for each 1 ≤i ≤n, we define a set of function
+fi := {fi,h,s}h∈[H],s∈S with fi,h,s : Ai 7→Ai, and denoting Fi as the set of possible fi. Armed with
+this, we can combine such fi with any joint policy π to reach a new policy fi⋄π, where fi⋄π will choose
+(a1, . . . , ai−1, fi(ai), ai+1, . . . , an) when policy π selects (a1, . . . , ai−1, ai, ai+1, . . . , an). With these in
+place, a joint policy π ∈∆(A) is said to be a CE (Aumann, 1987; Moulin and Vial, 1978) if it holds
+that
+for all (s, i) ∈S × [n] : V π,P
+i,1 (s) ≥max
+fi∈Fi V fi⋄π,P
+i,1
+(s).
+(7)
+CE is a also a relaxation of NE, which does not require the joint policy π to be a product policy.
+3
+Distributionally Robust Markov Games
+We consider a robust variant of standard MGs incorporating environmental uncertainties — termed distri-
+butionally robust Markov games (RMGs). RMGs represent a richer class than standard MGs, allowing for
+different prescribed environmental uncertainty sets as long as they meet a rectangularity condition, detailed
+below.
+3.1
+Distributionally robust Markov games
+A distributionally robust multi-agent general-sum Markov game (RMG) in the finite-horizon setting is defined
+by
+MGrob =
+
+S, {Ai}1≤i≤n, {Uσi
+ρ (P 0)}1≤i≤n, r, H
+	
+,
+where S, {Ai}, r, and H are identical to those of standard MGs (see Section 2). A notable deviation from
+standard MGs is that: for 1 ≤i ≤n, instead of assuming a fixed transition kernel, each i-th agent anticipates
+that the transition kernel is allowed to be chosen arbitrarily from a prescribed uncertainty set Uσi
+ρ (P 0). Here,
+the uncertainty set Uσi
+ρ (P 0) is constructed centered on a nominal kernel P 0 : S × A 7→∆(S), with its size
+and shape defined by a certain distance metric ρ and a radius parameter σi > 0. Note that, for generality,
+to accommodate individual robustness preferences, each agent is permitted to tailor its own uncertainty set
+Uσi
+ρ (P 0) by choosing different size σi and even the shape determined by different divergence function ρ. Here,
+we consider the same divergence function for all agents for simplicity. And we focus on the discussion of the
+transition kernel’s uncertainty in this work, it’s worth noting that similar uncertainty can also be considered
+for each agent’s reward function.
+Uncertainty set with agent-wise (s, a)-rectangularity.
+In the following, we specify the construction
+of the transition kernel uncertainty sets Uρ(P 0) = {Uσi
+ρ (P 0)}1≤i≤n for RMGs. Drawing inspiration from the
+rectangularity condition advocated in robust single-agent RL (Iyengar, 2005; Shi et al., 2023; Wiesemann
+et al., 2013; Zhou et al., 2021), we consider a multi-agent variant of rectangularity in RMGs — agent-wise
+(s, a)-rectangularity. This condition enables the robust counterpart of Bellman recursions and computational
+tractability of the problems. It allows for each agent to independently choose its own uncertainty set that
+can be decomposed into a product of subsets over each state-action pair.
+In particular, we assume all agents use the same distance metric ρ for their uncertainty sets.2 Each i-th
+agent can choose their own uncertainty level σi > 0 independently. With ρ and {σi}1≤i≤n in hand, the
+2Generally, each agent can decide their own (possibly different) distance metric for the uncertainty set. We consider the
+same ρ for simplicity.
+6
+
+uncertainty set Uρ(P 0) of all agents obeying agent-wise (s, a)-rectangularity is mathematically specified as:
+∀i ∈[n] : Uσi
+ρ (P 0) := ⊗Uσi(P 0
+h,s,a)
+with
+(8)
+Uσi
+ρ (P 0
+h,s,a) :=
+
+Ph,s,a ∈∆(S) : ρ
+ Ph,s,a, P 0
+h,s,a
+
+≤σi
+	
+,
+where ⊗represents the Cartesian product and we denote a vector of the transition kernel P or P 0 at any
+state-action pair (s, a) ∈S × A respectively as
+Ph,s,a := Ph(· | s, a) ∈R1×S,
+P 0
+h,s,a := P 0
+h(· | s, a) ∈R1×S.
+(9)
+Here, the ‘distance’ function ρ for each agent’s uncertainty set can be chosen from many candidate functions
+that measure the difference between two probability vectors, such as f-divergence (including total variation
+(TV), chi-square, and Kullback-Leibler (KL) divergence) (Yang et al., 2022), ℓq norm (Clavier et al., 2023),
+and Wasserstein distance (Xu et al., 2023). In this work, we focus on the uncertainty sets that are constructed
+using TV distance:
+ρTV
+ Ph,s,a, P 0
+h,s,a
+ := 1
+2
+Ph,s,a −P 0
+h,s,a
+
+1 .
+(10)
+Robust value functions.
+For a RMG, each agent aims to maximize its own worst-case performance over
+all possible transition kernels in its own (possibly different) prescribed uncertainty set Uσi
+ρ (P 0). For any
+joint policy π ∈∆(A), the worst-case performance of the i-th agent at time step h can be measured by the
+robust value function V π,σi
+i,h
+and the robust Q-function Qπ,σi
+i,h , defined as
+V π,σi
+i,h (s) :=
+inf
+P ∈U
+σi
+ρ (P 0) V π,P
+i,h (s)
+and
+Qπ,σi
+i,h (s, a) :=
+inf
+P ∈U
+σi
+ρ (P 0) Qπ,P
+i,h (s, a)
+(11)
+for all (i, h, s, a) ∈[n] × [H] × S × A.
+Similar to standard MGs, given a fixed joint policy π−i for all
+agents but the i-th agent, by optimizing over π′
+i : S × [H] →∆(Ai) that is executed independently from
+π−i, we can further define the maximum of the robust value function for each agent as follows: for all
+(i, h, s) ∈[n] × [H] × S :
+V ⋆,π−i,σi
+i,h
+(s) :=
+max
+π′
+i:S×[H]7→∆(Ai) V π′
+i×π−i,σi
+i,h
+(s)
+=
+max
+π′
+i:S×[H]7→∆(Ai)
+inf
+P ∈U
+σi
+ρ (P 0) V π′
+i×π−i,P
+i,h
+(s).
+(12)
+Similar to standard MGs, it can be easily verified that there exists at least one policy (Blanchet et al., 2024,
+Section A.2), denoted by π⋆,σi
+i
+ π−i
+
+: S × [H] →∆(Ai) and referred to as the robust best-response policy for
+the i-th agent, that can simultaneously attain V ⋆,π−i,σi
+i,h
+(s) for all s ∈S and h ∈[H].
+Robust Bellman equations.
+Analogous to standard MGs, RMGs feature a robust counterpart of the
+Bellman equation — robust Bellman equation. In particular, the robust value functions {V π,σi
+i,h } of RMGs
+associated with any joint policy π obey: for all (i, h, s) ∈[n] × [H] × S,
+V π,σi
+i,h (s) = Ea∼πh(s)
+"
+ri,h(s, a) +
+inf
+P ∈U
+σi
+ρ (P 0
+h,s,a) PV π,σi
+i,h+1
+#
+.
+(13)
+We emphasize that the above robust Bellman equation is fundamentally linked to the agent-wise (s, a)-
+rectangularity condition (cf. (8)) imposed on the designed uncertainty set. Specifically, this condition decou-
+ples the dependency of uncertainty subsets across different agents, each state-action pair, and different time
+steps, leading to the Bellman recursive equation.
+7
+
+3.2
+Solution concepts for robust Markov games
+For RMGs, the games are no longer n-agent games, but become 2n-agent games between agents and n
+natural adversaries to choose the worst-case transitions. Given the possibly conflicting objectives, finding an
+equilibrium becomes a core goal for RMGs. Below, we introduce three robust variants of widely considered
+standard solution concepts — robust NE, robust CE, and robust CCE for any RMG.
+• Robust NE. A product policy π = π1 × π2 × · · · × πn is said to be a robust NE if (cf. (5))
+∀(i, s) ∈[n] × S :
+V π,σi
+i,1
+(s) = V ⋆,π−i,σi
+i,1
+(s).
+(14)
+Robust NE indicates that given the current strategy of the opponents π−i, when each agent considers
+the worst-case performance over its own uncertainty set Uσi
+ρ (P 0), no player can benefit by unilaterally
+diverging from its present strategy.
+• Robust CCE. A (possibly correlated) joint policy π ∈S × [H] 7→∆(A) is said to be a robust CCE if it
+holds that (cf. (6))
+∀(i, s) ∈[n] × S : V π,σi
+i,1
+(s) ≥V ⋆,π−i,σi
+i,1
+(s).
+(15)
+As a relaxation of robust NE, robust CCE also guarantees that no player has incentive to unilaterally
+deviate from the current policy, where the policies are not necessarily independent among players.
+• Robust CE. A joint policy π ∈∆(A) is said to be a robust CE if it holds that (cf. (7))
+∀(s, i) ∈S × [n] : V π,σi
+i,1
+(s) ≥max
+fi∈Fi V fi⋄π,σi
+i,1
+(s).
+(16)
+It is known that computing exact robust equilibria is challenging and may not be necessary in practice.
+As a result, people usually search for approximate equilibria. Toward this, as a slightly relaxation from (14),
+a product policy π ∈∆(A1) × · · · × ∆(An) is said to be an ε-robust NE if
+gapNE(π) :=
+max
+s∈S,1≤i≤n
+
+V ⋆,π−i,σi
+i,1
+(s) −V π,σi
+i,1
+(s)
+	
+≤ε.
+(17)
+Similarly, relaxing (15) or (16), a (possibly correlated) joint policy π ∈∆(A) is said to be an ε-robust
+CCE if
+gapCCE(π) :=
+max
+s∈S,1≤i≤n
+
+V ⋆,π−i,σi
+i,1
+(s) −V π,σi
+i,1
+(s)
+	
+≤ε,
+(18)
+or an ε-robust CE if
+gapCE(π) :=
+max
+s∈S,1≤i≤n
+
+max
+fi∈Fi V fi⋄π,σi
+i,1
+(s) −V π,σi
+i,1
+(s)
+
+≤ε.
+(19)
+The existence of robust NE has been verified (Blanchet et al., 2023) under general divergence functions
+for the uncertainty set. Indeed, the robust equilibria defined here can be reduced to the standard equilibria
+associated with the robust variant of standard payoffs (robust Q-functions), which have been verified obeying
+{NE} ⊆{CE} ⊆{CCE} (Roughgarden, 2010). Therefore, the existence of robust NE directly indicates the
+existence of robust CE and robust CCE.
+3.3
+Non-adaptive sampling from a generative model
+Given the formulation of distributionally robust Markov games, a question of prime interest is how to learn
+the robust equilibria without knowing the model exactly in a sample-efficient manner.
+8
+
+Sampling mechanism: a generative model.
+As a widely used sampling mechanism in standard MARL
+(Li et al., 2022a; Zhang et al., 2020a), in this paper, we assume access to a generative model (simulator)
+(Kearns and Singh, 1999) and collect samples in a non-adaptive manner. Specifically, for each tuple (s, a, h) ∈
+S × A × [H], we collect N independent samples generated based on the true nominal transition kernel P 0:
+si,h,s,a
+i.i.d
+∼P 0
+h(· | s, a),
+i = 1, 2, . . . , N.
+(20)
+The total number of samples is thus Nall = NS Qn
+i=1 Ai.
+Armed with the collected dataset from the nominal environment, the goal is to learn a solution among
+ε-robust-{NE, CCE, CE} for the game MGrob — w.r.t. some prescribed uncertainty set U(P 0) around the
+nominal kernel — using as few samples as possible.
+4
+Algorithm and Theory
+In this and the following sections, we focus on the class of robust MGs with uncertainty set measured by TV
+distance, namely, the uncertainty set Uσi
+ρ (·) = Uσi
+ρTV(·) w.r.t the TV distance ρ = ρTV defined in (10). For
+convenience, we abbreviate Uσi(·) := Uσi
+ρTV(·).
+4.1
+Distributionally robust Nash value iteration
+We develop a model-based approach tailored to solve robust Markov games, which involves two separate
+steps. First, we construct an empirical nominal transition kernel bP 0 using the collected samples from the
+generative model. Then armed with bP 0, we propose to apply distributionally robust Nash value iteration
+(DR-NVI) to compute a robust equilibrium solution for all agents.
+Nominal model estimation.
+Based on the empirical frequency of state transitions, we estimate the
+empirical nominal transition kernel bP 0 = { bP 0
+h}h∈[H], where the entries of bP 0
+h ∈RS Qn
+i=1 Ai×S at each time
+step h is constructed as follows: for all (h, s, a) ∈S × A,
+bP 0
+h(s′ | s, a) := 1
+N
+N
+X
+i=1
+1
+
+si,h,s,a = s′	
+.
+(21)
+Distributionally robust Nash value iteration (DR-NVI).
+With the empirical nominal kernel bP 0 in
+hand, to compute a robust equilibrium solution, we propose DR-NVI by adapting a model-based algorithm
+for standard Markov games — Nash value iteration (Liu et al., 2021), summarized in Algorithm 1.
+The process starts from the last time step h = H and proceeds with h = H −1, H −2, · · · , 1.
+At
+each time step h ∈[H], the robust Q-function can be estimated as bQi,h (see line 5) as: for all (i, h, s, a) ∈
+[n] × [H] × S × A,
+bQi,h(s, a) = ri,h(s, a) +
+inf
+P∈Uσi( b
+P 0
+h,s,a)
+P bVi,h+1.
+(22)
+Directly solving (22) presents significant computational challenges due to the need to optimize over an S-
+dimensional probability simplex, a task whose complexity increases exponentially with the state space size
+S. Fortunately, leveraging strong duality enables us to solve (22) equivalently via its dual problem (Iyengar,
+2005):
+bQi,h(s, a) = ri,h(s, a) +
+max
+α∈[mins bVi,h+1(s),maxs bVi,h+1(s)]
+n
+bP 0
+h,s,a
+h
+bVi,h+1
+i
+α −σi
+
+α −min
+s′
+h
+bVi,h+1
+i
+α (s′)
+ o
+,
+(23)
+where [V ]α denotes the clipped version of any vector V ∈RS determined by some level α ≥0, namely,
+[V ]α(s) :=
+(
+α,
+if V (s) > α,
+V (s),
+otherwise.
+(24)
+9
+
+Algorithm 1: Distributionally robust equilibrium value iteration (DR-NVI).
+1: input: empirical nominal transition kernel bP 0; reward function r; uncertainty levels {σi}i∈[n].
+2: initialization: bQi,h(s, a) = 0, bVi,h(s) = 0 for all (s, a, h) ∈S × A × [H + 1].
+3: for h = H, H −1, · · · , 1 do
+4:
+for i = 1, 2, · · · , n and s ∈S, a ∈A do
+5:
+Set bQi,h(s, a) according to (22).
+6:
+end for
+7:
+for s ∈S do
+8:
+Get πh(s) = {πi,h(s)}1≤i≤n ←Equilibrium
+
+{ bQi,h(s, ·)}1≤i≤n
+
+.
+9:
+Set bVi,h(s) = Ea∼πh[ bQi,h(s, a)].
+10:
+end for
+11: end for
+12: output: { bQi,h}, {bVi,h}, and bπ = {πh}1≤h≤H.
+With robust Q-function estimates { bQi,h}i∈[n] available for all agents at time step h, the sub-routine in line 8
+Equilibrium ∈Compute−{Nash, CE, CCE} represents the algorithm for computing the corresponding robust-
+{NE, CE, CCE}, respectively. Note that for the studied RMGs, a robust-NE/CE/CCE is equivalent to a
+corresponding NE/CE/CCE associated with the payoff matrices { bQi,h}i∈[n]. On the computing and learning
+front of the sub-routine Equilibrium(·), for a general standard MG, the NE has been proved PPAD-hard
+to compute (Daskalakis, 2013), even for two-player matrix games (except for two-player zero-sum games).
+Notably, even when the non-robust standard MG associated with the nominal transition kernel is a two-player
+zero-sum game, the corresponding robust MG is generally not because agents may select different worst-case
+transition kernels. Conversely, computing CE/CCE is computationally tractable within polynomial time
+through linear programming (Liu et al., 2021).
+4.2
+Sample complexity: upper and lower bounds
+We now present our main theoretical results regarding the sample complexity of learning robust equilibria
+of robust Markov games, including an upper bound of DR-NVI (Algorithm 1) and an information-theoretic
+lower bound. First, we introduce the finite-sample guarantee for DR-NVI, which is proven in Appendix B.
+Theorem 1 (Upper bound for DR-NVI). Recall the TV uncertainty set Uσi(·) = Uσi
+ρTV(·) defined in (9).
+Consider any δ ∈(0, 1) and any RMG MGrob =
+
+S, {Ai}1≤i≤n, {Uσi(P 0)}1≤i≤n, r, H
+	
+with σi ∈(0, 1] for
+all i ∈[n]. For any ε ≤
+q
+min
+
+H,
+1
+min1≤i≤n σi
+	
+, Algorithm 1 can output any robust equilibrium among ε-
+robust {NE, CCE, CE} by executing different subroutine Equilibrium ∈Compute−{Nash, CE, CCE} in line 8.
+Namely, for some constant C1, we can achieve any of the following results
+gapNE(bπ) ≤ε,
+gapCCE(bπ) ≤ε,
+gapCE(bπ) ≤ε
+with probability at least 1 −δ, as long as the total number of samples obeys
+Nall ≥
+C1SH3 Q
+1≤i≤n Ai
+ε2
+min
+n
+H,
+1
+min1≤i≤n σi
+o
+log
+18S Qn
+i=1 AinHN
+δ
+
+.
+Before delving into the implications of Theorem 1, we provide a lower bound for solving robust Markov
+games. The proof is provided in Appendix C.
+Theorem 2 (Lower bound for solving robust MGs). Consider any tuple
+
+S, {Ai}1≤i≤n, {σi}1≤i≤n, H
+	
+obey-
+ing σi ∈(0, 1 −c0] with 0 < c0 ≤1
+4 being any small enough positive constant, and H > 16 log 2. Let
+ε ≤
+(
+c2
+H ,
+if σ1 ≤
+c2
+2H ,
+1
+otherwise
+(25)
+10
+
+σ1 for agent 1
+Sample complexity
+1
+𝐻
+𝐻!
+σ2 for agent 2
+1
+𝐻"
+1
+𝐻
+Figure 2: Illustration of the sample complexity of DR-NVI with respect to the uncertainty levels σ1 and σ2
+for two-player RMGs, where we only highlight the dependency with respect to the horizon length H.
+for any c2 ≤1
+4. We can construct a set of RMGs— denoted as M = {MGi}i∈[I], such that for any dataset
+with in total Nall independent samples over all state-action pairs generated from the nominal environment
+(for any game MGi ∈M): one has
+inf
+bπ
+max
+MGi∈M
+
+PMGi
+ gapNE(bπ) > ε
+	
+≥1
+8,
+inf
+bπ
+max
+MGi∈M
+
+PMGi
+ gapCCE(bπ) > ε
+	
+≥1
+8,
+(26)
+inf
+bπ
+max
+MGi∈M
+
+PMGi
+ gapCE(bπ) > ε
+	
+≥1
+8,
+provided that
+Nall ≤C2SH3 max1≤i≤n Ai
+ε2
+min
+n
+H,
+1
+min1≤i≤n σi
+o
+.
+(27)
+Here, C2 is some small enough constant, the infimum is taken over all estimators bπ, and PMGi denotes the
+probability when the game is MGi for all MGi ∈M.
+We now highlight several key implications and comparisons that follow from the above results.
+Near-optimal sample complexity for RMGs.
+Theorem 1 shows that the proposed model-based algo-
+rithm DR-NVI can achieve any robust solution among ε-robust {NE, CCE, CE} when the total number of
+samples exceeds the order of
+eO
+SH3 Q
+1≤i≤n Ai
+ε2
+min
+n
+H,
+1
+min1≤i≤n σi
+o
+.
+(28)
+Combining this with the lower bound in (27) of Theorem 2 confirms that the sample complexity of DR-NVI
+is optimal with respect to many salient factors, including ε, S, H, {σi}1≤i≤n. To the best of our knowledge,
+this is the first near-optimal sample complexity upper bound for solving robust MGs.
+As illustrated in
+Figure 2, it uncovers that the sample requirement of DR-NVI depends on all agents’ uncertainty levels {σi}
+and is inversely proportional to mini∈[n] σi when mini∈[n] σi ≳1/H. Furthermore, the sample complexity
+of DR-NVI (Theorem 1) significantly improve upon the prior art eO
+ S4 (Qn
+i=1 Ai)3 H4/ε2
+(Blanchet et al.,
+2023).
+11
+
+Minimax-optimal sample complexity for single-agent RMDP.
+We observe that when the size of
+the action space reduces to one except one agent, i.e. A2 = A3 = · · · = An = 1, the robust MG simplifies to
+a single-agent robust Markov decision process (known as RMDP) (Iyengar, 2005). Consequently, the upper
+bound of (cf. (28)) indicates that a simplified DR-NVI learns an ε-optimal policy for the RMDP associated
+with the first agent as soon as the sample complexity is on the order of
+eO
+SA1H3
+ε2
+min
+n
+H, 1
+σ1
+o
+,
+(29)
+which is minimax-optimal in view of the lower bound (cf. (27) of Theorem 2). To the best of our knowledge,
+these findings introduce the first minimax-optimal sample complexity for RMDPs in the finite-horizon setting,
+complementary to the infinite-horizon result established in Shi et al. (2023).
+Benchmarking with standard MGs under non-adaptive sampling.
+Note that DR-NVI is based on
+a non-adaptive sampling mechanism from the generative model. Focusing on the same sampling mechanism,
+we compare the sample complexity of DR-NVI for solving robust MGs with the state-of-the-art approach
+(model-based NVI) (Liu et al., 2021; Zhang et al., 2020b) for solving standard MGs as below3:
+Standard MGs (by NVI):
+Robust MGs (by our DR-NVI in Theorem 1):
+eO
+S Qn
+i=1 AiH4
+ε2
+
+
+
+
+
+
+eO
+
+S Qn
+i=1 AiH4
+ε2
+
+if 0 < min
+1≤i≤n σi ≲1
+H
+eO
+
+S Qn
+i=1 AiH3
+ε2 min1≤i≤n σi
+
+if
+1
+H ≲min
+1≤i≤n σi < 1
+.
+(30)
+It shows that DR-NVI achieves enhanced robustness against model uncertainty in comparison to the prior art
+NVI for standard MGs, using the same or even sometimes fewer number of samples (min1≤i≤n σi ≳1/H).
+In particular, as illustrated in Figure 2,
+• When 0 < min1≤i≤n σi ≲1
+H : the sample complexity dependency of DR-NVI on H matches that of NVI
+in the order of H4.
+• When min1≤i≤n σi ≳1
+H : DR-NVI’s sample complexity decreases towards H3 as min1≤i≤n σi increases,
+which improves upon the sample complexity of NVI for standard MGs by a factor of H min1≤i≤n σi
+that goes to H when min1≤i≤n σi = O(1).
+Technical challenges and insights.
+Compared to robust single-agent RL, robust MARL introduces
+complex statistical dependencies due to game-theoretical interactions between multiple agents and their
+natural adversaries to choose the worst-case transitions for each agent. Additionally, robust MGs are more
+intricate than standard MGs since the agents’ payoffs become highly nonlinear without closed form, in
+contrast to being linear in standard MGs. To mitigate these challenges, we carefully control the statistical
+errors and exploit technical tools from distributionally robust optimization to achieve a near-optimal upper
+bound. Additionally, note that the established lower bound (Theorem 2) is the first information-theoretic
+lower bound for solving robust MGs, which is achieved by creating a new class of hard instances for the
+tightness with respect to H and uncertainty levels {σi}1≤i≤n.
+5
+Related Works
+In this section, we discuss a non-exhaustive set of related works, limiting our discussions primarily to provable
+RL algorithms in the tabular setting, which are most related to this paper.
+3Zhang et al. (2020b) considered a two-player zero-sum standard MGs in the infinite-horizon setting.
+Liu et al. (2021)
+considered both two-player zero-sum and multi-player general sum standard MGs in online setting. We show the best possible
+outcomes after transferring into our settings
+12
+
+Finite-sample studies of standard Markov games.
+Multi-agent reinforcement learning (MARL), orig-
+inated from the seminal work (Littman, 1994), has been widely studied under the framework of standard
+Markov games (Shapley, 1953); see Busoniu et al. (2008); Oroojlooy and Hajinezhad (2023); Zhang et al.
+(2021b) for detailed reviews. There has been no shortage of provably convergent MARL algorithms with
+asymptotic guarantees (Littman et al., 2001; Littman and Szepesvári, 1996).
+A line of recent efforts have concentrated on understanding and developing algorithms for standard
+MGs with non-asymptotic guarantees (finite-sample analysis). Within this field, Nash equilibrium (NE)
+is arguably one of the most compelling solution concepts for standard MGs. Research on calculating NE
+primarily focuses on an important basic class: standard two-player zero-sum MGs (Bai and Jin, 2020; Chen
+et al., 2022; Cui and Du, 2022a,b; Dou et al., 2022; Jia et al., 2019; Mao and Başar, 2022; Tian et al., 2021;
+Wei et al., 2017, 2021; Yan et al., 2022b; Yang and Ma, 2022; Zhong et al., 2022). This focus arises because
+computing NEs in scenarios beyond the standard two-player zero-sum MGs is generally computationally
+intractable (i.e., PPAD-complete) (Daskalakis, 2013; Daskalakis et al., 2009).
+For discounted infinite-horizon two-player zero-sum Markov games, the state-of-the-art sample complexity
+for learning NE (Zhang et al., 2020e) remains suboptimal due to the "curse of multiple agents" issue (Zhang
+et al., 2020e). In contrast, for episodic finite-horizon two-player zero-sum Markov games standard MGs, Bai
+et al. (2020); Jin et al. (2021a); Li et al. (2022a) have overcome this curse, progressively achieving minimax-
+optimal sample complexity in the order of O(S max1≤i≤n AiH4/ε2). Besides NE, Daskalakis et al. (2022);
+Jin et al. (2021a); Li et al. (2022a); Liu et al. (2021); Mao and Başar (2022); Song et al. (2021) have extended
+this achievement to other computationally tractable solution concepts (e.g., CE/CCE) in general-sum multi-
+player MGs. Focusing on the same non-adaptive sampling mechanism considered in this work, the sample
+complexity for learning NE/CE/CCE in standard MGs with the state-of-the-art approaches (Liu et al., 2021;
+Zhang et al., 2020e) still suffers from the curse of multiple agents, calculated as O(S Q
+1≤i≤n AiH4/ε2).
+Robustness in MARL.
+Despite significant advances in standard MARL, current algorithms may fail
+dramatically due to perturbations or uncertainties in game components, resulting in significantly deviated
+equilibrium, as illustrated in Figure 1. A growing body of research is now addressing the robustness of
+MARL algorithms against uncertainties in various components of Markov games, such as state (Han et al.,
+2022; He et al., 2023; Zhang et al., 2023c; Zhou and Liu, 2023), environment (reward and transition kernel),
+the type of agents (Zhang et al., 2021a), or other agents’ policies (Kannan et al., 2023; Li et al., 2019); see
+Vial et al. (2022) for a recent review.
+This work considers the robustness against environmental uncertainty, adopting distributionally robust
+optimization (DRO) that has primarily been investigated in the context of supervised learning (Bertsimas
+et al., 2018; Blanchet and Murthy, 2019; Duchi and Namkoong, 2018; Gao, 2020; Rahimian and Mehrotra,
+2019). Applying DRO for single-agent RL (Iyengar, 2005) to handle model uncertainty has garnered sig-
+nificant attention. When turning to MARL, the problem is conceptualized as robust Markov games within
+the DRO framework, an area that remains relatively underexplored with only a few provable algorithms
+developed (Blanchet et al., 2023; Kardeş et al., 2011; Ma et al., 2023; Zhang et al., 2020c). Notably, Kardeş
+et al. (2011) verifies the existence of Nash equilibrium for robust Markov games under mild assumptions;
+Zhang et al. (2020c) derives asymptotic convergence for a Q-learning type algorithm under certain conditions;
+Blanchet et al. (2023); Ma et al. (2023) are the most related works that provide algorithms with finite-sample
+guarantees for various types of uncertainty set. Especially, Ma et al. (2023) considers a restricted uncertainty
+level that could fail to bring robustness to MARL in certain scenarios. In particular, as the required accuracy
+level (ε goes to zero or the robust MGs has a small minimal positive transition probabilities (pmin →0),
+the required uncertainty level becomes quite restrictive (obeying σi ≤max{
+ε
+SH2 , pmin
+H } for all i ∈[n]) —
+potentially reducing robust MARL to standard MARL and failing to maintain desired robustness.
+Single-agent distributionally robust RL (robust MDPs).
+For single-agent RL, considering robust-
+ness to model uncertainty using DRO framework — i.e., distributionally robust dynamic programming and
+robust MDPs — has gained significant attention across both theoretical and practical domains (Badrinath
+and Kalathil, 2021; Derman et al., 2018; Derman and Mannor, 2020; Goyal and Grand-Clement, 2022; Ho
+et al., 2018, 2021; Iyengar, 2005; Kaufman and Schaefer, 2013; Mankowitz et al., 2019; Roy et al., 2017;
+Smirnova et al., 2019; Tamar et al., 2014; Wolff et al., 2012; Xu and Mannor, 2012). Recently, a substantial
+body of work has been dedicated to exploring the finite-sample performance of provable robust single-agent
+13
+
+RL algorithms, where different sampling mechanisms, diverse divergence function of the uncertainty set, and
+other related problems/issues has been investigated a lot (Badrinath and Kalathil, 2021; Blanchet et al.,
+2023; Clavier et al., 2023; Dong et al., 2022; Kumar et al., 2023; Li and Lan, 2023; Li et al., 2022b; Liang
+et al., 2023; Liu et al., 2022; Ma et al., 2022; Panaganti and Kalathil, 2022; Panaganti et al., 2022; Ramesh
+et al., 2023; Shi and Chi, 2022; Shi et al., 2023; Wang et al., 2024, 2023a,b,c; Wang and Zou, 2021; Xu et al.,
+2023; Yang et al., 2023, 2022; Zhang et al., 2023a; Zhou et al., 2021).
+Among the studies of robust MDPs, those particularly relevant to this paper employ the uncertainty set
+using total variation (TV) distance in a tabular setting (Dong et al., 2022; Liu and Xu, 2024; Panaganti and
+Kalathil, 2022; Xu et al., 2023; Yang et al., 2022). It has been established that solving robust MDPs requires
+no more samples than solving standard MDPs in terms of the sample requirement (Shi et al., 2023) with
+a generative model. However, robust MARL involves additional complexities compared to robust single-
+agent RL. It remains an open question whether the findings from robust MDPs can be generalized to robust
+MARL, which includes more technical challenges and strategic interactions. Our work takes a step towards
+the question, confirming that similar phenomena apply in robust MARL, albeit with increased difficulties
+due to the multi-agent dynamics.
+RL with a generative model.
+Access to a generative model (or simulator) serves as a fundamental and
+idealistic sampling protocol that has been widely used to study finite-sample guarantees for diverse types
+of RL algorithms, such as various model-based, model-free, and policy-based algorithms (Agarwal et al.,
+2020; Azar et al., 2013; Beck and Srikant, 2012; Even-Dar and Mansour, 2003; Kakade, 2003; Kearns et al.,
+2002; Khamaru et al., 2020; Li et al., 2023, 2020; Pananjady and Wainwright, 2020; Sidford et al., 2018;
+Wainwright, 2019; Woo et al., 2023; Yang and Wang, 2019; Zanette et al., 2019). This work follows this
+fundamental protocol with a non-adaptive sampling mechanism to understand and design algorithms for
+robust Markov games. Besides generative model, there also exist other sampling protocols that involve more
+realistic scenarios such as online exploration setting (Dong et al., 2019; Jafarnia-Jahromi et al., 2020; Li
+et al., 2021; Liu and Su, 2020; Yang et al., 2021; Zhang et al., 2023b, 2020d,e) or offline setting (Jin et al.,
+2021b; Li et al., 2024; Rashidinejad et al., 2021; Shi et al., 2022; Uehara and Sun, 2021; Woo et al., 2024;
+Xie et al., 2021; Yan et al., 2022a; Yin and Wang, 2021), which are interesting directions in the future.
+6
+Conclusion
+Providing robustness guarantees is a pressing need for RL, one that is especially crucial in multi-agent
+RL (MARL) since game-theoretical interactions between agents bring in extra instability. We address the
+vulnerability of MARL to environmental uncertainty by focusing on robust Markov games (RMGs) that
+consider robustness against worst-case distribution shifts of the shared environment. We design a provable
+sample-efficient model-based algorithm (DR-NVI) with a finite-sample complexity guarantee. In addition, we
+provide a lower bound for solving RMGs, which highlights that DR-NVI has near-optimal sample complexity
+with respect to the size of the state space, the target accuracy, and the horizon length. To the best of our
+knowledge, this is the first algorithm with near-optimal sample complexity for RMGs. Our work opens up
+interesting future directions for robust MARL including but not limited to taming the curse of multi-agents
+and studying other divergence functions for the uncertainty set.
+Acknowledgement
+The work of L. Shi is supported in part by the Resnick Institute and Computing, Data, and Society Post-
+doctoral Fellowship at California Institute of Technology. The work of Y. Chi is supported in part by the
+grants ONR N00014-19-1-2404 and NSF CCF-2106778. The work of A. Wierman is supported in part from
+the NSF through CNS-2146814, CPS-2136197, CNS-2106403, NGSDI-2105648. The authors thank Shicong
+Cen, Gen Li, and Yaru Niu for valuable discussions.
+14
+
+References
+Achiam, J., Adler, S., Agarwal, S., Ahmad, L., Akkaya, I., Aleman, F. L., Almeida, D., Altenschmidt, J.,
+Altman, S., Anadkat, S., et al. (2023). Gpt-4 technical report. arXiv preprint arXiv:2303.08774.
+Agarwal, A., Kakade, S., and Yang, L. F. (2020). Model-based reinforcement learning with a generative
+model is minimax optimal. In Conference on Learning Theory, pages 67–83. PMLR.
+Aumann, R. J. (1987).
+Correlated equilibrium as an expression of Bayesian rationality.
+Econometrica:
+Journal of the Econometric Society, pages 1–18.
+Azar, M. G., Munos, R., and Kappen, H. J. (2013). Minimax PAC bounds on the sample complexity of
+reinforcement learning with a generative model. Machine learning, 91(3):325–349.
+Badrinath, K. P. and Kalathil, D. (2021). Robust reinforcement learning using least squares policy iteration
+with provable performance guarantees. In International Conference on Machine Learning, pages 511–520.
+PMLR.
+Bai, Y. and Jin, C. (2020). Provable self-play algorithms for competitive reinforcement learning. In Inter-
+national Conference on Machine Learning, pages 551–560. PMLR.
+Bai, Y., Jin, C., and Yu, T. (2020). Near-optimal reinforcement learning with self-play. Advances in neural
+information processing systems, 33:2159–2170.
+Balaji, B., Mallya, S., Genc, S., Gupta, S., Dirac, L., Khare, V., Roy, G., Sun, T., Tao, Y., Townsend,
+B., et al. (2019). Deepracer: Educational autonomous racing platform for experimentation with sim2real
+reinforcement learning. arXiv preprint arXiv:1911.01562.
+Beck, C. L. and Srikant, R. (2012). Error bounds for constant step-size Q-learning. Systems & control letters,
+61(12):1203–1208.
+Bertsimas, D., Gupta, V., and Kallus, N. (2018). Data-driven robust optimization. Mathematical Program-
+ming, 167(2):235–292.
+Blanchet, J., Lu, M., Zhang, T., and Zhong, H. (2023). Double pessimism is provably efficient for distri-
+butionally robust offline reinforcement learning: Generic algorithm and robust partial coverage. arXiv
+preprint arXiv:2305.09659.
+Blanchet, J., Lu, M., Zhang, T., and Zhong, H. (2024). Double pessimism is provably efficient for distribu-
+tionally robust offline reinforcement learning: Generic algorithm and robust partial coverage. Advances in
+Neural Information Processing Systems, 36.
+Blanchet, J. and Murthy, K. (2019). Quantifying distributional model risk via optimal transport. Mathe-
+matics of Operations Research, 44(2):565–600.
+Busoniu, L., Babuska, R., and De Schutter, B. (2008). A comprehensive survey of multiagent reinforcement
+learning. IEEE Transactions on Systems, Man, and Cybernetics, Part C (Applications and Reviews),
+38(2):156–172.
+Chen, Z., Zhou, D., and Gu, Q. (2022). Almost optimal algorithms for two-player zero-sum linear mixture
+Markov games. In International Conference on Algorithmic Learning Theory, pages 227–261. PMLR.
+Clavier, P., Pennec, E. L., and Geist, M. (2023).
+Towards minimax optimality of model-based robust
+reinforcement learning. arXiv preprint arXiv:2302.05372.
+Cui, Q. and Du, S. S. (2022a). Provably efficient offline multi-agent reinforcement learning via strategy-wise
+bonus. arXiv preprint arXiv:2206.00159.
+Cui, Q. and Du, S. S. (2022b). When is offline two-player zero-sum Markov game solvable? arXiv preprint
+arXiv:2201.03522.
+15
+
+Daskalakis, C. (2013).
+On the complexity of approximating a nash equilibrium.
+ACM Transactions on
+Algorithms (TALG), 9(3):1–35.
+Daskalakis, C., Goldberg, P. W., and Papadimitriou, C. H. (2009). The complexity of computing a Nash
+equilibrium. SIAM Journal on Computing, 39(1):195–259.
+Daskalakis, C., Golowich, N., and Zhang, K. (2022). The complexity of markov equilibrium in stochastic
+games. arXiv preprint arXiv:2204.03991.
+Derman, E., Mankowitz, D. J., Mann, T. A., and Mannor, S. (2018). Soft-robust actor-critic policy-gradient.
+arXiv preprint arXiv:1803.04848.
+Derman, E. and Mannor, S. (2020). Distributional robustness and regularization in reinforcement learning.
+arXiv preprint arXiv:2003.02894.
+Dong, J., Li, J., Wang, B., and Zhang, J. (2022). Online policy optimization for robust MDP. arXiv preprint
+arXiv:2209.13841.
+Dong, K., Wang, Y., Chen, X., and Wang, L. (2019). Q-learning with UCB exploration is sample efficient
+for infinite-horizon MDP. arXiv preprint arXiv:1901.09311.
+Dou, Z., Yang, Z., Wang, Z., and Du, S. (2022). Gap-dependent bounds for two-player markov games. In
+International Conference on Artificial Intelligence and Statistics, pages 432–455.
+Duchi, J. and Namkoong, H. (2018). Learning models with uniform performance via distributionally robust
+optimization. arXiv preprint arXiv:1810.08750.
+Duchi, J. C. (2018). Introductory lectures on stochastic optimization. The mathematics of data, 25:99–186.
+Even-Dar, E. and Mansour, Y. (2003). Learning rates for Q-learning. Journal of machine learning Research,
+5(Dec):1–25.
+Fang, F., Stone, P., and Tambe, M. (2015). When security games go green: Designing defender strategies to
+prevent poaching and illegal fishing. In IJCAI, pages 2589–2595.
+Filar, J. and Vrieze, K. (2012). Competitive Markov decision processes. Springer Science & Business Media.
+Gao, R. (2020). Finite-sample guarantees for wasserstein distributionally robust optimization: Breaking the
+curse of dimensionality. arXiv preprint arXiv:2009.04382.
+Gilbert, E. N. (1952). A comparison of signalling alphabets. The Bell system technical journal, 31(3):504–522.
+Goyal, V. and Grand-Clement, J. (2022). Robust markov decision processes: Beyond rectangularity. Math-
+ematics of Operations Research.
+Han, S., Su, S., He, S., Han, S., Yang, H., and Miao, F. (2022). What is the solution for state adversarial
+multi-agent reinforcement learning? arXiv preprint arXiv:2212.02705.
+He, S., Han, S., Su, S., Han, S., Zou, S., and Miao, F. (2023). Robust multi-agent reinforcement learning
+with state uncertainty. Transactions on Machine Learning Research.
+Ho, C. P., Petrik, M., and Wiesemann, W. (2018). Fast bellman updates for robust MDPs. In International
+Conference on Machine Learning, pages 1979–1988. PMLR.
+Ho, C. P., Petrik, M., and Wiesemann, W. (2021). Partial policy iteration for l1-robust markov decision
+processes. Journal of Machine Learning Research, 22(275):1–46.
+Iyengar, G. N. (2005). Robust dynamic programming. Mathematics of Operations Research, 30(2):257–280.
+Jafarnia-Jahromi, M., Wei, C.-Y., Jain, R., and Luo, H. (2020). A model-free learning algorithm for infinite-
+horizon average-reward MDPs with near-optimal regret. arXiv preprint arXiv:2006.04354.
+16
+
+Jia, Z., Yang, L. F., and Wang, M. (2019). Feature-based Q-learning for two-player stochastic games. arXiv
+preprint arXiv:1906.00423.
+Jin, C., Liu, Q., Wang, Y., and Yu, T. (2021a). V-learning–a simple, efficient, decentralized algorithm for
+multiagent RL. arXiv preprint arXiv:2110.14555.
+Jin, Y., Yang, Z., and Wang, Z. (2021b). Is pessimism provably efficient for offline RL? In International
+Conference on Machine Learning, pages 5084–5096.
+Kakade, S. (2003). On the sample complexity of reinforcement learning. PhD thesis, University of London.
+Kannan, S. S., Venkatesh, V. L., and Min, B.-C. (2023). Smart-llm: Smart multi-agent robot task planning
+using large language models. arXiv preprint arXiv:2309.10062.
+Kardeş, E., Ordóñez, F., and Hall, R. W. (2011). Discounted robust stochastic games and an application to
+queueing control. Operations research, 59(2):365–382.
+Kaufman, D. L. and Schaefer, A. J. (2013).
+Robust modified policy iteration.
+INFORMS Journal on
+Computing, 25(3):396–410.
+Kearns, M., Mansour, Y., and Ng, A. Y. (2002). A sparse sampling algorithm for near-optimal planning in
+large Markov decision processes. Machine learning, 49(2-3):193–208.
+Kearns, M. J. and Singh, S. P. (1999). Finite-sample convergence rates for Q-learning and indirect algorithms.
+In Advances in neural information processing systems, pages 996–1002.
+Khamaru, K., Pananjady, A., Ruan, F., Wainwright, M. J., and Jordan, M. I. (2020). Is temporal difference
+learning optimal? an instance-dependent analysis. arXiv preprint arXiv:2003.07337.
+Kumar, N., Derman, E., Geist, M., Levy, K., and Mannor, S. (2023). Policy gradient for s-rectangular robust
+markov decision processes. arXiv preprint arXiv:2301.13589.
+Lanctot, M., Lockhart, E., Lespiau, J.-B., Zambaldi, V., Upadhyay, S., Pérolat, J., Srinivasan, S., Timbers,
+F., Tuyls, K., Omidshafiei, S., et al. (2019). Openspiel: A framework for reinforcement learning in games.
+arXiv preprint arXiv:1908.09453.
+Lee, J., Jeon, W., Lee, B., Pineau, J., and Kim, K.-E. (2021). Optidice: Offline policy optimization via
+stationary distribution correction estimation. In International Conference on Machine Learning, pages
+6120–6130. PMLR.
+Li, G., Cai, C., Chen, Y., Wei, Y., and Chi, Y. (2023). Is Q-learning minimax optimal? a tight sample
+complexity analysis. Operations Research.
+Li, G., Chi, Y., Wei, Y., and Chen, Y. (2022a). Minimax-optimal multi-agent RL in Markov games with a
+generative model. Advances in Neural Information Processing Systems, 35:15353–15367.
+Li, G., Shi, L., Chen, Y., Chi, Y., and Wei, Y. (2024). Settling the sample complexity of model-based offline
+reinforcement learning. The Annals of Statistics, 52(1):233–260.
+Li, G., Shi, L., Chen, Y., Gu, Y., and Chi, Y. (2021). Breaking the sample complexity barrier to regret-
+optimal model-free reinforcement learning. Advances in Neural Information Processing Systems, 34.
+Li, G., Wei, Y., Chi, Y., Gu, Y., and Chen, Y. (2020). Breaking the sample size barrier in model-based
+reinforcement learning with a generative model. In Advances in Neural Information Processing Systems,
+volume 33.
+Li, S., Wu, Y., Cui, X., Dong, H., Fang, F., and Russell, S. (2019). Robust multi-agent reinforcement learning
+via minimax deep deterministic policy gradient.
+In Proceedings of the AAAI conference on artificial
+intelligence, volume 33, pages 4213–4220.
+17
+
+Li, Y. and Lan, G. (2023). First-order policy optimization for robust policy evaluation. arXiv preprint
+arXiv:2307.15890.
+Li, Y., Zhao, T., and Lan, G. (2022b). First-order policy optimization for robust markov decision process.
+arXiv preprint arXiv:2209.10579.
+Liang, Z., Ma, X., Blanchet, J., Zhang, J., and Zhou, Z. (2023). Single-trajectory distributionally robust
+reinforcement learning. arXiv preprint arXiv:2301.11721.
+Littman, M. L. (1994). Markov games as a framework for multi-agent reinforcement learning. In Machine
+learning proceedings 1994, pages 157–163. Elsevier.
+Littman, M. L. et al. (2001). Friend-or-foe Q-learning in general-sum games. In ICML, volume 1, pages
+322–328.
+Littman, M. L. and Szepesvári, C. (1996). A generalized reinforcement-learning model: Convergence and
+applications. In ICML, volume 96, pages 310–318.
+Liu, Q., Yu, T., Bai, Y., and Jin, C. (2021). A sharp analysis of model-based reinforcement learning with
+self-play. In International Conference on Machine Learning, pages 7001–7010. PMLR.
+Liu, S. and Su, H. (2020). γ-regret for non-episodic reinforcement learning. arXiv:2002.05138.
+Liu, Z., Bai, Q., Blanchet, J., Dong, P., Xu, W., Zhou, Z., and Zhou, Z. (2022). Distributionally robust
+q-learning. In International Conference on Machine Learning, pages 13623–13643. PMLR.
+Liu, Z. and Xu, P. (2024). Distributionally robust off-dynamics reinforcement learning: Provable efficiency
+with linear function approximation. arXiv preprint arXiv:2402.15399.
+Ma, S., Chen, Z., Zou, S., and Zhou, Y. (2023). Decentralized robust v-learning for solving markov games
+with model uncertainty. Journal of Machine Learning Research, 24(371):1–40.
+Ma, X., Liang, Z., Blanchet, J., Liu, M., Xia, L., Zhang, J., Zhao, Q., and Zhou, Z. (2022). Distributionally
+robust offline reinforcement learning with linear function approximation. arXiv preprint arXiv:2209.06620.
+Mankowitz, D. J., Levine, N., Jeong, R., Shi, Y., Kay, J., Abdolmaleki, A., Springenberg, J. T., Mann, T.,
+Hester, T., and Riedmiller, M. (2019). Robust reinforcement learning for continuous control with model
+misspecification. arXiv preprint arXiv:1906.07516.
+Mao, W. and Başar, T. (2022). Provably efficient reinforcement learning in decentralized general-sum Markov
+games. Dynamic Games and Applications, pages 1–22.
+Moulin, H. and Vial, J.-P. (1978). Strategically zero-sum games: the class of games whose completely mixed
+equilibria cannot be improved upon. International Journal of Game Theory, 7(3):201–221.
+Nash, J. (1951). Non-cooperative games. Annals of mathematics, pages 286–295.
+Nilim, A. and El Ghaoui, L. (2005). Robust control of Markov decision processes with uncertain transition
+matrices. Operations Research, 53(5):780–798.
+Oroojlooy, A. and Hajinezhad, D. (2023). A review of cooperative multi-agent deep reinforcement learning.
+Applied Intelligence, 53(11):13677–13722.
+Pan, Y., Chen, Y., and Lin, F. (2023). Adjustable robust reinforcement learning for online 3d bin packing.
+arXiv preprint arXiv:2310.04323.
+Panaganti, K. and Kalathil, D. (2022). Sample complexity of robust reinforcement learning with a generative
+model. In International Conference on Artificial Intelligence and Statistics, pages 9582–9602. PMLR.
+Panaganti, K., Xu, Z., Kalathil, D., and Ghavamzadeh, M. (2022). Robust reinforcement learning using
+offline data. Advances in neural information processing systems, 35:32211–32224.
+18
+
+Pananjady, A. and Wainwright, M. J. (2020). Instance-dependent ℓ∞-bounds for policy evaluation in tabular
+reinforcement learning. IEEE Transactions on Information Theory, 67(1):566–585.
+Rahimian, H. and Mehrotra, S. (2019). Distributionally robust optimization: A review. arXiv preprint
+arXiv:1908.05659.
+Ramesh, S. S., Sessa, P. G., Hu, Y., Krause, A., and Bogunovic, I. (2023). Distributionally robust model-
+based reinforcement learning with large state spaces. arXiv preprint arXiv:2309.02236.
+Rashidinejad, P., Zhu, B., Ma, C., Jiao, J., and Russell, S. (2021). Bridging offline reinforcement learning
+and imitation learning: A tale of pessimism. arXiv preprint arXiv:2103.12021.
+Roughgarden, T. (2010). Algorithmic game theory. Communications of the ACM, 53(7):78–86.
+Roy, A., Xu, H., and Pokutta, S. (2017). Reinforcement learning under model mismatch. Advances in neural
+information processing systems, 30.
+Saloner, G. (1991).
+Modeling, game theory, and strategic management.
+Strategic management journal,
+12(S2):119–136.
+Shapley, L. S. (1953). Stochastic games. Proceedings of the national academy of sciences, 39(10):1095–1100.
+Shi, L. and Chi, Y. (2022). Distributionally robust model-based offline reinforcement learning with near-
+optimal sample complexity. arXiv preprint arXiv:2208.05767.
+Shi, L., Li, G., Wei, Y., Chen, Y., and Chi, Y. (2022). Pessimistic Q-learning for offline reinforcement
+learning: Towards optimal sample complexity. In Proceedings of the 39th International Conference on
+Machine Learning, volume 162, pages 19967–20025. PMLR.
+Shi, L., Li, G., Wei, Y., Chen, Y., Geist, M., and Chi, Y. (2023).
+The curious price of distributional
+robustness in reinforcement learning with a generative model. arXiv preprint arXiv:2305.16589.
+Sidford, A., Wang, M., Wu, X., Yang, L., and Ye, Y. (2018). Near-optimal time and sample complexities for
+solving Markov decision processes with a generative model. In Advances in Neural Information Processing
+Systems, pages 5186–5196.
+Silver, D., Huang, A., Maddison, C. J., Guez, A., Sifre, L., Van Den Driessche, G., Schrittwieser, J.,
+Antonoglou, I., Panneershelvam, V., Lanctot, M., et al. (2016). Mastering the game of go with deep
+neural networks and tree search. nature, 529(7587):484–489.
+Silver, D., Schrittwieser, J., Simonyan, K., Antonoglou, I., Huang, A., Guez, A., Hubert, T., Baker, L., Lai,
+M., Bolton, A., et al. (2017). Mastering the game of Go without human knowledge. Nature, 550(7676):354–
+359.
+Slumbers, O., Mguni, D. H., Blumberg, S. B., Mcaleer, S. M., Yang, Y., and Wang, J. (2023). A game-
+theoretic framework for managing risk in multi-agent systems. In International Conference on Machine
+Learning, pages 32059–32087. PMLR.
+Smirnova, E., Dohmatob, E., and Mary, J. (2019). Distributionally robust reinforcement learning. arXiv
+preprint arXiv:1902.08708.
+Song, Z., Mei, S., and Bai, Y. (2021). When can we learn general-sum Markov games with a large number
+of players sample-efficiently? arXiv preprint arXiv:2110.04184.
+Tamar, A., Mannor, S., and Xu, H. (2014). Scaling up robust MDPs using function approximation. In
+International conference on machine learning, pages 181–189. PMLR.
+Tian, Y., Wang, Y., Yu, T., and Sra, S. (2021). Online learning in unknown markov games. In International
+conference on machine learning, pages 10279–10288. PMLR.
+Tsybakov, A. B. (2009). Introduction to nonparametric estimation, volume 11. Springer.
+19
+
+Uehara, M. and Sun, W. (2021). Pessimistic model-based offline reinforcement learning under partial cover-
+age. arXiv preprint arXiv:2107.06226.
+Vershynin, R. (2018). High-dimensional probability: An introduction with applications in data science, vol-
+ume 47. Cambridge university press.
+Vial, D., Shakkottai, S., and Srikant, R. (2022). Robust multi-agent bandits over undirected graphs. Pro-
+ceedings of the ACM on Measurement and Analysis of Computing Systems, 6(3):1–57.
+Vinyals, O., Babuschkin, I., Czarnecki, W. M., Mathieu, M., Dudzik, A., Chung, J., Choi, D. H., Powell, R.,
+Ewalds, T., Georgiev, P., et al. (2019). Grandmaster level in starcraft ii using multi-agent reinforcement
+learning. Nature, 575(7782):350–354.
+Wainwright, M. J. (2019). Stochastic approximation with cone-contractive operators: Sharp ℓ∞-bounds for
+Q-learning. arXiv preprint arXiv:1905.06265.
+Wang, H., Shi, L., and Chi, Y. (2024). Sample complexity of offline distributionally robust linear markov
+decision processes. arXiv preprint arXiv:2403.12946.
+Wang, S., Si, N., Blanchet, J., and Zhou, Z. (2023a). A finite sample complexity bound for distributionally
+robust Q-learning. arXiv preprint arXiv:2302.13203.
+Wang, S., Si, N., Blanchet, J., and Zhou, Z. (2023b). On the foundation of distributionally robust reinforce-
+ment learning. arXiv preprint arXiv:2311.09018.
+Wang, S., Si, N., Blanchet, J., and Zhou, Z. (2023c). Sample complexity of variance-reduced distributionally
+robust Q-learning. arXiv preprint arXiv:2305.18420.
+Wang, Y. and Zou, S. (2021). Online robust reinforcement learning with model uncertainty. Advances in
+Neural Information Processing Systems, 34.
+Wei, C.-Y., Hong, Y.-T., and Lu, C.-J. (2017). Online reinforcement learning in stochastic games. Advances
+in Neural Information Processing Systems, 30.
+Wei, C.-Y., Lee, C.-W., Zhang, M., and Luo, H. (2021). Last-iterate convergence of decentralized optimistic
+gradient descent/ascent in infinite-horizon competitive Markov games. In Conference on Learning Theory,
+pages 4259–4299. PMLR.
+Wiesemann, W., Kuhn, D., and Rustem, B. (2013). Robust markov decision processes. Mathematics of
+Operations Research, 38(1):153–183.
+Wolff, E. M., Topcu, U., and Murray, R. M. (2012). Robust control of uncertain markov decision processes
+with temporal logic specifications. In 2012 IEEE 51st IEEE Conference on Decision and Control (CDC),
+pages 3372–3379. IEEE.
+Woo, J., Joshi, G., and Chi, Y. (2023). The blessing of heterogeneity in federated Q-learning: Linear speedup
+and beyond. arXiv preprint arXiv:2305.10697.
+Woo, J., Shi, L., Joshi, G., and Chi, Y. (2024). Federated offline reinforcement learning: Collaborative
+single-policy coverage suffices. arXiv preprint arXiv:2402.05876.
+Xie, T., Jiang, N., Wang, H., Xiong, C., and Bai, Y. (2021). Policy finetuning: Bridging sample-efficient
+offline and online reinforcement learning. Advances in neural information processing systems, 34.
+Xu, H. and Mannor, S. (2012). Distributionally robust Markov decision processes. Mathematics of Operations
+Research, 37(2):288–300.
+Xu, Z., Panaganti, K., and Kalathil, D. (2023). Improved sample complexity bounds for distributionally
+robust reinforcement learning. arXiv preprint arXiv:2303.02783.
+20
+
+Yan, Y., Li, G., Chen, Y., and Fan, J. (2022a). The efficacy of pessimism in asynchronous Q-learning. arXiv
+preprint arXiv:2203.07368.
+Yan, Y., Li, G., Chen, Y., and Fan, J. (2022b). Model-based reinforcement learning is minimax-optimal for
+offline zero-sum markov games. arXiv preprint arXiv:2206.04044.
+Yang, K., Yang, L., and Du, S. (2021). Q-learning with logarithmic regret. In International Conference on
+Artificial Intelligence and Statistics, pages 1576–1584. PMLR.
+Yang, L. and Wang, M. (2019). Sample-optimal parametric Q-learning using linearly additive features. In
+International Conference on Machine Learning, pages 6995–7004.
+Yang, W., Wang, H., Kozuno, T., Jordan, S. M., and Zhang, Z. (2023). Avoiding model estimation in robust
+markov decision processes with a generative model. arXiv preprint arXiv:2302.01248.
+Yang, W., Zhang, L., and Zhang, Z. (2022). Toward theoretical understandings of robust Markov decision
+processes: Sample complexity and asymptotics. The Annals of Statistics, 50(6):3223–3248.
+Yang, Y. and Ma, C. (2022). o(t−1) convergence of optimistic-follow-the-regularized-leader in two-player
+zero-sum markov games. arXiv preprint arXiv:2209.12430.
+Yeh, C., Meng, C., Wang, S., Driscoll, A., Rozi, E., Liu, P., Lee, J., Burke, M., Lobell, D. B., and Ermon,
+S. (2021). Sustainbench: Benchmarks for monitoring the sustainable development goals with machine
+learning. arXiv preprint arXiv:2111.04724.
+Yin, M. and Wang, Y.-X. (2021). Towards instance-optimal offline reinforcement learning with pessimism.
+Advances in neural information processing systems, 34.
+Zanette, A., Kochenderfer, M. J., and Brunskill, E. (2019). Almost horizon-free structure-aware best policy
+identification with a generative model. Advances in Neural Information Processing Systems, 32.
+Zeng, L., Qiu, D., and Sun, M. (2022). Resilience enhancement of multi-agent reinforcement learning-based
+demand response against adversarial attacks. Applied Energy, 324:119688.
+Zhang, H., Chen, H., Boning, D., and Hsieh, C.-J. (2021a). Robust reinforcement learning on state observa-
+tions with learned optimal adversary. arXiv preprint arXiv:2101.08452.
+Zhang, K., Kakade, S., Basar, T., and Yang, L. (2020a). Model-based multi-agent RL in zero-sum Markov
+games with near-optimal sample complexity. Advances in Neural Information Processing Systems, 33:1166–
+1178.
+Zhang, K., Kakade, S., Basar, T., and Yang, L. (2020b). Model-based multi-agent RL in zero-sum Markov
+games with near-optimal sample complexity. Advances in Neural Information Processing Systems, 33.
+Zhang, K., Sun, T., Tao, Y., Genc, S., Mallya, S., and Basar, T. (2020c). Robust multi-agent reinforcement
+learning with model uncertainty. Advances in neural information processing systems, 33:10571–10583.
+Zhang, K., Yang, Z., and Başar, T. (2021b). Multi-agent reinforcement learning: A selective overview of
+theories and algorithms. Handbook of Reinforcement Learning and Control, pages 321–384.
+Zhang, R., Hu, Y., and Li, N. (2023a). Regularized robust mdps and risk-sensitive mdps: Equivalence, policy
+gradient, and sample complexity. arXiv preprint arXiv:2306.11626.
+Zhang, Z., Chen, Y., Lee, J. D., and Du, S. S. (2023b). Settling the sample complexity of online reinforcement
+learning. arXiv preprint arXiv:2307.13586.
+Zhang, Z., Ji, X., and Du, S. S. (2020d). Is reinforcement learning more difficult than bandits? a near-optimal
+algorithm escaping the curse of horizon. arXiv preprint arXiv:2009.13503.
+Zhang, Z., Sun, Y., Huang, F., and Miao, F. (2023c). Safe and robust multi-agent reinforcement learning
+for connected autonomous vehicles under state perturbations. arXiv preprint arXiv:2309.11057.
+21
+
+Zhang, Z., Zhou, Y., and Ji, X. (2020e). Model-free reinforcement learning: from clipped pseudo-regret to
+sample complexity. arXiv preprint arXiv:2006.03864.
+Zhong, H., Xiong, W., Tan, J., Wang, L., Zhang, T., Wang, Z., and Yang, Z. (2022).
+Pessimistic
+minimax value iteration: Provably efficient equilibrium learning from offline datasets.
+arXiv preprint
+arXiv:2202.07511.
+Zhou, M., Luo, J., Villella, J., Yang, Y., Rusu, D., Miao, J., Zhang, W., Alban, M., Fadakar, I., Chen, Z.,
+et al. (2020). Smarts: Scalable multi-agent reinforcement learning training school for autonomous driving.
+arXiv preprint arXiv:2010.09776.
+Zhou, Z., Bai, Q., Zhou, Z., Qiu, L., Blanchet, J., and Glynn, P. (2021). Finite-sample regret bound for
+distributionally robust offline tabular reinforcement learning. In International Conference on Artificial
+Intelligence and Statistics, pages 3331–3339. PMLR.
+Zhou, Z. and Liu, G. (2023). Robustness testing for multi-agent reinforcement learning: State perturbations
+on critical agents. arXiv preprint arXiv:2306.06136.
+A
+Preliminaries
+A.1
+Details of the example shown in Figure 1
+The standard Markov game for fishing protection.
+To simulate a scenario of defense against il-
+legal fishing, we can formulate a two-player general sum finite-horizon standard Markov game between
+a fisher (the first player) and a police officer (the second player).
+This MG can be represented as
+MGe =
+
+S, {Ai}1≤i≤2, p, r, H
+	
+.
+Here, S := {0, 1, · · · , 100} is the state space, where each state s ∈S
+represents the number of punishments received by the fisherman, with the license being revoked at s = 100;
+A1 = A2 = {0, 1} is the action space.
+At each time step (round), the fisher chooses a1 among space
+A1 = {legal fishing (0), illegal fishing (1)}, while the officer chooses a2 among A2 = {no patrols (0), go
+patrols (1)}; H is the horizon-length; the transition kernel is governed by a model parameter p ∈[0, 1],
+shown in Figure 3(a) (a detailed version of Figure 1(a)), specified as
+∀h ∈[H] :
+Ph(s′ | s, a1, a2) =
+ p1(s′ = s + 1) + (1 −p)1(s′ = s)
+if
+s ∈S \ {100}, a1 = 1,
+1(s′ = s)
+otherwise.
+(31)
+In words, the state s transit to s′ = s + 1 with probability p when a1 = 1, otherwise staying in s′ = s, i.e.,
+In addition, r = {ri,h}i∈{1,2},h∈[H] represents the immediate reward (benefit) function of two players at each
+time step h ∈[H]. Here, we consider time-invariant reward function ri,h = ri for all h ∈[H]. In particular,
+at any time step h ∈[H], r1(s, a1, a2, s′) (resp. r2(s, a1, a2, s′)) denotes the immediate benefit that the first
+agent (resp. the second player) receives conditioned on the current state s, the actions of two players (a1, a2),
+and the next state s′. The reward function for any state s ∈S \ {100} is defined in Figure 3(b). And the
+reward function at state s = 100 for two players is specified as below:
+∀a2 ∈{0, 1} :
+r1(100, 0, a2, 100) = −1
+and
+r1(100, 1, a2, 100) = −20p
+r2(100, 0, 0, 100) = 1
+and
+r2(100, 0, 1, 100) = 0
+r2(100, 1, 0, 100) = 1
+and
+r2(100, 1, 1, 100) = 3 −2p.
+(32)
+Computing the Nash equilibrium (NE).
+Notice that the NE of a standard Markov game is indeed
+a series of NE of the matrix games associated with the Q-function at each time step h ∈[H]. We denote
+the NE of MGe as π⋆= (µ⋆, ν⋆) = {µ⋆
+h, ν⋆
+h}h∈[H] with µ⋆
+h : S 7→∆(A1), ν⋆
+h : S 7→∆(A2) for all h ∈[H].
+To proceed, we start from characterizing the Q-function and Bellman consistency equation of the fishing
+protection game.
+It is easily verified that for time step H + 1, one has for any joint policy π = (µ, ν),
+∀(i, a1, a2) ∈{1, 2} × A1 × A2 :
+Qπ,P
+i,H+1(s, a1, a2) = Qπ,P
+i,H+1(s′, a1, a2) = 0.
+(33)
+22
+
+Agent 2: Officer
+𝑎! = 1 [go patrols]
+𝑎! = 0 [no patrols]
+(−1, 0)
+(−1, 1)
+𝑎" = 0
+legal fishing
+Agent 1:
+Fisher
+𝑎" = 1
+illegal fishing
+(b) Reward:  𝑟! 𝑠, 𝑎!, 𝑎", 𝑠# , 𝑟" 𝑠, 𝑎!, 𝑎", 𝑠#   for 𝑠= {0,1, ⋯, 99}  
+(
+(−20, 1)
+if s0 = s + 1
+(0, 1)
+if s0 = s
+𝑠= 0
+1 −𝑝
+𝑝
+𝑠= 1
+𝑝
+𝑠= 2
+...
+𝑠=
+100
+1 −𝑝
+1 −𝑝
+1
+1
+1
+1
+(a) States and Transitions
+fishing license
+revoked after
+100 punishment
+𝑠= 0 times
+punishment
+𝑎! = 1
+otherwise
+(
+(−20, 1)
+if s0 = s = 1
+(0, 3)
+if s0 = s
+Figure 3: (a) shows the transition kernels of the game at each time step h. (b) illustrates the immediate
+reward function of two agents.
+Then, we characterize the Bellman consistency equation at time step h = H, H −1, · · · , 1 for the optimal
+policy π⋆. Notice that the rewards and the transition kernels have similar structures for all states except
+s = 100. So we start from the cases when s ∈S \ {100}. Recalling the definition of Q-function in (3), the
+reward function r (defined in Figure 3(b)) and the transition kernel in (31), we have for any state s ∈S\{100}
+and any time step h ∈[H], the Q-function of the fisher (the first player) obeys
+Qπ⋆,P
+1,h (s, 0, 0) = −1 + V π⋆,P
+1,h+1(s)
+Qπ⋆,P
+1,h (s, 0, 1) = −1 + V π⋆,P
+1,h+1(s)
+Qπ⋆,P
+1,h (s, 1, 0) = −20p + pV π⋆,P
+1,h+1(s + 1) + (1 −p)V π⋆,P
+1,h+1(s)
+Qπ⋆,P
+1,h (s, 1, 1) = −20p + pV π⋆,P
+1,h+1(s + 1) + (1 −p)V π⋆,P
+1,h+1(s).
+(34)
+Similarly, for the officer (the second player), we observe that for any state s ∈S \ {100} and any time
+step h ∈[H]:
+Qπ⋆,P
+2,h (s, 0, 0) = 1 + V π⋆,P
+2,h+1(s)
+Qπ⋆,P
+2,h (s, 0, 1) = 0 + V π⋆,P
+2,h+1(s),
+Qπ⋆,P
+2,h (s, 1, 0) = 1 + pV π⋆,P
+2,h+1(s + 1) + (1 −p)V π⋆,P
+2,h+1(s),
+Qπ⋆,P
+2,h (s, 1, 1) = 3 −2p + pV π⋆,P
+2,h+1(s + 1) + (1 −p)V π⋆,P
+2,h+1(s).
+(35)
+Armed with above results, we are now ready to show that the NE for all (h, s) ∈[H]×S are the same, which
+determined by the model parameter p as below:
+∀(h, s) ∈[H] × S :
+(
+π⋆
+h(s) = πB = (0, 0)
+if p > 0.05
+π⋆
+h(s) = πA = (1, 1)
+if p ≤0.05.
+(36)
+We will verify it by induction as below:
+• Base case: when h = H. Applying (34) and (35) for h = H with the fact in (33), we arrive at for any
+state s ∈S \ {100}:
+∀a2 ∈{0, 1} :
+Qπ⋆,P
+1,H (s, 0, a2) = −1
+and
+Qπ⋆,P
+1,H (s, 1, a2) = −20p
+Qπ⋆,P
+2,H (s, 0, 0) = 1
+and
+Qπ⋆,P
+2,H (s, 0, 1) = 0
+Qπ⋆,P
+2,H (s, 1, 0) = 1
+and
+Qπ⋆,P
+2,H (s, 1, 1) = 3 −2p
+(37)
+Similarly, when state s = 100, recalling the reward function in (32), we achieve the same Q-function
+on state s = 100. Therefore, one has for all s ∈S:
+∀a2 ∈{0, 1} :
+Qπ⋆,P
+1,H (s, 0, a2) = −1
+and
+Qπ⋆,P
+1,H (s, 1, a2) = −20p
+23
+
+Qπ⋆,P
+2,H (s, 0, 0) = 1
+and
+Qπ⋆,P
+2,H (s, 0, 1) = 0
+Qπ⋆,P
+2,H (s, 1, 0) = 1
+and
+Qπ⋆,P
+2,H (s, 1, 1) = 3 −2p.
+(38)
+Consequently, in view of (44), it can be verified that if p < 0.05 (resp. p > 0.05), the unique NE
+of two agents on any state s ∈S at time step H is the policy pair π⋆
+H(s) = (µ⋆
+H(s), ν⋆
+H(s)) = (1, 1)
+(resp. π⋆
+H(s) = (µ⋆
+H(s), ν⋆
+H(s)) = (0, 0)), leading to Nash πA := (1, 1) when p = pA = 0.049 (resp. Nash
+πB := (0, 0) when p = pB = 0.051).
+In addition, we observe the optimal value function satisfies that:
+∀s ∈S :
+(
+V π⋆,P
+1,H (s) = −1
+and
+V π⋆,P
+2,H (s) = 1
+if p > 0.05
+V π⋆,P
+1,H (s) = −20p
+and
+V π⋆,P
+2,H (s) = 3 −2p
+if p ≤0.05 .
+(39)
+• Induction. The rest of this paragraph is to verify (36) for all (h, s) ∈[H −1] × S by induction. So
+suppose (36) holds for time step h + 1, then we will show that it also holds for time step h.
+To begin with, we introduce the following claim which will be verified in Appendix A.1.1: for any
+policy π = (µ, ν) and any s, s′ ∈S:
+∀(i, h) ∈{1, 2} × [H] :
+V π,P
+i,h (s) = V π,P
+i,h (s′).
+(40)
+To proceed, armed with the fact in (40), invoking the results in (34) and (35) yields that for all s ∈S:
+Qπ⋆,P
+1,h (s, 0, 0) = −1 + V π⋆,P
+1,h+1(s)
+and
+Qπ⋆,P
+2,h (s, 0, 0) = 1 + V π⋆,P
+2,h+1(s)
+Qπ⋆,P
+1,h (s, 0, 1) = −1 + V π⋆,P
+1,h+1(s)
+and
+Qπ⋆,P
+2,h (s, 0, 1) = 0 + V π⋆,P
+2,h+1(s)
+Qπ⋆,P
+1,h (s, 1, 0) = −20p + V π⋆,P
+1,h+1(s)
+and
+Qπ⋆,P
+2,h (s, 1, 0) = 1 + V π⋆,P
+2,h+1(s)
+Qπ⋆,P
+1,h (s, 1, 1) = −20p + V π⋆,P
+1,h+1(s)
+and
+Qπ⋆,P
+2,h (s, 1, 1) = 3 −2p + V π⋆,P
+2,h+1(s).
+(41)
+The above fact directly indicates that at time step h, the NE of the matrix games associated with the
+payoff Qπ⋆,P
+1,h (s) and Qπ⋆,P
+2,h (s) satisfies
+∀s ∈S :
+(
+π⋆
+h(s) = (0, 0)
+if p > 0.05
+π⋆
+h(s) = (1, 1)
+if p ≤0.05.
+(42)
+Summing up the base case and the induction results, we complete the proof for (36).
+The robust MG and computing the robust Nash equilibrium (robust NE).
+When turns to
+the robust formulation of the fishing protection game, we construct a robust Markov game represented as
+MGe
+rob =
+
+S, {Ai}1≤i≤2, p0, σ, r, H
+	
+, where S, {Ai}1≤i≤2, r, H are the same as those defined in the standard
+MG MGe. Note that this example is designed to illustrate general environmental uncertainty (includes both
+the reward and transition kernel uncertainty) and is not tailored to the specific class of robust MGs defined
+in Section 3. For simplicity, let each agent consider that the model parameter p can perturb around some
+nominal one p0 with uncertainty level σ = 0.005, i,e., p ∈[p0 −σ, p0 +σ]. Other components of the transition
+kernel is not allowed to perturb. With abuse of notation, for any joint policy π, we still denote the robust
+value function (resp. robust Q-function) for i-th agent at time step h as V π,σ
+i,h
+(resp. Qπ,σ
+i,h ). In addition, we
+denote the robust NE of MGe
+rob as π⋆,σ = (µ⋆,σ, ν⋆,σ) = {µ⋆,σ
+h , ν⋆,σ
+h }h∈[H], where µ⋆,σ
+h
+: S 7→∆(A1), ν⋆,σ
+h
+:
+S 7→∆(A2).
+Observe that in city A (resp. city B), the nominal model parameter p0 = 0.049 (resp. p0 = 0.051).
+Without loss of generality, we first focus on city A. To proceed, we shall verify the following claim using the
+same routine for computing NE of the standard MG MGe (cf. (36)):
+In city A :
+(µ⋆,σ
+h (s), ν⋆,σ
+h (s)) = (0, 0),
+∀(h, s) ∈[H] × S.
+(43)
+24
+
+• Base case: when h = H. Recall the definitions of robust value/Q-function (cf. (11)), one has at time
+step H: for all s ∈S,
+∀a2 ∈{0, 1} :
+Qπ⋆,σ
+1,H (s, 0, a2) = −1
+and
+Qπ⋆,σ
+1,H (s, 1, a2) = −20(p0 + σ) = −1.08
+Qπ⋆,σ
+2,H (s, 0, 0) = 1
+and
+Qπ⋆,σ
+2,H (s, 0, 1) = 0
+Qπ⋆,σ
+2,H (s, 1, 0) = 1
+and
+Qπ⋆,σ
+2,H (s, 0, 1) = 3 −2(p0 + σ) = 2.892.
+(44)
+As a result, it is easily verified that the unique robust NE of two agents on any state s ∈S at time
+step H is the policy pair (µ⋆,σ
+H (s), ν⋆,σ
+H (s)) = (0, 0).
+• Induction. First of all, for any policy π = (µ, ν) and s, s′ ∈S, similar to (40)
+∀(i, h) ∈{1, 2} × [H] :
+V π,σ
+i,h (s) = V π,σ
+i,h (s′).
+(45)
+which indicates that the worst-case performance are indeed influenced by the uncertainty of the reward
+function but not the transition kernel perturbation.
+Armed with above fact, invoking the robust
+Bellman consistency equation, similar to (41), we can achieve that for all h ∈1, 2, · · · , H −1,
+Qπ⋆,σ,σ
+1,h
+(s, 0, 0) = −1 + V π⋆,σ,σ
+1,h+1 (s)
+and
+Qπ⋆,σ,σ
+2,h
+(s, 0, 0) = 1 + V π⋆,σ,σ
+2,h+1 (s)
+Qπ⋆,σ,σ
+1,h
+(s, 0, 1) = −1 + V π⋆,σ,σ
+1,h+1 (s)
+and
+Qπ⋆,σ,σ
+2,h
+(s, 0, 1) = 0 + V π⋆,σ,σ
+2,h+1 (s)
+Qπ⋆,σ,σ
+1,h
+(s, 1, 0) = −1.08 + V π⋆,σ,σ
+1,h+1 (s)
+and
+Qπ⋆,σ,σ
+2,h
+(s, 1, 0) = 1 + V π⋆,σ,σ
+2,h+1 (s)
+Qπ⋆,σ,σ
+1,h
+(s, 1, 1) = −1.08 + V π⋆,σ,σ
+1,h+1 (s)
+and
+Qπ⋆,σ,σ
+2,h
+(s, 1, 1) = 2.892 + V π⋆,σ,σ
+2,h+1 (s).
+(46)
+As a consequence, the robust NE of the matrix games associated with the payoff Qπ⋆,σ,σ
+1,h
+(s) and
+Qπ⋆,σ,σ
+2,h
+(s) satisfies (µ⋆,σ
+h (s), ν⋆,σ
+h (s)) = (0, 0) for all h ∈1, 2, · · · , H −1.
+Summing up the results in the base case and the induction, we verify the unique robust NE for MGe
+rob
+in city A as (43). The same unique robust NE can be verified in city B by following the same routine, which
+we omit for brevity. Thus, we show the unique robust NE in two slightly different environments (city A and
+city B) are identical.
+Deriving the states of executing different equilibrium solutions.
+In view of (36), we know that
+the NE of the standard MG MGe in city A when p = pA = 0.049 (resp. city B when p = pB = 0.051) is
+πA = (1, 1) (resp. πB = (0, 0)) for all (h, s) ∈[H] × S. And the MG MGe has some one-way transition
+structure, namely state s can only transit to itself or a larger state s + 1, while not any states s′ < s. So
+as long as H is large enough, the final state of executing πA = (1, 1) will be state s = 100 with the fishing
+license revoked since the fisher will always do illegal fishing (a1 = 1). The agents who execute the joint
+policy πB = (0, 0) or the robust NE (µ⋆,σ
+h (s), ν⋆,σ
+h (s)) = (0, 0) will stay in s = 0 with no punishment since
+the fisher will never choose illegal fishing (a1 = 1).
+A.1.1
+Proof of claim (40)
+We will proof (40) by induction. Note that the base case when h = H has already been verified in (39).
+Then suppose the claim holds at time step h + 1, i.e.,
+∀(i, s, s′) ∈{1, 2} × S × S :
+V π,P
+i,h+1(s) = V π,P
+i,h+1(s′),
+(47)
+it remains to show that the claim holds at time step h as well.
+Towards this, we first consider the cases when state s ∈S \ {100}. Recall the recursion in (34), we arrive
+at
+Qπ,P
+1,h (s, 0, 0) = −1 + V π,P
+1,h+1(s)
+Qπ,P
+1,h (s, 0, 1) = −1 + V π,P
+1,h+1(s)
+25
+
+Qπ,P
+1,h (s, 1, 0) = −20p + pV π,P
+1,h+1(s + 1) + (1 −p)V π⋆,P
+1,h+1(s)
+(i)
+= −20p + V π,P
+1,h+1(s)
+Qπ,P
+1,h (s, 1, 1) = −20p + pV π,P
+1,h+1(s + 1) + (1 −p)V π⋆,P
+1,h+1(s)
+(ii)
+= −20p + V π,P
+1,h+1(s),
+(48)
+where (i) and (ii) holds by the induction assumption in (50).
+Analogously, recalling (35) for the second player (protector), we arrive at for any state s ∈S \ {100} and
+time step h ∈[H],
+Qπ,P
+2,h (s, 0, 0) = 1 + V π,P
+2,h+1(s)
+Qπ,P
+2,h (s, 0, 1) = 0 + V π,P
+2,h+1(s),
+Qπ,P
+2,h (s, 1, 0) = 1 + V π,P
+2,h+1(s),
+Qπ,P
+2,h (s, 1, 1) = 3 −2p + V π,P
+2,h+1(s).
+(49)
+Combining (48) and (49) gives that for any s, s′ ∈S \ {100},
+∀(i, a1, a2) ∈{1, 2} × ∆(A1) × ∆(A2) :
+Qπ,P
+i,h (s, a1, a2) = Qπ,P
+i,h (s′, a1, a2),
+(50)
+which indicates
+V π,P
+i,h (s) = E(a1,a2)∈µ(s)×µ(s)[Qπ,P
+i,h (s, a1, a2)] = E(a1,a2)∈µ(s)×µ(s)[Qπ,P
+i,h (s′, a1, a2)] = V π,P
+i,h (s′).
+(51)
+Similarly, when s = 100, it can be verified that (48) and (49) also hold. Therefore, we complete the
+induction argument by observing that for all s, s′ ∈S, V π,P
+i,h (s) = V π,P
+i,h (s′) is satisfied.
+A.2
+Additional notation and basic facts
+For convenience, for any two vectors x = [xi]1≤i≤n and y = [yi]1≤i≤n, the notation x ≤y (resp. x ≥y) means
+xi ≤yi (resp. xi ≥yi) for all 1 ≤i ≤n. We denote by x ◦y =
+
+x(s) · y(s)
+
+s∈S the Hadamard product of
+any two vectors x, y ∈RS. And for any vecvor x, we let x◦2 =
+
+x(s, a)2
+(s,a)∈S×A (resp. x◦2 =
+
+x(s)2
+s∈S).
+With slight abuse of notation, we denote 0 (resp. 1) as the all-zero (resp. all-one) vector, and ei ∈RS as a
+S-dimensional basis vector with the i-th entry being 1 and others being 0. Recall that we abbreviate the
+subscript ρTV when the divergence function is specified to TV distance to write Uσ(·) = Uσ
+ρTV(·).
+Additional matrix notation.
+For any (i, h) ∈[n] × [H], we recall or introduce some additional notation
+and matrix notation that is useful throughout the analysis
+• ri,h = [ri,h(s, a)](s,a)∈S×A ∈RS Qn
+i=1 Ai: a reward vector that represents the reward function for the
+i-th player at time step h.
+• Ππ
+h ∈RS×S Qn
+i=1 Ai: a projection matrix associated with time step h and a given joint policy π =
+{πh}h∈[H] in the following form
+Ππ
+h =
+
+
+
+πh(1)⊤
+0⊤
+· · ·
+0⊤
+0⊤
+πh(2)⊤
+· · ·
+0⊤
+...
+...
+...
+...
+0⊤
+0⊤
+· · ·
+πh(S)⊤
+
+
+,
+(52)
+where we recall πh(s) = [πh(s, a)]a∈A ∈∆(A) for all s ∈S denote the joint policy vectors from all
+agents.
+• rπ
+i,h ∈RS: a reward vector associated with the distribution of actions chosen by any joint policy
+π = {πh}h∈[H] at time step h.
+Here, rπ
+i,h(s) = Ea∼πh(s)[ri,h(s, a)] for all s ∈S, or equivalently
+rπ
+i,h = Ππ
+hri,h (see (52)).
+• P 0
+h ∈RS Qn
+i=1 Ai×S: the matrix of the nominal transition kernel at time step h, with P 0
+h,s,a ∈R1×S
+serves as the (s, a)-th row for any (s, a) ∈S × A.
+26
+
+• bP 0
+h ∈RS Qn
+i=1 Ai×S: the matrix of the estimated nomimal transition kernel at time step h, with bP 0
+h,s,a ∈
+R1×S serves as the (s, a)-th row for any (s, a) ∈S × A.
+• P V
+i,h ∈RS Qn
+i=1 Ai×S, bP V
+i,h ∈RS Qn
+i=1 Ai×S: at time step h, those matrices represent the worst-case prob-
+ability transition kernel within the i-th agent’s uncertainty set around the nominal/estimated nominal
+transition kernel, associated with any vector V ∈RS. As a result, we denote P V
+i,h,s,a (resp. bP V
+i,h,s,a) as
+the (s, a)-th row of the transition matrix P V
+i,h (resp. bP V
+i,h), defined by
+P V
+i,h,s,a = argminP∈U
+σi
+ρ (P 0
+h,s,a)PV,
+and
+bP V
+i,h,s,a = argminP∈U
+σi
+ρ ( b
+P 0
+h,s,a)PV.
+(53a)
+Similarly, we define the corresponding probability transition matrices for some special value vectors that
+are useful: P π,V
+i,h
+∈RS Qn
+i=1 Ai×S, P π,bV
+i,h
+∈RS Qn
+i=1 Ai×S, bP π,V
+i,h
+∈RS Qn
+i=1 Ai×S and bP π,bV
+i,h
+∈RS Qn
+i=1 Ai×S.
+Here, we already use the following short-hand notation:
+P π,V
+i,h
+:= P
+V
+π,σi
+i,h+1
+i,h
+and
+P π,V
+i,h,s,a := P
+V
+π,σi
+i,h+1
+i,h,s,a = argminP∈U
+σi
+ρ (P 0
+h,s,a)PV π,σi
+i,h+1,
+P π,bV
+i,h
+:= P
+bV
+π,σi
+i,h+1
+i,h
+and
+P π,bV
+h,s,a := P
+bV
+π,σi
+i,h+1
+h,s,a
+= argminP∈U
+σi
+ρ (P 0
+h,s,a)P bV π,σi
+i,h+1,
+bP π,V
+i,h
+:= bP
+V
+π,σi
+i,h+1
+i,h
+and
+bP π,V
+h,s,a := bP
+V
+π,σi
+i,h+1
+h,s,a
+= argminP ∈U
+σi
+ρ ( b
+P 0
+h,s,a)PV π,σi
+i,h+1,
+bP π,bV
+i,h
+:= bP
+bV
+π,σi
+i,h+1
+i,h
+and
+bP π,bV
+h,s,a := bP
+bV
+π,σi
+i,h+1
+h,s,a
+= argminP ∈U
+σi
+ρ ( b
+P 0
+h,s,a)P bV π,σi
+i,h+1.
+(53b)
+• P π
+h ∈RS×S, bP π
+h ∈RS×S, P π,V
+i,h
+∈RS×S, P π,bV
+i,h
+∈RS×S, bP
+π,V
+i,h
+∈RS×S and bP
+π,bV
+i,h
+∈RS×S: at time
+step h, those six square probability transition matrices w.r.t. a given joint policy π are defined by
+multiplying the projection matrix in (52) as below, resepctively:
+P π
+h := Ππ
+hP 0
+h,
+bP
+π
+h := Ππ
+h bP 0
+h,
+P π,V
+i,h := Ππ
+hP π,V
+i,h ,
+P π,bV
+i,h := Ππ
+hP π,bV
+i,h ,
+bP
+π,V
+i,h := Ππ
+h bP π,V
+i,h ,
+and
+bP
+π,bV
+i,h := Ππ
+h bP π,bV
+i,h .
+(54)
+We then introduce two notations of the variance. First, for any probability vector P ∈R1×S and vector
+V ∈RS, we denote the variance
+VarP (V ) := P(V ◦V ) −(PV ) ◦(PV ).
+(55)
+Then in addition, for any transition kernel P ∈RS Qn
+i=1 Ai×S and vector V ∈RS, we denote VarP (V ) ∈
+RS Qn
+i=1 Ai as a vector of variance whose (s, a)-th row of VarP (V ) is taken as
+VarP (s, a) := VarPs,a(V ).
+(56)
+A.3
+Preliminary facts of RMGs and empirical RMGs
+Dual equivalence of robust Bellman operator with TV uncertainty set.
+Opportunely, when the
+prescribed uncertainty set is in a benign form (such as using TV distance as the divergence function), the
+robust Bellman operator can be computed efficiently by solving its dual formulation instead (Clavier et al.,
+2023; Iyengar, 2005; Shi et al., 2023). In particular, the following lemma describes the equivalence between
+the robust Bellman operator and its dual form due to strong duality in the case of TV distance.
+Lemma 1 (Lemma 4, Shi et al. (2023)). Consider any TV uncertainty set Uσ(P) = Uσ
+ρTV(P) associated with
+any probability vector P ∈∆(S), fixed uncertainty level σ ∈(0, 1]. For any vector V ∈RS obeying V ≥0,
+recalling the definition of [V ]α in (24), one has
+inf
+P∈Uσ(P ) PV =
+max
+α∈[mins V (s),maxs V (s)]
+n
+P [V ]α −σ
+
+α −min
+s′ [V ]α (s′)
+o
+.
+(57)
+The above lemma ensures that the computation cost of applying robust Bellman operator is relatively
+the same as applying standard Bellman operator (Iyengar, 2005) up to some logarithmic factors.
+27
+
+Notations and facts of RMGs and empirical RMGs.
+First, recall that for any robust Markov game
+MGrob =
+
+S, {Ai}1≤i≤n, {Uσi
+ρ (P 0)}1≤i≤n, r, H
+	
+, according to robust Bellman equations in (13), one has for
+any joint policy π : S × [H] →∆(A) and any (h, i, s, a) ∈[H] × [n] × S × A:
+Qπ,σi
+i,h (s, a) = ri,h(s, a) +
+inf
+P ∈U
+σi
+ρ (P 0
+h,s,a) PV π,σi
+i,h+1,
+where V π,σi
+i,h (s) = Ea∼πh(s)[Qπ.σi
+i,h (s, a)].
+(58)
+Combined with the matrix notation in Appendix A.2, we arrive at
+V π,σi
+i,h
+= rπ
+i,h + Ππ
+h
+inf
+P ∈U
+σi
+ρ (P 0
+h) PV π,σi
+i,h+1 = rπ
+i,h + P π,V
+i,h V π,σi
+i,h+1.
+(59)
+Then we denote the empirical robust Markov games based on the estimated nominal distribution bP 0
+constructed in (21) as d
+MGrob =
+
+S, {Ai}1≤i≤n, {Uσi
+ρ ( bP 0)}1≤i≤n, r, H
+	
+. Analogous to (11), we can define the
+corresponding robust value function (resp. robust Q-function) of any joint policy π in d
+MGrob as
+bV π,σi
+i,h
+	
+1≤i≤n
+(resp.
+ bQπ,σi
+i,h
+	
+1≤i≤n). In addition, similar to (12), we can define the maximum of the robust value function
+for each agent over d
+MGrob as follows :
+∀s ∈S :
+bV ⋆,π−i,σi
+i,h
+(s) :=
+max
+π′
+i:S×[H]→∆(Ai)
+bV π′
+i×π−i,σi
+i,h
+(s) =
+max
+π′
+i:S×[H]→∆(Ai)
+inf
+P ∈Uσi( b
+P 0)
+bV π′
+i×π−i,P
+i,h
+(s),
+(60)
+which can be achieved by at least one robust best-response policy for all s ∈S simultaneously (Blanchet
+et al., 2024, Section A.2).
+Moreover, applying the robust Bellman equation in (13) for the empirical RMG d
+MGrob, for any joint
+policy π,
+bQπ,σi
+i,h (s, a) = ri,h(s, a) +
+inf
+P ∈U
+σi
+ρ ( b
+P 0
+h,s,a)
+P bV π,σi
+i,h+1,
+where bV π,σi
+i,h (s) = Ea∼πh(s)[ bQπ,σi
+i,h (s, a)],
+(61)
+which combined with the matrix notations in Appendix A.2 leads to the matrix form of the robust Bellman
+equation:
+bV π,σi
+i,h
+= rπ
+i,h + Ππ
+h
+inf
+P ∈Uσi( b
+P 0
+h)
+P bV π,σi
+i,h+1 = rπ
+i,h + bP
+π,bV
+i,h bV π,σi
+i,h+1.
+(62)
+Encouragingly, the above property of the robust Bellman equations ensure that the policy bπ output by
+the proposed method DR-NVI (cf. Algorithm 1) is a robust-{NE, CE, CCE} of the empirical RMG d
+MGrob
+when executing different corresponding subroutines, summarized in the following lemma:
+Lemma 2. The output policy bπ by DR-NVI (cf. Algorithm 1) is a robust-{NE, CE, CCE} of the empirical
+RMG d
+MGrob =
+
+S, {Ai}1≤i≤n, {Uσi
+ρ ( bP 0)}1≤i≤n, r, H
+	
+when executing different subroutine Equilibrium ∈
+Compute−{Nash, CE, CCE} accordingly, namely
+∀(i, h) ∈[n] × [H] :
+
+
+
+
+
+bVi,h = bV bπ,σi
+i,h
+= bV ⋆,bπ−i,σi
+i,h
+when Equilibrium = Compute −Nash
+bVi,h = bV bπ,σi
+i,h
+≥bV ⋆,bπ−i,σi
+i,h
+when Equilibrium = Compute −CCE
+bVi,h = bV bπ,σi
+i,h
+≥maxfi∈Fi V fi⋄bπ,σi
+i,h
+when Equilibrium = Compute −CE.
+(63)
+Proof. See Appendix B.3.1.
+B
+Proof of Theorem 1
+Before starting, let us introduce an essential lemma that characterize the difference between robust MGs and
+standard MGs. For each agent, the possible range of the robust value function shrinks as the uncertainty
+level σi of its own uncertainty set increases, shown below.
+28
+
+Lemma 3. Consider the uncertainty set Uσi(·) = Uσi
+ρTV(·) and any robust Markov game MGrob =
+
+S, {Ai}1≤i≤n, {Uσi(P)}1≤i≤n, r, H
+	
+. The robust value function {V π,σi
+i,h }i∈[n],h∈[H] associated with any joint
+policy π satisfies:
+∀(i, h) ∈[n] × [H] :
+max
+s∈S V π,σi
+i,h (s) −min
+s∈S V π,σi
+i,h (s) ≤min
+ 1
+σi
+, H −h + 1
+
+.
+Proof. See Appendix B.3.2
+Equipped with the preceding lemma, we are now prepared to prove Theorem 1 for three different robust
+solution concepts, respectively.
+B.1
+Proof of learning robust NE/robust CCE
+In this subsection, we focus on the two equilibrium concepts — robust NE and robust CCE. The proof is
+separated into several key steps as below.
+Step 1: decomposing the error.
+Before proceeding, recall the goal is to prove that the output policy
+bπ from Algorithm 1 is an ε-robust NE/CCE with corresponding subroutine (cf. line 8).
+Namely, bπ ∈
+∆(A1) × ∆(A2) × ∆(An) is a product policy satisfies
+gapNE(bπ) :=
+max
+s∈S,i∈[n]
+n
+V ⋆,bπ−i,σi
+i,1
+(s) −V bπ,σi
+i,1
+(s)
+o
+≤ε
+(64)
+or bπ ∈∆(A) is a (possibly correlated) policy obeys
+gapCCE(bπ) :=
+max
+s∈Si∈[n]
+n
+V ⋆,bπ−i,σi
+i,1
+(s) −V bπ,σi
+i,1
+(s)
+o
+≤ε.
+(65)
+We note that gapNE and gapCCE exhibit similar properties, differing only in the feasible set of policy bπ. So
+we consider them together.
+To continue, we introduce the following best-response policy of the i-th player given other players policy
+bπ−i:
+eπ⋆
+i = {eπ⋆
+i,h}1≤h≤H = argmaxπ′
+i∈S×[H]→∆(Ai)V π′
+i×bπ−i,σi
+i,1
+,
+(66)
+which indicates that
+V eπ⋆
+i ×bπ−i,σi
+i,1
+= V ⋆,bπ−i,σi
+i,1
+.
+(67)
+Armed with above notations and facts, the term of interest V ⋆,bπ−i,σi
+i,1
+−V bπ,σi
+i,1
+for any i ∈[n] can be decomposed
+as
+V ⋆,bπ−i,σi
+i,1
+−V bπ,σi
+i,1
+=
+
+V ⋆,bπ−i,σi
+i,1
+−bV eπ⋆
+i ×bπ−i,σi
+i,1
+
++
+
+bV eπ⋆
+i ×bπ−i,σi
+i,1
+−bV bπ,σi
+i,1
+
++
+
+bV bπ,σi
+i,1
+−V bπ,σi
+i,1
+
+(i)
+≤
+
+V ⋆,bπ−i,σi
+i,1
+−bV eπ⋆
+i ×bπ−i,σi
+i,1
+
++
+
+bV eπ⋆
+i ×bπ−i,σi
+i,1
+−bV ⋆,bπ−i,σi
+i,1
+
++
+
+bV bπ,σi
+i,1
+−V bπ,σi
+i,1
+
+≤
+
+V ⋆,bπ−i,σi
+i,1
+−bV eπ⋆
+i ×bπ−i,σi
+i,1
+
++
+
+bV bπ,σi
+i,1
+−V bπ,σi
+i,1
+
+(68)
+where (i) holds by bV bπ,σi
+i,1
+=
+bV ⋆,bπ−i,σi
+i,1
+(resp. bV bπ,σi
+i,1
+≥
+bV ⋆,bπ−i,σi
+i,1
+) when the subroutine in line 8 is
+Compute −Nash (resp. Compute −CCE) implied by Lemma 2, and the last inequality follows from
+bV eπ⋆
+i ×bπ−i,σi
+i,1
+≤maxπ′
+i∈S×[H]→∆(Ai) bV π′
+i×bπ−i,σi
+i,1
+= bV ⋆,bπ−i,σi
+i,1
+by definition.
+29
+
+Step 2: developing the recursion.
+We consider a more general form for any time step h ∈[H] and
+any joint policy π. Towards this, one has
+V π,σi
+i,h
+−bV π,σi
+i,h
+(i)
+= rπ
+i,h + Ππ
+h
+inf
+P ∈Uσi(P 0
+h,s,a) PV π,σi
+i,h+1 −
+
+rπ
+i,h + Ππ
+h
+inf
+P ∈Uσi( b
+P 0
+h,s,a)
+P bV π,σi
+i,h+1
+
+(ii)
+= P π,V
+i,h V π,σi
+i,h+1 −bP
+π,bV
+i,h bV π,σi
+i,h+1
+(69)
+=
+
+P π,V
+i,h V π,σi
+i,h+1 −P π,bV
+i,h bV π,σi
+i,h+1
+
++
+
+P π,bV
+i,h bV π,σi
+i,h+1 −bP
+π,bV
+i,h bV π,σi
+i,h+1
+
+(iii)
+≤P π,bV
+i,h
+
+V π,σi
+i,h+1 −bV π,σi
+i,h+1
+
++
+P π,bV
+i,h bV π,σi
+i,h+1 −bP
+π,bV
+i,h bV π,σi
+i,h+1
+
+|
+{z
+}
+=:aπ
+i,h
+(70)
+where (i) and (ii) hold by the matrix version of robust Bellman consistency equations in (59) and (62), and
+(iii) follows from the observation
+P π,V
+i,h V π,σi
+i,h+1 ≤P π,bV
+i,h V π,σi
+i,h+1
+due to the definition of P π,V
+i,h = Ππ
+h arg minP ∈Uσi(P 0
+h,s,a) PV π,σi
+i,h+1 ≤Ππ
+h arg minP ∈Uσi(P 0
+h,s,a) P bV π,σi
+i,h+1 (cf. (53)
+and (54)).
+Recursively applying (70) leads to
+V π,σi
+i,h
+−bV π,σi
+i,h
+≤P π,bV
+i,h P π,bV
+i,h+1
+
+V π,σi
+i,h+2 −bV π,σi
+i,h+2
+
++ P π,bV
+i,h
+P π,bV
+i,h+1 bV π,σi
+i,h+2 −bP
+π,bV
+i,h+1 bV π,σi
+i,h+2
+ +
+P π,bV
+i,h bV π,σi
+i,h+1 −bP
+π,bV
+i,h bV π,σi
+i,h+1
+
+≤· · · ≤
+H
+X
+j=h
+ j−1
+Y
+k=h
+P π,bV
+i,k
+!
+aπ
+i,j,
+(71)
+where the last inequality holds by adopting the following notations
+ h−1
+Y
+k=h
+P π,bV
+i,k
+!
+= I
+and
+ j−1
+Y
+k=h
+P π,bV
+i,k
+!
+= P π,bV
+i,h · P π,bV
+i,h+1 · · · P π,bV
+i,j−1.
+(72)
+Next, similar to (70), we can achieve
+bV π,σi
+i,h
+−V π,σi
+i,h
+(i)
+= bP
+π,bV
+i,h bV π,σi
+i,h+1 −P π,V
+i,h V π,σi
+i,h+1
+=
+
+bP
+π,bV
+i,h bV π,σi
+i,h+1 −P π,bV
+i,h bV π,σi
+i,h+1
+
++
+
+P π,bV
+i,h bV π,σi
+i,h+1 −P π,V
+i,h V π,σi
+i,h+1
+
+≤P π,V
+i,h
+
+bV π,σi
+i,h+1 −V π,σi
+i,h+1
+
++
+P π,bV
+i,h bV π,σi
+i,h+1 −bP
+π,bV
+i,h bV π,σi
+i,h+1
+
+(73)
+where (i) holds by (69), and the last inequality follows from the fact P π,bV
+i,h bV π
+i,h+1 ≤P π,V
+i,h bV π
+i,h+1 (see the
+definition of P π,bV
+i,h , i.e., (53) and (54)).
+Then following the routine of achieving (71), we arrive at
+bV π,σi
+i,h
+−V π,σi
+i,h
+≤
+H
+X
+j=h
+ j−1
+Y
+k=h
+P π,V
+i,k
+!
+aπ
+i,j.
+(74)
+Summing up (71) and (74), one has for any joint policy π,
+bV π,σi
+i,h
+−V π,σi
+i,h
+ ≤max{V π,σi
+i,h
+−bV π,σi
+i,h , bV π,σi
+i,h
+−V π,σi
+i,h }
+30
+
+≤max
+
+
+
+H
+X
+j=h
+ j−1
+Y
+k=h
+P π,bV
+i,k
+!
+aπ
+i,j,
+H
+X
+j=h
+ j−1
+Y
+k=h
+P π,V
+i,k
+!
+aπ
+i,j
+
+
+,
+(75)
+where the max operator is taken entry-wise for the vectors.
+To continue, we introduce an important concentration result about the value estimation error as follows:
+Lemma 4. Consider any δ ∈(0, 1). With probability at least 1 −δ, one has for any joint policy π,
+∀(h, i) ∈[H] × [n] :
+aπ
+i,h =
+P π,bV
+i,h bV π,σi
+i,h+1 −bP
+π,bV
+i,h bV π,σi
+i,h+1
+
+≤2
+s
+log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+q
+VarP π
+h(bV π
+i,h+1) + log( 18S Qn
+i=1 AinHN
+δ
+)H
+N
+1
+≤3
+s
+H2 log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+1
+(76)
+where VarP π
+h(·) is defined in (56).
+Proof. See Appendix B.3.3.
+Step 3: controlling the first term in (75).
+Let us introduce some additional notations for convenience.
+Recall es denote a S-dimensional standard basis supported on the s-th element. We denote
+dh
+h = es
+and
+dj
+h = e⊤
+s
+ j−1
+Y
+k=h
+P π,bV
+i,k
+!
+∀j = h + 1, · · · , H.
+(77)
+Armed with above notations and facts, for any s ∈S, we have
+V π,σi
+i,h (s) −bV π,σi
+i,h (s) =
+D
+es, V π,σi
+i,h
+−bV π,σi
+i,h
+E
+=
+H
+X
+j=h
+D
+dj
+h, aπ
+i,j
+E
+≤
+H
+X
+j=h
+*
+dj
+h,
+
+2
+s
+log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+q
+VarP π
+j (bV π,σi
+i,j+1) + log( 18S Qn
+i=1 AinHN
+δ
+)H
+N
+1
+
+
++
+≤log( 18S Qn
+i=1 AinHN
+δ
+)H2
+N
++ 2
+s
+log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+H
+X
+j=h
+
+dj
+h,
+q
+VarP π
+j (bV π,σi
+i,j+1)
+
+(i)
+≤log( 18S Qn
+i=1 AinHN
+δ
+)H2
+N
++ 2
+s
+log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+v
+u
+u
+tH
+H
+X
+j=h
+D
+dj
+h, VarP π
+j (bV π,σi
+i,j+1)
+E
+≤log( 18S Qn
+i=1 AinHN
+δ
+)H2
+N
++ 2
+s
+H log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+v
+u
+u
+t
+H
+X
+j=h
+
+dj
+h, VarP π, b
+V
+i,j (bV π,σi
+i,j+1)
+
+|
+{z
+}
+=:B1
++ 2
+s
+log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+v
+u
+u
+tH
+H
+X
+j=h
+
+dj
+h,
+VarP π
+j (bV π,σi
+i,j+1) −VarP π, b
+V
+i,j (bV π,σi
+i,j+1)
+
+
+|
+{z
+}
+=:B2
+(78)
+where (i) holds by the Cauchy-Schwarz inequality.
+Then we control the two main terms in (78) separately.
+31
+
+• Controlling B1. To begin with, we introduce the following lemma about PH
+j=h
+
+dj
+h, VarP π, b
+V
+i,j (bV π,σi
+i,j+1)
+
+whose proof is postponed to Appendix B.3.4.
+Lemma 5. Consider any δ ∈(0, 1). With probability at least 1 −δ, one has for any joint policy π,
+∀(h, i) ∈[H] × [n] :
+H
+X
+j=h
+
+dj
+h, VarP π, b
+V
+i,j (bV π,σi
+i,j+1)
+
+≤3H
+
+max
+s∈S
+bV π,σi
+i,j+1(s) −min
+s∈S
+bV π,σi
+i,j+1(s)
+ 
+1 + 2H
+s
+log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+
+.
+(79)
+Applying Lemma 5 to B1 in (78), we arrive at
+B1 = 2
+v
+u
+u
+tH log
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+v
+u
+u
+t
+H
+X
+j=h
+
+dj
+h, VarP π, b
+V
+i,j (bV π,σi
+i,j+1)
+
+≤2
+v
+u
+u
+tH log
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+v
+u
+u
+u
+t3H
+
+max
+s∈S
+bV π,σi
+i,j+1(s) −min
+s∈S
+bV π,σi
+i,j+1(s)
+  
+1 + 2H
+v
+u
+u
+tlog
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+!
+(i)
+≤2
+v
+u
+u
+u
+t3H2 log
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+min
+ 1
+σi
+, H −h + 1
+  
+1 + 2H
+v
+u
+u
+tlog
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+!
+≤6
+v
+u
+u
+tH2 min {1/σi, H} log
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+,
+(80)
+where (i) holds by applying Lemma B.3.2, and the last inequality follows by taking N
+≥
+4H2 log
+  18S Qn
+i=1 AinHN
+δ
+
+.
+• Controlling B2. We introduce another lemma; refer to the proof in Appendix B.3.5.
+Lemma 6. Consider the standard RMG MG =
+
+S, {Ai}1≤i≤n, {Uσi(P 0)}1≤i≤n, r, H
+	
+and empirical
+RMG MGrob =
+
+S, {Ai}1≤i≤n, {Uσi( bP 0)}1≤i≤n, r, H
+	
+. Considering any joint policy π, any transition
+kernel P ′ ∈RS and any eP ∈RS obeying eP ∈Uσi(P), one has
+∀(i, j) ∈[n] × [H] :
+VarP ′(bV π,σi
+i,j+1) −Var e
+P (bV π,σi
+i,j+1)
+ ≤min
+ 1
+σi
+, H −h + 1
+
+,
+(81a)
+VarP ′(V π,σi
+i,j+1) −Var e
+P (V π,σi
+i,j+1)
+ ≤min
+ 1
+σi
+, H −h + 1
+
+.
+(81b)
+Armed with above lemma, we observe that
+VarP π
+j (bV π,σi
+i,j+1) −VarP π, b
+V
+i,j (bV π,σi
+i,j+1)
+
+(i)
+=
+Ππ
+j
+
+VarP 0
+j (bV π,σi
+i,j+1) −VarP π, b
+V
+i,j (bV π,σi
+i,j+1)
+
+(ii)
+≤
+VarP 0
+j (bV π,σi
+i,j+1) −VarP π, b
+V
+i,j (bV π,σi
+i,j+1)
+
+∞
+1
+≤min
+ 1
+σi
+, H −h + 1
+
+1,
+(82)
+32
+
+where (i) and (ii) follows from the matrix notations Ππ
+j (cf (52)) and P π
+j , P π,bV
+i,j
+(cf (54)), and the last
+inequality holds by applying Lemma 6 with P ′ = P 0
+j,s,a, eP = P π,bV
+i,j,s,a for all (s, a) ∈S × A.
+Plugging back (82) to (78), it can be verified that
+B2 = 2
+s
+log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+v
+u
+u
+tH
+H
+X
+j=h
+
+dj
+h,
+VarP π
+j (bV π,σi
+i,j+1) −VarP π, b
+V
+i,j (bV π,σi
+i,j+1)
+
+
+≤2
+s
+H log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+v
+u
+u
+t
+H
+X
+j=h
+
+dj
+h, min
+ 1
+σi
+, H −h + 1
+
+1
+
+≤2
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+.
+(83)
+Consequently, combining (80) and (83), (78) can be bounded by
+V π,σi
+i,h (s) −bV π,σi
+i,h (s) ≤log( 18S Qn
+i=1 AinHN
+δ
+)H2
+N
++ 6
+v
+u
+u
+tH2 min {1/σi, H} log
+
+18S Qn
+i=1 AinHN
+δ
+
+N
++ 2
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+≤9
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+,
+(84)
+where the last inequality holds by taking N ≥4H2 log( 18S Qn
+i=1 AinHN
+δ
+).
+Step 4: controlling the second term in (75).
+To do so, similar to (77), we define
+wh
+h = es
+and
+wj
+h = e⊤
+s
+ j−1
+Y
+k=h
+P π,V
+i,k
+!
+∀j = h + 1, · · · , H.
+(85)
+With the above notations in mind, following the routine of (78) gives: for any s ∈S,
+bV π,σi
+i,h (s) −V π,σi
+i,h (s)
+≤log( 18S Qn
+i=1 AinHN
+δ
+)H2
+N
++ 2
+s
+log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+H
+X
+j=h
+
+wj
+h,
+q
+VarP π
+j (bV π,σi
+i,j+1)
+
+(i)
+≤log( 18S Qn
+i=1 AinHN
+δ
+)H2
+N
++ 2
+s
+log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+H
+X
+j=h
+D
+wj
+h,
+qVarP π
+j (bV π,σi
+i,j+1 −V π,σi
+i,j+1)
+ +
+qVarP π
+j (V π,σi
+i,j+1) −VarP π,V
+i,j (V π,σi
+i,j+1)
+ +
+q
+VarP π,V
+i,j (V π,σi
+i,j+1)
+E
+≤
+H2 log
+
+18S Qn
+i=1 AinHN
+δ
+
+N
++ 2
+s
+H log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+v
+u
+u
+t
+H
+X
+j=h
+D
+wj
+h, VarP π,V
+i,j (V π,σi
+i,j+1)
+E
+|
+{z
+}
+=:B3
++ 2
+s
+H log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+v
+u
+u
+t
+H
+X
+j=h
+D
+wj
+h,
+VarP π
+j (V π,σi
+i,j+1) −VarP π,V
+i,j (V π,σi
+i,j+1)
+
+E
+|
+{z
+}
+=:B4
+33
+
++ 2
+s
+H log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+v
+u
+u
+t
+H
+X
+j=h
+D
+wj
+h,
+VarP π
+j (bV π,σi
+i,j+1 −V π,σi
+i,j+1)
+
+E
+|
+{z
+}
+=:B5
+,
+(86)
+where (i) holds by the triangle inequality and the elementary inequality
+p
+VarP (V + V ′) ≤
+p
+VarP (V ) +
+p
+VarP (V ′) for any transition kernel P ∈RS and vectors V, V ′ ∈RS, and the last inequality follows from
+applying the Cauchy-Schwarz inequality to those terms.
+We can control the three main terms in (86) separately as below:
+• Controlling B3. First, we introduce the following lemma for PH
+j=h
+D
+wj
+h, VarP π,V
+i,j (V π,σi
+i,j+1)
+E
+.
+Lemma 7. Consider any δ ∈(0, 1). For any joint policy π, with probability at least 1 −δ,
+∀(h, i) ∈[H] × [n] :
+H
+X
+j=h
+
+wj
+h, VarP π, b
+V
+i,j (V π,σi
+i,j+1)
+
+≤3H
+
+max
+s∈S V π,σi
+i,h (s) −min
+s∈S V π,σi
+i,h (s)
+
+.
+(87)
+Proof. See Appendix B.3.6.
+Then applying Lemma 7 yields
+B3 = 2
+v
+u
+u
+tH log
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+v
+u
+u
+t
+H
+X
+j=h
+D
+wj
+h, VarP π,V
+i,j (V π,σi
+i,j+1)
+E
+≤2
+v
+u
+u
+tH log
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+s
+3H
+
+max
+s∈S
+bV π,σi
+i,h (s) −min
+s∈S
+bV π,σi
+i,h (s)
+
+≤4
+v
+u
+u
+tH2 min {1/σi, H} log
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+,
+(88)
+where the last inequality follows from Lemma 3.
+• Controlling B4 and B5 . First, it is easily verified that B4 can be controlled as the same as that for
+B2 (see (83)) by applying Lemma (81b), namely
+B4 ≤2
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+.
+(89)
+Then the remainder of the proof shall focus on B5. Recalling the definition in (86), one has
+B5 = 2
+s
+H log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+v
+u
+u
+t
+H
+X
+j=h
+D
+wj
+h,
+VarP π
+j (bV π,σi
+i,j+1 −V π,σi
+i,j+1)
+
+E
+≤2
+s
+H2 log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+r
+max
+h≤j≤H
+VarP π
+j (bV π,σi
+i,j+1 −V π,σi
+i,j+1)
+
+∞
+≤2
+s
+H2 log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+max
+h≤j≤H
+bV π,σi
+i,j+1 −V π,σi
+i,j+1
+
+∞.
+(90)
+34
+
+Summing up (88), (89), and (90) and inserting back to (86), we conclude
+bV π,σi
+i,h (s) −V π,σi
+i,h (s)
+≤log( 18S Qn
+i=1 AinHN
+δ
+)H2
+N
++ 4
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
++ 2
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
++ 2
+s
+H2 log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+max
+h≤j≤H
+bV π,σi
+i,j+1 −V π,σi
+i,j+1
+
+∞
+≤7
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+1
++ 2
+s
+H2 log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+max
+h≤j≤H
+bV π,σi
+i,j+1 −V π,σi
+i,j+1
+
+∞1,
+(91)
+as long as N ≥H2 log
+  18S Qn
+i=1 AinHN
+δ
+
+.
+Step 5: summing up the results.
+Inserting (84) and (91) back into (75), we observe that
+bV π,σi
+i,h
+−V π,σi
+i,h
+ ≤max
+n
+V π,σi
+i,h
+−bV π,σi
+i,h , bV π,σi
+i,h
+−V π,σi
+i,h
+o
+≤max
+n
+9
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+1,
+7
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+1 + 2
+s
+H2 log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+max
+h≤j≤H
+bV π,σi
+i,j+1 −V π,σi
+i,j+1
+
+∞1
+o
+,
+(92)
+which indicates
+max
+h∈[H]
+bV π,σi
+i,h
+−V π,σi
+i,h
+
+∞
+≤9
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+1 + 2
+s
+H2 log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+max
+h∈[H]
+bV π,σi
+i,h+1 −V π,σi
+i,h+1
+
+∞
+(i)
+≤9
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+1 + 1
+2 max
+h∈[H]
+bV π,σi
+i,h
+−V π,σi
+i,h
+
+∞
+≤18
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+,
+(93)
+where (i) holds by taking N ≥16H2 log( 18S Qn
+i=1 AinHN
+δ
+) and invoking the basic fact that bV π,σi
+i,H+1 = V π,σi
+i,H+1 =
+0.
+Finally, we complete the proof by showing that the performance gap in (68) is bounded by
+V ⋆,bπ−i
+i,1
+−V bπ
+i,1 ≤
+
+V ⋆,bπ−i
+i,1
+−bV eπ⋆
+i ×bπ−i
+i,1
+
++
+
+bV bπ
+i,1 −V bπ
+i,1
+
+≤
+V ⋆,bπ−i
+i,1
+−bV eπ⋆
+i ×bπ−i
+i,1
+
+∞1 +
+bV bπ
+i,1 −V bπ
+i,1
+
+∞1
+≤max
+h∈[H]
+V ⋆,bπ−i
+i,h
+−bV eπ⋆
+i ×bπ−i
+i,h
+
+∞1 + max
+h∈[H]
+bV bπ
+i,h −V bπ
+i,h
+
+∞1
+≤36
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+1,
+(94)
+35
+
+where the last inequality holds by applying (93) to two different cases when π = eπ⋆
+i × bπ−i or π = bπ,
+respectively.
+As a result, to achieve maxs∈S,i∈[n]
+n
+V ⋆,bπ−i,σi
+i,1
+(s) −V bπ,σi
+i,1
+(s)
+o
+≤ε with probability at least 1 −δ, we
+require the total number of samples
+Nall = HS
+Y
+i∈[n]
+AiN ≥
+C1SH3 Q
+1≤i≤n Ai log
+
+18S Qn
+i=1 AinHN
+δ
+
+ε2
+min
+n
+H,
+1
+min1≤i≤n σi
+o
+≥
+C0SH3 Q
+1≤i≤n Ai log
+
+18S Qn
+i=1 AinHN
+δ
+
+ε2
+min
+n
+H,
+1
+min1≤i≤n σi
+o
++ 16H3S
+Y
+i∈[n]
+Ai log(18S Qn
+i=1 AinHN
+δ
+),
+(95)
+providing C1 > C0 are larger enough universal constant, and ε ≤
+r
+min
+n
+H,
+1
+min1≤i≤n σi
+o
+.
+B.2
+Proof of learning robust CE
+This section is analogous to the proof for learning robust NE/CCE in Appendix B.1.
+The goal is to prove that the policy bπ output from Algorithm 1 is an ε-robust CE when executing
+subroutine Compute −CE(·) for line 8, i.e.,
+gapCE(bπ) =
+max
+s∈S,1≤i≤n
+
+max
+fi∈Fi V fi⋄bπ,σi
+i,1
+(s) −V bπ,σi
+i,1
+(s)
+
+≤ε.
+(96)
+So we define the following best perturbation policy of the i-th player as
+π⋆
+i = {π⋆
+i,h}1≤h≤H =
+
+argmaxfi∈FiV fi⋄bπ,σi
+i,1
+
+⋄bπ
+(97)
+which leads to
+V π⋆
+i ,σi
+i,1
+= max
+fi∈Fi V fi⋄bπ,σi
+i,1
+.
+(98)
+With above notations in mind, for any 1 ≤i ≤n, the term of interest can be decomposed as
+max
+fi∈Fi V fi⋄bπ,σi
+i,1
+−V bπ,σi
+i,1
+=
+
+V π⋆
+i ,σi
+i,1
+−bV π⋆
+i ,σi
+i,1
+
++
+
+bV π⋆
+i ,σi
+i,1
+−bV bπ,σi
+i,1
+
++
+
+bV bπ,σi
+i,1
+−V bπ,σi
+i,1
+
+(i)
+≤
+
+V π⋆
+i ,σi
+i,1
+−bV π⋆
+i ,σi
+i,1
+
++
+
+bV π⋆
+i ,σi
+i,1
+−max
+fi∈Fi
+bV fi⋄bπ,σi
+i,1
+
++
+
+bV bπ,σi
+i,1
+−V bπ,σi
+i,1
+
+≤
+
+V π⋆
+i ,σi
+i,1
+−bV π⋆
+i ,σi
+i,1
+
++
+
+bV bπ,σi
+i,1
+−V bπ,σi
+i,1
+
+(99)
+where (i) holds by bV bπ,σi
+i,1
+≥maxfi∈Fi V fi⋄bπ,σi
+i,1
+when the subroutine in line 8 is Compute −CE(·) implied by
+Lemma 2, and the last inequality follows from bV π⋆
+i ,σi
+i,1
+= bV f i⋄bπ,σi
+i,1
+≤maxfi∈Fi bV fi⋄bπ,σi
+i,1
+for some f i ∈Fi.
+Observing that (99) is similar to (68), it can be verified that following the same pipeline routine and the
+same facts developed from Step 2 to Step 5 in Appendix B.1, we can achieve similar results as below:
+∀i ∈[n] :
+max
+fi∈Fi V fi⋄bπ,σi
+i,1
+−V bπ,σi
+i,1
+≤36
+s
+H2 min {1/σi, H} log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+1,
+(100)
+which yields (95) and complete the proof. We omit the details here for conciseness.
+36
+
+B.3
+Proof of the auxiliary lemmas
+B.3.1
+Proof of Lemma 2
+We will prove each line of (63) separately with an induction argument. Note that Blanchet et al. (2023)
+provides the proof of the first line of (63) for robust NE. For completeness, we offer the whole proof for all
+of the three robust solution concepts (including robust-NE).
+Proof for robust NE.
+First, we focus on the first line of (63) and provide the following induction
+argument:
+• Base case when h = H. Note that bV π,σi
+i,H+1 = 0 for all i ∈[n] are satisfied by definition. As a result, the
+robust Q-function for any joint policy π and the estimate from Algorithm 1 satisfy
+∀(i, s, a) ∈[n] × S × A :
+bQπ,σi
+i,H (s, a) = ri,H(s, a)
+and
+bQi,H(s, a) = ri,H(s, a)
+(101)
+which directly leads to
+bV π,σi
+i,H
+= bVi,H
+(102)
+and the output πH obeying
+∀s ∈S :
+bπH(· | s) ←Compute −Nash (r1,H(s, a), r2,H(s, a), · · · , rn,H(s, a)) .
+(103)
+Consequently, invoking line 8 of Algorithm 1 gives that for all s ∈S,
+bVi,H(s) = Ea∼bπH(s)
+h
+bQi,H(s, a)
+i (i)
+= Ea∼bπH(s)
+h
+bQbπ,σi
+i,H (s, a)
+i (ii)
+= Ea∼bπH(s)[ri,H(s, a)]
+(104)
+(iii)
+=
+max
+eπi,H(s)∈∆(Ai) Ea∼eπi,H(s)×bπ−i,H(s)[ri,H(s, a)]
+(105)
+(iv)
+=
+max
+eπi,H(s)∈∆(Ai) Ea∼eπi,H(s)×bπ−i,H(s)
+h
+bQeπi×bπ−i,σi
+i,H
+(s, a)
+i
+=
+max
+eπi:S×[H]→∈∆(Ai)
+bV eπi×bπ−i,σi
+i,H
+(s) = bV ⋆,bπ−i,σi
+i,H
+,
+(106)
+where (i) and (ii) hold by (101), (iii) arises from the definition of robust-NE (see (103)) associated with
+{ri,H}i∈[n], (iv) holds by applying (101) for policy π = eπi × bπ−i, and the penultimate equality follows
+from the fact that only the policy of the time step H will influence bV π,σi
+i,H (s) due to Markov property.
+Thus we complete the proof for the base case.
+• Induction. To continue, suppose the first line in (63) holds for step h + 1, we shall proof that it also
+holds for time step h. To proceed, applying the robust Bellman equation in (61) for the TV uncertainty
+set Uσi(·), we observe that
+∀(s, a) ∈S × A :
+bQbπ,σi
+i,h (s, a) = ri,h(s, a) +
+inf
+P ∈Uσi( b
+P 0
+h,s,a)
+P bV bπ,σi
+i,h+1.
+(107)
+In addition, line 5 of Algorithm 1 gives that for all (s, a) ∈S × A,
+bQi,h(s, a) = ri,h(s, a) +
+inf
+P ∈Uσi( b
+P 0
+h,s,a)
+P bVi,h+1
+= ri,h(s, a) +
+inf
+P ∈Uσi( b
+P 0
+h,s,a)
+P bV bπ,σi
+i,h+1 = bQbπ,σi
+i,h (s, a),
+(108)
+where the penultimate equality holds by the induction assumption and the final equality follows from
+(107). It indicates
+∀s ∈S :
+bVi,h(s) = Ea∼bπh(s)
+h
+bQi,h(s, a)
+i
+= Ea∼bπh(s)
+h
+bQbπ,σi
+i,h (s, a)
+i
+= bV bπ,σi
+i,h (s)
+(109)
+37
+
+and that the output policy obeys
+∀s ∈S :
+bπh(· | s) ←Compute −Nash
+
+bQbπ,σi
+1,h (s, ·), bQbπ,σi
+2,h (s, ·), bQbπ,σi
+n,h (s, ·)
+
+.
+(110)
+Then the term of interest satisfies that for any s ∈S,
+bV ⋆,bπ−i,σi
+i,h
+(s) =
+max
+eπi:S×[H]→∆(Ai) Ea∼eπi,h(s)×bπ−i,h(s)
+h
+bQeπi×bπ−i,σi
+i,h
+(s, a)
+i
+=
+max
+eπi:S×[H]→∆(Ai) Ea∼eπi,h(s)×bπ−i,h(s)
+h
+ri,h(s, a) +
+inf
+P ∈Uσi( b
+P 0
+h,s,a)
+P bV eπi×bπ−i,σi
+i,h+1
+i
+(i)
+=
+max
+eπi,h∈∆(Ai) Ea∼eπi,h(s)×bπ−i,h(s)
+h
+ri,h(s, a) +
+max
+eπi:S×[H]→∆(Ai)
+inf
+P ∈Uσi( b
+P 0
+h,s,a)
+P bV eπi×bπ−i,σi
+i,h+1
+i
+(ii)
+=
+max
+eπi,h(s)∈∆(Ai) Ea∼eπi,h(s)×bπ−i,h(s)
+h
+ri,h(s, a) +
+inf
+P ∈Uσi( b
+P 0
+h,s,a)
+P bV bπ,σi
+i,h+1
+i
+=
+max
+eπi,h(s)∈∆(Ai) Ea∼eπi,h(s)×bπ−i,h(s)
+h
+bQbπ,σi
+i,h (s, a)
+i
+,
+(111)
+where (i) holds by ri,h(s, a) is independent from all other time steps h′ ̸= h, (ii) is due to
+the exchangability of maxeπi:S×[H]→∆(Ai) and infP ∈Uσi( b
+P 0
+h,s,a), along with the induction assumption
+bV bπ,σi
+i,h+1 = bV ⋆,bπ−i,σi
+i,h+1
+= maxeπi:S×[H]→∆(Ai) bV eπi×bπ−i,σi
+i,h+1
+, and the last equality can be verified by (107). To
+continue, applying (110) with the definition of robust NE, one has
+bV ⋆,bπ−i,σi
+i,h
+(s) =
+max
+eπi,h(s)∈∆(Ai) Ea∼eπi,h(s)×bπ−i,h(s)
+h
+bQbπ,σi
+i,h (s, a)
+i
+= Ea∈bπh(s)
+h
+bQbπ,σi
+i,h (s, a)
+i
+= Ea∈bπh(s)
+h
+bQi,h(s, a)
+i
+= bVi,h(s),
+(112)
+where the penultimate equality follows from (108). Finally, it is easily observed that
+∀s ∈S : bVi,h(s) = Ea∈bπh(s)
+h
+bQi,h(s, a)
+i
+= Ea∈bπh(s)
+h
+bQbπ,σi
+i,h (s, a)
+i
+= bV bπ,σi
+i,h (s).
+(113)
+Combined this fact with (115) shows that bVi,h = bV bπ,σi
+i,h
+= bV ⋆,bπ−i,σi
+i,h
+, which complete the induction
+argument.
+Proof for robust CCE.
+The proof is analogous to the above argument for robust NE. According to the
+different subroutine Compute −CCE and the corresponding output policy bπ, the proof only differs in two
+steps. First, for the base case, following the same routine in (106) but replacing the robust NE property by
+the one of robust CCE, one has
+bVi,H(s) = Ea∼bπH(s)[ bQi,H(s, a)] = Ea∼bπH(s)[ri,H(s, a)]
+≥
+max
+eπi,H(s)∈∆(Ai) Ea∼eπi,H(s)×bπ−i,H(s)[ri,H(s, a)]
+=
+max
+eπi,H(s)∈∆(Ai) Ea∼eπi,H(s)×bπ−i,H(s)
+h
+bQeπi×bπ−i,σi
+i,H
+(s, a)
+i
+=
+max
+eπi:S×[H]→∈∆(Ai)
+bV eπi×bπ−i,σi
+i,H
+(s) = bV ⋆,bπ−i,σi
+i,H
+.
+(114)
+Secondly, following (115) in induction step, we can achieve
+bV ⋆,bπ−i,σi
+i,h
+≤bVi,h
+(115)
+and bVi,h = bV bπ,σi
+i,h
+≥bV ⋆,bπ−i,σi
+i,h
+, which complete the proof.
+38
+
+Proof for robust CE.
+The proof is similar to the one of robust NE as well. According to the different
+subroutine Compute −CE and the corresponding output policy bπ, the parallel claims to (106) and (115) are
+shown below, which we omit the process for brevity:
+bVi,H(s) = Ea∼bπH(s)[ bQi,H(s, a)] = Ea∼bπH(s)[ri,H(s, a)]
+≥
+max
+fi,H,s:Ai→Ai Ea∼fi,H,s⋄bπH(s)[ri,H(s, a)] = max
+fi∈Fi
+bV fi⋄bπ,σi
+i,H
+,
+(116)
+and
+max
+fi∈Fi
+bV fi⋄bπ,σi
+i,h
+≤bV bπ,σi
+i,h
+= bVi,h.
+(117)
+Thus we complete the proof.
+B.3.2
+Proof of Lemma 3
+To begin with, we observe that
+min
+s∈S V π,σi
+i,h (s) = min
+s∈S Ea∼πh(s)[Qπ,σi
+i,h (s, a)] = min
+s∈S Ea∼πh(s)[ri,h(s, a) +
+inf
+P ∈Uσi(Ph,s,a) PV π,σi
+i,h+1]
+≥0 + min
+s∈S V π,σi
+i,h+1(s),
+(118)
+where the second equality holds by the robust Bellman equation (cf. (13)). Similarly, one has
+max
+s∈S V π,σi
+i,h (s) = max
+s∈S Ea∼πh(s)[Qπ,σi
+i,h (s, a)] = max
+s∈S Ea∼πh(s)[ri,h(s, a) +
+inf
+P ∈Uσi(Ph,s,a) PV π,σi
+i,h+1]
+≤1 +
+max
+(s,a)∈S×A
+inf
+P ∈Uσi(Ph,s,a) PV π,σi
+i,h+1.
+(119)
+Armed with above results, we are ready to prove Lemma 3. Towards this, we introduce some additional
+notations for convenience. Fixing any joint policy π, note that for any (i, h) ∈[n] × [H], there exist at least
+one state s⋆
+i,h that satisfies V π,σi
+i,h (s⋆
+i,h) = mins∈S V π,σi
+i,h (s).
+Then, it is observed that for any (s, a) ∈S × A and accessible uncertainty set σi > 0, we can construct
+an auxiliary vector P ′
+h,s,a ∈RS by strictly reducing the values of some elements of Ph,s,a so that
+0 ≤P ′
+h,s,a ≤Ph,s,a
+and
+X
+s′∈S
+Ph,s,a(s′) −P ′
+h,s,a(s′) =
+P ′
+h,s,a −Ph,s,a
+
+1 = σi.
+(120)
+Recalling es⋆
+i,h denote a S-dimensional standard basis supported on s⋆
+i,h, the above fact directly indicates
+that
+1
+2
+P ′
+h,s,a + σi
+
+es⋆
+i,h
+⊤−Ph,s,a
+
+1 ≤1
+2
+P ′
+h,s,a −Ph,s,a
+
+1 + 1
+2
+σi
+
+es⋆
+i,h
+⊤
+1 ≤σi,
+(121)
+where the first inequality holds by that TV distance enjoys the triangle inequality.
+The above results in (121) imply that P ′
+h,s,a +σi
+
+es⋆
+i,h
+⊤is a distribution vector and P ′
+h,s,a +σi
+
+es⋆
+i,h
+⊤∈
+Uσi(Ph,s,a), which leads to
+inf
+P ∈Uσi(Ph,s,a) PV π,σi
+i,h+1 ≤
+
+P ′
+h,s,a + σi
+
+es⋆
+i,h
+⊤
+V π,σi
+i,h+1 ≤
+P ′
+h,s,a
+
+1
+V π,σi
+i,h+1
+
+∞+ σiV π,σi
+i,h+1(s⋆
+i,h+1)
+≤(1 −σi) max
+s∈S V π,σi
+i,h+1(s) + σi min
+s∈S V π,σi
+i,h+1(s),
+(122)
+where the last inequality can be verified by (see (120))
+P ′
+h,s,a
+
+1 =
+X
+s′
+P ′
+h,s,a(s′) = −
+X
+s′
+ Ph,s,a(s′) −P ′
+h,s,a(s′)
+
++
+X
+s′
+Ph,s,a(s′) = 1 −σi.
+(123)
+39
+
+Inserting (122) back to (119) yields
+max
+s∈S V π,σi
+i,h (s) ≤1 +
+max
+(s,a)∈S×A
+inf
+P ∈Uσi(Ph,s,a) PV π,σi
+i,h+1
+≤1 + (1 −σi) max
+s∈S V π,σi
+i,h+1(s) + σi min
+s∈S V π,σi
+i,h+1(s).
+(124)
+Combined above fact with (118) shows that
+max
+s∈S V π,σi
+i,h (s) −min
+s∈S V π,σi
+i,h (s) ≤1 + (1 −σi) max
+s∈S V π,σi
+i,h+1(s) + σi min
+s∈S V π,σi
+i,h+1(s) −min
+s∈S V π,σi
+i,h+1(s)
+≤1 + (1 −σi)
+
+max
+s∈S V π,σi
+i,h+1(s) −min
+s∈S V π,σi
+i,h+1(s)
+
+≤1 + (1 −σi)
+
+1 + (1 −σi)
+
+max
+s∈S V π
+i,h+2(s) −min
+s∈S V π
+i,h+2(s)
+
+≤· · · ≤1 −(1 −σi)H−h
+σi
+≤1
+σi
+.
+(125)
+Combining above result with the basic fact maxs∈S V π,σi
+i,h (s)−mins∈S V π,σi
+i,h (s) ≤H −h+1, we complete
+the proof.
+B.3.3
+Proof of Lemma 4
+The proof is adapted from the routine for proving Shi et al. (2023, Lemma 9).
+Step 1: a point-wise bound.
+Consider any fixed (independent from bP 0) value vector V , combined with
+the definitions in (53), the (s, a)-th row of the term of interest can be written out as
+P V
+i,h,s,aV −bP V
+i,h,s,aV
+ =
+
+inf
+P∈Uσi(P 0
+h,s,a) PV −
+inf
+P∈Uσi( b
+P 0
+h,s,a)
+PV
+
+(i)
+=
+
+max
+α∈[mins V (s),maxs V (s)]
+n
+P 0
+h,s,a [V ]α −σi
+
+α −min
+s′ [V ]α (s′)
+o
+−
+max
+α∈[mins V (s),maxs V (s)]
+n
+bP 0
+h,s,a [V ]α −σi
+
+α −min
+s′ [V ]α (s′)
+o 
+≤
+max
+α∈[mins V (s),maxs V (s)]
+P 0
+h,s,a [V ]α −bP 0
+h,s,a [V ]α
+
+≤max
+α∈[0,H]
+P 0
+h,s,a [V ]α −bP 0
+h,s,a [V ]α
+ ,
+(126)
+where (i) holds by applying Lemma 1, and the last inequality can be verified by the fact that the maximum
+operator is 1-Lipschitz.
+To continue, recalling the definition of variance in (55) and using the Bernstein’s inequality, one has for
+a fixed α ∈[0, H] and (s, a) ∈S × A, with probability at least 1 −δ,
+
+
+P 0
+h,s,a −bP 0
+h,s,a
+
+[V ]α
+ ≤
+s
+2 log( 2
+δ )
+N
+q
+VarP 0
+h,s,a([V ]α) + 2H log( 2
+δ )
+3N
+≤
+s
+2 log( 2
+δ )
+N
+q
+VarP 0
+h,s,a(V ) + 2H log( 2
+δ )
+3N
+,
+(127)
+where the first inequality holds by the fact that ∥V ∥∞≤H, and the last inequality can be easily verified by
+noticing that VarP 0
+h,s,a([V ]α) ≤VarP 0
+h,s,a(V ) for all α ∈[0, maxs V (s)].
+40
+
+Step 2:
+the union bound.
+Then to obtain the union bound, we first notice that the function
+
+
+P 0
+h,s,a −bP 0
+h,s,a
+
+[V ]α
+ is 1-Lipschitz w.r.t.
+α for any V obeying 0 ≤V (s) ≤H.
+Therefore, we can
+construct an ε1-net Nε1 for α over [0, H] with the size up to |Nε1| ≤3H
+ε1 (Vershynin, 2018). So applying
+the uniform concentration argument combined with (127) yields that for all (α, s, a) ∈Nε1 × S × A, with
+probability at least 1 −δ,
+
+
+P 0
+h,s,a −bP 0
+h,s,a
+
+[V ]α
+ ≤
+v
+u
+u
+t2 log
+ 2S Qn
+i=1 Ai|Nε1|
+δ
+
+N
+q
+VarP 0
+h,s,a(V ) +
+2H log
+ 2S Qn
+i=1 Ai|Nε1|
+δ
+
+3N
+.
+(128)
+Inserting the above fact back to (126), we arrive at: for all (s, a) ∈S × A,
+P V
+i,h,s,aV −bP V
+i,h,s,aV
+ ≤max
+α∈[0,H]
+P 0
+h,s,a [V ]α −bP 0
+h,s,a [V ]α
+
+(i)
+≤sup
+α∈Nε1
+P 0
+h,s,a [V ]α −bP 0
+h,s,a [V ]α
+ + ε1
+(ii)
+≤
+v
+u
+u
+t2 log
+ 2S Qn
+i=1 Ai|Nε1|
+δ
+
+N
+q
+VarP 0
+h,s,a(V ) +
+2 log
+ 2S Qn
+i=1 Ai|Nε1|
+δ
+
+H
+3N
++ ε1
+(129)
+(iii)
+≤
+v
+u
+u
+t2 log
+ 2S Qn
+i=1 Ai|Nε1|
+δ
+
+N
+q
+VarP 0
+h,s,a(V ) +
+log
+ 2S Qn
+i=1 Ai|Nε1|
+δ
+
+H
+N
+(iv)
+≤2
+v
+u
+u
+tlog
+
+18S Qn
+i=1 AiN
+δ
+
+N
+q
+VarP 0
+h,s,a(V ) +
+log
+
+18S Qn
+i=1 AiN
+δ
+
+H
+N
+(130)
+≤2
+v
+u
+u
+tlog
+
+18S Qn
+i=1 AiN
+δ
+
+N
+∥V ∥∞+
+log
+
+18S Qn
+i=1 AiN
+δ
+
+H
+N
+≤3
+v
+u
+u
+tH2 log
+
+18S Qn
+i=1 AiN
+δ
+
+N
+(131)
+where (i) arises from the fact that the solution α⋆= arg maxα∈[0,H]
+P 0
+h,s,a [V ]α −bP 0
+h,s,a [V ]α
+ falls into the
+ε1-ball centered around some point inside Nε1 and
+P 0
+h,s,a [V ]α −bP 0
+h,s,a [V ]α
+ is 1-Lipschitz w.r.t. α, (ii)
+holds by (128), (iii) follows from taking ε1 = log(
+2S Qn
+i=1 Ai|Nε1 |
+δ
+)H
+3N
+, (iv) is verified by |Nε1| ≤3H
+ε1 ≤9N, and
+the last inequality is due to the fact ∥V ∥∞≤H and letting N ≥log( 18S Qn
+i=1 AiN
+δ
+).
+Invoking the matrix form (see (53) and (54)) and applying the above result with V = bV π,σi
+i,h+1 for a union
+bound over all (h, i, s, a) ∈[H] × [n] × S × A, we complete the proof: with probability at least 1 −δ,
+∀(h, i) ∈[H] × [n] :
+aπ
+i,h =
+P π,bV
+i,h bV π,σi
+i,h+1 −bP
+π,bV
+i,h bV π,σi
+i,h+1
+
+=
+Ππ
+hP π,bV
+i,h bV π,σi
+i,h+1 −Ππ
+h bP π,bV
+i,h bV π,σi
+i,h+1
+
+(i)
+≤Ππ
+h
+P π,bV
+i,h bV π,σi
+i,h+1 −bP π,bV
+i,h bV π,σi
+i,h+1
+
+(132)
+≤2
+s
+log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+Ππ
+h
+q
+VarP 0
+h(bV π
+i,h+1) + log( 18S Qn
+i=1 AinHN
+δ
+)H
+N
+1
+(ii)
+≤2
+s
+log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+q
+VarP π
+h(bV π
+i,h+1) + log( 18S Qn
+i=1 AinHN
+δ
+)H
+N
+1
+41
+
+≤3
+s
+H2 log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+1,
+(133)
+where (i) and (ii) hold by the Jensen’s inequality, Var(·) is defined in (56), and P 0
+h, P π
+h are defined in (54).
+B.3.4
+Proof of Lemma 5
+In this section, we want to take the accessible range of the robust value function bV π,σi
+i,j+1 into consideration
+when controlling PH
+j=h
+
+dj
+h, VarP π, b
+V
+i,j (bV π,σi
+i,j+1)
+
+. Towards this, we introduce some auxiliary values and reward
+functions as below. For any time step h ∈[H] and the i-th agent:
+• bV min
+h
+:= mins∈S bV π,σi
+i,h (s): bV min
+h
+denote the minimum value of all the entries in vector bV π,σi
+i,h .
+• bV ′
+h := bV π,σi
+i,h
+−bV min
+h
+1: truncated value function.
+• brmin
+i,h = rπ
+i,h +
+
+bV min
+h+1 −bV min
+h
+
+1: truncated reward function.
+With above notations, we introduce the following fact of V ′
+h:
+bV ′
+h = bV π,σi
+i,h
+−bV min
+h
+1
+(i)
+= rπ
+i,h + bP
+π,bV
+i,h bV π,σi
+i,h+1 −bV min
+h
+1
+= rπ
+i,h + P π,bV
+i,h bV π,σi
+i,h+1 +
+
+bP
+π,bV
+i,h −P π,bV
+i,h
+
+bV π,σi
+i,h+1 −bV min
+h
+1
+= rπ
+i,h +
+
+bV min
+h+1 −bV min
+h
+
+1 + P π,bV
+i,h bV ′
+h+1 +
+
+bP
+π,bV
+i,h −P π,bV
+i,h
+
+bV π,σi
+i,h+1
+= brmin
+i,h + P π,bV
+i,h bV ′
+h+1 +
+
+bP
+π,bV
+i,h −P π,bV
+i,h
+
+bV π,σi
+i,h+1,
+(134)
+where (i) holds by the robust Bellman’s consistency equation in (62).
+With the above fact in hand, we can verify that
+VarP π, b
+V
+i,h (bV π,σi
+i,h+1)
+(i)
+= VarP π, b
+V
+i,h (bV ′
+h+1) = P π,bV
+i,h
+
+bV ′
+h+1 ◦bV ′
+h+1
+
+−
+ P π,bV
+i,h bV ′
+h+1
+
+◦
+ P π,bV
+i,h bV ′
+h+1
+
+(ii)
+= P π,bV
+i,h
+
+bV ′
+h+1 ◦bV ′
+h+1
+
+−
+
+bV ′
+h −brmin
+i,h −
+
+bP
+π,bV
+i,h −P π,bV
+i,h
+
+bV π,σi
+i,h+1
+◦2
+= P π,bV
+i,h
+
+bV ′
+h+1 ◦bV ′
+h+1
+
+−bV ′
+h ◦bV ′
+h + 2bV ′
+h ◦
+
+brmin
+i,h +
+
+bP
+π,bV
+i,h −P π,bV
+i,h
+
+bV π,σi
+i,h+1
+
+−
+
+brmin
+i,h +
+
+bP
+π,bV
+i,h −P π,bV
+i,h
+
+bV π,σi
+i,h+1
+◦2
+(iii)
+≤P π,bV
+i,h
+
+bV ′
+h+1 ◦bV ′
+h+1
+
+−bV ′
+h ◦bV ′
+h + 2
+bV ′
+h
+
+∞
+
+1 +
+
+
+bP
+π,bV
+i,h −P π,bV
+i,h
+
+bV π,σi
+i,h+1
+
+
+(135)
+≤P π,bV
+i,h
+
+bV ′
+h+1 ◦bV ′
+h+1
+
+−bV ′
+h ◦bV ′
+h + 2
+bV ′
+h
+
+∞1 + 6∥V ′
+h∥∞
+v
+u
+u
+tH2 log
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+1
+(136)
+holds with probability at least 1−δ, where (i) follows from the fact that VarP π, b
+V
+i,h (V −b1) = VarP π, b
+V
+i,h (V ) for any
+value vector V ∈RS and scalar b, (ii) holds by (134), (iii) arises from brmin
+i,h ≤rπ
+i,h ≤1 since V min
+h+1 −V min
+h
+≤0
+by definition, and the last inequality holds by (133).
+Finally, combining (136) and the definition of dj
+h in (77), the term of interest can be controlled as
+H
+X
+j=h
+
+dj
+h, VarP π, b
+V
+i,j (bV π,σi
+i,j+1)
+
+42
+
+=
+H
+X
+j=h
+(dj
+h)⊤
+
+
+
+P π,bV
+i,j
+
+bV ′
+j+1 ◦bV ′
+j+1
+
+−bV ′
+j ◦bV ′
+j + 2∥bV ′
+j ∥∞1 + 6∥bV ′
+j ∥∞
+v
+u
+u
+tH2 log
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+1
+
+
+
+
+(i)
+≤
+H
+X
+j=h
+h
+(dj
+h)⊤
+P π,bV
+i,j
+
+bV ′
+j+1 ◦bV ′
+j+1
+
+−bV ′
+j ◦bV ′
+j
+i
++ 2H∥bV ′
+h∥∞+ 6H2∥bV ′
+h∥∞
+v
+u
+u
+tlog
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+=
+H
+X
+j=h
+h
+(dj+1
+h
+)⊤
+bV ′
+j+1 ◦bV ′
+j+1
+
+−(dj
+h)⊤
+bV ′
+j ◦bV ′
+j
+i
++ 2H∥bV ′
+h∥∞+ 6H2∥bV ′
+h∥∞
+v
+u
+u
+tlog
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+≤
+dH+1
+h
+
+1
+bV ′
+H+1 ◦bV ′
+H+1
+
+∞+ 2H∥bV ′
+h∥∞+ 6H2∥bV ′
+h∥∞
+v
+u
+u
+tlog
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+≤3H∥bV ′
+h∥∞+ 6H2∥bV ′
+h∥∞
+v
+u
+u
+tlog
+
+18S Qn
+i=1 AinHN
+δ
+
+N
+= 3H∥bV ′
+h∥∞
+
+1 + 2H
+s
+log( 18S Qn
+i=1 AinHN
+δ
+)
+N
+
+,
+(137)
+where (i) holds by the fact ∥bV ′
+h∥∞≥∥bV ′
+h+1∥∞≥· · · ≥∥bV ′
+H∥∞and basic calculus.
+B.3.5
+Proof of Lemma 6
+We start with the proof about the empirical MG MGrob. To begin with, for any policy π and the i-th agent,
+we define
+∀h ∈[H] :
+V span
+i,h
+:= bV π,σi
+i,h
+−min
+s′∈S
+bV π,σi
+i,h (s′)1,
+(138)
+which leads to
+V span
+i,h
+
+∞≤min
+ 1
+σi
+, H −h + 1
+
+.
+(139)
+which holds by applying Lemma 3.
+Armed with above notation and facts, considering any transition kernel P ′ ∈RS and any eP ∈RS obeying
+eP ∈Uσi(P ′), we have for all (i, h) ∈[n] × [H]
+VarP ′(bV π,σi
+i,h ) −Var e
+P (bV π,σi
+i,h )
+ =
+VarP ′(V span
+i,h ) −Var e
+P (V span
+i,h )
+
+≤
+ eP −P ′
+1
+V span
+i,h
+
+∞
+≤σi
+
+min
+ 1
+σi
+, H −h + 1
+2
+≤min
+ 1
+σi
+, H −h + 1
+
+.
+(140)
+Similar facts can be verified for standard MG MG analogously.
+B.3.6
+Proof of Lemma 7
+Analogous to Appendix B.3.4, we introduce some auxiliary values and reward functions to control
+H
+X
+j=h
+D
+wj
+h, VarP π,V
+i,j (V π,σi
+i,j+1)
+E
+as below: for any time step h and the i-th agent
+43
+
+• V min
+h
+:= mins∈S V π,σi
+i,h (s): V min
+h
+denote the minimum value of all the entries in vector V π,σi
+i,h .
+• V ′
+h := V π,σi
+i,h
+−V min
+h
+1: truncated value function.
+• rmin
+i,h = rπ
+i,h +
+ V min
+h+1 −V min
+h
+
+1: truncated reward function.
+Then applying the robust Bellman’s consistency equation in (59) gives
+V ′
+h = V π,σi
+i,h
+−V min
+h
+1 = rπ
+i,h + P π,V
+i,h V π,σi
+i,h+1 −V min
+h
+1
+= rπ
+i,h +
+ V min
+h+1 −V min
+h
+
+1 + P π,V
+i,h V ′
+h+1 = rmin
+i,h + P π,V
+i,h V ′
+h+1.
+(141)
+The above fact leads to
+VarP π,V
+i,h (V π,σi
+i,h+1)
+(i)
+= VarP π,V
+i,h (V ′
+h+1) = P π,V
+i,h
+ V ′
+h+1 ◦V ′
+h+1
+
+−
+ P π,V
+i,h V ′
+h+1
+
+◦
+ P π,V
+i,h V ′
+h+1
+
+(ii)
+= P π,V
+i,h
+ V ′
+h+1 ◦V ′
+h+1
+
+−
+
+V ′
+h −rmin
+i,h
+◦2
+= P π,V
+i,h
+ V ′
+h+1 ◦V ′
+h+1
+
+−V ′
+h ◦V ′
+h + 2V ′
+h ◦rmin
+i,h −rmin
+i,h ◦rmin
+i,h
+≤P π,V
+i,h
+ V ′
+h+1 ◦V ′
+h+1
+
+−V ′
+h ◦V ′
+h + 2∥V ′
+h∥∞1
+(142)
+where (i) follows from the fact that VarP π,V
+i,h (V −b1) = VarP π, b
+V
+i,h (V ) for any value vector V ∈RS and scalar
+b, (ii) holds by (141), and the last inequality arises from rmin
+i,h ≤rπ
+i,h ≤1 since V min
+h+1 −V min
+h
+≤0 by definition.
+Consequently, combining (142) and the definition of wj
+h in (85), we arrive at
+H
+X
+j=h
+D
+wj
+h, VarP π,V
+i,j
+ V π,σi
+i,j+1
+ E
+=
+H
+X
+j=h
+(wj
+h)⊤
+P π,V
+i,j
+ V ′
+j+1 ◦V ′
+j+1
+
+−V ′
+j ◦V ′
+j + 2∥V ′
+h∥∞1
+
+(i)
+≤
+H
+X
+j=h
+h
+(wj
+h)⊤
+P π,V
+i,j
+ V ′
+j+1 ◦V ′
+j+1
+
+−V ′
+j ◦V ′
+j
+i
++ 2H∥V ′
+h∥∞
+=
+H
+X
+j=h
+h
+(wj+1
+h
+)⊤ V ′
+j+1 ◦V ′
+j+1
+
+−(wj
+h)⊤ V ′
+j ◦V ′
+j
+i
++ 2H∥V ′
+h∥∞
+≤∥wH+1
+h
+∥1
+V ′
+H+1 ◦V ′
+H+1
+
+∞+ 2H∥V ′
+h∥∞
+≤3H∥V ′
+h∥∞,
+(143)
+where (i) and the last inequality hold by the fact ∥V ′
+h∥∞≥∥V ′
+h+1∥∞≥· · · ≥∥V ′
+H∥∞and basic calculus.
+C
+Proof of Theorem 2
+In this section, the proof will focus on a special and simpler class of RMGs: distributionally robust Markov
+decision processes (RMDPs) — single-agent RMGs.
+Before proceeding, to keep self-contained, we first briefly introduce the definition of a RMDP in finite-
+horizon episodic setting.
+Recall that a multi-agent general-sum robust Markov games (RMG) with TV
+uncertainty set can be represented as MG =
+
+S, {Ai}1≤i≤n, {Uσi(P 0)}1≤i≤n, r, H
+	
+. Resorting to the same
+notations for RMGs, a finite-horizon episodic distributionally robust MDP (RMDP) can be represented as
+Mrob =
+ S, A1, Uσ1(P 0), {r1,h}1≤h≤H, H
+
+, i.e., let n = 1. Then we can show an essential fact between RMGs
+and RMDPs that allow us to turn to RMDPs for proving Theorem 2. Without loss of generality, we consider
+the class of RMGs with n players that obey |A1| ≥max{|A2|, · · · , |Am|}. Moreover, let |A2| = |A3| = · · · =
+|Am| = 1 for simplicity, which leaves those agents’ (i = 2, 3, · · · , n) choices of actions having no randomness
+44
+
+or effects on the transitions or rewards for any agents.
+Consequently, it is clear that finding a robust
+NE/CE/CCE of such RMGs degrades to finding the optimal policy of the first agent over a corresponding
+RMDP Mrob =
+
+S, A1, Uσ1(P 0), {r1,h}1≤h≤H, H
+	
+.
+Therefore, in this section, we turn to construct the lower bound for finding the optimal policy over RMDPs
+instead, which directly imply a lower bound for finding equilibriums (robust NE/CE/CCE) of RMGs.
+Before continuing, we make note of the following useful property about the KL divergence in Tsybakov
+(2009, Lemma 2.7) which is useful in this section.
+Lemma 8. For any p, q ∈(0, 1), it holds that
+KL(p ∥q) ≤(p −q)2
+q(1 −q).
+(144)
+C.1
+Constructing hard robust MDP instances
+The hard instances developed here are different from standard MDP since we need to consider that the
+transition kernel can be perturbed in robust MDPs.
+This is the first lower bound for robust MDPs in
+episodic setting.
+Step 1: constructing hard robust MDP instances.
+To begin with, we first introduce an auxiliary
+collection Θ ⊆{0, 1}H, consisting of H-dimensional vectors. In addition, resorting to the Gilbert-Varshamov
+lemma (Gilbert, 1952), we notice that there exists a set Θ ⊆{0, 1}H such that:
+for any θ, eθ ∈Θ obeying θ ̸= eθ :
+∥θ −eθ∥1 ≥H
+8
+and
+|Θ| ≥eH/8.
+(145)
+Without loss of generality, we denote the first component of Θ as θbase and denote Θ⋆as Θ \ {θbase}.
+With this in mind, we construct a set of RMDPs as below:
+M(W, Θ) :=
+
+Mθ
+w =
+ S, A, Uσ(P w,θ), {rh}H
+h=1, H
+
+| w ∈W = {0, 1, · · · , SA −1}, θ = [θh]1≤h≤H ∈Θ⋆	
+,
+(146)
+where
+S = {0, 1, . . . , S −1},
+and
+A = {0, 1, · · · , A −1},
+and σ will be introduced momentarily.
+In words, the collection of M(W, Θ) consists of |W| = SA subsets, with each includes |Θ⋆| different
+RMDPs associated with some w ∈W. The state space of each RMDP Mθ
+w ∈M(W, Θ) is denoted as SM,
+includes two classes of states X = {xi | i ∈W} and Y = {yi | i ∈W}. Each state in X and Y only have two
+possible actions AM = {0, 1}. So we have totally 2|W| = 2SA states and there is in total |SM||AM| = 4SA
+state-action pairs.
+We shall define the nominal transition kernels for M(W, Θ), where any state xi ∈X only transits to
+the corresponding yi ∈Y or itself. For convenience, for any s = xi ∈X, we denote the corresponding state
+yi ∈Y as sx→y.
+Armed with above notations, we define a basic nominal transition kernel associated with θbase as below:
+for all (h, s, a) ∈[H] × SM × AM,
+P ⋆
+h(s′ | s, a) =
+
+
+
+(p + ∆)1(s′ = sx→y) + (1 −p −∆)1(s′ = s)
+if
+s ∈X, a = θbase
+h
+p1(s′ = sx→y) + (1 −p)1(s′ = s)
+if
+s ∈X, a = 1 −θbase
+h
+1(s′ = s)
+if
+s ∈Y.
+(147)
+In addition, for any RMDP Mθ
+w ∈M(W, Θ), the transition kernel P w,θ = {P w,θ
+h
+}H
+h=1 is specified as
+follows: for any (s, a, s′, h) ∈SM × AM × SM × [H],
+P w,θ
+h
+(s′ | s, a) =
+
+
+
+p1(s′ = yw) + (1 −p)1(s′ = s)
+if
+s = xw, a = θh
+q1(s′ = yw) + (1 −q)1(s′ = s)
+if
+s = xw, a = 1 −θh
+P ⋆
+h(s′ | s, a)
+otherwise
+(148)
+45
+
+Here, p and q are set according to
+0 ≤p ≤p + ∆≤1
+and
+0 ≤q = p −∆
+(149)
+for some p and ∆> 0 that will be introduced momentarily. In words, the transition kernel of each Mθ
+w ∈
+M(W, Θ) only differs slightly from the basic nominal transition kernel P ⋆
+h when s = xw, which makes all
+the components within M(W, Θ) closed to each other.
+To continue, the reward function is defined as
+∀(h, s, a) ∈[H] × SM × {0, 1} :
+rh(s, a) =
+ 1
+if s ∈Y
+0
+otherwise.
+(150)
+Uncertainty set of the transition kernels.
+Denote the transition kernel vector as
+∀(h, s, a) ∈[H] × SM × {0, 1} :
+P w,θ
+h,s,a := P w,θ
+h
+(· | s, a) ∈∆(S).
+(151)
+Recalling the uncertainty set defined in (8), we know Uσ(P w,θ) represents:
+Uσ(P w,θ) := ⊗Uσ(P w,θ
+h,s,a),
+Uσ(P w,θ
+h,s,a) :=
+n
+eP w,θ
+h,s,a ∈∆(S) : 1
+2
+ eP w,θ
+h,s,a −P w,θ
+h,s,a
+
+1 ≤σ
+o
+,
+(152)
+where ⊗represents the Cartesian product over (h, s, a) ∈[H] × SM × AM.
+For such TV uncertainty set, without loss of generality, let the uncertainty level to be σ ∈(0, 1 −c0] for
+some 0 < c0 < 1. Then taking c2 ≤1
+4 amd c1 := c0
+2 ≤1
+4, p and ∆are set as
+p =
+(
+c2
+H ,
+if σ ≤
+c2
+2H
+ 1 + c1
+H
+
+σ
+otherwise
+and
+∆≤
+(
+c2
+2H ,
+if σ ≤
+c2
+2H
+c1
+H σ
+otherwise
+(153)
+Combined with H ≥2, it is easily verified that 0 ≤p + ∆≤1 as follows:
+when σ > c2
+2H :
+
+1 + c1
+H
+
+σ + c1
+H σ ≤1 −c0 + 2c1
+H σ ≤1 −c0(H −1)
+H
+< 1,
+when σ ≤c2
+2H :
+3c2
+2H ≤1.
+(154)
+Then we introduce some useful notations and facts throughout this section. First, for any RMDP Mθ
+w ∈
+M(W, Θ) and any (h, s, a, s′) ∈[H] × SM × AM × SM, we denote the minimum probability of transiting
+from (s, a) to s′ determined by any perturbed transition kernel Ph,s,a ∈Uσ(P w,θ
+h,s,a) as
+P w,θ
+h
+(s′ | s, a) :=
+inf
+Ph,s,a∈Uσ(P w,θ
+h,s,a)
+Ph(s′ | s, a) = max{Ph(s′ | s, a) −σ, 0},
+(155)
+where the last equation can be easily verified by the definition of Uσ(·) in (152) and distributing the proba-
+bility on s′ to other states.
+Especially, for convenience, we denote the transition from each s ∈X to the corresponding state sx→y ∈Y
+of any Mθ
+w as below, which plays an important role in the analysis: for all h ∈[H],
+for xw :
+ph := P w,θ
+h
+(yw | xw, θh) = p −σ,
+qh := P w,θ
+h
+(yw | xw, 1 −θh) = q −σ,
+for s ∈X \ {xw} :
+p′
+h := P w,θ
+h
+(sx→y | s, θbase
+h
+) = p + ∆−σ,
+q′
+h := P w,θ
+h
+(sx→y | s, 1 −θbase
+h
+) = p −σ,
+(156)
+which follows from the following fact that is clear from (153)
+p + ∆≥p ≥q = p −∆≥max
+n c2
+2H , σ
+o
+.
+(157)
+Then it is obvious that
+p1 = p2 = · · · pH,
+q1 = q2 = · · · qH,
+p′
+1 = p′
+2 = · · · p′
+H,
+q′
+1 = q′
+2 = · · · q′
+H,
+(158)
+which motivates us to abbreviate them consistently as p := p1, q := q1, p′ := p′
+1, and q′ := q′
+1 later.
+46
+
+Robust value functions and optimal policies.
+Now we are ready to characterize the corresponding
+robust value functions and identify the optimal policies for RMDP instances. With abuse of notations, for
+any RMDP Mθ
+w ∈M(W, Θ), we denote π⋆,w,θ = {π⋆,w,θ
+h
+}H
+h=1 as the optimal policy. In addition, at each
+step h, we let V π,σ,w,θ
+h
+(resp. V ⋆,σ,w,θ
+h
+) represent the robust value function of any policy π (resp. π⋆,w,θ)
+with uncertainty level σ. Armed with these notations, the following lemma shows some essential properties
+concerning the robust value functions and optimal policies; the proof is postponed to Appendix C.3.1.
+Lemma 9. Consider any Mθ
+w ∈M(W, Θ) and any policy π. Defining
+xπ,w,θ
+h
+= pπh(θh | xw) + qπh(1 −θh | xw),
+(159)
+it holds that
+∀h ∈[H] :
+V π,σ,w,θ
+h
+(xw) = xπ,w,θ
+h
+V π,σ,w,θ
+h+1
+(yw) + (1 −xπ,w,θ
+h
+)V π,σ,w,θ
+h+1
+(xw),
+(160a)
+∀(s, h) ∈Y × [H] :
+V π,σ,w,θ
+h
+(s) = 1 + (1 −σ)V π,σ,w,θ
+h+1
+(s) + σV π,σ,w,θ
+h+1
+(xw).
+(160b)
+In addition, for all h ∈[H], the optimal policy and the optimal value function obey
+π⋆,w,θ
+h
+(θh | xw) = π⋆,w,θ
+h
+(θh | yw) = 1,
+π⋆,w,θ
+h
+(θbase
+h
+| s) = π⋆,w,θ
+h
+(θbase
+h
+| sx→y) = 1,
+∀s ∈X \ {xw}
+(161a)
+and
+V ⋆,σ,w,θ
+h
+(xw) = pV π,σ,w,θ
+h+1
+(yw) + (1 −p)V π,σ,w,θ
+h+1
+(xw).
+(162)
+C.2
+Establishing the lower bound
+Recall our goal: for any policy estimator bπ computed based on the dataset with N samples, we plan to
+control the quantity
+max
+(w,θ)∈W×Θ⋆max
+s∈X∪Y
+n
+V ⋆,σ,w,θ
+1
+(s) −V bπ,σ,w,θ
+1
+(s)
+o
+≥
+max
+(w,θ)∈W×Θ⋆max
+s∈X
+n
+V ⋆,σ,w,θ
+1
+(s) −V bπ,σ,w,θ
+1
+(s)
+o
+.
+(163)
+Step 1: converting the goal to estimate (w, θ).
+Towards this, we make the following essential claim
+which shall be verified in Appendix C.3.2: letting
+ε ≤
+(
+c2
+H ,
+if σ ≤
+c2
+2H
+1
+otherwise
+(164)
+and
+∆= c5
+(
+ε
+H2 ,
+if σ ≤
+c2
+2H
+σε
+H
+otherwise
+(165)
+which satisfies (153), it leads to that for any policy π obeying
+H
+X
+h=1
+bπh(· | xw) −π⋆,w,θ
+h
+(· | xw)
+
+1 ≥H
+8 ,
+(166)
+one has
+V ⋆,σ,w,θ
+1
+(xw) −V bπ,σ,w,θ
+1
+(xw) > ε.
+(167)
+Now we are ready to convert the estimation of an optimal policy to estimate (w, θ). Towards this, we
+denote Pw,θ as the probability distribution when the RMDP is Mθ
+w for any (w, θ) ∈W × Θ⋆. In addition,
+we represent the subset of M(W, Θ) excluding the ones associated with some w ∈W as below:
+G−w := W \ {w} × Θ⋆.
+(168)
+47
+
+Then, for any (w, θ) ∈W × Θ⋆, suppose there exists a policy bπ that achieves
+Pw,θ
+n
+V ⋆,σ,w,θ
+1
+(xw) −V bπ,σ,w,θ
+1
+(xw) ≤ε
+o
+≥3
+4,
+(169)
+which in view of (167) indicates that we necessarily have
+Pw,θ
+( H
+X
+h=1
+bπh(· | xw) −π⋆,w,θ
+h
+(· | xw)
+
+1 < H
+8
+)
+≥3
+4.
+(170)
+Consequently, taking eθ = arg minθ∈Θ
+PH
+h=1
+bπh(· | xw) −π⋆,w,θ
+h
+(· | xw)
+
+1, we are motivated to construct
+the following estimate of (w, θ):
+ bw, bθ
+
+(
+= (w, eθ)
+if
+eθ ∈Θ⋆
+∈G−w
+if
+eθ = Θ \ Θ⋆= θbase.
+(171)
+Then let us focus on the first kind of scenarios in (171) when eθ ∈Θ⋆so that we have the hope to estimate
+(w, θ) correctly. Namely, if PH
+h=1
+bπh(· | xw) −π⋆,w,θ
+h
+(· | xw)
+
+1 < H
+8 holds for some θ ∈Θ⋆, then for any
+θ′ ∈Θ⋆obeying θ′ ̸= θ, one has
+H
+X
+h=1
+bπh(· | xw) −π⋆,w,θ′
+h
+(· | xw)
+
+1 ≥
+H
+X
+h=1
+π⋆,w,θ
+h
+(· | xw) −π⋆,w,θ′
+h
+(· | xw)
+
+1 −
+H
+X
+h=1
+bπh(· | xw) −π⋆,w,θ
+h
+(· | xw)
+
+1
+> H
+4 −H
+8 = H
+8 ,
+(172)
+where the first inequality holds by the triangle inequality, and the last inequality follows from the assumption
+PH
+h=1
+bπh(· | xw)−π⋆,w,θ
+h
+(· | xw)
+
+1 < H
+8 and the separation property of θ ∈Θ (see (145)). Similarly, It shows
+that we have ( bw, bθ) = (w, θ) if
+H
+X
+h=1
+bπh(· | xw) −π⋆,w,θ
+h
+(· | xw)
+
+1 < H
+8 <
+H
+X
+h=1
+bπh(· | xw) −π⋆,w,θ′
+h
+(· | xw)
+
+1
+(173)
+holds for all (w′, θ′) ∈W × Θ that (w′, θ′) ̸= (w, θ). It is clear that the above equation can be directly
+achieved when PH
+h=1
+bπh(· | xw) −π⋆,w,θ
+h
+(· | xw)
+
+1 < H
+8 , which gives
+Pw,θ
+h
+( bw, bθ) = (w, θ)
+i
+≥Pw,θ
+( H
+X
+h=1
+bπh(· | xw) −π⋆,w,θ
+h
+(· | xw)
+
+1 < H
+8
+)
+≥3
+4.
+(174)
+Step 2: developing the probability of error in testing multiple hypotheses.
+Before proceeding,
+we discuss the data generation choices of the dataset D. Recall that each RMDP inside the set M(W, Θ)
+under testing has two classes of states X and Y, with each has |W| = SA components.
+Noticing that
+accordingly, M(W, Θ) consists of |W| subset, with each {Mθ
+w}θ∈Θ⋆constructed symmetrically around one
+pair of state (xw, yw) ∈X × Y, respectively. Therefore, at each time step h, it is clear that the dataset are
+supposed to be generated uniformly by the transition kernels on each pair of states (xw, yw) ∈X × Y to
+maximize the information gain. Namely, the dataset D has in total
+N
+|W|H =
+N
+SAH samples for the two states
+(xw, yw) ∈X × Y at each time step h ∈[H].
+Now we turn to the hypothesis testing problem over (w, θ) ∈W × Θ⋆. We shall develop the information
+theoretical lower bound for the probability of error. In particular, we consider the minimax probability of
+error defined as follows:
+pe := inf
+( b
+w,bθ)
+max
+(w,θ)∈W×Θ⋆
+
+Pw,θ
+ ( bw, bθ) ̸= (w, θ)
+	
+,
+(175)
+where the infimum is taken over all possible tests ( bw, bθ) constructed from the dataset.
+48
+
+To continue, armed with the dataset D with N samples generated independently, we denote µw,θ
+(resp. µw,θ
+h
+(s, a)) as the distribution vector (resp. distribution) of each sample tuple (sh, ah, s′
+h) at time
+step h under the nominal transition kernel P w,θ associated with Mθ
+w. With this in mind, combined with
+Fano’s inequality from Tsybakov (2009, Theorem 2.2) and the additivity of the KL divergence (cf. Tsybakov
+(2009, Page 85)), we obtain
+pe ≥1 −N
+max
+(w,θ),( e
+w,eθ)∈W×Θ⋆,(w,θ)̸=( e
+w,eθ)
+KL
+ µw,θ | µw,θ
++ log 2
+log |W||Θ⋆|
+(i)
+≥1 −8N
+H
+max
+(w,θ),( e
+w,eθ)∈W×Θ⋆,(w,θ)̸=( e
+w,eθ)
+KL
+ µw,θ | µw,θ
+−log 2
+H
+(ii)
+≥1
+2 −8N
+H
+max
+(w,θ),( e
+w,eθ)∈W×Θ⋆,(w,θ)̸=( e
+w,eθ)
+KL
+ µw,θ | µw,θ
+(176)
+where (i) and (ii) holds by |W||Θ⋆| ≥2(eH/8 −1) ≥eH/8 as long as H ≥16 log 2.
+To continue, applying the chain rule of the KL divergence (Duchi, 2018, Lemma 5.2.8) with the dataset
+D generated independently yields:
+KL
+ µw,θ | µw,θ
+=
+H
+X
+h=1
+E
+(s,a)∼µw,θ
+h
+(s,a)
+h
+KL
+ P w,θ
+h
+(· | s, a) ∥P e
+w,eθ
+h
+(· | s, a)
+i
+(i)
+=
+H
+X
+h=1
+X
+s∈{xw,x e
+w},a∈{0,1}
+µw,θ
+h
+(s, a)
+h
+KL
+ P w,θ
+h
+(· | , s, a) ∥P e
+w,eθ
+h
+(· | , s, a)
+i
+≤
+1
+SAH
+H
+X
+h=1
+X
+s∈{xw,x e
+w},a∈{0,1}
+h
+KL
+ P w,θ
+h
+(· | , s, a) ∥P e
+w,eθ
+h
+(· | , s, a)
+i
+,
+(177)
+where (i) follows from the fact P w,θ
+h
+(· | , s, a) and P e
+w,eθ
+h
+(· | , s, a) only differs from each other on state xw, x e
+w (see
+the definitions in (147)), and the last inequality holds by noticing µw,θ
+h
+(s, a) ≤P
+a∈{0,1} µw,θ
+h
+(s, a) =
+1
+SAH .
+Consequently, now we turn to focus on terms in (177) in different cases of the uncertainty level σ.
+• When 0 < σ ≤
+c2
+2H . When w = ew, it is clear that
+X
+s∈{xw,x e
+w},a∈{0,1}
+KL
+ P w,θ
+h
+(· | , s, a) ∥P e
+w,eθ
+h
+(· | , s, a)
+
+= 0
+(178)
+as long as θh = eθh. Then if θh ̸= eθh, without loss of generality, we suppose θh = 0 and eθh = 1, which
+indicates
+P w,θ
+h
+(0 | xw, 0) = 1 −p
+and
+P w,eθ
+h
+(0 | xw, 0) = 1 −q.
+(179)
+Applying Lemma 8 gives
+KL
+ P w,θ
+h
+(0 | xw, 0) ∥P w,eθ
+h
+(0 | xw, 0)
+
+≤(p −q)2
+q(1 −q)
+(i)
+=
+∆2
+q(1 −q)
+(ii)
+=
+(c5)2ε2
+H4q(1 −q) ≤4(c5)2ε2
+c2H3
+,
+(180)
+where (i) and (ii) follows from the definitions in (149) or (165), and the last inequality arises from
+q = p −∆≥
+c2
+2H (see (153)) and 1 −q ≥1 −p ≥1 −c2
+H ≥1
+2.
+The same bound can be established for KL
+ P w,θ
+h
+(0 | xw, 1) ∥P w,eθ
+h
+(0 | xw, 1)
+
+. In addition, it is easily
+verified that when w ̸= ew and θh ̸= θbase
+h
+(resp. eθh ̸= θbase
+h
+), the same bound can be developed for
+49
+
+KL
+ P w,θ
+h
+(0 | xw, 0) ∥P e
+w,eθ
+h
+(0 | xw, 0)
+
+and KL
+ P w,θ
+h
+(0 | xw, 1) ∥P e
+w,eθ
+h
+(0 | xw, 1)
+
+(resp. KL
+ P w,θ
+h
+(0 | x e
+w, 0) ∥
+P e
+w,eθ
+h
+(0 | x e
+w, 0)
+
+and KL
+ P w,θ
+h
+(0 | x e
+w, 1) ∥P e
+w,eθ
+h
+(0 | x e
+w, 1)
+
+).
+Summing up the results with the fact in (180), we arrive at
+X
+s∈{xw,x e
+w},a∈{0,1}
+KL
+ P w,θ
+h
+(· | , s, a) ∥P e
+w,eθ
+h
+(· | , s, a)
+
+≤16(c5)2ε2
+c2H3
+.
+(181)
+• When
+c2
+2H < σ ≤1 −c0. Following the same pipeline, it then boils down to control the main term as
+below:
+KL
+ P w,θ
+h
+(0 | xw, 0) ∥P w,eθ
+h
+(0 | xw, 0)
+
+≤(p −q)2
+q(1 −q)
+(i)
+=
+∆2
+q(1 −q)
+(ii)
+=
+(c5)2σ2ε2
+H2q(1 −q) ≤2(c5)2σε2
+c0H2
+,
+(182)
+where (i) and (ii) follows from the definitions in (149) or (165). Here, the last inequality arises from
+1 −q ≥1 −p = 1 −(1 + c1
+H )σ
+(i)
+≥c0 −c1
+H
+(ii)
+≥c0
+2
+p ≥q = p −∆
+(iii)
+≥σ,
+(183)
+where (ii) holds by the definition of c1 = c0
+2 , and (iii) follows from (157). Consequently, we arrive at
+X
+s∈{xw,x e
+w},a∈{0,1}
+KL
+ P w,θ
+h
+(· | , s, a) ∥P e
+w,eθ
+h
+(· | , s, a)
+
+≤8(c5)2σε2
+c0H2
+.
+(184)
+Summing up (181) and (184), we achieve for any (w, θ), ( ew, eθ) ∈W × Θ⋆with (w, θ) ̸= ( ew, eθ) and any
+time step h ∈[H]
+X
+s∈{xw,x e
+w},a∈{0,1}
+KL
+ P w,θ
+h
+(· | , s, a) ∥P e
+w,eθ
+h
+(· | , s, a)
+
+≤16(c5)2ε2
+c0c2H2 max{σ, 1/H}.
+(185)
+Plugging (185) back to (177) and then (176) leads to the following fact:
+pe ≥1
+2 −8N
+H
+max
+(w,θ),( e
+w,eθ)∈W×Θ⋆,(w,θ)̸=( e
+w,eθ)
+KL
+ µw,θ | µw,θ
+≥1
+2 −8N
+H
+max
+(w,θ),( e
+w,eθ)∈W×Θ⋆,(w,θ)̸=( e
+w,eθ)
+1
+SAH
+H
+X
+h=1
+X
+s∈{xw,x e
+w},a∈{0,1}
+h
+KL
+ P w,θ
+h
+(· | , s, a) ∥P e
+w,eθ
+h
+(· | , s, a)
+i
+≥1
+2 −128N(c5)2ε2
+c0c2SAH3 max{σ, 1/H} ≥1
+4
+(186)
+as long as the sample size N of the dataset is selected as
+N ≤c0c2SAH3 min{1/σ, H}
+512(c5)2ε2
+.
+(187)
+Step 3: summing up the results together.
+We suppose that there exists an estimator bπ such that
+max
+(w,θ)∈W×Θ⋆Pw,θ
+
+max
+s∈X∪Y
+n
+V ⋆,σ,w,θ
+1
+(s) −V bπ,σ,w,θ
+1
+(s)
+o
+≥ε
+
+< 1
+4,
+(188)
+50
+
+then according to (163), we necessarily have
+∀w ∈W :
+max
+θ∈Θ⋆Pw,θ
+hn
+V ⋆,σ,w,θ
+1
+(xw) −V bπ,σ,w,θ
+1
+(xw)
+o
+≥ε
+i
+< 1
+4.
+(189)
+To meet (189) for any w ∈W, we require
+∀θ ∈Θ⋆: Pw,θ
+n
+V ⋆,σ,w,θ
+1
+(xw) −V bπ,σ,w,θ
+1
+(xw) < ε
+o
+≥3
+4,
+(190)
+which in view of (167) indicates that we necessarily have
+∀θ ∈Θ⋆:
+Pw,θ
+( H
+X
+h=1
+bπh(· | xw) −π⋆,w,θ
+h
+(· | xw)
+
+1 < H
+8
+)
+≥3
+4.
+(191)
+As a consequence, (174) indicates
+∀θ ∈Θ⋆: Pw,θ
+h
+( bw, bθ) = (w, θ)
+i
+≥3
+4.
+(192)
+Applying the fact in (192) to all w ∈W leads to one necessarily has
+∀(w, θ) ∈W × Θ⋆:
+Pw,θ
+h
+( bw, bθ) = (w, θ)
+i
+≥3
+4
+(193)
+to achieve (188).
+However, this would contract with (186) as long as the sample size condition in (187) is satisfied. Thus, if
+the sample size obeys the condition (187), we can’t achieve an estimate bπ that satisfies (188), which complete
+the proof.
+C.3
+Proof of the auxiliary facts
+C.3.1
+Proof of Lemma 9
+As all RMDPs within M(W, Θ) are constructed analogously over each w ∈W and θ ∈Θ⋆, in this section,
+we shall focus on one specific RMDP Mθ
+w ∈M(W, Θ), whose facts can be carried on for all other RMDPs
+in M(W, Θ) directly.
+Step 1: ordering the robust value function over different states.
+Before proceeding, we introduce
+several facts and notations that are useful throughout this section. First, we observe that for any Mθ
+w and
+any policy π: at the final step H + 1,
+∀s ∈X ∪Y :
+V π,σ,w,θ
+H+1
+(s) = 0.
+(194)
+Then for the step H, we can easily verified that
+∀s ∈Y :
+V π,σ,w,θ
+H
+(s) = Ea∼πH(· | s)
+"
+rH(s, a) +
+inf
+P∈Uσ(P w,θ
+H,s,a)
+PV π,σ,w,θ
+H+1
+#
+= 1
+∀s ∈X :
+V π,σ,w,θ
+H
+(s) = Ea∼πH(· | s)
+"
+rH(s, a) +
+inf
+P∈Uσ(P w,θ
+H,s,a)
+PV π,σ,w,θ
+H+1
+#
+= 0,
+(195)
+which holds by (194) and the definition of the reward function (see (150)). The above fact directly indicates
+that
+∀(s, s′) ∈X \ {xw} × Y :
+min
+es∈S V π,σ,w,θ
+H
+(es) = V π,σ,w,θ
+H
+(xw) ≤V π,σ,w,θ
+H
+(s) < V π,σ,w,θ
+H
+(s′),
+∀(s, s′) ∈Y × Y :
+V π,σ,w,θ
+H
+(s) = V π,σ,w,θ
+H
+(s′).
+(196)
+51
+
+Then we introduce a claim which we will proof by induction in a moment as below:
+∀(h, s, s′) ∈[H] × X \ {xw} × Y :
+V π,σ,w,θ
+h
+(xw) ≤V π,σ,w,θ
+h
+(s) < V π,σ,w,θ
+h
+(s′)
+∀(s, s′) ∈Y × Y :
+V π,σ,w,θ
+h
+(s) = V π,σ,w,θ
+h
+(s′).
+(197)
+Note that the base case when the time step is H + 1 is verified in (196). Assuming that the following fact
+at time step h + 1 holds
+∀(s, s′) ∈X \ {xw} × Y :
+min
+es∈S V π,σ,w,θ
+h+1
+(es) = V π,σ,w,θ
+h+1
+(xw) ≤V π,σ,w,θ
+h+1
+(s) < V π,σ,w,θ
+h+1
+(s′),
+∀(s, s′) ∈Y × Y :
+V π,σ,w,θ
+h+1
+(s) = V π,σ,w,θ
+h+1
+(s′),
+(198)
+the rest of the proof focuses on proving the same property for time step h. For RMDP Mθ
+w ∈M(W, Θ) and
+any policy π, we characterize the robust value function of different states separately:
+• For state s ∈Y. We observe that for any s ∈Y,
+V π,σ,w,θ
+h
+(s) = Ea∼πh(· | s)
+
+rh(s, a) +
+inf
+P∈Uσ(P w,θ
+h,s,a)
+PV π,σ,w,θ
+h+1
+
+(i)
+= 1 + Ea∼πh(· | s)
+h
+P w,θ
+h
+(s | s, a)V π,σ,w,θ
+h+1
+(s)
+i
++ σV π,σ,w,θ
+h+1
+(xw)
+= 1 + (1 −σ)V π,σ,w,θ
+h+1
+(s) + σV π,σ,w,θ
+h+1
+(xw),
+(199)
+where (i) holds by rh(s, a) = 1 for all s ∈Y (see (150)), the fact that mines∈S V π,σ,w,θ
+h+1
+(es) = V π,σ,w,θ
+h+1
+(xw)
+induced by the induction assumption (cf. (198)) and the definition of P w,θ
+h
+(s | s, a) in (155), and the last
+equality follows from P w,θ(s | s, a) = 1 for all (s, a) ∈Y × AM. Resorting to the induction assumption
+in (198), we have
+∀(s, s′) ∈Y × Y :
+V π,σ,w,θ
+h
+(s) = V π,σ,w,θ
+h
+(s′).
+(200)
+• For state xw. First, the robust value function at state xw obeys
+V π,σ,w,θ
+h
+(xw)
+= Ea∼πh(· | xw)
+"
+rh(xw, a) +
+inf
+P∈Uσ(P w,θ
+h,xw,a)
+PV π,σ,w,θ
+h+1
+#
+(i)
+= 0 + πh(θh | xw)
+inf
+P∈Uσ(P w,θ
+h,xw,θh)
+PV π,σ,w,θ
+h+1
++ πh(1 −θh | xw)
+inf
+P∈Uσ(P w,θ
+h,xw,1−θh)
+PV π,σ,w,θ
+h+1
+(ii)
+= πh(θh | xw)
+h
+pV π,σ,w,θ
+h+1
+(yw) +
+ 1 −p
+
+V π,σ,w,θ
+h+1
+(xw)
+i
++ πh(1 −θh | xw)
+h
+qV π,σ,w,θ
+h+1
+(yw) +
+ 1 −q
+
+V π,σ,w,θ
+h+1
+(xw)
+i
+(iii)
+= xπ,w,θ
+h
+V π,σ,w,θ
+h+1
+(yw) + (1 −xπ,w,θ
+h
+)V π,σ,w,θ
+h+1
+(xw)
+(201)
+≤(1 −σ)V π,σ,w,θ
+h+1
+(yw) + σV π,σ,w,θ
+h+1
+(xw).
+(202)
+where (i) uses the definition of the robust value function and the reward function in (150), (ii) uses the
+induction assumption in (198) so that the minimum is attained by picking the choice specified in (156)
+to absorb probability mass to state xw, and (iii) holds by plugging in the definition (159) of xπ,w,θ
+h
+in (iii). Finally, the last inequality follows from the fact that function f(x) := xV π,σ,w,θ
+h+1
+(yw) + (1 −
+x)V π,σ,w,θ
+h+1
+(xw) is monotonically increasing with x since V π,σ,w,θ
+h+1
+(yw) > V π,σ,w,θ
+h+1
+(xw) (see the induction
+assumption (198)), and the fact xπ,w,θ
+h
+≤1 −σ.
+52
+
+• For state s ∈X \ {xw}. Then we consider other states s ∈X \ {xw}. Before proceeding, analogous to
+(159), we define
+xs
+base = (p + ∆)πh(θbase
+h
+| s) + (q + ∆)πh(1 −θbase
+h
+| s).
+(203)
+Recall that the nominal transition kernel at any state s ∈X \ {xw} are the same {P ⋆
+h,s,a}h∈[H] for all
+a ∈AW associated with the basic θbase ∈Θ (see the definitions of the transition kernels in (147) and
+(148)). Consequently, for any s ∈X \ {xw}, following the same argument pipeline of (202), we arrive
+at
+V π,σ,w,θ
+h
+(s) = πh(θbase
+h
+| s)
+h
+(p + ∆)V π,σ,w,θ
+h+1
+(sx→y) + (1 −p −∆) V π,σ,w,θ
+h+1
+(s) + σV π,σ,w,θ
+h+1
+(xw)
+i
++ πh(1 −θbase
+h
+| s)
+h
+(q + ∆)V π,σ,w,θ
+h+1
+(sx→y) + (1 −p) V π,σ,w,θ
+h+1
+(s) + σV π,σ,w,θ
+h+1
+(xw)
+i
+= xs
+baseV π,σ,w,θ
+h+1
+(sx→y) + (1 −xs
+base −σ)V π,σ,w,θ
+h+1
+(s) + σV π,σ,w,θ
+h+1
+(xw)
+(204)
+(i)
+= xs
+baseV π,σ,w,θ
+h+1
+(yw) + (1 −xs
+base −σ)V π,σ,w,θ
+h+1
+(s) + σV π,σ,w,θ
+h+1
+(xw)
+(205)
+< (1 −σ)V π,σ,w,θ
+h+1
+(sx→y) + σV π,σ,w,θ
+h+1
+(s),
+(206)
+where (i) holds by V π,σ,w,θ
+h+1
+(s) = V π,σ,w,θ
+h+1
+(s′) for any two states s, s′ ∈Y (see (202)), and the last
+inequality holds by V π,σ,w,θ
+h+1
+(s) < V π,σ,w,θ
+h+1
+(sx→y) induced by the induction assumption in (198).
+In addition, to compare the robust value function V π,σ,w,θ
+h
+(xw) to that of other states s ∈X \ {xw},
+we recall the definitions in (159) and then introduce the following fact
+xπ,w,θ
+h
+= pπh(θh | xw) + qπh(1 −θh | xw)
+≤p ≤(p + ∆)πh(θbase
+h
+| s) + pπh(1 −θbase
+h
+| s)
+= (p + ∆)πh(θbase
+h
+| s) + (q + ∆)πh(1 −θbase
+h
+| s) = xs
+base,
+(207)
+which comes from the fact p ≥q and the facts in (156) and (157).
+With this in mind, continuing from (201), we arrive at that for any s ∈X:
+V π,σ,w,θ
+h
+(xw) = xπ,w,θ
+h
+V π,σ,w,θ
+h+1
+(yw) + (1 −xπ,w,θ
+h
+)V π,σ,w,θ
+h+1
+(xw)
+≤xs
+baseV π,σ,w,θ
+h+1
+(yw) + (1 −xs
+base)V π,σ,w,θ
+h+1
+(xw)
+≤xs
+baseV π,σ,w,θ
+h+1
+(yw) + (1 −xs
+base −σ)V π,σ,w,θ
+h+1
+(s) + σV π,σ,w,θ
+h+1
+(xw)
+= V π,σ,w,θ
+h
+(s)
+(208)
+where the last equality holds by (205).
+Summing up (208), then (199), and (206), we verify the induction property at time step h as below
+∀(s, s′) ∈X \ {xw} × Y : V π,σ,w,θ
+h
+(xw) ≤V π,σ,w,θ
+h
+(s) < V π,σ,w,θ
+h
+(s′).
+(209)
+Combined above results with (200), we confirm the claim in (197).
+Step 2: deriving the optimal policy and optimal robust value function.
+We shall characterize the
+optimal policy and corresponding optimal robust value function for different states separately:
+• For states in X. Recall (201)
+V π,σ,w,θ
+h
+(xw) = xπ,w,θ
+h
+V π,σ,w,θ
+h+1
+(yw) + (1 −xπ,w,θ
+h
+)V π,σ,w,θ
+h+1
+(xw)
+(210)
+and the fact V π,σ,w,θ
+h+1
+(yw) > V π,σ,w,θ
+h+1
+(xw) in (197). We observe that (210) is monotonicity increasing
+with respect to xπ,w,θ
+h
+, and xπ,w,θ
+h
+is also increasing in πh(θh | xw) (refer to the fact p ≥q since p ≥q;
+53
+
+see (149) and (156)). Consequently, the optimal policy and optimal robust value function in state xw
+thus obey
+∀h ∈[H] :
+π⋆,w,θ
+h
+(θh | xw) = 1
+V ⋆,σ,w,θ
+h
+(xw) = pV ⋆,σ,w,θ
+h+1
+(yw) +
+
+1 −p
+
+V ⋆,σ,w,θ
+h+1
+(xw).
+(211)
+Similarly, for any state s ∈X \ {xw}, recalling (205) yields
+V π,σ,w,θ
+h
+(s) = xs
+baseV π,σ,w,θ
+h+1
+(yw) + (1 −xs
+base −σ)V π,σ,w,θ
+h+1
+(s) + σV π,σ,w,θ
+h+1
+(xw),
+(212)
+which indicates V π,σ,w,θ
+h
+(s) achieves the maximum when xs
+base = (p + ∆)πh(θbase
+h
+| s) + (q + ∆)πh(1 −
+θbase
+h
+| s) attain the maximum. Therefore, the optimal policy in state s satisfies
+π⋆,w,θ
+h
+(θbase
+h
+| s) = 1.
+(213)
+• For states s ∈Y. Recall the transitions in (147) and (148). Considering that the action does not
+influence the state transition for all states s ∈Y, without loss of generality, we choose the robust
+optimal policy obeying
+∀s ∈Y :
+π⋆,w,θ
+h
+(θh | s) = 1.
+(214)
+C.3.2
+Proof of claim (167)
+Recalling (160a) and (162), we first consider a more general form
+V ⋆,σ,w,θ
+h
+(xw) −V π,σ,w,θ
+h
+(xw)
+= pV ⋆,σ,w,θ
+h+1
+(yw) + (1 −p)V ⋆,σ,w,θ
+h+1
+(xw) −
+
+xπ,w,θ
+h
+V π,σ,w,θ
+h+1
+(yw) +
+h
+1 −xπ,w,θ
+h
+i
+V π,σ,w,θ
+h+1
+(xw)
+
+=
+
+p −xπ,w,θ
+h
+
+V ⋆,σ,w,θ
+h+1
+(yw) + xπ,w,θ
+h
+
+V ⋆,σ,w,θ
+h+1
+(yw) −V π,σ,w,θ
+h+1
+(yw)
+
++ (1 −p)
+
+V ⋆,σ,w,θ
+h+1
+(xw) −V π,σ,w,θ
+h+1
+(xw)
+
+−
+
+p −xπ,w,θ
+h
+
+V π,σ,w,θ
+h+1
+(xw)
+= xπ,w,θ
+h
+
+V ⋆,σ,w,θ
+h+1
+(yw) −V π,σ,w,θ
+h+1
+(yw)
+
++ (1 −p)
+
+V ⋆,σ,w,θ
+h+1
+(xw) −V π,σ,w,θ
+h+1
+(xw)
+
++
+
+p −xπ,w,θ
+h
+ 
+V ⋆,σ,w,θ
+h+1
+(yw) −V ⋆,σ,w,θ
+h+1
+(xw)
+
+≥(1 −p)
+
+V ⋆,σ,w,θ
+h+1
+(xw) −V π,σ,w,θ
+h+1
+(xw)
+
++
+
+p −xπ,w,θ
+h
+ 
+V ⋆,σ,w,θ
+h+1
+(yw) −V ⋆,σ,w,θ
+h+1
+(xw)
+
+≥(1 −p)
+
+V ⋆,σ,w,θ
+h+1
+(xw) −V π,σ,w,θ
+h+1
+(xw)
+
++ 1
+2(p −q)
+π⋆,w,θ
+h
+(· | xw) −πh(· | xw)
+
+1
+
+V ⋆,σ,w,θ
+h+1
+(yw) −V ⋆,σ,w,θ
+h+1
+(xw)
+
+(215)
+where the last inequality holds by applying (156) and deriving as follows:
+p −xπ,w,θ
+h
+=
+ p −q
+ 1 −πh(θh | xw)
+
+= (p −q)
+ 1 −πh(θh | xw)
+
+= 1
+2(p −q)
+ 1 −πh(θh | xw) + πh(1 −θh | xw)
+
+= 1
+2(p −q)
+π⋆,w,θ
+h
+(· | xw) −πh(· | xw)
+
+1.
+(216)
+To further control (215), applying Lemma 9 yields
+V ⋆,σ,w,θ
+h
+(yw) −V ⋆,σ,w,θ
+h
+(xw)
+= 1 + (1 −σ)V ⋆,σ,w,θ
+h+1
+(yw) + σV ⋆,σ,w,θ
+h+1
+(xw) −
+
+pV ⋆,σ,w,θ
+h+1
+(yw) + (1 −p)V ⋆,σ,w,θ
+h+1
+(xw)
+
+= 1 + (1 −p −σ)
+
+V ⋆,σ,w,θ
+h+1
+(yw) −V ⋆,σ,w,θ
+h+1
+(xw)
+
+54
+
+= 1 + (1 −p)
+
+V ⋆,σ,w,θ
+h+1
+(yw) −V ⋆,σ,w,θ
+h+1
+(xw)
+
+= · · · =
+H−h
+X
+j=0
+(1 −p)j,
+(217)
+where the penultimate equality holds by (156). Then, we consider two cases with respect to the uncertainty
+level σ to control (217), respectively:
+• When 0 < σ ≤
+c2
+2H . Recall p =
+(
+c2
+H ,
+if σ ≤
+c2
+2H
+1 + c1
+H σ
+otherwise . In this case, applying (217), we have
+V ⋆,σ,w,θ
+h
+(yw) −V ⋆,σ,w,θ
+h
+(xw)
+=
+H−h
+X
+j=0
+(1 −p)j ≥
+H−h
+X
+j=0
+
+1 −c2
+H
+j
+= 1 −
+ 1 −c2
+H
+H−h+1
+c2/H
+≥2c2(H −h + 1)
+3
+(218)
+Here, the final inequality holds by observing
+
+1 −c2
+H
+H−h+1
+≤exp
+
+−c2(H −h + 1)
+H
+
+≤1 −2c2(H −h + 1)
+3H
+(219)
+where the first inequality holds by noticing c2 < 0.5 and then 1 −x ≤exp(−x), and the last inequality
+holds by exp(−x) ≤1 −2x
+3 for any 0 ≤x ≤1/2.
+Plugging above fact in (218) back to (215), we arrive at
+V ⋆,σ,w,θ
+h
+(xw) −V π,σ,w,θ
+h
+(xw)
+≥(1 −p)
+
+V ⋆,σ,w,θ
+h+1
+(xw) −V π,σ,w,θ
+h+1
+(xw)
+
++ 1
+2(p −q)
+π⋆,w,θ
+h
+(· | xw) −πh(· | xw)
+
+1
+2c2(H −h + 1)
+3
+.
+(220)
+Then invoking the assumption
+H
+X
+h=1
+πh(· | xw) −π⋆,w,θ
+h
+(· | xw)
+
+1 ≥H
+8
+(221)
+in (166) and applying (220) recursively for h = 1, 2, · · · , H yields
+V ⋆,σ,w,θ
+1
+(xw) −V π,σ,w,θ
+1
+(xw) ≥c2
+3
+H
+X
+h=1
+(1 −p)h−1(p −q)(H −h + 1)
+π⋆,w,θ
+h
+(· | xw) −πh(· | xw)
+
+1
+(i)
+≥c2
+3
+H
+X
+h=1
+(1 −c2
+H )h−1(p −q)(H −h + 1)
+π⋆,w,θ
+h
+(· | xw) −πh(· | xw)
+
+1
+(ii)
+≥c2
+6
+H
+X
+h=1
+(p −q)(H −h + 1)
+π⋆,w,θ
+h
+(· | xw) −πh(· | xw)
+
+1
+(iii)
+= c2∆
+6
+H
+X
+h=1
+h
+π⋆,w,θ
+H−h+1(· | xw) −πH−h+1(· | xw)
+
+1
+(iv)
+≥c2∆
+6
+⌊H/16⌋
+X
+h=1
+2h ≥c2∆
+6
+⌊H/16⌋(⌊H/16⌋+ 1) ,
+(222)
+55
+
+where (i) follows from 1 −p ≥1 −p = 1 −c2
+H , and (ii) holds by
+∀h ∈[H] :
+(1 −c2
+H )h−1 ≥(1 −c2
+H )H ≥1
+2
+(223)
+as long as c2 ≤1
+2. Here, (iii) arises from the definition of p, q in (149); (iv) can be verified by the fact
+that for any series 0 ≤x1, x2, · · · , xH ≤xmax that obeys PH
+h=1 xh ≥y, one has
+H
+X
+h=1
+xhh ≥
+⌊xmax/y⌋
+X
+h=1
+xmaxh,
+(224)
+and taking xh =
+πH−h+1(· | xw) −π⋆,w,θ
+H−h+1(· | xw)
+
+1 ≤2 = xmax and y = H
+8 .
+Consequently, observed from (222), we have
+V ⋆,σ,w,θ
+1
+(xw) −V π,σ,w,θ
+1
+(xw) ≥c2∆
+6
+⌊H/16⌋(⌊H/16⌋+ 1) ≥c3∆H2 > ε
+(225)
+holds for some small enough constant c3 and letting ∆=
+ε
+c3H2 .
+• When
+c2
+2H < σ ≤1 −c0. Similarly, recalling p =
+(
+c2
+H ,
+if σ ≤
+c2
+2H
+ 1 + c1
+H
+
+σ
+otherwise and invoking (217) gives
+V ⋆,σ,w,θ
+h
+(yw) −V ⋆,σ,w,θ
+h
+(xw)
+=
+H−h
+X
+j=0
+(1 −p)j =
+H−h
+X
+j=0
+
+1 −
+
+1 + c1
+H
+
+σ
+j
+≥1 −
+ 1 −(1 + c1
+H )σ
+H−h+1
+(1 + c1
+H )σ
+≥c2(H −h + 1)
+3σH
+,
+(226)
+where the final inequality holds by observing
+
+1 −
+
+1 + c1
+H
+
+σ
+H−h+1
+≤exp
+
+−
+
+1 + c1
+H
+
+σ(H −h + 1)
+
+(i)
+≤exp
+
+−c2
+2H
+
+1 + c1
+H
+
+(H −h + 1)
+
+≤1 −
+
+1 + c1
+H
+ c2(H −h + 1)
+3H
+. (227)
+Here, (i) holds by observing
+c2
+2H < σ, and the last inequality holds by
+ 1 + c1
+H
+
+≤2, c2 ≤0.5, and the
+fact exp(−x) ≤1 −2x
+3 for any 0 ≤x ≤1/2.
+Plugging above fact in (226) back to (215) gives
+V ⋆,σ,w,θ
+h
+(xw) −V π,σ,w,θ
+h
+(xw)
+≥(1 −p)
+
+V ⋆,σ,w,θ
+h+1
+(xw) −V π,σ,w,θ
+h+1
+(xw)
+
++ 1
+2(p −q)
+π⋆,w,θ
+h
+(· | xw) −πh(· | xw)
+
+1
+c2(H −h + 1)
+3σH
+.
+(228)
+Following the same routine to achieve (222), applying (228) recursively for h = 1, 2, · · · , H gives
+V ⋆,σ,w,θ
+1
+(xw) −V π,σ,w,θ
+1
+(xw) ≥
+H
+X
+h=1
+(1 −p)h−1(p −q)c2(H −h + 1)
+6σH
+π⋆,w,θ
+h
+(· | xw) −πh(· | xw)
+
+1
+(i)
+= c2(p −q)
+6σH
+H
+X
+h=1
+(1 −c1
+H )h−1(H −h + 1)
+π⋆,w,θ
+h
+(· | xw) −πh(· | xw)
+
+1
+56
+
+(ii)
+≥
+c2∆
+12σH ⌊H/16⌋(⌊H/16⌋+ 1)
+(229)
+where (i) follows from 1 −p = 1 −(p −σ) = 1 −c1
+H σ, and (ii) holds by letting c1 ≤1
+2 and following the
+same routine of (222).
+Consequently, (229) yields
+V ⋆,σ,w,θ
+1
+(xw) −V π,σ,w,θ
+1
+(xw) ≥
+c2∆
+12σH ⌊H/16⌋(⌊H/16⌋+ 1) ≥c4∆H
+σ
+> ε
+(230)
+holds for some small enough constant c4 and letting ∆=
+σε
+c4H .
+57

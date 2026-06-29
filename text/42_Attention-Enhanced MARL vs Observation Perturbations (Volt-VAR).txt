@@ -1,0 +1,1454 @@
+IEEE TRANSACTIONS ON SMART GRID, VOL. 15, NO. 6, NOVEMBER 2024
+5761
+Attention-Enhanced Multi-Agent Reinforcement
+Learning Against Observation Perturbations
+for Distributed Volt-VAR Control
+Xu Yang
+, Graduate Student Member, IEEE, Haotian Liu, and Wenchuan Wu
+, Fellow, IEEE
+Abstract—The cloud-edge collaboration architecture has been
+widely adopted for distributed Volt-VAR control (VVC) prob-
+lems
+in
+active
+distribution
+networks
+(ADNs).
+To
+alleviate
+the computation and communication burden on edge sides,
+centralized training & decentralized execution (CTDE) based
+multi-agent reinforcement learning methods have been proposed.
+However, the performance of these methods relies heavily on
+the agents’ coordination mechanism and accurate observations.
+Given access to a vast amount of distributed energy resources, it
+becomes increasingly challenging to achieve efﬁcient coordination
+within CTDE framework. Furthermore, the agents’ observations
+always involve perturbations such as measurement noises and
+even cyber-attacks in real-world ADNs, which can signiﬁcantly
+degrade the distributed VVC performance and may cause
+severe security issues. In this paper, we propose an attention-
+enhanced multi-agent reinforcement learning method to address
+observation perturbations for distributed VVC. In our proposed
+method, a mix network on the cloud platform with an agent-
+level attention mechanism is used to approximate the global
+reward, successfully capturing the intercorrelations between
+agents and achieving excellent coordination. A novel robust
+regularizer is also designed to enhance the agents’ robustness
+facing the observation perturbations, which greatly improves
+the applicability of reinforcement learning methods. Numerical
+simulations on IEEE test cases with real-world data demonstrate
+the effectiveness and robustness of our proposed method.
+Index
+Terms—Voltage
+control,
+cloud-edge
+collaboration,
+centralized training & decentralized execution, multi-agent rein-
+forcement learning, attention mechanism, robust regularizer.
+I. INTRODUCTION
+W
+ITH increasing penetration of distributed renewable
+energy resources in the power system, voltage viola-
+tions and high network losses are becoming more serious in
+active distribution networks (ADNs) [1], [2]. To alleviate the
+problems, Volt-VAR control (VVC) has become an important
+Manuscript received 6 November 2023; revised 29 February 2024 and
+22 May 2024; accepted 23 June 2024. Date of publication 5 July 2024;
+date of current version 23 October 2024. This work was supported in
+part by the National Key Research and Development Plan of China under
+Grant 2022YFB2402900, and in part by the S&T Program of State Grid
+Corporation of China under Grant 52060023001T. Paper no. TSG-01866-
+2023. (Corresponding author: Wenchuan Wu.)
+The authors are with the State Key Laboratory of Power Systems,
+Department
+of
+Electrical
+Engineering,
+Tsinghua
+University,
+Beijing
+100084, China (e-mail: yangxuthu@163.com; liuhaotian@tsinghua.edu.cn;
+wuwench@tsinghua.edu.cn).
+Color versions of one or more ﬁgures in this article are available at
+https://doi.org/10.1109/TSG.2024.3423700.
+Digital Object Identiﬁer 10.1109/TSG.2024.3423700
+part of real-time dispatch of the ADNs [3]. Given that most
+of the renewable energy resources are connected to the grid
+by inverters, they are able and required to provide additional
+reactive power support to stabilize the voltage proﬁle.
+Till now, VVC is usually formulated as a nonlinear pro-
+gramming problem that can be efﬁciently solved by some
+mature centralized optimization methods such as interior
+point method [4]. However, these centralized VVC methods
+require a complete model and global measurements of the
+ADN, which may suffer from single-point failure and heavy
+communication burden. For an ADN with increasingly huge
+number of inverters, centralized methods can no longer meet
+the need for fast and reliable VVC. Therefore, distributed
+VVC has gained great attention recently. Based on dis-
+tributed optimization algorithms such as alternating direction
+of multipliers [5], [6], and generalized Benders decomposi-
+tion [7], effective distributed VVC is achieved using only local
+and neighboring information.
+Despite signiﬁcant research in distributed VVC, computa-
+tion and communication burdens remain a bottleneck for these
+methods in real practice. Optimization based distributed VVC
+requires sufﬁcient computational power and frequent com-
+munication between the inverters, which is unaffordable for
+ADN operators. Hence, learning-based control solutions with
+cloud-edge collaboration architecture have been proposed. A
+representative example is centralized training & decentralized
+execution (CTDE) multi-agent reinforcement learning (RL)
+framework [8].
+In the CTDE framework, the cloud platform carries out the
+centralized training process, which shoulders the majority of
+the computation burden. The edge controllers, on the other
+hand, execute the trained policies with local measurements.
+After centralized training, the only computation burden for
+inverters in execution stage is the forward propagation of
+the local policy networks, which is fast enough to real-
+ize real-time VVC. Several multi-agent RL methods for
+distributed VVC have been investigated under this frame-
+work, such as multi-agent deep deterministic policy gradient
+(MADDPG) [9], [10], [11], [12], multi-agent soft actor-critic
+(MASAC) [13], [14], [15], and multi-agent twin delayed deep
+deterministic policy gradient (MATD3) [16].
+The above CTDE based multi-agent RL methods have
+one thing in common: they all maintain a “central value
+network” on the cloud platform to approximate the global
+reward of the system, whose input concatenates observations
+1949-3053 c⃝2024 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:33 UTC from IEEE Xplore.  Restrictions apply. 
+
+5762
+IEEE TRANSACTIONS ON SMART GRID, VOL. 15, NO. 6, NOVEMBER 2024
+and actions of all RL agents to optimize policies and
+achieve coordination. But the curse of dimensionality and
+training burden caused by the “central value network” limit
+their performance on large-scale distribution systems. Unlike
+the aforementioned approaches, value network factorization,
+exempliﬁed by VDN [17] and QMIX [18] only maintains
+a relatively small-scale mix network on the cloud platform,
+reducing training difﬁculty and burden. These methods have
+also been applied in distributed VVC recently [19]. However,
+the critical mix network in existing works is relatively simple,
+whose performance may not be assured as the number of edge
+controllers increases. Therefore, a more effective mix network
+structure is needed for large-scale multi-agent systems.
+This paper is inspired by the success of attention mechanism
+in the ﬁeld of natural language processing. Attention mecha-
+nism aggregates scattered information based on the calculated
+attention distribution, which has a strong ability to extract
+the most important information for learning. Some pioneering
+works also combine attention mechanism and RL to address
+dispatch problems in power systems. For example, researchers
+in [20], [21], [22] utilize attention mechanism to process
+global information so that the most relevant information is
+fed into the RL agents for better training. And researchers
+in [23], [24] leverage graph attention networks to explicitly
+embed the topology and features of distribution networks or
+transportation networks so that RL agents can better perceive
+the system states. As can be seen, most of the existing works
+use attention mechanism to extract signiﬁcant information. But
+attention mechanism is rarely used to achieve coordination
+under the scheme of value network factorization, which is one
+of the innovations of this paper.
+On the other hand, since RL is data-driven, the performance
+of multi-agent RL methods for distributed VVC relies heavily
+on the observations’ accuracy. Due to the sensitivity of the
+policy networks in RL agents, once there exists a small
+perturbation in the observations, the generated control actions
+can be very distorted. In reality, perturbations in observations,
+such as measurement noises, communication errors, and even
+cyber-attacks are unavoidable in the edge controllers. The
+existing multi-agent RL methods for distributed VVC lack
+consideration of these perturbations, which hinders their appli-
+cation to real-world ADNs.
+In this paper, we propose a Robust Attention-Enhanced Soft
+Actor-Critic (RASAC) method for distributed VVC in ADNs.
+As shown in Fig. 1, in the centralized training stage, local
+policies, local value networks, along with a mix network are
+trained on the cloud platform. The proposed mix network in
+RASAC utilizes an agent-level attention mechanism to achieve
+coordination, which can dynamically measure the importance
+of each local agent to the whole system. After the centralized
+training, local policy networks are downloaded to the edge
+controllers (PV inverters in this paper) for decentralized
+execution.
+Moreover, considering possible observation perturbations in
+the execution stage, a novel robust regularizer is designed
+to enhance the agents’ robustness. Unlike traditional robust
+reinforcement learning methods, the proposed robust regular-
+izer only requires a small modiﬁcation of the policies’ loss
+Fig. 1.
+Overall structure of the proposed method under CTDE framework.
+function without massive tuning and extra training. Details of
+the mix network and the robust regularizer will be introduced
+in Section III. The unique contributions of this paper are
+summarized as follows.
+1) In order to achieve distributed VVC in ADN, we model
+each inverter in the ADN as an RL agent and formulate
+the distributed VVC problem as a cooperative Markov game,
+which can be efﬁciently optimized by CTDE based multi-
+agent RL algorithms. Under CTDE framework, we utilize the
+value network factorization method, in which only local value
+networks and a mix network are maintained on the cloud
+platform, successfully avoiding the curse of dimensionality
+and training burden.
+2) Based on the idea of value network factorization, a
+novel mix network with agent-level attention mechanism is
+proposed to achieve coordination between the RL agents.
+Compared to existing value network factorization methods, our
+proposed mechanism treats each agent as an attention input
+and calculates their intercorrelation using global information
+and local unique features, which dynamically captures the
+importance of each agent to the whole system and achieves
+outstanding performance.
+3) Considering possible observation perturbations in exe-
+cution stage, a robust regularizer is added to the policies’
+loss function, which involves little additional computation
+and automatically incorporates robustness into the policies.
+This novel regularizer greatly enhances the agents’ ability
+to compress possible observation perturbations and improves
+the applicability of current RL methods to real-world ADNs.
+Comprehensive experiments using real-world data demon-
+strate the effectiveness and robustness of our proposed
+method.
+The remainder of this paper is organized as follows.
+Section II formulates the distributed VVC problem in ADNs,
+and introduces the cooperative Markov game and value
+network factorization method used in this paper. Section III
+introduces the proposed attention-enhanced mix network and
+robust regularizer in detail. Section IV demonstrates the
+effectiveness and robustness of RASAC with different test
+cases using real-world data. Finally, we present the conclusion
+and directions for future research.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:33 UTC from IEEE Xplore.  Restrictions apply. 
+
+YANG et al.: ATTENTION-ENHANCED MULTI-AGENT RL AGAINST OBSERVATION PERTURBATIONS
+5763
+II. PRELIMINARIES
+In this section, we ﬁrst formulate the distributed VVC
+problem in ADNs. Then, the settings of the cooperative
+Markov game in this paper are explained. Lastly, we intro-
+duce the value network factorization method as an important
+preliminary of our proposed attention-enhanced mix network.
+A. Distributed VVC Problem Formulation
+In this paper, we consider an ADN implemented with N PV
+inverters at node N1, . . . , NN, which can be described as an
+undirected graph G(V, E), where V and E are the collections
+of nodes and branches in the ADN. Objective of the VVC
+problem is to minimize voltage deviation and network loss by
+adjusting reactive power generation of the PV inverters. Power
+ﬂow functions of this ADN are shown in eq. (1)–(2), where
+PPV
+i
+and QPV
+i
+are the active and reactive power generated by
+PV inverter at node i, PL
+i and QL
+i are the active and reactive
+load at node i, Gij and Bij are the real and imaginary part
+of the corresponding element in the admittance matrix of the
+network, θij is the voltage phase difference between node i
+and j. If i /∈{N1, . . . , NN}, then PPV
+i
+= QPV
+i
+= 0.
+PPV
+i
+−PL
+i = Vi
+
+j∈V
+Vj
+
+Gij cos θij + Bij sin θij
+
+, ∀i ∈V (1)
+QPV
+i
+−QL
+i = Vi
+
+j∈V
+Vj
+
+−Bij cos θij + Gij sin θij
+
+, ∀i ∈V (2)
+In the distributed VVC problem, the ADN can be divided
+into M control regions R1, . . . , RM and we model each PV
+inverter as an agent I1, . . . , IN. Local observations of the nth
+agent In is {PPV
+i
+, PL
+i , QPV
+i
+, QL
+i , Vi, ∀i ∈Rm}, Rm is the region
+where In belongs to, i.e., Nn ∈Rm. Local control action of In
+is QPV
+Nn, which satisﬁes the rated capacity constraint |QPV
+Nn| ≤
+
+(SPV
+Nn)2 −(PPV
+Nn)2 where SPV
+Nn is the rated capacity of the nth
+inverter.
+B. Cooperative Markov Game
+In order to apply multi-agent RL algorithms to the dis-
+tributed VVC problem, we consider an extension of Markov
+decision process [25] called cooperative Markov game [26].
+The cooperative Markov game describes the interaction
+between N agents I1, . . . , IN and a common environment,
+which can be deﬁned by a tuple (S, [On]N, [An]N, p, r, γ ). S
+is the state space of the common environment, On and An are
+the local observation space and local action space of In.
+At timestep t, state of the environment is st ∈S. Each agent
+observes the environment and receives its local observation
+on,t ∈On, then chooses a local action an,t ∈An based on its
+stochastic policy πn which is a probability density function
+πn:On × An →[0, ∞). After all of the actions are executed,
+the environment transfers to next state st+1 ∈S based on the
+transition probability p:S × A1 × . . . × AN × S →[0, ∞).
+After this transition, each agent receives the next observation
+on,t+1 ∈On and a global reward rt which measures the
+cooperative performance of this transition. The goal of each
+agent is to maximize the expected discounted return:
+max
+π1,...,πNJ(π1, . . . , πN) = Eτ∼π1,...,πN
+ T
+
+t=0
+γ trt
+
+(3)
+where τ is the trajectory when applying π1, . . . , πN to the
+common environment, T is the length of an episode, γ ∈[0, 1]
+is the discount factor for future rewards.
+In value-based RL algorithms such as soft actor-critic [27]
+used in this paper, we usually utilize two neural networks to
+approximate the policy and expected discounted return. The
+policy network πθn approximates In’s policy with parameters
+θn, which consists of subnetworks μθn and σθn. The output
+of μθn and σθn are mean value and standard deviation of the
+action distribution such that
+an,t = tanh
+
+μθn
+
+on,t
+
++ σθn
+
+on,t
+
+⊙ξn
+
+(4)
+where ξn satisﬁes standard normal distribution.
+The value network Qφn approximates In’s expected dis-
+counted return with parameters φn. A local value network
+whose input is local observation and local action is deﬁned
+as:
+Qφn(on, an) =
+E
+ T
+
+t=0
+γ trt −α log πθn
+
+·|on,t
+
+|on,0 = on, an,0 = an
+
+(5)
+where −log πθn(·|on,t) is a term measuring the randomness of
+the policy, α is its corresponding coefﬁcient. Since the local
+value network only utilizes local information, which makes it
+hard to achieve coordination between agents, several methods
+propose “central value networks”. The input of “central value
+networks” concatenates observations and actions of all agents
+such that the gradients for local policy networks are calculated
+based on global information.
+C. Value Network Factorization
+For large-scale systems, “central value networks” suf-
+fer from the curse of dimensionality and training burden.
+Therefore, value network factorization methods such as VDN
+and QMIX are gaining much more attention. In value network
+factorization methods, a mix network fϕ with parameters ϕ is
+trained along with the local policy networks and local value
+networks, whose role is to aggregate the outputs of all local
+value networks into a global one. With the help of the mix
+network, the expected discounted return is approximated using
+the aggregated global information, which makes it easier to
+implement coordination between RL agents.
+As shown in Fig. 2, local value network Qφn takes local
+observation on and local action an as input to generate
+the local value Qφn(on, an). Then, in order to achieve
+coordination, the mix network aggregates all of the local
+values Qφ1(o1, a1), . . . , QφN(oN, aN) into one global value
+fϕ(Qφ1(o1, a1), . . . , QφN(oN, aN)) to approximate the total
+expected discounted return. It should be noted that after the
+value network factorization, fϕ(Qφ1(o1, a1), . . . , QφN(oN, aN))
+represents the expected discounted return while the local
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:33 UTC from IEEE Xplore.  Restrictions apply. 
+
+5764
+IEEE TRANSACTIONS ON SMART GRID, VOL. 15, NO. 6, NOVEMBER 2024
+Fig. 2.
+Value network factorization method.
+values Qφ1(o1, a1), . . . , QφN(oN, aN) have no corresponding
+physical meanings anymore.
+During training, parameters ϕ of the mix network and
+parameters φ1, . . . , φN of local value networks are optimized
+by minimizing the following loss function L(ϕ, φ1, . . . , φN):
+L(ϕ, φ1, . . . , φN) =
+1
+|D|
+
+D
+
+fϕ
+
+Qφ1
+
+o1,t, a1,t
+
+, . . . , QφN
+
+oN,t, aN,t
+
+−y
+2	
+(6)
+where D is a batch of data randomly sampled from the replay
+buffer which stores the transition information. y is the target
+value for fϕ deﬁned as:
+y = rt +
+γ
+
+fϕ′
+
+Qφ′
+1
+
+o1,t+1, a1,t+1
+
+, . . . , Qφ′
+N
+
+oN,t+1, aN,t+1
+
+−
+α
+N
+
+n=1
+log πθn
+
+an,t+1|on,t+1
+
+
+(7)
+where
+an,t+1
+∼
+πθn(on,t+1).
+After
+the
+calculation
+of
+L(ϕ, φ1, . . . , φN), the parameters are updated using gradient
+descent:
+ϕ ←ϕ −λϕ∇ϕL(ϕ, φ1, . . . , φN)
+(8)
+φn ←φn −λφn∇φnL(ϕ, φ1, . . . , φN), n = 1, . . . , N
+(9)
+In eq. (7), fϕ′ and Qφ′
+1, . . . , Qφ′
+N are the target networks
+for fϕ and Qφ1, . . . , QφN, introduced to stabilize the training
+process, whose parameters ϕ′ and φ′
+1, . . . , φ′
+N are delayed
+parameters of ϕ and φ1, . . . , φN. These parameters are gradu-
+ally updated using:
+ϕ′ ←λϕ′ϕ +
+
+1 −λϕ′
+ϕ′
+(10)
+φ′
+n ←λφ′nφn +
+
+1 −λφ′n
+
+φ′
+n, n = 1, . . . , N
+(11)
+With the help of the mix network and local value networks,
+parameters θ1, . . . , θN of local policy networks can be opti-
+mized by minimizing the loss function L(θ1, . . . , θN):
+L(θ1, . . . , θN) =
+1
+|D|
+
+D
+
+−fϕ
+
+Qφ1
+
+o1,t, a1,t
+
+, . . . , QφN
+
+oN,t, aN,t
+
++
+α
+N
+
+n=1
+log πθn
+
+an,t|on,t
+
+
+(12)
+where an,t ∼πθn(on,t), then parameters θ1, . . . , θN are also
+updated using gradient descent:
+θn ←θn −λθn∇θnL(θ1, . . . , θN), n = 1, . . . , N
+(13)
+In the functions above, λϕ′, λφ′
+1, . . . , λφ′
+N, are updating rate
+of corresponding parameters, λϕ, λφ1, . . . , λφN, λθ1, . . . , λθN
+are learning rate of corresponding parameters.
+Although value network factorization methods alleviate the
+training burden and reduce the critic network size, existing
+mix networks are relatively simple, whose performance is
+not assured as the number of agents increases. Take two
+popular value network factorization methods, VDN and QMIX
+as examples: VDN factorizes the global value fϕ into sum
+of local values: fϕ = N
+n=1 Qφn(on, an); and QMIX extends
+this addictive function into a modiﬁed weighted sum, whose
+weights are directly calculated by the global state without
+considering unique features of each agent. The expressive
+ability of the mix network in VDN and QMIX is limited
+due to their formulation. In federated multi-agent soft actor-
+critic (FMASAC) proposed in our previous work [19], the
+mix network is a multi-layer perception (MLP), whose input
+is local values and output is the approximated global reward.
+Although an MLP has a much stronger approximation ability,
+the coordination is not explicitly incorporated into its structure,
+which means the agents’ intercorrelation captured by the MLP
+is relatively random and lacks interpretability, making it less
+scalable and reliable in larger systems.
+As can be seen from the above analysis, when the number of
+agents increases, it becomes increasingly challenging for these
+methods to achieve coordination due to their mix network
+formulation. Therefore, a novel mix network, which explicitly
+incorporates agents’ coordination into its structure, is urgently
+needed.
+III. METHODS
+In this section, RASAC, an attention-enhanced multi-agent
+RL method against observation perturbations is proposed,
+which achieves not only effective coordination but also robust
+performance. We ﬁrst formulate the distributed VVC problem
+as a cooperative Markov game, and describe the deﬁni-
+tions in detail. Then the mix network with an agent-level
+attention mechanism and the proposed robust regularizer are
+introduced.
+A. Distributed VVC as A Cooperative Markov Game
+First, we formulate the distributed VVC problem as a
+cooperative Markov game which can be optimized by multi-
+agent RL algorithms under CTDE framework. The deﬁnitions
+of state space, observation space, action space and global
+reward are designed as follows.
+1) State Space: The state s ∈S of the cooperative Markov
+game is deﬁned as a vector: s = (PPV
+i
+, PL
+i , QPV
+i
+, QL
+i , Vi), i ∈V,
+which includes PV generation information, load information,
+and voltage information of the ADN.
+2) Observation Space: In the cooperative Markov game,
+observation of agent In on ∈On is based on the local
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:33 UTC from IEEE Xplore.  Restrictions apply. 
+
+YANG et al.: ATTENTION-ENHANCED MULTI-AGENT RL AGAINST OBSERVATION PERTURBATIONS
+5765
+measurements of its region: on = (PPV
+i
+, PL
+i , QPV
+i
+, QL
+i , Vi), i ∈
+Rm, Rm is the region where In belongs to.
+3) Action Space: In the cooperative Markov game, action
+of agent In an ∈An controls the reactive power generation
+of its corresponding PV inverter. an ∈[−1, 1], and QPV
+Nn is
+calculated as QPV
+Nn = an
+
+(SPV
+Nn)2 −(PPV
+Nn)2 to satisfy the rated
+capacity constraint.
+4) Reward: Global reward of the cooperative Markov game
+aligns with the objective of distributed VVC problem. In order
+to minimize voltage deviation and network loss, the global
+reward is deﬁned as:
+r = −βV
+
+i∈V
+Vi −Vref
+
+|V|
+−βp
+
+ij∈E PLOSS
+ij
+|E|
+(14)
+where Vref is the reference voltage magnitude, PLOSS
+ij
+is the
+network loss on branch ij, βV and βp are coefﬁcients for
+voltage reward and network loss reward. Since the focus of
+this paper is voltage safety and the voltage proﬁles facing
+perturbations, we set βV = 1.0, βp = 0.1 here to help the RL
+agents focus on the voltage deviation term.
+B. Attention-Enhanced Mix Network
+As we mentioned before, as the number of RL agents
+increases, current value network factorization methods are
+difﬁcult to achieve effective coordination. A more efﬁcient
+mix network is indispensable. Attention mechanism, which
+aggregates scattered information based on the calculated atten-
+tion distribution, has a strong ability to extract information
+for learning, thus gaining great success in the ﬁeld of natural
+language processing. There are three vectors in attention mech-
+anism: query vector, key vector, and value vector. Importance
+of each value vector is calculated based on the correlation
+between the query vector and key vector so that important
+information can be given higher weights. Inspired by its
+great success, we incorporate attention mechanism into value
+network factorization: Intuitively, we model each RL agent in
+distributed VVC as an attention input, whose importance to
+the whole system can be dynamically measured by attention
+mechanism, so that effective coordination and aggregation
+can be realized. Based on this idea, we improve existing
+value network factorization methods with an agent-level atten-
+tion mechanism [28] and propose an attention-enhanced mix
+network. For simplicity, in the following contents, we still
+denote all parameters in the proposed mix network as ϕ and
+output of the network as fϕ.
+We ﬁrst clarify the three vectors used in our attention-
+enhanced mix network. As shown in Fig. 3, since the mix
+network aggregates local values Qφ1(o1, a1), . . . , QφN(oN, aN)
+into the global value fϕ, value vector for agent In is its
+own local value Qφn(on, an). The correlation between the
+query vector and the key vector determines the weight of
+corresponding value vector. Therefore, the query vector in the
+mix network is the embedded global state, and the key vector is
+the embedded agents’ local features so that global information
+and local unique information can be fully analyzed.
+Then we introduce the details of the mix network. In
+addition to agent-level attention mechanism, we also utilize
+multi-head attention [29] to obtain more information, and the
+number of attention heads in the network is H. In the hth head,
+the global state s is embedded by an MLP Wh
+q to formulate
+the query vector Wh
+q(s). While the local features of agent
+In, including local observation on and agent id n (one-hot
+encoding) is embedded by another MLP Wh
+k to formulate the
+key vector Wh
+k (on, n). It should be noted that the parameters
+of Wh
+q and Wh
+k are shared among all of the agents, which
+creates common embedding spaces for more efﬁcient learning.
+Afterwards, the importance χh
+n for agent In in the hth head is
+calculated based on the correlation between the query vector
+and the key vector:
+χh
+n ∝exp
+
+Wh
+q(s)Wh
+k (on, n)T
+(15)
+Here, we pass the correlation between the query vector and
+key vector into a softmax function:
+χh
+n = softmax
+
+Wh
+q(s)Wh
+k (on, n)T
+√dk
+
+(16)
+where dk is the scaling factor equal to the dimension of the
+query vector and key vector. After the calculation of χh
+n for
+each agent, we can determine the output of the hth head Qh
+as weighted sum of the value vectors:
+Qh =
+N
+
+n=1
+
+χh
+n Qφn(on, an)
+	
+(17)
+Till now, based on the calculated importance we success-
+fully aggregate local values Qφ1(o1, a1), . . . , QφN(oN, aN) into
+the outputs of several attention heads Q1, . . . , QH. Then, as
+in QMIX, to further aggregate Q1, . . . , QH into the global
+value fϕ, after activated by an Exponential Linear Unit (ELU)
+function, Q1, . . . , QH are summed using the positive weights
+wh(s) and bias b(s), which are calculated by two MLPs based
+on the global state s. The ﬁnal output of the mix network is:
+fϕ =
+H
+
+h=1
+
+wh(s)ELU
+
+Qh	
++ b(s)
+(18)
+which is used to approximate the expected discounted return
+of the formulated cooperative Markov game.
+Compared to existing value factorization methods, the
+proposed mix network explicitly incorporates agents’ coordi-
+nation into its structure, which can dynamically capture the
+importance of each agent to the whole system, thus avoiding
+inefﬁcient training and unnecessary exploration of the mix
+network. Effectiveness of the proposed mix network will be
+demonstrated in Section IV.
+C. Robust Regularizer
+Although CTDE based multi-agent RL algorithms achieve
+good convergence and performance on VVC problems, few
+of them consider the inﬂuence of possible observation pertur-
+bations. Since the policy network of RL agents is sensitive
+to the input, possible observation perturbations may cause
+distorted actions and lead to a serious deterioration in exe-
+cution stage. As shown in Fig. 1, during the interaction with
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:33 UTC from IEEE Xplore.  Restrictions apply. 
+
+5766
+IEEE TRANSACTIONS ON SMART GRID, VOL. 15, NO. 6, NOVEMBER 2024
+Fig. 3.
+Framework of the proposed attention-enhanced mix network.
+the real-world ADN, accurate observation of agent In is on,
+while the observation received by the agent might be on ∈
+B(on, ϵ) because of perturbations such as measurement noises,
+communication errors, and even cyber-attacks. Here, B(on, ϵ)
+is the neighborhood of on bounded by ∥on −on∥∞≤ϵ. This
+difference in observation could cause a signiﬁcant divergence
+in the generated action, i.e., πθn(on) turns into πθn(on).
+In order to tackle the above problem, we consider robust
+reinforcement learning [30] whose objective is to maintain the
+performance of RL agents under adversarial perturbations. In
+order to improve the RL agents’ robustness, traditional robust
+reinforcement learning methods usually concurrently train an
+adversarial agent. During training, the adversarial agent attacks
+the observation of RL agents to make their performance
+deteriorate. Then the RL agents’ robustness is gained through
+the adversarial training process. However, this adversarial
+training requires massive computation and exhaustive tuning,
+and may result in an unstable training performance [31].
+Instead of burdensome adversarial training, recent studies
+show that minimizing the distance between πθn(on) and
+πθn(on) during training is enough to improve the robustness of
+the policy network [32], [33]. Based on this idea, we propose
+a novel robust regularizer to be added into the loss function
+of the policy networks, so that policy networks can minimize
+the distance between πθn(on) and πθn(on) while maximizing
+the reward.
+In this paper, since the agents’ policies are stochastic, we
+utilize KL divergence to measure the distance between the
+normal action distribution πθn(on) and the perturbated action
+distribution πθn(on). Our proposed robust regularizer is deﬁned
+as the maximum distance found in B(on, ϵ):
+Rθn(on, ϵ) =
+max
+˜o∈B(on,ϵ)
+DKL
+
+πθn(on)||πθn(on)
+
+=
+max
+˜oϵB(on,ϵ)
+log σθn(on)
+σθn(on) +
+σ 2
+θn(on) +
+
+μθn(on) −μθn(on)
+2
+2σ 2
+θn(˜on)
+−1
+2 (19)
+With
+this
+regularizer
+Rθn(on, ϵ),
+the
+loss
+function
+L(θ1, . . . , θN) in eq. (12) is further transformed into:
+L(θ1, . . . , θN) =
+1
+|D|
+
+D
+
+−fϕ
+
+Qφ1
+
+o1,t, a1,t
+
+, . . . , QφN
+
+oN,t, aN,t
+
++
+α
+N
+
+n=1
+log πθn
+
+an,t|on,t
+
++ δ
+N
+
+n=1
+Rθn
+
+on,t, ϵ
+
+
+(20)
+where δ is the coefﬁcient for the regularizer. As can be
+seen from the deﬁnition and the transformed loss function,
+the essence of this added regularizer is to construct a game
+between the RL agent and observation perturbations. Then
+RL agents’ robustness can be enhanced through this game.
+Compared to traditional adversarial training, the only task left
+to do is appropriately adjusting the parameters ϵ and δ in
+eq. (20), and the robustness can be automatically incorporated
+into agents’ policies. The overall training process of RASAC
+is presented in Algorithm 1.
+It should be noted that all of the ϵ
+in this paper
+are rescaled by the standard deviation of each element
+in the agents’ observation. Furthermore, since calculating
+the robust regularizer Rθn(on, ϵ) in eq. (19) involves the
+policy network πθn, it is a high dimensional non-convex
+optimization problem, which is hard to solve a global optimal
+on for max˜oϵB(on,ϵ)DKL(πθn(on)||πθn(on)). Therefore, we use
+Stochastic gradient Langevin dynamics (SGLD) [34] to ﬁnd
+a suitable on in B(on, ϵ), based on which we calculate
+DKL(πθn(on)||πθn(on)) to approximate Rθn(on, ϵ). SGLD is
+a common optimization algorithm used in machine learning
+to solve high dimensional optimization problems. In each
+iteration of SGLD, the gradients of model parameters are
+calculated using one sample or a small sample of data
+so that computation time and memory can be reduced.
+Another important feature of SGLD is that it adds Gaussian
+noises during iteration to encourage exploration. In this
+paper, to calculate Rθn(on, ϵ) we ﬁrst initialize a on near
+on using random noise. Then, based on this on, we calcu-
+late DKL(πθn(on)||πθn(on)) and use backpropagation of the
+policy network πθn to calculate its gradient regarding on,
+i.e.,
+∇onDKL||(πθn(on)πθn(on)). Since the objective for on
+is to maximize DKL(πθn(on)||πθn(on)), on in next iteration
+is calculated with gradient ascent. Finally, the new on is
+bounded into B(on, ϵ). After iterations, a suitable on can be
+calculated quickly and effectively. The process of SGLD is
+also presented in Algorithm 2, where η is the noise factor, K is
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:33 UTC from IEEE Xplore.  Restrictions apply. 
+
+YANG et al.: ATTENTION-ENHANCED MULTI-AGENT RL AGAINST OBSERVATION PERTURBATIONS
+5767
+Algorithm 1 RASAC
+Input: Initial parameters for all networks, initial replay buffer,
+ADN environment
+Output:
+Local
+policies
+πθ1, . . . , πθN
+for
+decentralized
+execution
+1: foreach episode do
+2: foreach environment step t do
+3: foreach agent n do in parallel
+4: Locally observe on,t;
+5: Locally execute an,t ∼πθn(on,t);
+6: end
+7: Calculate global reward rt as in eq. (14);
+8: Store transition information into replay buffer;
+9: if t mod update frequency = 0 then
+10: Sample a batch D from replay buffer;
+11: Compute loss L(ϕ, φ1, . . . , φN) as in eq. (6);
+12: Compute loss L(θ1, . . . , θN) as in eq. (20);
+13: Update ϕ as in eq. (8);
+14: Update φ1, . . . , φN as in eq. (9);
+15: Update θ1, . . . , θN as in eq. (13);
+16: Update ϕ′ as in eq. (10);
+17: Update φ′
+1, . . . , φ′
+N as in eq. (11);
+18: end
+19: end
+20: end
+21: return πθ1, . . . , πθN
+Algorithm 2 SGLD
+Input: Local observation on, local policy πθn, ϵ, noise factor
+η, iteration steps K
+Output: Approximated Rθn(on, ϵ)
+1: Calculate upper bound on = on + ϵ;
+2: Calculate lower bound on = on −ϵ;
+3: Calculate step size ϵK = ϵ/K;
+4: Initialize on = on + sgn(η√2ϵK ⊙ξn) · ϵK;
+5: for k = 2 to K do
+6: on = on + sgn(∇onDKL(πθn(on)||πθn(on)) + η√2ϵK/k ⊙
+ξn) · ϵK;
+7: on = min(on, on);
+8: on = max(on, on);
+9: end
+10: Calculate Rθn(on, ϵ) = DKL(πθn(on)||πθn(on));
+11: return Rθn(on, ϵ)
+the iteration steps, and sgn(·) is the sign function. To speed up
+this calculation, we limit the iteration to K steps and discretize
+the step size as ϵ/K. The following test results demonstrate
+that Rθn(on, ϵ) calculated by this simple SGLD is enough to
+empower the agents’ robustness.
+IV. NUMERICAL STUDY
+In this section, to validate the effectiveness and robustness
+of the proposed RASAC, several numerical simulations are
+conducted on IEEE 33-bus [35] and 141-bus [36] distribution
+networks. The load and PV proﬁles used here are based on
+Fig. 4.
+PV installations and local regions of 33-bus test system.
+3-year Portuguese electricity load data and PV generation data
+collected from Elia group [37]. In the following training and
+execution, we sample load and PV proﬁles from the 3-year
+dataset and import them into corresponding simulation system
+to evaluate the state of the ADN. In 33-bus case, the system
+is partitioned into 4 regions, 6 PVs are added on bus 13, 18,
+22, 25, 29, and 33. In 141-bus case, the system is partitioned
+into 9 regions, 22 PVs are added on bus 36, 53, 59, 62, 68,
+69, 75, 77, 82, 87, 100, 106, 110, 111, 116, 117, 130, 133,
+137, 138, 139, and 141. Installation details are presented in
+the following ﬁgures and table. According to the requirements
+of real-time VVC and resolution of the used dataset, we set
+the control period to 3 minutes, which is also the interval
+between two timesteps in an episode. In addition, considering
+the training time and usual practice of reinforcement learning,
+each episode during training lasts for 240 timesteps, which
+corresponds to the proﬁle of half a day. Voltage limitations
+are [0.95, 1.05]p.u., and Vref = 1.0p.u..
+We ﬁrst introduce the settings of the proposed and baseline
+algorithms, then the training and execution performance on
+VVC are presented and compared in ﬁgures and tables
+respectively. Finally, to test the robustness, we add noises and
+attacks in the observation of RL agents, which are common
+in real-world ADNs, and show their performance under such
+perturbations.
+All of the RL agents are implemented in Python with the
+deep learning framework Pytorch. Experiments are run on
+a computer with a 2.3GHz Intel Core i7-10875H CPU and
+16GB RAM. Considering the stochasticity of RL algorithms,
+for each group of experiments, we test with 3 independent
+random seeds. Then the mean values and error bounds of the
+algorithms are presented as solid lines and shading areas in
+the ﬁgures.
+A. Proposed and Baseline Algorithms Setup
+Our proposed method, RASAC, is implemented with an
+agent-level attention mechanism and trained with the robust
+regularizer. To verify the effectiveness of the proposed
+attention mechanism, we choose two famous value network
+factorization methods, QMIX and VDN as benchmarks. And
+combine QMIX and VDN with the soft actor-critic RL
+algorithm used in this paper to formulate QMIXSAC and
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:33 UTC from IEEE Xplore.  Restrictions apply. 
+
+5768
+IEEE TRANSACTIONS ON SMART GRID, VOL. 15, NO. 6, NOVEMBER 2024
+Fig. 5.
+PV installations and local regions of 141-bus test system.
+TABLE I
+SETTINGS OF THE TEST SYSTEM
+VDNSAC. FMASAC in our previous work is also imple-
+mented for comparison, which is demonstrated effective when
+the number of agents is small. As we introduced before, the
+mix network of FMASAC is a simple MLP to aggregate local
+values into a global one. In addition, to verify the robustness
+of RASAC, we formulate an attention-enhanced soft actor-
+critic (ASAC) for the ablation study. All settings for ASAC
+are identical to those of RASAC, except that there is no
+robust regularizer in the loss function of policy networks.
+Hyperparameters of these RL agents are listed in Table II.
+To compare the performance between CTDE based multi-
+agent RL methods and single-agent RL method, we also
+construct centralized soft actor-critic (CSAC) as a centralized
+VVC baseline. There is only one agent in CSAC that utilizes
+global measurements to determine control actions for all
+inverters inside the ADN.
+B. Training and Execution Performance
+In the centralized training stage, we randomly select 100
+episodes of data for interaction. Test is conducted after each
+episode with 5 episodes of data randomly selected for RL
+TABLE II
+HYPERPARAMETERS OF RL AGENTS
+Fig. 6.
+33-bus system centralized training results of RASAC and baseline
+algorithms.
+agents’ evaluation. Average of the 5 test episodes’ total
+rewards is calculated to represent the agents’ centralized train-
+ing performance, which is displayed in the following ﬁgures
+(blue for RASAC, orange for CSAC, yellow for VDNSAC,
+brown for QMIXSAC, and green for FMASAC). In the
+following ﬁgures, solid lines and shading areas represent mean
+values and error bounds across 3 random seeds, respectively.
+Fig. 6 displays the performance of each algorithm in 33-bus
+system, which contains only 6 agents. For CTDE based multi-
+agent RL methods in this system, RASAC and QMIXSAC
+converge steadily while FMASAC and VDNSAC diverge in
+some cases. As we mentioned before, VDNSAC factorizes
+global value into a simple sum of local values, which may
+not represent the agents’ relationship in this system. And
+FMASAC utilizes an MLP to capture the agents’ intercorrela-
+tion, which is relatively random and not scalable, so FMASAC
+may diverge sometimes. As for the ﬁnal performance, our
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:33 UTC from IEEE Xplore.  Restrictions apply. 
+
+YANG et al.: ATTENTION-ENHANCED MULTI-AGENT RL AGAINST OBSERVATION PERTURBATIONS
+5769
+Fig. 7.
+141-bus system centralized training results of RASAC and baseline
+algorithms.
+Fig. 8.
+Voltage proﬁles on bus 18 in 33-bus system during a typical summer
+day.
+proposed RASAC achieves the highest ﬁnal reward, which
+demonstrates effectiveness of the proposed agent-level atten-
+tion mechanism.
+In the larger 141-bus system, since the 22 agents can only
+observe a small portion of the system, it becomes much
+harder to achieve efﬁcient coordination. As shown in Fig. 7,
+VDNSAC fails to coordinate the agents and its training is
+very unstable. Although QMIXSAC does not diverge violently
+as VDNSAC, its reward does not grow during the training
+process. And the performance of FMASAC also declines
+signiﬁcantly. In contrast, with help of the proposed agent-level
+attention mechanism, RASAC maintains steady convergence
+and outstanding performance as the system expands.
+After the centralized training, we download the ﬁnal policies
+to edge controllers for decentralized execution, which is called
+the execution stage. First, to demonstrate the necessity of VVC
+and the effectiveness of RL methods, we choose a summer
+day for 33-bus system and a winter day for 141-bus system in
+the 3-year dataset, respectively. In these two typical days, we
+compare the converged RASAC, ASAC, and CSAC algorithms
+with a “No Control” method, where no PVs are involved in
+VVC operation, i.e., all PV’s reactive power generation is
+always zero. For better visualization, we present the voltage
+proﬁles of PV bus 18 in 33-bus system and PV bus 68 in
+141-bus system as follows.
+As can be seen from Fig. 8, when no PVs are involved in
+VVC operation, the voltage magnitude of the PV bus rises
+rapidly in summer and exceeds the safety limitation due to
+the high PV generation at noon. While in Fig. 9, since the PV
+Fig. 9.
+Voltage proﬁles on bus 68 in 141-bus system during a typical winter
+day.
+TABLE III
+DISTRIBUTED VVC PERFORMANCE OF RASAC
+AND BASELINE ALGORITHMS
+generation cannot fully satisfy the electricity load, most of the
+voltage magnitudes of No Control method deviate from the
+reference value and are below the safety limitation. The above
+observations indicate the necessity of VVC to prevent several
+voltage issues caused by the integrated PVs. However, the RL
+methods RASAC, ASAC, and CSAC perform much better than
+the No Control method, whose proﬁles are much more steady
+when facing different PV generations, which demonstrates the
+effectiveness of data-driven RL methods on the VVC problem.
+Next, to compare the performance of different RL methods,
+we select a typical day for each month in the 3-year dataset,
+i.e., 36 days (17280 timesteps in total) to test the RL agents’
+VVC performance. The following table shows the voltage
+deviations and network losses in these 17820 timesteps, in
+which the best performance among the algorithms is marked
+as bold.
+As can be seen from the results listed in Table III, after
+centralized training, our proposed RASAC realize lower volt-
+age deviations in the execution stage, which means that CTDE
+based multi-agent RL methods can be utilized to achieve
+distributed VVC with appropriate algorithm and coordination
+mechanism. Another important observation from Table III is
+that RASAC and ASAC have almost the same performance on
+distributed VVC problems without observation perturbances,
+which means the added robust regularizer won’t sacriﬁce the
+agents’ normal performance. However, the regularizer can
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:33 UTC from IEEE Xplore.  Restrictions apply. 
+
+5770
+IEEE TRANSACTIONS ON SMART GRID, VOL. 15, NO. 6, NOVEMBER 2024
+TABLE IV
+33-BUS SYSTEM TOTAL REWARDS UNDER NOISES
+greatly enhance the robustness against observation perturba-
+tions, which will be presented in next subsection. As for the
+network losses presented in Table III, since we encourage
+the RL agents to focus on the voltage deviation term in the
+reward function, there is no obvious difference in RL agents’
+performance on network losses. However, it should be noted
+that if the ADN operator is more concerned with the network
+losses, the coefﬁcients in the reward function can be adjusted
+accordingly and adaptively.
+The most signiﬁcant distinction between the above CTDE
+based multi-agent RL methods and CSAC lies in the action
+dimension and the access to global information during
+execution. Generally speaking, since CSAC utilizes global
+information to determine global control actions during exe-
+cution, it usually outperforms CTDE based multi-agent RL
+methods which only have access to partial observation of the
+system. However, CSAC may suffer from curse of dimen-
+sionality during training, and the single-point failure and
+communication burden limit its further application in real-
+world ADNs. As can be seen from the training curves, CSAC
+and our proposed RASAC have similar performance, which
+demonstrates the effectiveness of the CTDE framework and
+our proposed agent-level attention mechanism. After central-
+ized training with an appropriate coordination method, the
+proposed RASAC can achieve similar performance to CSAC
+during execution with only local measurements. Test results
+listed in Table III are consistent with the above observation.
+C. Robustness Comparison
+Different from the simulation environment, in the real-
+world ADN, observation perturbations such as measurement
+noises, communication errors, and even cyber-attacks are
+unavoidable, thus requiring RL agents’ robustness. In this
+subsection, we pick one trained policy of RASAC and ASAC
+from the 3 random seeds, and compare their performance when
+encountering noises and attacks in 33-bus system and 141-bus
+system respectively.
+For 33-bus system, to test RL agents’ robustness against
+noises in observations, we add random noises from [−ϵ′, ϵ′] to
+the observation of the RL agents. ϵ′ increases from 0.0 to 2.5,
+and we conduct 30 episodes of test for each ϵ′. The following
+table shows the mean values and standard deviations of total
+rewards in these 30 episodes.
+From the listed result, RASAC and ASAC have similar total
+rewards with no perturbations (ϵ′ = 0.0). But as the noises
+increase, the performance of ASAC greatly deteriorates, when
+ϵ′ = 2.5, the total rewards of ASAC decrease by almost
+Fig. 10.
+Control actions and voltage proﬁles of RASAC and ASAC before
+and after the ﬁrst type observation attack.
+75%. While RASAC can keep good performance with similar
+rewards when the measurement noises increase.
+Then for 141-bus system, we test the agents’ robustness
+against possible cyber-attacks. In this extreme scenario, we
+assume the agents’ policy networks are leaked to a cyber
+attacker who tries to manually manipulate the agents’ observa-
+tions so that the control actions can be distorted. The reactive
+power generated by PV inverters will be affected by distorted
+control actions and may result in voltage violations in the
+ADN. Our proposed robust regularizer can avoid the action
+distortion to some extent, thus protecting safe operation of the
+ADN under cyber-attacks.
+In this experiment, the cyber attacker adds attacks from
+[ −ϵ′, ϵ′] to the observation of the RL agents. Different from
+random noises added in 33-bus case, the added attacks are
+deliberately set by the attacker (for example, using SGLD
+introduced in Section III to ﬁnd an appropriate attack) to
+distort the control actions as much as possible. Therefore, we
+select two typical timesteps and try two types of cyber-attacks:
+in the ﬁrst type, ϵ′ = 1.5 and the attacker tries to maximize
+the control actions to cause overvoltage; while in the second
+type, ϵ′ = 1.0 and the attacker tries to minimize the control
+actions to cause lower voltage. The control actions and voltage
+proﬁles before the attack (RASAC, ASAC) and after the attack
+(RASAC_attack, ASAC_attack) are depicted in the following
+ﬁgures.
+As can be seen from the ﬁgures, RASAC and ASAC have
+similar control actions and voltage proﬁles before the attacks.
+All of the voltages are near the reference value and within
+a safe range, indicating the effectiveness of our proposed
+attention mechanism again. However, RASAC and ASAC
+behave very differently when facing the cyber-attacks. In
+Fig. 10, since the attacker tries to cause overvoltage, control
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:33 UTC from IEEE Xplore.  Restrictions apply. 
+
+YANG et al.: ATTENTION-ENHANCED MULTI-AGENT RL AGAINST OBSERVATION PERTURBATIONS
+5771
+Fig. 11.
+Control actions and voltage proﬁles of RASAC and ASAC before
+and after the second type observation attack.
+TABLE V
+ONLINE COMPUTATIONAL TIME OF RASAC
+actions of ASAC are greatly increased due to this attack. This
+results in an increase of the reactive power generated by PV
+inverters and the voltage proﬁle is also raised. And in Fig. 11,
+since the attacker tries to cause lower voltage, control actions
+of ASAC are greatly decreased due to this attack. This also
+results in a decrease of the reactive power generated by PV
+inverters and the voltage proﬁle also drops. In Fig. 11, the
+lowest voltage magnitude of ASAC after attack is about 0.85
+p.u., which may cause power quality degradation, equipment
+damage, and even PV off-grid in real-world ADNs.
+The only difference between RASAC and ASAC is the
+added robust regularizer, but this small modiﬁcation can make
+a remarkable difference in robustness performance. Under such
+severe attacks, the control actions of RASAC are much less
+distorted than ASAC. Because of the enhanced robustness, the
+voltage proﬁles of RASAC are not signiﬁcantly affected either,
+and most of the voltage magnitudes in RASAC are still kept in
+the safe range. It can be seen from the above results, with only
+an added robust regularizer in the policies’ loss functions, the
+applicability of current RL methods can be greatly enhanced.
+The computational time is also an important indicator of
+applicability and scalability for CTDE based multi-agent RL
+methods. Therefore, we test the RASAC average computa-
+tional time for one agent of one step, which is listed in the
+following table.
+During online execution, the only computation burden
+for inverters is the forward propagation of the local policy
+networks, which only takes milliseconds. Since the VVC in
+ADNs is usually minute-level (for example, 3 minutes), this
+computational time is completely sufﬁcient for real practice
+of our proposed method.
+V. CONCLUSION
+With the number of edge agents increasing, there are
+two serious concerns when applying CTDE based multi-
+agent RL algorithms to real-world ADNs, i.e., “coordination
+between value networks” and “robustness of policy networks”.
+Therefore, a mix network with an agent-level attention mech-
+anism is proposed in this paper, which can dynamically
+measure the importance of each local agent to the whole
+system, achieving excellent coordination. An effective robust
+regularizer is also designed to enhance the agents’ robustness
+against observation perturbations, which only requires a small
+modiﬁcation of the policies’ loss function. Numerical studies
+have validated our proposed method.
+In future work, new RL method to detect cyber-attack is an
+interesting research topic.
+REFERENCES
+[1] K. E. Antoniadou-Plytaria, I. N. Kouveliotis-Lysikatos, P. S. Georgilakis,
+and N. D. Hatziargyriou, “Distributed and decentralized voltage control
+of smart distribution networks: Models, methods, and future research,”
+IEEE Trans. Smart Grid, vol. 8, no. 6, pp. 2999–3008, Nov. 2017.
+[2] H. T. Nguyen and D.-H. Choi, “Three-stage inverter-based peak shaving
+and volt-VAR control in active distribution networks using online safe
+deep reinforcement learning,” IEEE Trans. Smart Grid, vol. 13, no. 4,
+pp. 3266–3277, Jul. 2022.
+[3] P. Li et al., “Coordinated control method of voltage and reactive power
+for active distribution networks based on soft open point,” IEEE Trans.
+Sustain. Energy, vol. 8, no. 4, pp. 1430–1442, Oct. 2017.
+[4] M. B. Liu, C. A. Canizares, and W. Huang, “Reactive power and voltage
+control in distribution systems with limited switching operations,” IEEE
+Trans. Power Syst., vol. 24, no. 2, pp. 889–899, May 2009
+[5] T. Xu and W. Wu, “Accelerated ADMM-based fully distributed inverter-
+based volt/VAR control strategy for active distribution networks,” IEEE
+Trans. Ind. Informat., vol. 16, no. 12, pp. 7532–7543, Dec. 2020.
+[6] H. J. Liu, W. Shi, and H. Zhu, “Distributed voltage control in distribution
+networks: Online and robust implementations,” IEEE Trans. Smart Grid,
+vol. 9, no. 6, pp. 6106–6117, Nov. 2018.
+[7] Y. Chai, L. Guo, C. Wang, Y. Liu, and Z. Zhao, “Hierarchical distributed
+voltage optimization method for HV and MV distribution networks,”
+IEEE Trans. Smart Grid, vol. 11, no. 2, pp. 968–980, Mar. 2020.
+[8] R. Lowe, Y. Wu, A. Tamar, J. Harb, P. Abbeel, and I. Mordatch, “Multi-
+agent actor-critic for mixed cooperative-competitive environments,” in
+Proc. Adv. Neural Inf. Process. Syst. (NeurIPS), 2017, pp. 6382–6393.
+[9] S. Wang et al., “A data-driven multi-agent autonomous voltage control
+framework using deep reinforcement learning,” IEEE Trans. Power Syst.,
+vol. 35, no. 6, pp. 4644–4654, Nov. 2020.
+[10] X. Sun and J. Qiu, “Two-stage volt/var control in active distribution
+networks with multi-agent deep reinforcement learning method,” IEEE
+Trans. Smart Grid, vol. 12, no. 4, pp. 2903–2912, Jul. 2021.
+[11] H. Liu, C. Zhang, Q. Chai, K. Meng, Q. Guo, and Z. Y. Dong, “Robust
+regional coordination of inverter-based volt/var control via multi-agent
+deep reinforcement learning,” IEEE Trans. Smart Grid, vol. 12, no. 6,
+pp. 5420–5433, Nov. 2021.
+[12] D. Cao, W. Hu, J. Zhao, Q. Huang, Z. Chen, and F. Blaabjerg, “A
+multi-agent deep reinforcement learning based voltage regulation using
+coordinated PV inverters,” IEEE Trans. Power Syst., vol. 35, no. 5,
+pp. 4120–4123, Sep. 2020.
+[13] H. Liu and W. Wu, “Online multi-agent reinforcement learning for
+decentralized inverter-based volt-VAR control,” IEEE Trans. Smart Grid,
+vol. 12, no. 4, pp. 2980–2990, Jul. 2021.
+[14] D. Cao et al., “Data-driven multi-agent deep reinforcement learning for
+distribution system decentralized voltage control with high penetration
+of PVs,” IEEE Trans. Smart Grid, vol. 12, no. 5, pp. 4137–4150,
+Sep. 2021.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:33 UTC from IEEE Xplore.  Restrictions apply. 
+
+5772
+IEEE TRANSACTIONS ON SMART GRID, VOL. 15, NO. 6, NOVEMBER 2024
+[15] D. Cao et al., “Deep reinforcement learning enabled physical-model-free
+two-timescale voltage control method for active distribution systems,”
+IEEE Trans. Smart Grid, vol. 13, no. 1, pp. 149–165, Jan. 2022.
+[16] P. Chen, S. Liu, X. Wang, and I. Kamwa, “Physics-shielded multi-agent
+deep reinforcement learning for safe active voltage control with photo-
+voltaic/battery energy storage systems,” IEEE Trans. Smart Grid,vol. 14,
+no. 4, pp. 2656–2667, Jul. 2023.
+[17] P. Sunehag et al., “Value-decomposition networks for cooperative multi-
+agent learning,” 2017, arXiv:1706.05296.
+[18] T. Rashid, M. Samvelyan, C. Schroeder, G. Farquhar, J. Foerster, and
+S. Whiteson, “QMIX: Monotonic value function factorisation for deep
+multi-agent reinforcement learning,” in Proc. 35th Int. Conf. Mach.
+Learn., Stockholm, Sweden, 2018, pp. 4295–4304.
+[19] H. Liu and W. Wu, “Federated reinforcement learning for decentralized
+voltage control in distribution networks,” IEEE Trans. Smart Grid,
+vol. 13, no. 5, pp. 3840–3843, Sep. 2022.
+[20] D. Cao, J. Zhao, W. Hu, F. Ding, Q. Huang, and Z. Chen, “Attention
+enabled multi-agent DRL for decentralized volt-VAR control of active
+distribution system using PV inverters and SVCs,” IEEE Trans. Sustain.
+Energy, vol. 12, no. 3, pp. 1582–1592, Jul. 2021.
+[21] L. Yu et al., “Multi-agent deep reinforcement learning for HVAC control
+in commercial buildings,” IEEE Trans. Smart Grid, vol. 12, no. 1,
+pp. 407–419, Jan. 2021.
+[22] D. Hu, Z. Ye, Y. Gao, Z. Ye, Y. Peng, and N. Yu, “Multi-agent deep
+reinforcement learning for voltage control with coordinated active and
+reactive power optimization,” IEEE Trans. Smart Grid, vol. 13, no. 6,
+pp. 4873–4886, Nov. 2022.
+[23] D. Cao et al., “Physics-informed graphical representation-enabled deep
+reinforcement learning for robust distribution system voltage control,”
+IEEE Trans. Smart Grid, vol. 15, no. 1, pp. 233–246, Jan. 2024.
+[24] Q. Xing, Y. Xu, and Z. Chen, “A bilevel graph reinforcement learning
+method for electric vehicle ﬂeet charging guidance,” IEEE Trans. Smart
+Grid, vol. 14, no. 4, pp. 3309–3312, Jul. 2023.
+[25] R. S. Sutton and A. G. Barto, Reinforcement Learning: An Introduction,
+vol. 1. Cambridge, MA, USA: MIT Press, 1998.
+[26] M. L. Littman, “Markov games as a framework for multi-agent rein-
+forcement learning,” in Proc. 11th Int. Conf. Mach. Learn., 1994,
+pp. 157–163.
+[27] T. Haarnoja et al., “Soft actor-critic algorithms and applications,” 2019,
+arxiv:1812.05905.
+[28] Y. Yang et al., “Qatten: A general framework for cooperative multiagent
+reinforcement learning,” 2020, arxiv:2002.03939.
+[29] A. Vaswani et al., “Attention is all you need,” in Proc. Adv. Neural Inf.
+Process. Syst., 2017, pp. 5998–6008.
+[30] L. Pinto, J. Davidson, R. Sukthankar, and A. Gupta, “Robust adversarial
+reinforcement learning,” in Proc. 34th Int. Conf. Mach. Learn., 2017,
+pp. 2817–2826.
+[31] H. Liu and W. Wu, “Two-stage deep reinforcement learning for inverter-
+based volt-VAR control in active distribution networks,” IEEE Trans.
+Smart Grid, vol. 12, no. 3, pp. 2037–2047, May 2021.
+[32] H. Zhang et al., “Robust deep reinforcement learning against adversarial
+perturbations on state observations,” in Proc. Adv. Neural Inf. Process.
+Syst., 2020, pp. 21024–21037.
+[33] Q. Shen, Y. Li, H. Jiang, Z. Wang, and T. Zhao, “Deep reinforcement
+learning with robust and smooth policy,” in Proc. Int. Conf. Mach.
+Learn., 2020, pp. 8707–8718.
+[34] S. B. Gelfand and S. K. Mitter, “Recursive stochastic algorithms for
+global optimization in Rd,” SIAM J. Control Optim., vol. 29, no. 5,
+pp. 999–1018, Sep. 1991.
+[35] M. E. Baran and F. F. Wu, “Network reconﬁguration in distribution
+systems for loss reduction and load balancing,” IEEE Trans. Power Del.,
+vol. 4, no. 2, pp. 1401–1407, Apr. 1989.
+[36] H. M. Khodr, F. G. Olsina, P. M. De Oliveira-De Jesus, and J. M. Yusta,
+“Maximum savings approach for location and sizing of capacitors
+in distribution systems,” Electr. Power Syst. Res., vol. 78, no. 7,
+pp. 1192–1203, Jul. 2008.
+[37] J. Wang, W. Xu, Y. Gu, W. Song, and T. C. Green, “Multi-agent
+reinforcement learning for active voltage control on power distribution
+networks,” in Proc. Adv. Neural Inf. Process. Syst., 2021, pp. 1–14.
+Xu
+Yang
+(Graduate
+Student
+Member,
+IEEE)
+received
+the
+B.S.
+degree
+from
+the
+Electrical
+Engineering
+Department,
+Tsinghua
+University,
+Beijing, China, in 2022, where he is currently
+pursuing the Ph.D. degree. His research interests
+include active distribution system operation and
+control, safe and robust reinforcement learning and
+its application in the energy system.
+Haotian
+Liu
+received
+the
+B.S.
+and
+Ph.D.
+degrees from the Electrical Engineering Department,
+Tsinghua
+University,
+Beijing,
+China,
+in
+2018
+and 2023, respectively, where he is currently a
+Postdoctor. His research interests include active dis-
+tribution system operation and control, model-free
+control, machine learning especially reinforcement
+learning, and their applications in the energy system.
+Wenchuan Wu (Fellow, IEEE) received the B.S.,
+M.S.,
+and
+Ph.D.
+degrees
+from
+the
+Electrical
+Engineering
+Department,
+Tsinghua
+University,
+Beijing,
+China,
+in
+1996,
+1998,
+and
+2003,
+respectively, where he is currently a Full Professor.
+His research interests include energy management
+system, active distribution system operation and
+control, machine learning, and its application in
+energy system.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:17:33 UTC from IEEE Xplore.  Restrictions apply. 

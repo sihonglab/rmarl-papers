@@ -1,0 +1,2428 @@
+Tractable Equilibrium Computation in Markov Games through
+Risk Aversion
+Eric Mazumdar∗†
+Caltech
+Kishan Panaganti∗‡
+Caltech
+Laixi Shi∗‡
+Caltech
+August 28, 2024
+Abstract
+A significant roadblock to the development of principled multi-agent reinforcement learning is the
+fact that desired solution concepts like Nash equilibria may be intractable to compute. To overcome this
+obstacle, we take inspiration from behavioral economics and show that—by imbuing agents with important
+features of human decision-making like risk aversion and bounded rationality—a class of risk-averse
+quantal response equilibria (RQE) become tractable to compute in all n-player matrix and finite-horizon
+Markov games. In particular, we show that they emerge as the endpoint of no-regret learning in suitably
+adjusted versions of the games. Crucially, the class of computationally tractable RQE is independent of
+the underlying game structure and only depends on agents’ degree of risk-aversion and bounded rationality.
+To validate the richness of this class of solution concepts we show that it captures peoples’ patterns of
+play in a number of 2-player matrix games previously studied in experimental economics. Furthermore,
+we give a first analysis of the sample complexity of computing these equilibria in finite-horizon Markov
+games when one has access to a generative model and validate our findings on a simple multi-agent
+reinforcement learning benchmark.
+Keywords: behavioral economics, risk-aversion, multi-agent reinforcement learning, quantal response,
+bounded rationality.
+1
+Introduction
+Machine learning algorithms are increasingly being deployed in dynamic environments in which they interact
+with other agents like people or other algorithms. Often, these agents have their own goals which may not be
+aligned with those of the algorithm—making the interactions strategic. Such situations are naturally modeled
+as games between rational agents and their prevalence in a wide range of application areas has driven a
+surge in research interest in learning in games [13] and multi-agent reinforcement learning [76] in recent years.
+Indeed, real-world applications of these problems range from the training of large language models [50] to the
+decentralized control of the smart grid [48], autonomous driving [39], and financial trading [72] among many
+others.
+When viewed through the lens of game-theory, many of these problems can be cast as problems of
+equilibrium computation under varying information structures, where the equilibrium represents a stable
+outcome for rational agents. The most common equilibrium concept is that of a Nash equilibrium (NE) [51]:
+a solution under which no rational agent has an incentive to unilaterally seek to improve their outcome.
+Despite its popularity as a solution concept, computing a NE outside of highly structured games is known to
+be computationally intractable [14] even for two-player matrix games.
+While relaxations of NE like (coarse) correlated equilibria (CCE) are known to be more tractable to
+compute, they also have their limitations. Indeed while CCE can be computed through the use of no-regret
+∗Author list is in alphabetical order.
+†Department of Computing Mathematical Sciences and Department of Economics, California Institute of Technology, CA
+91125, USA.
+‡Department of Computing Mathematical Sciences, California Institute of Technology, CA 91125, USA.
+1
+arXiv:2406.14156v2  [cs.GT]  27 Aug 2024
+
+Figure 1:
+The shaded blue region depicts the regime of risk-aversion and bounded rationality preferences
+that allow for computationally tractable RQE in all 2-player games as shown in Theorem 3. The markers
+GHP: Game 4 [28] and SC: Game 1-12 [59] represent the necessary parameter values required to recreate the
+average strategy played by people in various 2-player games in observational data up to 1% accuracy.
+learning algorithms [13], the set of CCE can be large (introducing an additional problem of equilibrium
+selection) and may include strictly dominated strategies [70] which means that they cannot necessarily be
+rationalized by individual agents [17]. Furthermore, a refinement of CCE—stationary CCE— are also known
+to be PPAD-hard to compute in dynamic general-sum games [16].
+Beyond these hardness results, solution concepts like NE and CCE also fail to be predictive of what
+strategies people play in games [18,44], with people being observed to be imperfect optimizers [11,27] and
+risk-averse [28] when confronted with game theoretic scenarios. This aligns with celebrated work in behavioral
+economics and mathematical psychology which has repeatedly shown that dominant features of human
+decision-making are a failure to perfectly optimize [42] and risk-aversion [37,69].
+The first observation is often referred to as bounded rationality which posits that individuals are naturally
+prone to making mistakes and often fail to be perfectly optimal [42]. This is often captured in games through
+the idea of a quantal response equilibrium (QRE) [44].
+The second observation can be attributed to the fact that players typically face uncertainty and risk in
+their decisions, stemming from environmental uncertainties like unknown future events, noise, or even other
+players’ lack of optimality. The presence of these uncertainties can lead people to prefer risk-averse strategies,
+i.e., strategies which give more certain outcomes at the cost of lower expected returns [30]. Interestingly,
+there is evidence that neither of these properties alone can account for people’s patterns of play observed in
+controlled experiments [28,29], and that models of decision-making that incorporate both of these features
+have the best predictive power [28].
+Motivated by these findings, in this paper we formulate and study games in which agents are risk-averse
+and have bounded rationality and study the computational tractability of the natural equilibrium concept in
+this class of games: a risk-averse quantal response equilibrium (RQE). At first glance, the introduction of
+these features of human decision-making into games can break existing game theoretic structures. However,
+by relying on dual formulations of risk we show how, for a large range of degrees of risk-aversion and
+bounded rationality, RQE are computationally tractable in all n-player matrix games. Crucially, the class of
+computationally tractable RQE is independent of the original game structure and depends only on players’
+degrees of risk aversion and bounded rationality. We then extend the result to finite-horizon Markov games in
+which agents interact in a Markov decision process (MDP) and provide a finite-sample complexity guarantee
+on how many samples one would need to approximate a RQE in Markov games.
+2
+
+These results suggest that designing multi-agent reinforcement learning (MARL) agents with realistic
+features of human decision-making can allow for a computationally tractable equilibrium concept in all finite
+action games and finite horizon Markov games. To emphasize the practical relevance of this theoretical result,
+we show how that the regime for which RQE are computationally tractable captures real-world data from
+behavioral economics on people’s observed pattern of play in 13 different games. This is illustrated in Fig. 1,
+where the blue region represents the set of RQE that are computationally tractable which is a function of
+agents’ degree of risk-aversion (τ1/τ2), and level of bounded rationality (ϵ1/ϵ2).
+Contributions:
+To begin, in Section 2 we focus on multi-player general-sum matrix games. We first
+introduce risk-aversion into matrix games by allowing agents to be risk-averse to the randomness introduced
+into the game by their opponents. To incorporate risk-aversion we make use of a general class of convex
+risk measures and present two forms of risk aversion: aggregate risk-aversion and action-dependent risk
+aversion—with the latter yielding less conservative solutions at the cost of a more complex formulation and
+analysis. Given this setup, we show that risk-averse Nash equilibria must exist in both formulations in all
+games and for any convex measures of risk.
+We then introduce bounded rationality into the games by assuming that agents optimize over quantal
+responses instead of the entire probability simplex. In Section 3 we show that computing the QRE of both
+types of risk-averse matrix games—i,e., the RQE described above—can be done in polynomial time as long as
+the level of risk-aversion and class of quantal response functions satisfies certain conditions. Importantly,
+these conditions are independent of the underlying game and only depend on the class of risk metrics and
+quantal responses under consideration. Thus, RQE not only incorporates features of human decision-making
+but are also more amenable to computation than QRE or NE in matrix games.
+In Section 4, we extend the study to multi-player general-sum Markov games. In this setting we consider
+the case in which players are risk-averse not only to the randomness introduced by their opponents, but
+also to the randomness in the environment. We again show that RQE can be computed efficiently when the
+environment is known and one has full information over the game. In addition, we consider the multi-agent
+reinforcement learning setting in which the environment is unknown and one needs to learn by sampling.
+We provide a first algorithm and a finite-sample guarantee for learning an approximate RQE in such MARL
+problems. Finally, we conduct experiments of the dynamic games in gridworlds to illustrate the effect of
+risk-aversion in sequential games and validate our findings.
+1.1
+Related Works
+Before presenting our results, we put our work into context, and discuss related works here.
+Computational tractability of game theoretic solution concepts.
+This work proposes a new solution
+concept for game theoretic settings that is computationally tractable, yet retains many of the desirable
+properties of classical equilibrium concepts. This general question emerged from the finding that computing
+a Nash equilibrium—perhaps the most natural solution concept for a game between rational self-interested
+agents—is PPAD-hard [14], even for two-player general-sum matrix games. Despite this negative result, a
+large amount of subsequent work has focused on understanding the classes of games in which one can compute,
+approximate, or learn Nash equilibria efficiently. This is often done by assuming additional structure on
+the players’ utilities and their relationships to one another, with large classes of games being zero-sum or
+competitive games, zero-sum polymatrix games [10,38], monotone games [31], smooth games [57], or socially
+concave games [21].
+In games without such structure however, the natural targets for computation and learning became
+correlated [49] and coarse correlated equilibria
+[4, 5](CE and CCE respectively), both of which can be
+shown to emerge as the endpoint of no-regret learning and are thus considered to be computationally
+tractable targets for the design of learning algorithms. Despite this desirable property, the two concepts
+have significant drawbacks. Indeed both CE and CCE require some form of coordination between players
+to implement, introduce a highly nontrivial equilibrium selection problem [13], and may have support on
+dominated strategies [70]. Furthermore, in the dynamic game context of Markov games, stationary CE and
+CCE are also computationally intractable to compute [16].
+3
+
+More recently, a new equilibrium concept—a smoothed Nash equilibrium— has been proposed as an
+alternative to these other equilibrium concepts [15] and motivated by similar considerations of individual and
+independent rationalizability and computational tractability. By applying ideas from smoothed analysis to
+the problem of computing Nash equilibria the authors show that one can efficiently find approximate classes
+of smoothed Nash equilibria—though to the best of our knowledge this cannot be done in a decentralized way.
+Our approach is orthogonal and is rooted in giving MARL agents a foundation rooted in behavioral
+economics by imbuing them with a realistic feature of human decision-making: risk-aversion. The question of
+computational tractability of risk-averse Nash equilibria has been analyzed in [22]. The work shows that if
+agents are risk-averse with respect to all the randomness in the game (including their own) then a risk-averse
+Nash equilibrium may not even exist in mixed strategies, and even understanding if such equilibria exist can
+be NP-complete. Our formulation overcomes this by incorporating risk-aversion in a different way. Indeed,
+we show that when agents are risk-averse only to the randomness introduced to their opponents (and the
+environment) then the risk-averse Nash equilibria will always exist. We note that such formulations of
+risk-aversion are common in the literature on risk-sensitive control [8,62] and risk-sensitive reinforcement
+learning [63] where agents are implicitly presumed to be risk-averse only to the randomness that is outside
+their control (i.e., the environment). Furthermore we show that introducing bounded rationality into the
+game allows a class of risk-averse quantal response equilibria (RQE) to be computationally tractable in all
+finite action and finite-horizon Markov games.
+Predictive power of equilibrium concepts.
+Another driving force in moving beyond the Nash and
+correlated equilibrium concepts stems from their lack of predictive power in experimental settings (see e.g.,
+[9,18,43,44,52]). To address this, a line of work originating in economics seeks to understand the natural
+solution concepts in game where players have behaviorally plausible restrictions to their strategy spaces,
+and to study whether such equilibria were better predictors of human play than Nash or (coarse) correlated
+equilibria [28,29,33]. The most common restriction is that players have bounded rationality,—i.e., they may
+fail to perfectly optimize—a model with roots in mathematical psychology [42]. Under this restriction, a
+natural equilibrium concept that emerged was that of a quantal response equilibrium (QRE) which induces
+bounded rationality by either assuming that the players are rational in a stochastically perturbed version of
+the game or equivalently that they optimize a regularized version of their utility [44,45,47]. Beyond their
+use as a better model for human decision-making in games, QRE have also increasingly been adopted as
+a solution concept in multi-agent reinforcement learning and learning in games [12, 20, 35, 41, 47, 68] due
+to their links with KL and entropy regularized reinforcement learning. Despite these developments QRE
+are not computable in all games. Indeed the class of QRE or equivalently the level of bounded rationality
+needed for computational tractability depends on the underlying game structure which may not be known a
+priori. In contrast we show that the addition of risk aversion allows for the same class of quantal response
+equilibria to be computationally tractable to compute in all finite action games and finite-horizon Markov
+games. Furthermore we show that this class of risk-averse QRE is nontrivial and can capture human data
+better than risk-neutral QRE—a finding which is in line with findings in behaviorial economics [28,29].
+Risk-averse and robust multi-agent reinforcement learning.
+Our work builds on and provides an
+additional justification for risk-sensitive (multi-agent) reinforcement learning. This line of work has roots
+going back to seminal work by Jacobson on risk-sensitive control [36], and more recently in risk-sensitive
+reinforcement learning [63]. In these works, the aim is to find a controller or policy for a system that accounts
+for stochasticity or uncertainty in the environment or system in a more nuanced way than risk-neutral
+approaches like optimal control or reinforcement learning [8]. Due to classic duality results (see e.g., [77])
+this line of work is closely related to the literature on robust control and distributionally robust reinforcement
+learning [34,53,64,73] which seeks to find solutions that are robust to worst case environmental disturbances.
+Our work rigorously extends these formulations to the multi-agent regime though it is not the first to
+consider risk-aversion in MARL. Indeed, risk-sensitive MARL has been the focus of several recent works
+(e.g., [25,67,71,74]). Several provide rigorous definitions of risk-averse equilibria and some guarantees on their
+computation by assuming structure on the risk-adjusted game. Oftentimes this is done by assuming that
+the risk-adjusted game is itself zero-sum [74], monotone [71], or that it satisfies other strong conditions [25].
+Other works are more empirical in nature [19,24,55,61,67,78], showing the promise of risk-averse algorithms
+for MARL.
+4
+
+One last closely related line of work is the emerging literature on robust multi-agent reinforcement
+learning [7,32,66,75]. Once again due to duality arguments, these works can be seen as tackling a similar
+problem to the risk-averse MARL problem. The focus of these previous works, however, is on robustness in
+the face of only environmental uncertainties (and not opponent strategies), and questions of existence and
+computational tractability are either assumed away or the focus is on extensions of correlated equilibrium
+concepts. A recent related work in this literature analyzed the computational tractability of robust Nash
+equilibria in Markov games, but only provided strong guarantees on the zero-sum regime, showing that
+computing such equilibria in general is PPAD-hard [46].
+To the best of our knowledge, no previous work in either of these literatures highlights the broad benefits
+afforded by risk-aversion in MARL in terms of computational tractability of equilibria. In our work we show
+that risk-aversion (and by extension distributional robustness), when combined with bounded rationality yields
+a computationally tractable class of individually rationalizable equilibria in all finite-horizon n-player Markov
+games. Furthermore we show that these equilibria can be computed using no-regret learning algorithms.
+Notations:
+We use ∆n to denote probability simplex of size n. In addition, we denote [N] = {1, 2, · · · , N}
+for any positive integer N > 0. We denote x =
+
+x(s, a)
+
+(s,a)∈S×A ∈RSA (resp. x =
+
+x(s)
+
+s∈S ∈RS) as any
+vector that constitutes certain values for each state-action pair (resp. state).
+2
+Matrix Games
+To begin, we consider n-player general-sum finite-action games. In these games, each player i has access to a
+(finite) action set Ai with Ai = |Ai| pure strategies. For each tuple of joint strategies a = (a1, ..., an) ∈A :=
+Qn
+i=1 Ai each player has an associated reward or utility Ri(a). As is common in the study of these games, we
+consider the case where players play over mixed strategies and seek to maximize their expected utility. Player
+i’s expected utility in this case can be written as a function Ui : P →R which can be written as:
+Ui(π1, ..., πn) = Ea∼π[Ri(a)]
+(1)
+where π = (π1, ..., πn) ∈P = Qn
+i=1 ∆Ai is the joint strategy of all the players. For ease of exposition we
+often write the utility as Ui(πi, π−i) where π−i = (π1, ..., πi−1, πi+1, ..., πn) represents the joint strategies of
+all players other than i.
+We note that the expected utility in finite-action games has a multi-linear form and that Ui(πi, π−i) is
+convex (actually linear) in πi for fixed π−i. To see this, one can observe that in two player games, these
+utility functions take the simpler, bilinear forms:
+U1(π1, π2) = Ea1∼π1
+a2∼x2[R1(a1, a2)] = πT
+1 R1π2
+U2(π1, π2) = Ea1∼π1
+a2∼π2[R2(a1, a2)] = πT
+2 R2π1,
+(2)
+where R1 ∈RA1×A2 and R2 ∈RA2×A1 are payoff matrices representing the utility or reward associated to
+each joint pure strategy.
+A natural outcome in this class of games is the notion of a (mixed) Nash equilibrium.
+Definition 1 (Nash Equilibrium). A (mixed) Nash equilibrium of a n-player general-sum finite-action game
+is a joint strategy π∗= (π∗
+1, ..., π∗
+n) ∈P such that no player has any incentive to unilaterally deviate—i.e,.
+for all i = 1, ..., n:
+Ui(π∗
+i , π∗
+−i) ≥Ui(πi, π∗
+−i)
+∀πi ∈∆Ai
+While such games are well known to admit at least one Nash equilibrium in mixed strategies, the Nash
+equilibrium may be intractable to compute. Furthermore, a preponderance of empirical evidence suggests
+that people do not play their Nash strategies and in fact are risk-averse and potentially bounded rational in
+their decision-making— inducing new forms of equilibria.
+In the next two sections, we introduce generalizations of the expected utility game that allow us to
+model agents as both risk-averse and imperfect optimizers—both of these being key attributes of human
+5
+
+decision-making. We show that while the addition of risk can undo the existing structure in the game, the
+addition of bounded rationality in the form of quantal responses allow us to derive a class of computationally
+tractable equilibria in all games that only depends on the degree of risk aversion and bounded rationality
+and not on the game structure.
+2.1
+Risk-Aversion in Matrix Games
+Given the setup of an expected utility game, we now allow agents to have risk preferences which we model
+through the use of a general class of convex risk metrics which have been the focus of a long line of study in
+mathematical finance and operations research [23]. In this framing we move into a regime where agents seek
+to minimize a measure of risk.
+Definition 2 (Convex Risk Measures). Let X be the set of functions mapping from a space of outcomes Ωto
+R. A convex measure of risk is a mapping ρ : X →R satisfying:
+1. Monotonicity: If X ≤Y almost surely, then ρ(X) ≥ρ(Y ).
+2. Translation Invariance: If m ∈R then ρ(X + m) = ρ(X) −m.
+3. Convexity: For all λ ∈(0, 1), ρ(λX + (1 −λ)Y ) ≤λρ(X) + (1 −λ)ρ(Y ).
+Typically, and as we assume in the remainder of the paper, the set X is the set of measurable functions
+defined on a probability space (Ω, F, P). Under this assumption, the convex measures of risk allow us to
+generalize expectations to allow for agents to optimize for more conservative or worst-case outcomes. For
+ease of exposition, we write ρπ(X) to denote the distribution that the measure of risk is taken with respect
+to a reference distribution π.
+In the case of matrix games, we consider the case where agents are risk averse with respect to the mixing
+or randomness introduced into the game by their opponents. In generalizing this to stochastic games in future
+sections we will also consider the case where agents are risk averse with respect to the underlying dynamics
+in the Markov game. Crucially, we assume that players are not risk averse to their own randomness. We note
+that is a common approach taken in the literature on risk-sensitive and robust decision-making [63] and it is
+necessary since if agents are risk-averse to their own randomness then an equilibrium may cease to exist [22].
+We refer to related works for more discussion.
+We consider two generalizations of the original game that differ in how risk is incorporated into the
+problem: aggregate risk aversion and action-dependent risk aversion. The first generalization allows for
+a comparatively simpler analysis but at the cost of a more conservative solution while the second is less
+conservative but requires a more complex analysis. Due to monotonicity and linearity of expectation both
+of these formulations can be seen as generalizations of risk-sensitive decision-making investigated in the
+literature on risk-sensitive control [8] and risk-sensitive RL [63]. To see this reduction, one can simply take
+the other agents to be part of an unknown environment.
+Aggregate Risk Aversion:
+To define a game with aggregate risk aversion, we transform the player’s
+utilities in (1) into costs fi which take the form
+fi(πi, π−i) = ρi,π−i(Eπi[Ri(a)]) = ρi,π−i
+ X
+ai∈Ai
+πi(ai)Ri(ai, a−i)
+!
+(3)
+where ρi,π−i is used to denote the potentially different risk preference of agent i which depends on the product
+distribution of opponents strategies π−i.
+Action-dependent Risk Aversion:
+To define a game with aggregate risk aversion, we transform the
+player’s utilities in (1) into costs fi which take the form
+fi(πi, π−i) = Eπi
+
+ρi,π−i(Ri(a))
+
+=
+X
+ai∈Ai
+πi(ai)ρi,π−i (Ri(ai, a−i))
+(4)
+6
+
+Risk-measure
+Penalty function D(p, q)
+Entropic Risk [2]
+Kullback-Leibler (KL): KL(p, q) = P
+i pi log
+  pi
+qi
+
+[23]
+Reverse KL (RKL): P
+i qi log
+
+qi
+pi
+
+ϕ-Entropic Risk [2]
+ϕ-Divergence: P
+i pi ϕ
+
+pi
+qi
+
+Utility-based shortfall [23]
+Utility-based Shortfall (u): infλ>0 1
+λ[r + P
+i piu⋆ λ qi
+pi
+
+]
+Table 1: We list several widely-used convex risk-measures with its penalty function D(p, q). Here, p, q are
+distributions of the same finite dimension, ϕ and u are differentiable convex functions on R satisfying ϕ(1) = 0
+and ϕ(t) = +∞for t < 0. The utility u is equipped with risk tolerance level of r, and its penalty function
+depends on its convex conjugate u⋆.
+where again ρi,π−i is used to denote the potentially different risk preference of agent i which depends on the
+product distribution of opponents strategies π−i.
+We remark that in both of these formulations, if ρi(X) = E[−X] for all players i = 1, ..., n (which satisfies
+the requirements in Definition 2) then the new formulation reduces to the original expected utility objective.
+Thus, both can be seen as generalizations of the classic setup described in the previous section.
+While—at first glance— the modified games look significantly more complex than the previous expected
+utility maximization setup (cf. (1)), we can rely on a particularly powerful property of convex measures of
+risk to simplify and expose some structure in this class of problems. In particular, we make use of the dual
+representation theorem for convex risk measures.
+Theorem 1 (Dual Representation Theorem for Convex Risk Measures [23]). Suppose that the set X is
+the set of functions mapping from a finite set Ωto R.
+Then a mapping ρ : X →R is a convex risk
+measure (cf. Definition 2) if and only if there exists a penalty function D : ∆Ω→(−∞, ∞] such that:
+ρ(X) = supp∈∆ΩEp[−X] −D(p), where ∆Ωis the set of all probability measures on Ω. Furthermore, the
+function D(p) can be taken to be convex, lower-semi-continuous, and satisfy D(p) > −ρ(0) for all p ∈∆Ω.
+When the set X is again the set of measurable functions defined on a probability space, one can choose
+the penalty function D to represent a notion of of distance from the probability law or distribution of the
+random variable π. In such cases, the dual representation theorem takes the form:
+ρπ(X) = sup
+p∈∆Ω
+Ep[−X] −D(p, π),
+where D(p, π) is convex in p for a fixed π. We also make a simplifying assumption that D is continuous in
+both its arguments, which is satisfied by various widely-used risk measures. This general form allows us to
+draw connections with a large class of risk and robustness metrics that are based around ϕ-divergences. We
+provide examples of common risk measures in Table 1.
+Given this setup, we can now write the aggregate risk-adjusted game in the following form:
+fi(πi, π−i) =
+sup
+pi∈P−i
+−πT
+i Ripi −Di(pi, π−i)
+(5)
+where P−i = P/∆Ai ⊂RA−i, A−i = P
+j̸=i Aj, and Ri ∈RAi×A−i is player i’s payoff matrix. Similarly, the
+action-dependent risk-adjusted game takes the form:
+fi(πi, π−i) =
+X
+j∈Ai
+πi(j)
+ 
+sup
+pi,j∈P−i
+−⟨Ri,j, pi,j⟩−Di(pi,j, π−i)
+!
+,
+(6)
+where Ri,j corresponds to the jth row of Ri.
+We note that we differentiate the penalty functions Di to allow for the different agents to have different
+risk preferences. In this form, one can see that in a risk-adjusted game, the players imagine that intermediate
+7
+
+adversaries seek to maximize their cost within a small ball in some metric of the opponents realized strategies.
+Thus, agents in risk-averse games introduce a certain amount of worst-case thinking into their strategies.
+In the aggregate case, from the point of view of player i the game has simplified from a setting with n −1
+opponents to a game with 1 opponent who is penalized from taking actions that deviate too far from the
+product distribution of the original n −1 opponents’ strategies. In the action-dependent case, the game from
+player i’s point of view goes from a n-player game to a Ai-player game who are also similarly constrained.
+Since the Nash equilibrium of the risk-adjusted game can be qualitatively different from that of the
+original game, we define a risk-averse Nash equilibrium (RNE) as follows. For ease of exposition we do not
+differentiate between aggregate and action-dependent RNE since similar results hold for either formulation.
+Definition 3 (Risk-adjusted Nash equilibrium). A risk-averse Nash equilibrium of is joint strategy π∗∈P
+such that no player has any incentive to unilaterally deviate in the risk adjusted game—i.e., for all i = 1, ..., n
+fi(π∗
+i , π∗
+−i) ≤fi(πi, π∗
+−i) ∀πi ∈∆Ai.
+Note that since players would like to minimize risk, the direction of the inequality has changed. The
+convexity and continuity of the penalty function guarantees that the risk-adjusted games admit at least one
+RNE.
+Theorem 2. There always exists a RNE for all aggregate and action-dependent risk-averse games presented
+in (5) and (6) respectively.
+Proof. To begin, we show that fi(πi, π−i) is convex in πi for all πi ∈P−i in (5). This follows from the fact
+that Di(·, ·) is assumed to be convex and continuous in its first argument. Invoking Danskin’s theorem
+guarantees us that fi is convex in πi for all fixed values of π−i. Since the probability simplex is compact and
+convex, the game satisfies the conditions of a convex game [56] and thus a Nash equilibrium must exist. The
+action-dependent risk aversion regime follows from the linearity of fi in πi in (6) and a similar invocation of
+the existence of Nash in convex games [56].
+The fact that these Nash equilibria exist is a consequence of the fact that players are not risk averse to the
+randomness that they introduce into the game by playing a mixed strategy. Under the stronger assumption
+that they are risk-averse to all randomness, previous work [22] shows that RNE may not exist. Thus, our
+specific formulation of risk is crucial in that it will always yield a RNE.
+Despite the fact that risk preferences already help convexify player’s objectives, the addition of risk can
+serve to weaken existing structures in the player’s cost function. To illustrate this, we show that even in
+two-player zero-sum games where R1 = R = −RT
+2 , the risk-adjusted game loses any zero-sum structure and
+may cease to even be strictly competitive in the sense that one player’s gain is the other’s loss.
+Example 1. Consider a 2-player zero-sum game where R1 = R = −RT
+2 where players have aggregate risk
+aversion in the entropic risk metric with different degrees of risk aversion τ1 and τ2. Under these conditions,
+the players loss functions take the following form:
+f1(π1, π2) = sup
+p1∈A2
+−πT
+1 Rp1 −1
+τ1
+KL(p1, π2) = 1
+τ1
+log
+
+X
+1≤j≤A2
+π2(j) exp(−τ1[Rπ1]j)
+
+f2(π1, π2) = sup
+p2∈A1
+πT
+2 RT p2 −1
+τ2
+KL(p2, π1) = 1
+τ2
+log
+
+X
+1≤j≤A1
+π1(j) exp(τ2[RT π2]j)
+
+.
+Even instantiating R = I2, τ1 = 10, and for any τ2 > 0, both f1(π1, π2) > f1(π′
+1, π2) and f2(π1, π2) > f2(π′
+1, π2)
+holds for the regions π1, π2 ∈∆2 satisfying π2(1) ∈(0.1, 0.5) and 0.75 −π1(1) > π′
+1(1) > π1(1), which implies
+that the game is not a strictly competitive game.
+Note that the previous example introduces degrees of risk aversion into the game through the parameters
+τ1 > 0 and τ2 > 0. As τ increases, the game becomes less reliant on the regularization term, which makes the
+adversary more powerful and results in more conservative game playing by the player. As τ goes to zero we
+recover the risk neutral regime [2].
+Finally, note that the additional convexity induced by the introduction of risk aversion guarantee is not
+enough to ensure the computational tractability of the Nash equilibrium (see e.g., [46]). This is not surprising
+given the fact that computing NE in general convex games can be intractable and that further structural
+conditions are required for computational tractability.
+8
+
+2.2
+Bounded Rationality in Matrix Games
+Since risk aversion on its own is not sufficient to guarantee computational tractability of NE, we also introduce
+a second important feature of human decision-making into the game: bounded rationality. Interestingly, in
+experimental settings risk aversion—by itself— is also not enough to model human decision-making in game
+theoretic scenarios [28].
+To incorporate bounded rationality into agents, we resort to the notion of a quantal response function.
+Definition 4. A quantal response function is a continuous function σ : Rn →∆n such that: If xi < xj,
+σi(x) > σj(x), where xk, σk(x) represent the k-th components of x and σ, respectively.
+Clearly, when players responses are constrained to be quantal responses, they cannot be perfect maximizers
+since the arg max function does not satisfy the first desiderata of a quantal response function. Common
+quantal response functions include the logit response function:
+σ(x) =
+exp(−1
+ϵ xi)
+Pn
+j=1 exp(−1
+ϵ xj),
+(7)
+where the sign is to account for the fact that agents may be minimizing their loss function.
+When all players achieve a Nash equilibrium in the space of their quantal responses—the class of strategies
+that can be represented by a fixed class of quantal response functions (cf. Definition 4)—the resulting
+equilibrium is known as a Quantal Response Equilibrium (QRE). To incorporate quantal responses into our
+risk-adjusted game, we introduce regularization to the player’s losses. This can be shown to be equivalent to
+constraining the player’s responses to quantal responses (see, e.g., [23, Proposition 7], or [47,68]). We write a
+regularized risk-adjusted game as:
+f ϵi
+i (πi, π−i) = fi(πi, π−i) + ϵiνi(πi)
+(8)
+where νi is strictly convex over the simplex and controls the class of quantal responses available to player i
+and ϵi controls the agent’s degree of bounded rationality.
+Example 2. If players are constrained to logit response functions, one can reflect this by incorporating
+a negative entropy regularizer ν(π) = P
+i pi log(pi). Another class of quantal response functions would be
+generated by making use of e.g., a log-barrier regularizer ν(π) = −P
+i log(pi). Both of these regularizers give
+rise to quantal response functions that satisfy Definition 4.
+This game now incorporates two key properties of human decision-making: risk aversion and bounded
+rationality on the part of the agents. The natural outcome of this game is what we term as a risk-adjusted
+quantal-response equilibrium (RQE).
+Definition 5. A risk-adjusted quantal response equilibrium (RQE) of a n-player general-sum finite-action
+game is a joint strategy π∗∈P such that for each player i = 1, ..., n:
+f ϵi
+i (π∗
+i , π∗
+−i) ≤f ϵi
+i (πi, π∗
+−i) ∀πi ∈∆Ai
+For any set of convex regularizers νi, it is easy to observe the that game remains a convex game and thus
+RQE will exist.
+As we will show in the following section, if player’s risk preferences and regularizers (and thus their set of
+quantal response functions) satisfy a simple relationship, one can show that irrespective of the underlying
+payoffs R1, ...Rn, the game admits RQE that can be efficiently computed using arbitrary no-regret learning
+algorithms which include e.g., gradient-play and mirror descent.
+3
+Conditions for Computational Tractability of RQE
+In this section we give conditions on the bounded rationality and degree of risk aversion of the players such
+that computing cost of RQE in the games is tractable. Further, an immediate consequence of our result is that
+players can find such equilibrium outcomes in a decentralized manner using no-regret learning algorithms.
+9
+
+Remark 1. For ease of exposition we focus on deriving the results for the aggregate risk-aversion formulation
+and defer the results for action-dependent risk-aversion to Appendix B. The results for both formulations in
+terms of computational tractability are similar in that both allow for a class of RQE to be learned using
+no-regret learning. However, we remark that the analysis of the aggregate case is comparatively simpler
+and allows one to compute simple bounds on the set of RQE that are computationally tractable. The
+action-dependent case requires more work and slightly more stringent requirements on the relationship
+between bounded rationality and risk-aversion.
+To derive our results on the computational tractability of RQE under aggregate risk-aversion, we first
+introduce a related 2n-player game in which we associate to each original player i an adversary whose strategy
+we denote pi ∈P−i. Let p = (p1, ..., pn) ∈¯P = Qn
+i=1 P−i. In this new game, each original player’s loss
+function takes the form:
+Ji(πi, π−i, p) = −πT
+i Ripi −Di(pi, π−i) + ϵiνi(πi)
+(9)
+For each player pi we associate them to a new loss function which we denote:
+¯Ji(π, pi, p−i) = πT
+i Ripi + Di(pi, π−i) −
+X
+j̸=i
+ξi,jνj(πj).
+(10)
+In this 2n player game, the i-th player’s adversary, whose strategy is pi seeks to minimize their loss ¯Ji which is
+strategically the same as maximizing Ji. We note that unlike the original risk-adjusted game, the introduction
+of the new players gives us additional structure that we can exploit. A key feature that we introduce are the
+additional parameters ξi,j > 0 which we will use to characterize the degree of risk aversion of each player i.
+Given the definition of the 2n-player game we show how no-regret learning algorithms can be used to
+compute a RQE. To do so, we show that CCEs of the 2n-player game coincide with NEs of it and NEs of the
+2n-player game coincide with RQE of the original n-player matrix game. This is a phenomenon known as
+equilibrium collapse which is well known to happen in zero-sum games and certain generalizations of zero-sum
+games [10,38]. To prove this, we first define coarse correlated equilibria.
+Definition 6. A coarse correlated equilibrium of the 2n-player game is a probability measure σ on P × ¯P
+such that for all i = 1, ..., n:
+E(π,p)∼σ[Ji(π, p)] ≤E(π−i,p)∼σ[Ji(π′
+i, π−i, p)]
+∀π′
+i ∈∆Ai
+E(π,p)∼σ[ ¯Ji(π, p)] ≤E(π,p−i)∼σ[ ¯Ji(π, p′
+i, p−i)]
+∀p′
+i ∈P−i.
+With this definition in hand we now present our results on computational tractability of RQE in 2-player
+matrix games. We also extend the results to n-player setting in Appendix A.3.
+To simplify our results we define H1(p1, π2) = D1(p1, π2)−ξ1ν2(π2) and H2(p2, π1) = D2(p2, π1)−ξ2ν1(π1).
+Let ξ∗
+1 > 0 and ξ∗
+2 > 0 be the smallest values of ξ1 and ξ2 such that H1(p1, π2) and H2(p2, π1) are concave
+in π2 and π1 for all p1 and p2 respectively. The parameters ξ∗
+1 and ξ∗
+2 capture the player’s degrees of risk
+aversion as illustrated in Corollaries 6.1 and 6.2 in Appendix A respectively.
+The following theorem gives conditions on ξ∗
+1, ξ∗
+2 and ϵ1, ϵ2, the bounded rationality parameters under
+which RQE’s are computationally tractable using no-regret learning. The proof is postponed to Appendix A.2.
+Theorem 3. Assume the penalty functions that give rise to the players’ risk preferences D1(·, ·) and D2(·, ·)
+are jointly convex in both their arguments. If σ is a CCE of the four player game with ξ1,2 = ξ∗
+1 and ξ2,1 = ξ∗
+2,
+and
+ϵ1
+ξ∗
+1
+≥ξ∗
+2
+ϵ2
+,
+then ˆπ1 = Eσ[π1] and ˆπ2 = Eσ[π2] constitute a RQE of the risk-adjusted game.
+The previous theorem gives a range of risk aversion and bounded rationality parameters under which
+an RQE can be computationally tractable using no-regret learning. Before presenting corollaries for certain
+instantiations of risk measures and quantal response functions in Appendix A, we briefly remark that the
+result does not necessarily guarantee uniqueness, though by exploiting the connections between socially
+convex games and monotone games [26] such a result would follow.
+10
+
+To validate this result, we show that the class of RQE that is computationally tractable seems sufficiently
+rich to capture the aggregate strategy played by people in various matrix games studied in laboratory
+experiments in behavioral economics [28,58,59] to showcase differing human behavior from Nash equilibrium
+strategies. In particular, we showcase in Fig. 1 that for some choice of parameters (ϵj and τj’s) satisfying
+conditions in Theorem 3, we recover risk-averse and rational human behaviors in various matching pennies
+games mentioned in Tables 2 and 3. We provide more details about the games and experiments in Appendix D.1
+for reproducing our results.
+4
+Extension to Markov Games
+In this section, we extend our results to finite-horizon Markov games, or stochastic games [60] which allow us
+to model dynamic games which are played out over Markov decision processes.
+A Markov game can be seen as a sequential matrix game with dynamics.
+In this paper, we
+consider a general-sum finite-horizon risk-aversion Markov game involving n players, represented as
+MG = {H, S, {Ai}i∈[n], {Ri,h, Pi,h}i∈[n],h∈[H]}. Here, H is the time horizon length of the Markov games;
+S = {1, 2, · · · , S} represents the state space of the joint environment with size S; we reuse several definitions
+in matrix game (see Section 2), {Ai}i∈[n] is the action spaces with cardinality |Ai| = Ai, the joint action
+space is A, the joint action profile is a ∈A, and P is the product policy space; Ri,h is the utility function
+of the i-th player at time step h for any (i, h) ∈[n] × [H], i.e., Ri,h(s, a) represents the immediate reward
+(or utility) received by the i-th player given state-action pair (s, a) ∈S × A. For simplicity, we assume Ri,h
+is deterministic; Pi,h : S × A 7→∆S denote the transition probability so that Pi,h(s′ | s, a) represents the
+probability transitioning from current state s to the next state s′ conditioned on the action a.
+Markov policies and value functions.
+In this section, we focus on a class of Markov policy, where at
+any state s at any time step h ∈[H], the action selection rule depends only on the current state s, and is
+independent of previous trajectories. Specifically, for any 1 ≤i ≤n, the i-th agent executes actions according
+to a policy πi = {πi,h : S 7→∆Ai}1≤h≤H, with πi,h(a | s) the probability of selecting action a in state s at time
+step h. We consider the joint policy of all agents as a product policy defined as π = (π1, . . . , πn) : S ×[H] 7→P
+and the corresponding policy space as Π, namely, the joint action profile a of all agents is chosen according
+to the distribution specified by πh(· | s) = (π1,h, π2,h . . . , πn,h)(· | s) ∈P conditioned on state s at time step h.
+For any given π, we employ π−i : S × [H] 7→P−i to represent the policies of all agents excluding the i-th
+agent.
+Then for any joint policy π, we can introduce the corresponding value function eVi,h(π) : S 7→R (resp. Q-
+function eQi,h(π) : S × A 7→R) of the i-th agent to characterize the long-term cumulative reward by as
+follows:
+∀(s, a, h) ∈A × S × [H] :
+eVi,h(π; s) := Eπ
+" H
+X
+t=h
+Ri,t
+ st, at
+
+| sh = s
+#
+,
+eQi,h(π; s, a) := Eπ
+" H
+X
+t=h
+Ri,t
+ st, at
+
+| sh = s, ah = a
+#
+,
+(11)
+where the expectation is taken over the Markovian trajectory {(st, at)}h≤t≤H by executing the joint policy π
+(i.e., at ∼πt(· | st)) over the Markov dynamics.
+4.1
+Risk-Averse Markov games
+Given these definitions, now we are ready to introduce the risk-averse Markov games (RAMGs) — considering
+both the uncertainty of agents’ strategies and the environments (rewards and transitions). Towards this,
+we first introduce two important risk-measures for agents’ strategies and environment respectively to form
+RAMGs together. Resorting to two sets of convex (convex w.r.t. the first argument with the second argument
+fixed) and lower-semi-continuous functions {Dpol,i(·, ·)}i∈[n] and {Denv,i(·, ·)}i∈[n], given any policy π, the two
+11
+
+risk-measures are defined as:
+∀i ∈[n] :
+f π
+pol,i(Qi) = sup
+pi∈Pi
+−πT
+i Qipi −Dpol,i(pi, π−i),
+∀i ∈[n] :
+fenv,i(R, P, V ) =
+inf
+e
+P ∈∆S
+h
+R + ePV + Denv,i( eP, P)
+i
+.
+(12)
+Here, Qi ∈RAi×P
+j̸=i Aj is the payoff matrix for the i-th player, R ∈RA, P ∈∆S, V ∈RS. Note that for
+simplicity, we choose the same {Dpol,i}i∈[n] and {Denv,i}i∈[n] for all time steps h ∈[H], which can be extended
+to diverse ones for each time step.
+Armed with those two penalty functions f π
+pol,i(·) and fenv,i(·), in a RAMG, the i-th agent aim to minimize
+its own risk-averse long-term loss function {Vi,h(π)}h∈[H], where Vi,h(π) : S 7→R for any joint strategy π ∈Π
+of the i-th agent is defined recursively as follows: for all (h, s, a) ∈[H] × S × A,
+Vi,h(π; s) = f π
+pol,i (Qi,h(π; s, :))
+(13)
+where
+Qi,h(π; s, a) = fenv,i (Ri,h(s, a), Ph,s,a, Vi,h+1(π))
+and
+Ph,s,a := Ph(· | s, a) ∈R1×S.
+(14)
+In words, Qi,h(π; s, :) ∈RAi×P
+j̸=i Aj is the payoff matrix of the i-th player at state s and time step h, where
+the value at the ai-th row and the a−i-th column is specified by Qi,h(π; s, a) with a = (ai, a−i). Therefore,
+the long-term loss function can be represented as a non-linear sum over the future immediate rewards as
+below:
+Vi,h(π; s) = f π
+pol,i ◦fenv,i
+ Ri,h(s, :), Ph,s,:,
+
+f π
+pol,i ◦fenv,i
+ Ri,h+1, Ph+1,
+
+f π
+pol,i ◦fenv,i
+ Ri,h+2, Ph+2, · · ·
+
+.
+(15)
+Solution concepts of RAMGs: risk-averse quantal response equilibrium (RQE).
+After introducing
+the RAMG problem formulation, we will focus on the solution concept that incorporate both risk-aversion
+and bounded rationality of human decision-making — RQE. To specify, we first introduce the regularized
+value functions for any given {ϵi ≥0}i∈[n]:
+∀(i, h, s) ∈[n] × [H] × S :
+V ϵi
+i,h(π; s) = sup
+pi∈Pi
+−πT
+i Qi,h(π; s, :)pi −Dpol,i(pi, π−i) + ϵiνi(πi)
+= Vi,h(π; s) + ϵiνi(πi).
+(16)
+In addition, for any policy π, we denote πi,−h := {πi,t}t=1,2,3,··· ,h−1,h+1,··· ,H as the i-th agent’s strategy
+over all time steps except step h.
+Definition 7 (RQE of Markov games). A product policy π = π1 × · · · × πn ∈Π is said to be a risk-averse
+quantal response equilibrium (RQE) of RAMG if we have
+∀(i, s, h) ∈[n] × S × [H] :
+V ϵi
+i,h(π; s) ≤
+min
+π′
+h:S7→∆Ai
+V ϵi
+i,h
+ (π′
+h, πi,−h) × π−i; s
+
+,
+(17)
+where νi(·) is a strictly convex function over the simplex and controls the class of the i-th player’s QRE with
+certain degree of bounded rationality ϵi ≥0.
+4.2
+Algorithm and Theoretical Guarantees
+RAMGs with perfect information.
+Notice that the risk-aversion Markov games (RAMGs) are sequential
+games with multiple rounds, it is natural to learn the game from the last step h = H and then back forward
+step by step. Towards this, at each time step h, for all (i, h, s, a) ∈[n] × [H] × S × A, we define the (original)
+payoff matrices for all agents at any state s at time step h as
+∀(i, s, h) ∈[n] × S × [H] :
+bQi,h(s, a) = Ri,h(s, a) + inf
+e
+P ∈∆S
+eP bVi,h+1 + Denv,i( eP, Ph,s,a),
+(18)
+12
+
+Algorithm 1: Computation method of RQE for risk-averse Markov games (RAMGs).
+1: Input: reward function {Ri,h}i∈[n]×h∈[H], transition kernel {Ph}h∈[H].
+2: Initialization: bQi,h(s, a) = 0, bVi,h(s) = 0 for all (s, a, h) ∈S × A × [H + 1].
+3: for h = H, H −1, · · · , 1 do
+4:
+for i = 1, 2, · · · , n and s ∈S, a ∈A do
+5:
+Set bQi,h(s, a) according to (18).
+6:
+end for
+7:
+for s ∈S do
+8:
+Get πh(s) = {πi,h(s)}1≤i≤n ←RQE
+
+f π,ϵi
+pol,i( bQi,h(s, :)
+	
+1≤i≤n
+
+.
+9:
+Set bVi,h(s) = f πh,ϵi
+pol,i
+  bQi,h(s, :)
+
+.
+10:
+end for
+11: end for
+12: output: bπ = {πh}1≤h≤H.
+which shall be used to define a risk-averse matrix game against other players’ strategies later so that we can
+calculate a QRE for it with tractable computation cost. Here, we denote the computing routine of a RQE of
+a matrix game as RQE(·). Armed with this, we summarize the entire algorithm to compute RQE for RAMGs
+in Algorithm 1. The following theorem shows that computing RQE using Algorithm 1 is computationally
+tractable when certain conditions of risk-measure and bounded rationality are satisfied, which can be directly
+verified based on Theorem 7.
+Theorem 4. For any RAMG MG, assume the penalty functions that give rise to the players’ risk preferences
+{Dpol,i(·, ·)} are jointly convex in both of their arguments. If for any (s, h) ∈S × [H], we can construct a
+2n-player game with the other n-additional players’ payoff as (10) with ξi,j = ξ∗
+i,j for all (i, j) ∈[n] × [n].
+And for all i = 1, ..., n we have ϵi ≥P
+j̸=i ξ∗
+j,i, then the output policy bπ from Algorithm 1 is a RQE of MG.
+RAMGs can be seen as a sequential of matrix games conditioned on states. As a corollary of the results in
+matrix games (Theorem 7), the above theorem shows that the proposed solution concept — RQE in RAMGs
+enables computational tractability with any well-defined risk-measures {Denv,i}i∈[n].
+RAMGs with imperfect environmental information.
+In the previous paragraph, we focus on the
+cases when the dynamics of the environment of RAMG — reward and transition kernel are perfectly known.
+While in practice, especially in MARL tasks, the environments can be complicated and unknown that need
+to be learned by interacting with (sampling from) the environments. In this subsection, we focus on such
+scenarios and provide the theoretical guarantees of Algorithm 1.
+We focus on a fundamental sampling mechanism — assuming access to a generative model or a simulator
+[1,40], which allows us to collect N independent samples for each state-action pair generated based on the
+true environment {Ri,h, Ph}i∈[n],h∈[H]:
+∀(s, a, j) ∈S × A × [n] :
+si,s,a,h
+i.i.d
+∼Ph(· | s, a),
+ri
+j,s,a,h = Rj,h(s, a),
+i ∈[N].
+(19)
+The total sample size is, therefore, Nall := NS Q
+i∈[n] Ai.
+In such imperfect information cases, we propose a model-based approach, which first constructs an
+empirical reward function and nominal transition kernel based on the collected samples and then applies
+Algorithm 1 to learn a QNE. First, the empirical reward function and transition kernel bP ∈RS Qn
+i=1 Ai×S can
+be constructed on the basis of the empirical frequency of state transitions,
+∀(s, a, j, h) ∈S × A × [n] × [H] :
+bRj,h(s, a) = r1
+j,s,a,h
+and
+bPh(s′ | s, a) := 1
+N
+N
+X
+i=1
+1
+
+si,s,a = s′	
+.
+(20)
+Then with such empirical reward and transition, we can apply the oracle summarized in Algorithm 1.
+The following theorem provides the finite-sample guarantees of this model-based approach as below:
+13
+
+Theorem 5. For any RAMG MG, we consider penalty functions {Denv,i(·, ·)}i∈[n] are L-Lipschitz w.r.t the
+ℓ1 norm of the second argument with any fixed first argument. Applying Algorithm 1 with the estimated
+reward { bRj,h} and transition kernels { bPh}h∈[H] as input, the output solution bπ is an δ-RQE of MG. Namely,
+we have
+max
+(i,s,h)∈[n]×S×[H]
+n
+V ϵi
+i,h(bπ; s) −
+min
+π′
+h:S7→∆Ai
+V ϵi
+i,h((π′
+h, bπi,−h) × bπ−i; s)
+o
+≤δ
+(21)
+as long as the total number of samples satisfying
+Nall = NS
+Y
+i∈[n]
+Ai ≥8S
+Y
+i∈[n]
+AiHL
+v
+u
+u
+t S
+N log
+ 2SH
+Y
+i∈[n]
+Ai/δ
+
+.
+The proof is postponed to Appendix C. We remark that L can be some constant for various penalty
+function, such as L = 1 when {Denv,i}i∈[n] are defined as any ℓp norm including total variation (TV). We also
+remark that similar sample complexity guarantees can be shown when {Denv,i}i∈[n] are defined as ϕ-divergence
+and allude to analyses ideas in [54, 64, 65, 73]. Note that computing exact RQE can be computationally
+expensive or may not be necessary in practice. This result provides the first finite-sample guarantees of
+computing RQE in RAMGs. We show that even when the environment is not perfectly known but needs to
+be learned by samples, we can achieve approximate-RQEs of RAMGs using sufficient finite samples of size
+Nall.
+4.3
+Experiments and Evaluation
+We consider a grid-world problem to test our algorithm (Algorithm 1) for showcasing risk-averse and bounded
+rational behaviors. We note that we use our matrix game method (details described in Appendix D.1) for the
+RQE solver at Line 8 in Algorithm 1.
+Cliff Walk Environment description:
+A grid of size 6 × 6 consists of some tiles that lead to the agents
+falling into the cliff. The environment setup is as follows: The cliff is the black grid with rewards −2.
+Agents/players are rewarded 0 for taking each step and 1 for when they reach the goal. The agents move
+in the direction of action with probability pd = 0.9 and takes uniform step in the unintended direction. To
+emphasize the risky choices of agents traversing along the cliff or traversing in each others’ paths, we reduce
+pd to 0.5 when the agents are both within a grid apart. The episode horizon H is 200.
+Algorithm details:
+We use the penalty function KL with the log-barrier regularizer, as mentioned in
+Table 1 and Example 2, for our experiments. We also use KL divergence for the environmental uncertainty
+metric Denv,i with the same bounded rational parameter τ −1
+i
+used by RQE. We use the full information of
+this grid-world to evaluate the Q-values described in Algorithm 1. Additionally, as we use the matrix games
+solver for RQE, we have similar statistical deviations for different training runs. In Appendix D.2, we also
+showcase results with ℓ1 metric for the environmental uncertainty metric Denv,i.
+Results Discussion:
+We present two results in Fig. 2. For both results, agent 1 starts at the 5th row and
+3rd column of the cliff-walking grid-world, and agent 2 starts at the 2nd row and 3rd column grid position.
+In the left figure of Fig. 2, agent 1 is risk-averse to the environmental uncertainty induced by the cliff grids
+by traversing the longer route shown by the red arrow. Interestingly, complementing our risk-adjusted notion,
+agent 2 is risk-averse w.r.t both the environmental uncertainty and evading the risk of coming into agent 1’s
+path (which leads to more chances of falling into the cliff). It makes a less rational and more risk-averse
+choice by reaching the end state shown by the blue arrow. In the case of the right figure of Fig. 2. They both
+make a more rational choice of reaching goal states but take a riskier path, increasing the chances of falling
+into the cliff. Interestingly, agent 1 waits at the corner grid (at the bottom right) until agent 2 passes it, since
+being at this grid is a more risk-averse agnostic choice against other players. These empirical evaluations
+support our theoretical result (Theorem 4) w.r.t the relative choice of risk-averse and bounded rationality
+parameters (ϵj and τj’s) for providing different level of risk-averse solutions.
+14
+
+Figure 2:
+Cliff Walk Description and Results: The Cliff Walk grid-world is depicted here with color codes
+of grids: black is the cliff, blue and pink are agents/players 1 and 2’s goals respectively, grey are grids for
+traversing. In both figures, red (blue) arrow depicts the actions taken by the learned policies for agent 1 (agent
+2) reaching the states of the arrowhead. The agent 2 policy in the left figure showcases more risk-aversion
+(avoid each others’ path to reduce the cliff risk) and less bounded rationality (not goal reaching). The agent 2
+policy in the right figure showcases less risk-aversion (more chances of cliff risk by sharing the path) and
+more bounded rationality (goal reaching). We also mention values of the risk-averse and bounded rational
+parameters ϵ1, ϵ2 and τ1, τ2 used in our experiments satisfying our theoretical conditions.
+5
+Conclusion
+By incorporating risk aversion and bounded rationality into agents’ decision-making processes, we introduced
+a computationally tractable class of risk-averse quantal response equilibria (RQE) for matrix games and
+finite-horizon Markov games. This approach not only makes equilibrium computation tractable but also aligns
+well with observed human behavior in behavioral economics. We provided rigorous theoretical results for
+tractable computation of equilibrium concepts and also provided sample complexity results in the generative
+modeling setting for multi-agent reinforcement learning. We also validated our findings on small-scale
+multi-agent game benchmarks: matching pennies games and cliff walking environment.
+Acknowledgment
+The work of LS is supported in part by the Resnick Institute and Computing, Data, and Society Postdoctoral
+Fellowship at California Institute of Technology. KP acknowledges support from the ‘PIMCO Postdoctoral
+Fellow in Data Science’ fellowship at the California Institute of Technology. EM acknowledges support from
+NSF Award 2240110.
+References
+[1] Alekh Agarwal, Sham Kakade, and Lin F Yang. Model-based reinforcement learning with a generative
+model is minimax optimal. In Conference on Learning Theory, pages 67–83. PMLR, 2020. 13
+15
+
+[2] Amir Ahmadi-Javid. Entropic value-at-risk: A new coherent risk measure. Journal of Optimization
+Theory and Applications, 155:1105–1123, 2012. 7, 8
+[3] Peter Auer, Thomas Jaksch, and Ronald Ortner. Near-optimal regret bounds for reinforcement learning.
+Advances in neural information processing systems, 21, 2008. 28
+[4] Robert J. Aumann. Subjectivity and correlation in randomized strategies. Journal of Mathematical
+Economics, 1(1):67–96, 1974. 3
+[5] Robert J. Aumann. Correlated equilibrium as an expression of bayesian rationality. Econometrica,
+55(1):1–18, 1987. 3
+[6] Amir Beck. First-order methods in optimization. SIAM, 2017. 29
+[7] Jose Blanchet, Miao Lu, Tong Zhang, and Han Zhong. Double pessimism is provably efficient for
+distributionally robust offline reinforcement learning: Generic algorithm and robust partial coverage.
+Advances in Neural Information Processing Systems, 36, 2024. 5
+[8] Vivek Borkar. Risk-sensitive control, single controller games and linear programming. Journal of
+Dynamics and Games, 11, 01 2023. 4, 6
+[9] James N Brown and Robert Rosenthal. Testing the minimax hypothesis: A re-examination of o’neill’s
+game experiment. Econometrica, 58(5):1065–81, 1990. 4
+[10] Yang Cai, Ozan Candogan, Constantinos Daskalakis, and Christos Papadimitriou. Zero-sum polymatrix
+games: A generalization of minmax. Mathematics of Operations Research, 41(2):648–655, 2016. 3, 10
+[11] C. Monica Capra, Jacob K. Goeree, Rosario Gomez, and Charles A. Holt. Learning and noisy equilibrium
+behavior in an experimental study of imperfect price competition. International Economic Review,
+43(3):613–636, 2002. 2
+[12] Shicong Cen, Yuting Wei, and Yuejie Chi. Fast policy extragradient methods for competitive games with
+entropy regularization. Advances in Neural Information Processing Systems, 34:27952–27964, 2021. 4
+[13] Nicolo Cesa-Bianchi and Gabor Lugosi. Prediction, learning, and games. Cambridge University Press,
+2006. 1, 2, 3
+[14] Constantinos Daskalakis. On the complexity of approximating a nash equilibrium. ACM Transactions
+on Algorithms (TALG), 9(3):1–35, 2013. 1, 3
+[15] Constantinos Daskalakis, Noah Golowich, Nika Haghtalab, and Abhishek Shetty. Smooth nash equilibria:
+Algorithms and complexity. arXiv preprint arXiv:2309.12226, 2023. 4
+[16] Constantinos Daskalakis, Noah Golowich, and Kaiqing Zhang. The complexity of markov equilibrium in
+stochastic games. In Gergely Neu and Lorenzo Rosasco, editors, Proceedings of Thirty Sixth Conference
+on Learning Theory, volume 195 of Proceedings of Machine Learning Research, pages 4180–4234. PMLR,
+12–15 Jul 2023. 2, 3
+[17] Eddie Dekel and Drew Fudenberg. Rational behavior with payoff uncertainty. Journal of Economic
+Theory, 52(2):243–267, 1990. 2
+[18] Ido Erev and Alvin Roth. Predicting how people play games: Reinforcement learning in experimental
+games with unique, mixed strategy equilibria. American Economic Review, 88(4):848–81, 1998. 2, 4
+[19] Hannes Eriksson, Debabrota Basu, Mina Alibeigi, and Christos Dimitrakakis. Risk-sensitive bayesian
+games for multi-agent reinforcement learning under policy uncertainty. arXiv preprint arXiv:2203.10045,
+2022. 4
+[20] Benjamin Patrick Evans and Sumitra Ganesh. Learning and calibrating heterogeneous bounded rational
+market behaviour with multi-agent reinforcement learning. arXiv preprint arXiv:2402.00787, 2024. 4
+16
+
+[21] Eyal Even-Dar, Yishay Mansour, and Uri Nadav. On the convergence of regret minimization dynamics
+in concave games. In Proceedings of the forty-first annual ACM symposium on Theory of computing,
+pages 523–532, 2009. 3
+[22] Amos Fiat and Christos Papadimitriou. When the players are not expectation maximizers. In Algorithmic
+Game Theory: Third International Symposium, SAGT 2010, Athens, Greece, October 18-20, 2010.
+Proceedings 3, pages 1–14. Springer, 2010. 4, 6, 8
+[23] Hans Föllmer and Alexander Schied. Convex measures of risk and trading constraints. Finance and
+Stochastics, 6(4):429–447, 2002. 6, 7, 9
+[24] Sumitra Ganesh, Nelson Vadori, Mengda Xu, Hua Zheng, Prashant Reddy, and Manuela Veloso.
+Reinforcement learning for market making in a multi-agent dealer market. Advances in Neural Information
+Processing Systems, 2019. 4
+[25] Yue Gao, Kry Yik Chau Lui, and Pablo Hernandez-Leal. Robust risk-sensitive reinforcement learning
+agents for trading markets. arXiv preprint arXiv:2107.08083, 2021. 4
+[26] Ian M. Gemp and Sridhar Mahadevan. Online monotone games. ArXiv, abs/1710.07328, 2017. 10
+[27] Jacob K. Goeree and Charles A. Holt. Stochastic game theory: For playing games, not just for doing
+theory. Proceedings of the National Academy of Sciences, 96(19):10564–10567, 1999. 2
+[28] Jacob K Goeree, Charles A Holt, and Thomas R Palfrey. Risk averse behavior in generalized matching
+pennies games. Games and Economic Behavior, 45(1):97–113, 2003. 2, 4, 9, 11, 29, 30
+[29] K. Goeree and Theo Offerman. Efficiency in auctions with private and common values: An experimental
+study. American Economic Review, 92(3):625–643, June 2002. 2, 4
+[30] Christian Gollier. The economics of risk and time. MIT press, 2001. 2
+[31] Noah Golowich, Sarath Pattathil, and Constantinos Daskalakis. Tight last-iterate convergence rates for
+no-regret learning in multi-player games. Advances in neural information processing systems, 33:20766–
+20778, 2020. 3
+[32] Sihong He, Songyang Han, Sanbao Su, Shuo Han, Shaofeng Zou, and Fei Miao. Robust multi-agent
+reinforcement learning with state uncertainty. Transactions on Machine Learning Research, 2023. 5
+[33] Teck Ho, Colin Camerer, and Juin-Kuan Chong. A cognitive hierarchy model games. The Quarterly
+Journal of Economics, 119:861–898, 02 2004. 4
+[34] Garud N Iyengar. Robust dynamic programming. Mathematics of Operations Research, 30(2):257–280,
+2005. 4
+[35] Athul Paul Jacob, David J Wu, Gabriele Farina, Adam Lerer, Hengyuan Hu, Anton Bakhtin, Jacob
+Andreas, and Noam Brown. Modeling strong and human-like gameplay with kl-regularized search. In
+International Conference on Machine Learning, pages 9695–9728. PMLR, 2022. 4
+[36] D. Jacobson. Optimal stochastic linear systems with exponential performance criteria and their relation
+to deterministic differential games. IEEE Transactions on Automatic Control, 18(2):124–131, 1973. 4
+[37] Daniel Kahneman and Amos Tversky. Prospect theory: An analysis of decision under risk. Econometrica,
+47(2):263–291, 1979. 2
+[38] Fivos Kalogiannis and Ioannis Panageas. Zero-sum polymatrix markov games: Equilibrium collapse and
+efficient computation of nash equilibria, 2023. 3, 10
+[39] Sampath Kannan, Michael Kearns, Jamie Morgenstern, Mallesh Pai, Aaron Roth, Rakesh Vohra, and
+Zhiwei Steven Wu. Fairness incentives for myopic agents. In Proceedings of the 2017 ACM Conference
+on Economics and Computation, pages 369–386, 2017. 1
+17
+
+[40] Michael Kearns and Satinder Singh. Finite-sample convergence rates for q-learning and indirect algorithms.
+Advances in neural information processing systems, 11, 1998. 13
+[41] Stefanos Leonardos, Georgios Piliouras, and Kelly Spendlove. Exploration-exploitation in multi-agent
+competition: Convergence with bounded rationality. In M. Ranzato, A. Beygelzimer, Y. Dauphin,
+P.S. Liang, and J. Wortman Vaughan, editors, Advances in Neural Information Processing Systems,
+volume 34, pages 26318–26331. Curran Associates, Inc., 2021. 4
+[42] R. Duncan Luce. Individual Choice Behavior: A Theoretical analysis. Wiley, New York, NY, USA, 1959.
+2, 4
+[43] Richard D. McKelvey and Thomas R. Palfrey. An experimental study of the centipede game. Econometrica,
+60(4):803–836, 1992. 4
+[44] Richard D McKelvey and Thomas R Palfrey. Quantal response equilibria for normal form games. Games
+and economic behavior, 10(1):6–38, 1995. 2, 4
+[45] Richard D McKelvey and Thomas R Palfrey. Quantal response equilibria for extensive form games.
+Experimental economics, 1:9–41, 1998. 4
+[46] Jeremy McMahan, Giovanni Artiglio, and Qiaomin Xie.
+Roping in uncertainty: Robustness and
+regularization in markov games. In Forty-first International Conference on Machine Learning, 2024. 5, 8
+[47] Panayotis Mertikopoulos and William H. Sandholm. Learning in games via reinforcement and regulariza-
+tion. Mathematics of Operations Research, 41(4):1297–1324, 2016. 4, 9
+[48] Amir-Hamed Mohsenian-Rad, Vincent WS Wong, Juri Jatskevich, Robert Schober, and Alberto Leon-
+Garcia. Autonomous demand-side management based on game-theoretic energy consumption scheduling
+for the future smart grid. IEEE transactions on Smart Grid, 1(3):320–331, 2010. 1
+[49] H. Moulin and J. P. Vial. Strategically zero-sum games: The class of games whose completely mixed
+equilibria cannot be improved upon. International Journal of Game Theory, 7(3):201–221, 1978. 3
+[50] Remi Munos, Michal Valko, Daniele Calandriello, Mohammad Gheshlaghi Azar, Mark Rowland, Zhao-
+han Daniel Guo, Yunhao Tang, Matthieu Geist, Thomas Mesnard, Andrea Michi, Marco Selvi, Sertan
+Girgin, Nikola Momchev, Olivier Bachem, Daniel J. Mankowitz, Doina Precup, and Bilal Piot. Nash
+learning from human feedback, 2023. 1
+[51] John F Nash. Non-cooperative games. Princeton University, 1950. 1
+[52] Barry O’Neill. Nonmetric test of the minimax theory of two-person zerosum games. Proceedings of the
+National Academy of Sciences of the United States of America, 84(7):2106–2109, 1987. 4
+[53] Kishan Panaganti and Dileep Kalathil. Robust reinforcement learning using least squares policy iteration
+with provable performance guarantees. In International Conference on Machine Learning (ICML), pages
+511–520, 2021. 4
+[54] Kishan Panaganti and Dileep Kalathil. Sample complexity of robust reinforcement learning with a
+generative model. In International Conference on Artificial Intelligence and Statistics (AISTATS), pages
+9582–9602, 2022. 14, 28
+[55] Wei Qiu, Xinrun Wang, Runsheng Yu, Rundong Wang, Xu He, Bo An, Svetlana Obraztsova, and
+Zinovi Rabinovich. Rmix: Learning risk-sensitive policies for cooperative reinforcement learning agents.
+Advances in Neural Information Processing Systems, 34:23049–23062, 2021. 4
+[56] J. B. Rosen. Existence and uniqueness of equilibrium points for concave n-person games. Econometrica,
+33(3):520–534, 1965. 8, 21
+[57] Tim Roughgarden. Intrinsic robustness of the price of anarchy. Journal of the ACM (JACM), 62(5):1–42,
+2015. 3
+18
+
+[58] Oliver G Selfridge. Adaptive strategies of learning a study of two-person zero-sum competition. In
+Proceedings of the sixth international workshop on Machine learning, pages 412–415. Elsevier, 1989. 11
+[59] Reinhard Selten and Thorsten Chmura. Stationary concepts for experimental 2x2-games. American
+Economic Review, 98(3):938–966, 2008. 2, 11, 29, 30
+[60] Lloyd S Shapley. Stochastic games. Proceedings of the national academy of sciences, 39(10):1095–1100,
+1953. 11
+[61] Siqi Shen, Chennan Ma, Chao Li, Weiquan Liu, Yongquan Fu, Songzhu Mei, Xinwang Liu, and Cheng
+Wang. Riskq: risk-sensitive multi-agent reinforcement learning value factorization. Advances in Neural
+Information Processing Systems, 36:34791–34825, 2023. 4
+[62] Yun Shen, Wilhelm Stannat, and Klaus Obermayer. Risk-sensitive markov control processes. SIAM
+Journal on Control and Optimization, 51(5):3652–3672, 2013. 4
+[63] Yun Shen, Michael J Tobia, Tobias Sommer, and Klaus Obermayer. Risk-sensitive reinforcement learning.
+Neural computation, 26(7):1298–1328, 2014. 4, 6
+[64] Laixi Shi and Yuejie Chi. Distributionally robust model-based offline reinforcement learning with
+near-optimal sample complexity. arXiv preprint arXiv:2208.05767, 2022. 4, 14
+[65] Laixi Shi, Gen Li, Yuting Wei, Yuxin Chen, Matthieu Geist, and Yuejie Chi.
+The curious price
+of distributional robustness in reinforcement learning with a generative model. Advances in Neural
+Information Processing Systems, 2023. 14, 28
+[66] Laixi Shi, Eric Mazumdar, Yuejie Chi, and Adam Wierman.
+Sample-efficient robust multi-agent
+reinforcement learning in the face of environmental uncertainty. arXiv preprint arXiv:2404.18909, 2024.
+5
+[67] Oliver Slumbers, David Henry Mguni, Stefano B Blumberg, Stephen Marcus Mcaleer, Yaodong Yang,
+and Jun Wang. A game-theoretic framework for managing risk in multi-agent systems. In International
+Conference on Machine Learning, pages 32059–32087. PMLR, 2023. 4
+[68] Samuel Sokota, Ryan D’Orazio, J Zico Kolter, Nicolas Loizou, Marc Lanctot, Ioannis Mitliagkas, Noam
+Brown, and Christian Kroer. A unified approach to reinforcement learning, quantal response equilibria,
+and two-player zero-sum games. In The Eleventh International Conference on Learning Representations,
+2023. 4, 9
+[69] Amos Tversky and Daniel Kahneman. Advances in prospect theory: Cumulative representation of
+uncertainty. Journal of Risk and Uncertainty, 5:297–323, 1992. 2
+[70] Yannick Viossat and Andriy Zapechelnyuk. No-regret dynamics and fictitious play. Journal of Economic
+Theory, 148(2):825–842, 2013. 2, 3
+[71] Zifan Wang, Yi Shen, Michael M Zavlanos, and Karl H Johansson. Learning of nash equilibria in
+risk-averse games. arXiv preprint arXiv:2403.10399, 2024. 4
+[72] Michael P Wellman and Peter R Wurman. Market-aware agents for a multiagent world. Robotics and
+Autonomous Systems, 24(3-4):115–125, 1998. 1
+[73] Zaiyan Xu∗, Kishan Panaganti∗, and Dileep Kalathil. Improved sample complexity bounds for distribu-
+tionally robust reinforcement learning. In Proceedings of The 25th International Conference on Artificial
+Intelligence and Statistics. Conference on Artificial Intelligence and Statistics, 2023. 4, 14, 28
+[74] Ali Yekkehkhany, Timothy Murray, and Rakesh Nagi. Risk-averse equilibrium for games. arXiv preprint
+arXiv:2002.08414, 2020. 4
+[75] Kaiqing Zhang, Tao Sun, Yunzhe Tao, Sahika Genc, Sunil Mallya, and Tamer Basar. Robust multi-agent
+reinforcement learning with model uncertainty. Advances in neural information processing systems,
+33:10571–10583, 2020. 5
+19
+
+[76] Kaiqing Zhang, Zhuoran Yang, and Tamer Başar. Multi-agent reinforcement learning: A selective
+overview of theories and algorithms. Handbook of reinforcement learning and control, pages 321–384,
+2021. 1
+[77] Runyu Zhang, Yang Hu, and Na Li. Soft robust MDPs and risk-sensitive MDPs: Equivalence, policy
+gradient, and sample complexity. In The Twelfth International Conference on Learning Representations,
+2024. 4
+[78] Shangtong Zhang, Bo Liu, and Shimon Whiteson.
+Mean-variance policy iteration for risk-averse
+reinforcement learning. In Proceedings of the AAAI Conference on Artificial Intelligence, volume 35,
+pages 10905–10913, 2021. 4
+20
+
+A
+Further results on computational tractability of RQE in aggregate
+risk-averse matrix games
+In this section we provide further results on the aggregate risk aversion formulation of the risk-averse problem.
+This section provides a proof of the main result of Theorem 3 presented in the main body of the paper as
+well as the generalization of the results on computationaly tractability to n-players. A key step in the proof
+is relating the Nash equilibrium of the 2n-player convex game presented where players have utilites of the
+form (10) and (9) and RQE of the desired game (3). We then use this result to prove Theorem 3.
+A.1
+Relating Nash of the 2n-player game and RQE
+We first note that this 2n player game is a convex game played over compact convex action sets and thus a
+Nash equilibrium must exist [56]. To relate outcomes in this new game to that of the original game, we show
+that the strategies played by the original players in Nash equilibria of the 2n-player game coincide with the
+RQE.
+Proposition 1. If (π∗, p∗) is a Nash equilibrium of the 2n-player game, then π∗is a RQE of Game (8).
+Furthermore, if π∗is a RQE of Game (8), then (π∗, p∗) is a Nash equilibrium of the 2n-player game, where:
+p∗
+i = arg max
+pi∈P−i −π∗
+i
+T Ripi −Di(pi, π∗
+−i).
+(22)
+Proof. To prove this result, we rely on the definitions of Nash and RQE. We begin by proving the first claim
+of the proposition. Recall that a Nash equilibrium is a joint strategy (π∗, p∗) ∈P × ¯P such that, for all
+i = 1, ..., n:
+Ji(π∗
+i , π∗
+−i, p∗) ≤Ji(π′
+i, π∗
+−i, p∗) ∀π′
+i ∈∆Ai
+(23)
+¯Ji(π∗, p∗
+i , p∗
+−i) ≤¯Ji(π∗, p′
+i, p∗
+−i) ∀p′
+i ∈P−i
+Noting that each Ji(π∗
+i , π∗
+−i, p∗
+i , p∗
+−i) does not depend on p∗
+−i, to show the forward direction, we start by
+taking the supremum of the right hand side of (23) over pi ∈P−i. Thus, we find that, for all i:
+Ji(π∗
+i , π∗
+−i, p∗) ≤
+sup
+pi∈P−i
+Ji(π′
+i, π∗
+−i, pi, p∗
+−i) ∀π′
+i ∈∆Ai
+= f ϵi
+i (π′
+i, π∗
+−i) ∀π′
+i ∈∆Ai,
+where in the second line we used the fact that for any π, p−i, by definition,
+sup
+pi∈P−i
+Ji(π, pi, p−i) = f ϵi
+i (π).
+It remains to show that for any i = 1, ..., n, Ji(π∗
+i , π∗
+−i, p∗) = f ϵi
+i (π∗
+i , π∗
+−i). This follows from the fact
+that the simplex is compact. Indeed for any fixed π, the function Ji(π, pi, p−i) is concave in pi. Thus, the
+supremum is attained at p∗
+i since
+p∗
+i = arg min
+pi∈P−i
+¯Ji(π∗, pi, p∗
+−i) = arg max
+pi∈P−i Ji(π∗, pi, p∗
+−i).
+Since the same argument holds for all i, we have shown that if (π∗, p∗) is a Nash equilibrium of the
+2n-player game, then:
+f ϵi
+i (π∗
+i , π∗
+−i) ≤f ϵi
+i (πi, π∗
+−i) ∀πi ∈∆Ai
+which is the definition of a RQE.
+To prove the second claim, suppose that π∗is a RQE. By definition, we have that if
+p∗
+i = arg max
+pi∈P−i −π∗
+i
+T Ripi −Di(pi, π∗
+−i).
+21
+
+then p∗
+i by construction satisfies the condition of a Nash equilibrium of the 2n-player game:
+¯Ji(π∗, p∗
+i , p∗
+−i) ≤¯Ji(π∗, p′
+i, p∗
+−i) ∀p′
+i ∈P−i.
+It remains to show that π∗also satisfies the necessary conditions on Ji. To see that this must hold, by
+definition, we must have that (π∗
+i , p∗
+i ) satisfies:
+Ji(π∗
+i , p∗
+i , π∗
+−i, p∗
+−i) = f ϵi
+i (π∗
+i , π∗
+−i) =
+min
+πi∈∆Ai
+max
+pi∈P−i J(πi, pi, π∗
+−i, p∗
+−i)
+Further manipulations allow us to show that:
+Ji(π∗
+i , π∗
+−i, p∗) = f ϵ
+i (π∗
+i , π∗
+−i)
+=
+min
+πi∈∆Ai
+max
+pi∈P−i J(π1, pi, π∗
+−i, p∗
+−i)
+=
+min
+πi∈∆Ai
+J(π1, p∗
+i , π∗
+−i, p∗
+−i)
+≤J(π′
+1, p∗
+i , π∗
+−i, p∗
+−i) ∀π′
+i ∈∆Ai
+Since this holds true for all i, this completes the proof.
+A.2
+Proof of Theorem 3 and immediate corollaries
+Given the results showing that finding a Nash equilibrium of the 2n-player convex game allows us to compute
+RQE, we present the proof of Theorem 3. We also provide two corollaries that specialize the results to
+different risk-metrics and quantal response functions.
+Theorem 6 (Restatement of Theorem 3). Assume the penalty functions that give rise to the players’ risk
+preferences D1(·, ·) and D2(·, ·) are jointly convex in both their arguments. If σ is a CCE of the four player
+game with ξ1 = ξ∗
+1 and ξ2 = ξ∗
+2, and
+ϵ1
+ξ∗
+1
+≥ξ∗
+2
+ϵ2
+,
+then ˆπ1 = Eσ[π1] and ˆπ2 = Eσ[π2] constitute a RQE of the risk-adjusted game.
+The proof follows by showing that CCE of the 2n-player convex game coincide with Nash equilibria of the
+2n-player convex game, and then invoking results from the previous section.
+Proof. To prove this, we show that (ˆπ1, ˆp1, ˆπ2, ˆp2) is a Nash equilibrium of the four player game and then
+invoke Proposition 1 (where ˆπ1 = Eσ[π1], ˆp2 = Eσ[p2],ˆπ2 = Eσ[π2], and ˆp2 = Eσ[p2]).
+To begin, we focus on J1 and ¯J1. By symmetry, the same arguments hold for J2 and ¯J2. We first note
+that J1 is (strictly) convex in π1 for all fixed p1, π2, p2 and jointly concave in p1, π2, p2 for all fixed π1. Now,
+starting with the definition of CCE for σ and via Jensen’s inequality, we have that:
+Eσ[J1(π1, p1, π2, p2)] ≤E(p1,π2,p2)∼σ[J1(π′
+1, p1, π2, p2)]
+= Ep1∼ˆp1
+
+Eπ2∼σ | p1
+
+Ep2∼σ | p1,π2 [J1(π′
+1, p1, π2, p2)]
+
+≤Ep1∼ˆp1
+
+Eπ2∼σ | p1
+
+J1(π′
+1, p1, π2, Eσ | p1,π2[p2])
+
+≤Ep1∼ˆp1
+
+J1(π′
+1, p1, Eσ | p1[π2], Eσ | p1[p2])
+
+≤J1(π′
+1, ˆp1, ˆπ2, ˆp2)
+∀π′
+1 ∈∆A1.
+(24)
+Similarly, we note that for ξ1 = ξ∗
+1, ¯J1 is jointly concave in π1, π2, p2, such that:
+Eσ[ ¯J1(π1, p1, π2, p2)] ≤¯J1(ˆπ1, p′
+1, ˆπ2, ˆp2)
+∀p′
+1 ∈∆A2.
+Letting ˆz = (ˆπ1, ˆp1, ˆπ2, ˆp2) and z = (π1, p1, π2, p2) to simplify notation, we can now take a weighted sum
+of the four utility functions with λ ∈(0, 1) to find that:
+λ
+2
+ J1(ˆz) + ¯J1(ˆz)
+
++ 1 −λ
+2
+ J2(ˆz) + ¯J2(ˆz)
+
+22
+
+≥Eσ
+λ
+2
+ J1(z) + ¯J1(z)
+
++ 1 −λ
+2
+ J2(z) + ¯J2(z)
+
+= 1
+2 (λϵ1 −(1 −λ)ξ∗
+2) Eσ [ν1(π1)] + 1
+2 ((1 −λ)ϵ2 −λξ∗
+1) Eσ [ν2(π2)] .
+Choosing λ = ξ∗
+2/(ϵ1 + ξ∗
+2), we can further simplify to find that:
+λ
+2
+ J1(ˆz) + ¯J1(ˆz)
+
++ 1 −λ
+2
+ J2(ˆz) + ¯J2(ˆz)
+
+≥1
+2
+ ϵ1ϵ2
+ϵ1 + ξ∗
+2
+−
+ξ∗
+1ξ∗
+2
+ϵ1 + ξ∗
+2
+
+Eσ [ν2(π2)]
+≥1
+2
+ ϵ1ϵ2
+ϵ1 + ξ∗
+2
+−
+ξ∗
+1ξ∗
+2
+ϵ1 + ξ∗
+2
+
+ν2(ˆπ2)
+= λ
+2
+ J1(ˆz) + ¯J1(ˆz)
+
++ 1 −λ
+2
+ J2(ˆz) + ¯J2(ˆz)
+
+,
+where we used the fact that ϵ1
+ξ∗
+1 ≥ξ∗
+2
+ϵ2 by assumption and invoke Jensen’s inequality for ν2 at the second
+inequality. Thus we have shown that:
+λ
+2
+ J1(ˆz) + ¯J1(ˆz)
+
++ 1 −λ
+2
+ J2(ˆz) + ¯J2(ˆz)
+
+(25)
+= λ
+2
+ Eσ [J1(z)] + Eσ
+ ¯J1(z)
+
++ 1 −λ
+2
+ Eσ [J2(z)] + Eσ
+ ¯J2(z)
+
+.
+(26)
+By Eq. (24), we observe:
+Eσ [J1(z)] ≤J1(ˆz), Eσ
+ ¯J1(z)
+
+≤¯J1(ˆz), Eσ [J2(z)] ≤J2(ˆz), Eσ
+ ¯J2(z)
+
+≤¯J2(ˆz).
+(27)
+We note a fact: λa + (1 −λ)b = λc + (1 −λ)d and a ≤c, b ≤d implies a = c, b = d for any a, b, c, d ∈R.
+Using this fact for Eqs. (26) and (27), we have:
+Eσ [J1(z)] = J1(ˆz) ≤J1(π′
+1, ˆp1, ˆπ2, ˆp2)
+∀π′
+1 ∈∆A1
+Eσ
+ ¯J1(z)
+
+= ¯J1(ˆz) ≤¯J1(ˆπ1, p′
+1, ˆπ2, ˆp2)
+∀p′
+1 ∈∆A2
+Eσ [J2(z)] = J2(ˆz) ≤J2(ˆπ1, ˆp1, π′
+2, ˆp2)
+∀π′
+2 ∈∆A2
+Eσ
+ ¯J2(z)
+
+= ¯J2(ˆz) ≤¯J2(ˆπ1, ˆp1, ˆπ2, p′
+2)
+∀p′
+2 ∈∆A1
+Thus we have shown that ˆz = (ˆπ1, ˆp1, ˆπ2, ˆp2) is a Nash equilibrium for the 4-player game. By invoking
+Propostion 1 we derive our result that (ˆπ1, ˆπ2) must be a RQE for the original risk-adjusted game.
+We now present two corollaries that specialize the results to specific risk metrics and quantal responses.
+In the first we look at the case where players make use of the entropic risk and log-barrier reguarlizers.
+Corollary 6.1. Suppose the players are risk-averse in the entropic risk metric with parameters τ1 and τ2
+respectively, meaning that their risk-adjusted losses are given by:
+f1(π1, π2) = sup
+p1∈A2
+−πT
+1 R1p1 −1
+τ1
+KL(p1, π2)
+f2(π1, π2) = sup
+p2∈A1
+πT
+2 R2p2 −1
+τ2
+KL(p2, π1)
+If they respond in the space of quantal responses generated by the log-barrier regularizers with parameters ϵ1
+and ϵ2 respectively, and if ϵ1τ1 ≥
+1
+ϵ2τ2 then, for any R1, R2 the players can compute a RQE by using no-regret
+learning.
+In the second corollary we look at the case when players make use of the reverse KL penalty function and
+logit quantal responses.
+23
+
+Corollary 6.2. Suppose the players are risk-averse and make use of the reverse-KL as a penalty function to
+give rise to their risk metric with parameters τ1 and τ2 respectively. Their risk-adjusted losses are given by:
+f1(π1, π2) = sup
+p1∈A2
+−πT
+1 R1p1 −1
+τ1
+RKL(p1, π2) f2(π1, π2) = sup
+p2∈A1
+πT
+2 R2p2 −1
+τ2
+RKL(p2, π1)
+If they respond in the space of quantal responses generated by the negative entropy regularizor with parameters
+ϵ1 and ϵ2 respectively, and if ϵ1τ1 ≥
+1
+ϵ2τ2 then, for any R1, R2 the players can compute a RQE by using
+no-regret learning.
+Proof. The proof of these corollaries result comes from the fact that for ξ∗= 1
+τ , the function H(p, π) =
+1
+τ RKL(p, π) −ξν(π) is concave in π for all p if ξ ≥1
+τ . Thus, choosing ξ∗= 1
+τ and invoking Theorem 3
+completes the proof.
+Note that the proof of this corollary is the same as that of Corollary 6.1 and so we only provide one proof
+for both.
+A.3
+Computing RQE in n-player General-Sum Games
+We now extend our result to the computation of RQE in n-player games. This requires stronger assumptions
+on the players’ risk preferences and bounded rationality parameters. Nevertheless, we once again show that a
+large class of RQE is computationally tractable in this class of games.
+To do so we now define Hi(pi, π−i) = Di(pi, π−i) −P
+j̸=i ξi,jνj(πj). For all i, j ∈{1, ..., n} let ξ∗
+i,j > 0
+be the smallest values of ξi,j such that Hi(pi, π−i) is concave in πj. Again, the parameters ξ∗
+i,j capture the
+player’s degrees of risk aversion. The following theorem gives a general condition under which an RQE is
+computable using no-regret learning.
+Theorem 7. Assume the penalty functions that give rise to the players’ risk preferences Di(·, ·) are jointly
+convex in both of their arguments. If σ is a CCE of the 2n-player game with ξi,j = ξ∗
+i,j for all i, j ∈{1, ..., n},
+and for all i = 1, ..., n we have ϵi ≥P
+j̸=i ξ∗
+j,i, then ˆπ = Eσ[π] is a RQE of the risk-adjusted n-player game.
+Proof. To prove this, we show that (ˆπ, ˆp) is a Nash equilibrium of the 2n-player game and then invoke
+Proposition 1 (where ˆπ = Eσ[π], ˆp = Eσ[p]).
+We focus on Ji and ¯Ji. We first note that Ji is (strictly) convex in πi for all fixed p, π−i and jointly
+concave in p, π−i for all fixed π1 by assumption. Thus, via Jensen’s inequality, we have that:
+Eσ[Ji(π, p)] ≤Ji(π′
+i, ˆπ−i, ˆp)
+∀π′
+i ∈∆Ai
+Similarly, we note that for ξi,j = ξ∗
+i,j, ¯Ji is jointly concave in π, p−i, such that:
+Eσ[ ¯Ji(π, p)] ≤¯Ji(ˆπ, p′
+i, ˆp−i)
+∀p′
+i ∈P−i.
+We can now take a sum of the 2n utility functions to find that:
+n
+X
+i=1
+Ji(ˆπ, ˆp) + ¯Ji(ˆπ, ˆp) ≥
+n
+X
+i=1
+Eσ[Ji(π, p)] + Eσ[ ¯Ji(π, p)]
+≥
+n
+X
+i=1
+
+ϵi −
+X
+j̸=i
+ξ∗
+j,i
+
+Eσ[νi(πi)]
+≥
+n
+X
+i=1
+
+ϵi −
+X
+j̸=i
+ξ∗
+j,i
+
+νi(ˆπi)
+=
+n
+X
+i=1
+Ji(ˆπ, ˆp) + ¯Ji(ˆπ, ˆp)
+24
+
+where we used the assumed condition on ϵi to guarantee convexity of the functions of πi in the second line,
+allowing us to use Jensen’s inequality to derive the third line.
+Thus we have shown that:
+n
+X
+i=1
+Ji(ˆπ, ˆp) + ¯Ji(ˆπ, ˆp) =
+n
+X
+i=1
+Eσ[Ji(π, p)] + Eσ[ ¯Ji(π, p)]
+This implies that:
+Ji(ˆπ, ˆp) = Eσ[Ji(π, p)] ≤Ji(π′
+i, ˆπ−i, ˆp)
+∀π′
+i ∈∆Ai
+¯Ji(ˆπ, ˆp) = Eσ[ ¯Ji(π, p)] ≤¯Ji(ˆπ, p′
+i, ˆp−i)
+∀p′
+i ∈P−i.
+Thus we have shown that (ˆπ, ˆp) is a Nash equilibrium for the 2n-player game. By invoking Proposition 1 we
+can observe that ˆπ must be a RQE for the risk-adjusted game.
+B
+Computational tractability of RQE in action-dependent risk-
+averse matrix games
+As in the case of aggregate risk-aversion, to prove our results we again introduce an auxiliary game that we
+relate to our risk-adjusted game of interest. In this case, the loss of the original players is given by:
+Ji(πi, π−i, p) =
+X
+j∈Ai
+πi(j) (−⟨Ri,j, pi,j⟩−Di(pi,j, π−i)) + ϵiνi(πi).
+(28)
+We now associate each player i to its intermediate adversary pi. For each player pi their loss function is given
+by:
+¯Ji(π, pi) =
+X
+j∈Ai
+πi(j) (⟨Ri,j, pi,j⟩+ Di(pi,j, π−i)) −
+X
+k
+ξi,kνk(πk),
+(29)
+where pi = {pi,j}j∈Ai where pi,j ∈P−i. This is once again a convex game since each player’s loss is convex
+in its own argument. Define ξ∗
+i,k ≥0 as the minimum value of ξi,k needed for ¯Ji(π, pi) to be concave in π for
+all values of pi for all i. Note that due to the structure of ¯J the values of ξ∗
+i,k only depend on properties of
+the risk metrics under consideration which are captured in Di, and not on the payoff structure Ri.
+The following proposition relates the Nash equilibrium of the 2n-player convex game to the RQE of the
+action-dependent risk averse game.
+Proposition 2. If (π∗, p∗) is a Nash equilibrium of the 2n-player game, then π∗is a RQE of Game (8).
+Furthermore, if π∗is a RQE of the action-dependent risk averse game, then (π∗, p∗) is a Nash equilibrium of
+the 2n-player game, where:
+p∗
+i,j = arg
+min
+pi,j∈P−i
+¯Ji,j(π∗, pi,j)
+(30)
+The proof of this result follows by exactly the same arguments as the proof of Proposition 1 and is
+therefore omitted for brevity.
+Given these results we now prove the equivalent of Theorem 7 for the action-dependent formulation. We
+note that by a more careful accounting of terms, a stronger guarantee is possible in the 2-player regime
+similar to Theorem 3.
+Theorem 8. Assume the penalty functions that give rise to the players’ risk preferences Di(·, ·) are jointly
+convex in both their arguments. If σ is a CCE of the n-player game and for each i:
+ϵi ≥
+X
+j
+ξ∗
+i,j
+then the marginal strategies ˆπi = Eσ[πi] constitute a RQE of the action-dependent risk-averse game.
+25
+
+Note that one point of departure for this result from the previous results is that σ is now the CCE of the
+original 2-player convex game defined on the objective functions f ϵ1
+1
+and f ϵ2
+2 .
+Proof. To begin, let σ be a CCE of the convex game played on f ϵi
+i , where:
+f ϵi
+i (πi, π−i) =
+X
+j∈Ai
+πi(j)
+ 
+sup
+pi,j∈P−i
+−⟨Ri,j, pi,j⟩−Di(pi,j, π−i)
+!
++ ϵiν(πi).
+By definition of a CCE, we must have that:
+Eσ[f ϵi
+i (πi, π−i)] ≤Eσ[f ϵi
+i (π′
+i, π−i)] ∀π′
+i ∈∆Ai,
+for all i = 1, ..., n. Given σ, we can define a new distribution σ′ as (π, p∗(π)) where
+p∗
+i (π) = arg min
+pi∈P−i
+¯Ji(π, pi),
+with ξi,j = ξ∗
+i,j. We now claim that, by construction, σ′ is a CCE of the 2n-player game. To see this, we
+observe that
+Eσ′[Ji(πi, π−i, p)] = Eσ[f ϵi
+i (πi, π−i)] ≤Eσ[f ϵi
+i (π′
+i, π−i)] = Eσ′[Ji(π′
+i, π−i, p)] ∀πi ∈∆Ai,
+where the first equality follows by construction of σ′, the second from the definition of a CCE, and the third
+from the fact that the value of p∗(π) only depends on π−i and not π′
+i.
+Similarly, we can show the same result for all the players pi. By simply applying Jensen’s inequality, we
+can see that
+Eσ′[ ¯Ji(π, pi)] = Eπ∼σ
+
+min
+pi,j
+¯Ji(π, pi,j)
+
+≤Eσ′[ ¯Ji(π, p′
+i)] ∀p′
+i ∈P−i.
+Thus we can observe that σ′ is a CCE of the 2n-player game. To show that the marginals of π in this CCE
+are Nash equilibria of the convex game (and thus RQE), we proceed as before. Using the fact that D(pi,j, π−i)
+is jointly convex in each of its arguments, we can apply Jensen’s inequality to find that:
+Eσ′[Ji(πi, π−i, p)] ≤Ji(π′
+i, ˆπ−i, ˆp)
+∀π′
+i ∈∆Ai,
+where ˆpi,j = Eσ′[pi,j] and ˆπi = Eσ′[πi]. Similarly, by our choice of ξi,j = ξ∗
+i,j we can find that:
+Eσ′[ ¯Ji(π, pi)] ≤¯Ji(ˆπ, p′
+i)
+∀p′
+i ∈P−i.
+Now, we can observe that:
+X
+i
+Ji(ˆπi, ˆπ−i, ˆp) + ¯Ji(ˆπ, ˆpi) ≥Eσ′
+"X
+i
+Ji(πi, π−i, p) + ¯Ji(π, pi)
+#
+=
+X
+i
+Eσ′
+
+
+
+ϵi −
+X
+j
+ξ∗
+i,j
+
+νi(πi)
+
+
+≥
+X
+i
+
+ϵi −
+X
+j
+ξ∗
+i,j
+
+νi(ˆπi)
+=
+X
+i
+Ji(ˆπi, ˆπ−i, ˆp) + ¯Ji(ˆπ, ˆpi),
+where the third inequality follows by the Jensen’s inequality. By the same rationale as in the proof of
+Theorem 7 we can now conclude that ˆπ is a Nash equilibrium-joint strategy profile-of the 2n player game and
+thus (due to Proposition 2) an RQE of the action-dependent risk averse game.
+26
+
+Similar to the aggregate risk regime, one can instantiate the previous theorem with specific risk-metrics
+and quantal response functions to illustrate the class of action-dependent RQE that are guaranteed to be
+computationally tractable. Importantly, this class once again only depends on the levels of risk averse and
+quantal response but not on the underlying structure of the game. However, note that the requirements are
+more stringent since the requirements on the ξ∗’s are stronger since they must ensure joint convexity of ¯Ji.
+Nevertheless further algebraic manipulations would allow one to recover analogues of Corollaries 6.1 and 6.2
+for the action-dependent risk case as well. For brevity we leave these as exercises to the reader.
+C
+Proof of Theorem 5
+Armed with the estimated reward and transition kernel in (20), we can construct an empirical MG d
+MG =
+{H, S, {Ai}i∈[n], { bRi,h, bPi,h}i∈[n],h∈[H]}. Analogously, for any joint policy π, we denote the corresponding
+risk-averse loss functions or the payoff matrices as {bV ϵi
+i,h(π)} and { bQϵi
+i,h(π)}, respectively.
+To begin with, recall the goal is to show that
+max
+(i,s,h)∈[n]×S×[H]
+n
+V ϵi
+i,h(bπ; s) −
+min
+π′
+h:S7→∆Ai
+V ϵi
+i,h((π′
+h, bπi,−h) × bπ−i; s)
+o
+≤δ.
+(31)
+For convenience, we denote
+∀(i, h, s) ∈[n] × [H] × S :
+V ⋆,ϵi
+i,h (bπ−i; s) =
+min
+π′
+i,h:S7→∆Ai
+V ϵi
+i,h((π′
+i,h, bπi,−h) × bπ−i; s)
+(32)
+and define the best-response policy π⋆
+i := {π⋆
+i,h : S 7→∆Ai}h∈[H] so that
+∀(i, h, s) ∈[n] × [H] × S :
+π⋆
+i,h(s) := argminπ′
+i:S7→∆AiV ϵi
+i,h((π′
+i,h, bπi,−h) × bπ−i; s).
+(33)
+Then, for any i ∈[n], the gap V ϵi
+i,1(bπ) −V ⋆,ϵi
+i,1 (bπ−i) can be decomposed as follows:
+V ϵi
+i,h(bπ) −V ⋆,ϵi
+i,h (bπ−i)
+= V ϵi
+i,h(bπ) −bV ϵi
+i,h(bπ) +
+
+bV ϵi
+i,h(bπ) −bV ϵi
+i,h((π⋆
+i,h, bπi,−h) × bπ−i)
+
++
+
+bV ϵi
+i,h((π⋆
+i,h, bπi,−h) × bπ−i) −V ϵi
+i,h((π⋆
+i,h, bπi,−h) × bπ−i)
+
+≤V ϵi
+i,h(bπ) −bV ϵi
+i,h(bπ) +
+
+bV ϵi
+i,h((π⋆
+i,h, bπi,−h) × bπ−i) −V ϵi
+i,h((π⋆
+i,h, bπi,−h) × bπ−i)
+
+≤∥V ϵi
+i,h(bπ) −bV ϵi
+i,h(bπ)∥∞1 +
+bV ϵi
+i,h((π⋆
+i,h, bπi,−h) × bπ−i) −V ϵi
+i,h((π⋆
+i,h, bπi,−h) × bπ−i)
+
+∞1
+(34)
+where the first inequality holds by applying Theorem 4 with the estimated RAMG d
+MG so that bπ is a RQE
+of d
+MG, i.e.,
+bV ϵi
+i,h(bπ) ≤
+min
+π′
+i,h:S7→∆Ai
+bV ϵi
+i,h((π′
+i,h, bπi,−h) × bπ−i) ≤bV ϵi
+i,h((π⋆
+i,h, bπi,−h) × bπ−i).
+(35)
+To continue, we divide the proof into several key steps.
+Step 1: developing the recursion.
+To control the two terms in (34), we consider that for any joint
+policy π and time step (s, h) ∈S × [H],
+V ϵi
+i,h(π; s) −bV ϵi
+i,h(π; s)
+(i)
+= gπ
+pol,i (Qi,h(π; s, :)) −gπ
+pol,i
+
+bQi,h(π; s, :)
+
+(ii)
+= sup
+pi∈Pi
+−πi(s)T genv,i (Ri,h(s, :), Ph,s,:, Vi,h+1(π)) pi −Dpol,i(pi, π−i(s))
+27
+
+−
+
+sup
+pi∈Pi
+−πi(s)T genv,i
+
+Ri,h(s, :), bPh,s,:, bVi,h+1(π)
+
+pi −Dpol,i(pi, π−i(s))
+
+≤sup
+pi∈Pi
+−πi(s)T h
+genv,i (Ri,h(s, :), Ph,s,:, Vi,h+1(π)) −genv,i
+
+Ri,h(s, :), bPh,s,:, bVi,h+1(π)
+i
+pi
+
+≤
+genv,i (Ri,h(s, :), Ph,s,:, Vi,h+1(π)) −genv,i
+
+Ri,h(s, :), bPh,s,:, bVi,h+1(π)
+
+∞,
+(36)
+where (i) holds by the definition in (16) and (13), and (ii) follows from the definition of gπ
+pol,i(·) in (12).
+To continue, we know that for any (s, a) ∈S × A:
+genv,i (Ri,h(s, a), Ph,s,a, Vi,h+1(π)) −genv,i
+
+Ri,h(s, :), bPh,s,a, bVi,h+1(π)
+
+=
+Ri,h(s, a) −sup
+e
+P ∈∆S
+−ePVi,h+1(π) −Denv,i( eP, Ph,s,a)
+−
+ 
+Ri,h(s, a) −sup
+e
+P ∈∆S
+−eP bVi,h+1(π) −Denv,i( eP, bPh,s,a)
+! 
+=
+ −sup
+e
+P ∈∆S
+
+−ePVi,h+1(π) −Denv,i( eP, Ph,s,a)
+
++ sup
+e
+P ∈∆S
+
+−eP bVi,h+1(π) −Denv,i( eP, bPh,s,a)
+ 
+(i)
+≤sup
+e
+P ∈∆S
+ −
+
+−ePVi,h+1(π) −Denv,i( eP, Ph,s,a)
+
++
+
+−eP bVi,h+1(π) −Denv,i( eP, bPh,s,a)
+ 
+(ii)
+=
+sup
+e
+P ∈∆S
+ eP
+
+Vi,h+1(π) −bVi,h+1(π)
+  + sup
+e
+P ∈∆S
+Denv,i( eP, Ph,s,a) −Denv,i( eP, bPh,s,a)
+
+≤
+Vi,h+1(π) −bVi,h+1(π)
+
+∞+ L
+Ph,s,a −bPh,s,a
+
+1 .
+(37)
+where the first equality holds by (18), (i) holds by the supreme operator is 1-Lipschitz, and the last inequality
+holds by the assumption that Denv,i(·) is L-Lipschitz with respect to the ℓ1 norm for the second argument,
+with any fixed first argument. We mention an important note here. As remarked earlier, similar sample
+complexity guarantees can be shown when {Denv,i}i∈[n] are defined as ϕ-divergence and allude to analyses
+ideas in [54,65,73] to modify this step.
+Plugging in (37) back to (36) and applying the results for all s ∈S yields
+V ϵi
+i,h(π) −bV ϵi
+i,h(π)
+
+∞≤
+Vi,h+1(π) −bVi,h+1(π)
+
+∞+ L
+max
+(s,a)∈S×A
+Ph,s,a −bPh,s,a
+
+1
+|
+{z
+}
+=:lh
+=
+V ϵi
+i,h+1(π) −bV ϵi
+i,h+1(π)
+
+∞+ Llh.
+(38)
+Applying above fact recursively for h, h + 1, · · · , H, we arrive at
+V ϵi
+i,h(π) −bV ϵi
+i,h(π)
+
+∞≤
+V ϵi
+i,h+2(π) −bV ϵi
+i,h+2(π)
+
+∞+ Llh + Llh+1
+≤· · · ≤
+V ϵi
+i,H+1(π) −bV ϵi
+i,H+1(π)
+
+∞+ L
+H
+X
+t=h
+lt
+≤L
+H
+X
+t=h
+lt,
+(39)
+where the last inequality holds since V ϵi
+i,H+1(π) = bV ϵi
+i,H+1(π) = Vi,h+1(π) = bVi,h+1(π) = 0 for any policy π.
+Step 2: controlling the errors {lt}.
+The remainder of the proof will focus on controlling (39). Applying [3,
+Lemma 17] over all (h, s, a) ∈[H] × S × A, we achieve the union bound that with probability at least 1 −δ,
+max
+(h,s,a)∈[H]×S×A
+Ph,s,a −bPh,s,a
+
+1 ≤
+v
+u
+u
+t14S
+N log
+ 
+2S Q
+i∈[n] AiH
+δ
+!
+.
+(40)
+28
+
+Applying (40), we arrive at with probability at least 1 −δ,
+∀h ∈[H], lh =
+max
+(s,a)∈S×A
+Ph,s,a −bPh,s,a
+
+1 ≤
+v
+u
+u
+t14S
+N log
+ 
+2S Q
+i∈[n] AiH
+δ
+!
+.
+(41)
+Inserting (41) into (39) gives
+V ϵi
+i,h(π) −bV ϵi
+i,h(π)
+
+∞≤L
+H
+X
+t=h
+lt ≤HL
+v
+u
+u
+t14S
+N log
+ 
+2S Q
+i∈[n] AiH
+δ
+!
+.
+(42)
+Finally, recalling (34) yields
+V ϵi
+i,1(bπ) −V ⋆,ϵi
+i,1 (bπ−i) ≤∥V ϵi
+i,h(bπ) −bV ϵi
+i,h(bπ)∥∞1 +
+bV ϵi
+i,h((π⋆
+i,h, bπi,−h) × bπ−i) −V ϵi
+i,h((π⋆
+i,h, bπi,−h) × bπ−i)
+
+∞1
+≤8HL
+v
+u
+u
+t S
+N log
+ 
+2S Q
+i∈[n] AiH
+δ
+!
+1,
+(43)
+where the last inequality holds by applying (42) with π = bπ or π = (π⋆
+i,h, bπi,−h) × bπ−i.
+□
+D
+Experiment Details
+We provide more results and details of our experiments in this section.
+D.1
+Matrix Games
+Matching pennies matrix games:
+Two players in matching pennies simultaneously choose heads or
+tails, and a player wins (the other player loses) a payoff if their choices match. The detailed payoff matrices
+are provided in Tables 2 and 3. These games from [28,59] are focused on showcasing risk-averse solutions
+by developing payoffs strategically such that either player deviating from their choice of plays will cause
+hefty damage in terms of payoff to the other player. So, both players prefer a ‘safer’ choice of plays, thus
+highlighting both risk-averse and bounded rational preferences.
+Algorithm and Result details:
+We use the penalty functions KL and reverse KL with the regularizers
+log barrier and negative entropy, as mentioned in Table 1, for our experiments. To be precise, we consider the
+following two experimental setups: (a) For j = 1, 2, we let νj(p) = −P
+i log(pi) and Dj(p, q) = (1/τj)KL(p, q).
+(b) For j = 1, 2, we let νj(p) = P
+i pi log(pi) and Dj(p, q) = (1/τj)KL(q, p). We note that the parameters
+τ −1
+j
+play the same role as ξj’s (formalized in Corollaries 6.1 and 6.2), i.e., the players take more risk neutral
+decisions as τj →0. With the perfect information, we use the vanilla projected gradient descent with constant
+stepsizes [6] as the no-regret algorithm to arrive at the CCE σ of the four player game. We use consistent
+stepsizes between 10−4 and 10−3 for all our runs iterating through 104 steps of gradient descent. We notice
+2% deviations in sup-norm for the algorithm policies in about 20 runs.
+D.2
+Markov Games
+Here, we showcase results corresponding to ℓ1 metric for the environmental uncertainty metric Denv,i for the
+grid-world problem. We consider the same Cliff-Walk environment described in Section 4.3 under some minor
+modifications discussed here. The rewards for falling into the cliff is now −100 and for reaching the goal is 20.
+Agents/players are rewarded a small negative reward of −0.1 for taking each step. The episode horizon H is
+100. The algorithm details is the same as described in Section 4.3.
+We present two results in Fig. 3 that has similar implications as in Fig. 2. We make one important
+observation about these agents equipped with ℓ1 environmental uncertainty metric. These agents are less
+risk-averse towards the cliff in horizontal grid axis compared to the results Fig. 2 corresponding to the KL
+environmental uncertainty metric. We do not investigate the effects of different environmental uncertainty
+metrics in this work and postpone to address in future research directions.
+29
+
+Game 1
+Game 2
+Game 3
+L
+R
+U
+10
+10
+0
+18
+D
+9
+9
+10
+8
+L
+R
+U
+9
+4
+0
+13
+D
+6
+7
+8
+5
+L
+R
+U
+8
+6
+0
+14
+D
+7
+7
+10
+4
+Game 4
+Game 5
+Game 6
+L
+R
+U
+7
+4
+0
+11
+D
+5
+6
+9
+2
+L
+R
+U
+7
+2
+0
+9
+D
+4
+5
+8
+1
+L
+R
+U
+7
+1
+1
+7
+D
+3
+5
+8
+0
+Game 7
+Game 8
+Game 9
+L
+R
+U
+10
+12
+4
+22
+D
+9
+9
+14
+8
+L
+R
+U
+9
+7
+3
+16
+D
+6
+7
+11
+5
+L
+R
+U
+8
+9
+3
+17
+D
+7
+7
+13
+4
+Game 10
+Game 11
+Game 12
+L
+R
+U
+7
+6
+2
+13
+D
+5
+6
+11
+2
+L
+R
+U
+7
+4
+2
+11
+D
+4
+5
+10
+1
+L
+R
+U
+7
+3
+3
+9
+D
+3
+5
+10
+0
+Table 2: Payoff Matrices from [59]. In each column, the number above (below) is the payoff for player 1
+(player 2).
+L
+R
+U
+200
+160
+160
+10
+D
+370
+200
+10
+370
+Table 3: Game 4 Payoff Matrix from [28]. In each column, the number above (below) is the payoff for player
+1 (player 2).
+30
+
+Figure 3:
+Cliff-Walk results for the ℓ1 environmental uncertainty metric.
+31

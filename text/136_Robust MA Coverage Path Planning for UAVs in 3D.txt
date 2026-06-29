@@ -1,0 +1,663 @@
+Robust Multi-Agent Coverage Path Planning for Unmanned Airial
+Vehicles (UAVs) in Complex 3D Environments with Deep Reinforcement
+Learning*
+Julian Bialas1, Mario Doeller2 and Robert Kathrein3
+Abstract— Multi-agent coverage path planning (MACPP)
+with unmanned aerial vehicles (UAVs) is an essential task in
+several real-world applications, such as environmental moni-
+toring, surveillance, and search and rescue missions. Existing
+MACPP algorithms suffer from limitations, such as the inability
+to generalize over all system parameters, long computational
+time, and limited applicability in dynamic environments. In
+this study, we propose a novel MACPP framework based on
+proximal policy optimization (PPO), a model-free reinforcement
+learning algorithm. Our framework provides a dynamic 3D
+machine learning-based approach that can generalize over
+all system parameters, such as target zones, agent positions,
+battery levels, and other critical factors. Hence, the framework
+offers several advantages, including efficient and effective path
+planning, real-time application on hardware, and applicability
+in complex 3D structures such as buildings or alpine terrain. We
+demonstrate the feasibility and effectiveness of our approach
+by successfully applying it in real-time on hardware. Our
+experimental results show that our proposed framework can
+effectively handle 3D structures and react to changes mid-flight.
+I. INTRODUCTION
+Unmanned aerial vehicles (UAVs) have become an in-
+creasingly popular tool for a wide range of applications,
+including environmental monitoring, search and rescue oper-
+ations, and military surveillance. In many of these applica-
+tions, coverage path planning (CPP) is an essential task that
+must be performed by the UAVs [1]. CPP involves finding a
+path that covers a given area with minimal overlap, ensuring
+that the coverage of the target area (TA) is maximized within
+the constraints. Multi-agent CPP (MACPP) is a variant of
+this problem where multiple UAVs must work together to
+cover a larger area more efficiently. The MACPP problem
+is challenging because it requires solving the NP-hard CPP
+problem while ensuring coordination with other agents [2].
+In order to react to unpredictable changes in the mission,
+such as an unforeseen termination or collisions of an agent
+or changes in the TA, the replanning of the trajectory needs
+to be feasible in real-time.
+*This work was supported by K-Regio as part of the ”Wasserstoff
+Drohne” project (ID: 2020-23)
+1Julian Bialas is with FH Kufstein Tirol – University of Applied Sciences,
+6330 Kufstein, Austria and University of Passau, 94032 Passau, Germany
+Julian.Bialas@fh-kufstein.ac.at
+2Mario
+Doeller
+is
+with
+FH
+Kufstein
+Tirol
+–
+Uni-
+versity
+of
+Applied
+Sciences,
+6330
+Kufstein,
+Austria
+Mario.Doeller@fh-kufstein.ac.at
+3Robert
+Kathrein
+is
+with
+FH
+Kufstein
+Tirol
+–
+University
+of
+Applied
+Sciences,
+6330
+Kufstein,
+Austria
+and
+University
+of
+Pas-
+sau, 94032 Passau, Germany and is funded by Josef Ressel Cen-
+ter for multimedia analysis in the mobility domain (Vision2Move)
+Robert.Kathrein@fh-kufstein.ac.at
+Researchers have proposed several genetic algorithm-
+based MACPP methods that perform well in complex 3D
+environments. For instance, the authors of [3] proposed a
+sampling-based algorithm that uses a grid-based representa-
+tion of the environment and uses an encoding and decoding
+strategy for the state processing. Similarly, Li et al. proposed
+a genetic algorithm-based method that samples viewpoints to
+optimize coverage and path lengths for multiple UAVs [4].
+While these methods perform well in offline environments,
+they have a long calculation time and cannot adapt to
+dynamic environments.
+Linear
+optimization-based
+methods
+have
+also
+been
+proposed for MACPP. Melo et al. proposed a linear
+optimization-based method that is combined with a heuristic
+to find the optimal paths for multiple UAVs [5]. This method
+works well in 3D environments and can handle dynamic
+environments by reoptimzation. However, it also has a high
+computational time, and the model may not be scalable for
+large-scale problems. To overcome the limitation of static
+approaches, machine learning-based approaches seems to
+be a promising alternative. The authors of [6] proposed a
+MACPP algorithm based on Multi-Agent Deep Deterministic
+Policy Gradient (MADDPG) algorithm to solve the CPP
+problem. The MADDPG algorithm learns a centralized critic
+and decentralized actor networks for each UAV, which can
+generalize well over map parameters. However, this method
+is only applicable to 2D maps and may not be applicable in
+3D environments as the scanning of vertical walls is not
+guaranteed (e.g for inspection). The same applies to the
+framework proposed by Bayerlein et al. [7], which is based
+on deep reinforcement learning. Another machine learning-
+based MACPP algorithm is proposed in [8]. This method
+only assigns separated target areas to the respective agents
+with no dynamic flight pattern within the region.
+Our framework is based on our previous work as described
+in [9], where we demonstrated the deep reinforcement model
+on a single-agent system. This paper extends the previous
+work with the following research contributions:
+• Extend the single agent system to a dynamic decentral-
+ized executed multi-agent CPP system.
+• Introduce a communication procedure to share outdoor
+coverage information.
+• Indoor experiments to simulate the ability of the system
+to react to unpredictable events.
+2023 IEEE International Conference on Robotics and Biomimetics (ROBIO) | 979-8-3503-2570-6/23/$31.00 ©2023 IEEE | DOI: 10.1109/ROBIO58561.2023.10354596
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+II. METHODS
+A. Problem Formulation
+This study employs a three-dimensional grid map, denoted
+as m ∈M, where M = Bw×d×h and w, d, h ∈N represent
+the map’s width, depth, and height. Each element in the
+boolean matrix m signifies the presence or absence of an
+element of the point cloud in the corresponding cube in the
+environment. The function y : T →M 6 represents the target
+cells at time-step t ∈T, where T = {t0, t1, . . . , tterminal}
+denotes the set of possible time-steps. The value range M 6
+corresponds to each target cube in the map, possessing six
+faces that can be covered individually. The grid map is
+represented by a three-dimensional matrix of size M. The
+presence of n ∈N \ {0, 1} agents is assumed in the map. At
+each time-step t ∈T, the agents cover the area specified
+by v : T →M 6, with a precise definition provided in
+reference [9]. The TA that is yet to be covered is obtained
+using y(t+1) = y(t)∧¬v(t), as described in reference [10].
+The aim of the study is to maximize the coverage of the TA
+while beginning and ending in a designated start-and-landing
+zone (SLZ), avoiding no-flying zones (NFZ), and taking the
+battery level into account.
+B. Deep Reinforcement Learning Model
+The model under consideration can be characterized as a
+Decentralized Partially Observable Markov Decision Process
+(Dec-POMDP) [11]. The Dec-POMDP is represented by the
+tuple (S, {Ai} , {Ωi} , Ta, O, R), where
+S =
+M
+|{z}
+3D gridmap
+× M 6
+|{z}
+TA
+× Bw×d
+| {z }
+NFZ
+× Bw×d
+| {z }
+SLZ
+×
+M
+|{z}
+positions
+×
+Nn
+|{z}
+power levels
+(1)
+is the state space, and i ∈U with U = {0, ..., n −1}
+represents the agent of interest. The action space Ai =
+{0, 1, 2, 3, 4, 5} consists of valid actions for the agents, such
+as flying up, down, north, east, west, and south. The observa-
+tion space for each agent is denoted by Ωi = {˜oi(s)|s ∈S},
+where the function ˜oi : S →Ωi extracts the information
+about a given state that is observable by the agent i. The
+function Ta : S × S →[0, 1] ; (s, s′) 7→Ta(s, s′) determines
+the probability of successfully transitioning from state s ∈S
+to state s′ ∈S by taking actions a ∈Ai. Moreover, the
+function Oi : S × Ωi →[0, 1] specifies the probability of
+agent i ∈U observing the outcome oi ∈Ωi in the state
+s ∈S. In this framework, it can be mathematically expressed
+as:
+O(s, oi) =
+ 1, if
+oi = ˜oi(s)
+0,
+otherwise
+.
+(2)
+The reward function R : S × S →R; (s, s′) 7→R(s, s′)
+describes the immediate reward obtained by transitioning
+from state s ∈S to s′ ∈S and is defined in section
+II-C.3. The objective is to find an offline policy function
+π : Ai × S →[0, 1] ; (ai, s) 7→π (ai, s|θ) that maximizes
+E [Rt] for a trajectory {s0, . . . , stterminal}, generated from
+sampling actions according to the probability distributions
+computed by π, with θ being the policy parameters. Here,
+Rt = Ptterminal−t
+k=0
+γkrt+k is the discounted, cumulative reward
+starting from time-step t ∈T, where rt = R (st, st+1) =
+P
+i∈U R (st, π (ait, st|θ)) is the immediate reward and γ the
+discount factor.
+It’s worth noting that the reward function is based on all
+agents, making the system function as an online learning
+algorithm. While the training is done centralized, we execute
+the model decentralized as displayed in Figure 1. In policy-
+based approaches, the respective policy is typically approx-
+imated by gradient descent and updating θ in the direction
+∇θlog π (at, st|θ) Rt.
+(3)
+As described in [9] the objective function to optimize is
+given by:
+LCLIP (θ) = bEt [min (rt (θ) A(at, st),
+clip (rt (θ) , 1 −ϵ, 1 + ϵ) A(at, st))] .
+(4)
+C. Environment and Motion Model
+We utilize the environment and motion model proposed
+in [9] for our multi-agent framework. The agent is assumed to
+be equipped with an observation sensor on each side and we
+impose orientation-aware coverage such that each sensor can
+only cover the area that is opposite to its viewing direction.
+For instance, the downward-facing sensor can only cover
+cells that are facing upwards. Moreover, the coverage area
+of a single observation sensor is assumed to be a pyramid
+with a floor space of 5 × 5 cells and a height of three. If a
+target cell’s view is blocked, it is not considered as covered.
+The motion model is adapted from [10] and extended by
+incorporating the up and down actions. If the agent takes
+an action that leads to a collision with the environment
+or another agent or enters into a no-fly zone (NFZ), the
+agent will hover instead. This motion model is based on the
+assumption of a safety controller on top of the reinforcement
+learning model. Additionally, we have developed a safe land-
+ing algorithm to ensure optimal utilization of the movement
+budget as defined in ??.
+Each agent has a constraint on its power consumption,
+similar to [10]. A movement budget b : T × U →N is given
+to each agent, representing its power level. The movement
+budget is decremented with each time-step.
+1) Observation:
+In a Dec-POMDP, each agent is granted only partial access
+to the data within a state. We use this framework in order
+to achieve scalability as described in [10]. Each observation
+consists of four components:
+• A 3D local map
+L3D : S × U →Bz×z×z×1
+|
+{z
+}
+m3D
+× Bz×z×z×6
+|
+{z
+}
+TA3D
+,
+(5)
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+where
+(m3D)k,l,r =
+
+
+
+
+
+
+
+
+
+
+
+mk+pi0−z+1,l+pi1−z+1,r+pi2−z+1
+if k + pi0 −z + 1 ∈{0, ...w} ∧
+l + pi1 −z + 1 ∈{0, ...d} ∧
+r + pi2 −z + 1
+∈
+{0, ...h}
+1,
+otherwise
+.
+(6)
+is the local 3D surrounding of the agent i with its
+position pi
+∈N3. The local target area TA3D is
+computed analogical, only with zero as the padding
+value. This step is the same as extending the functions
+fcenter and flocal in [10] to a third dimension.
+• A 2D local map
+L2D : S × U →Bz2×z2
+| {z }
+TA2D
+× Bz2×z2
+| {z }
+NFZ2D
+× Bz2×z2
+| {z }
+pos2D
+(7)
+combining the local 2D NFZ and the local target sur-
+roundings to a z2 by z2 by 3 tensor. To map the 3D TA
+y(t) to a 2D TA, the values are summed up over the
+exposition and the height:
+y2D(t)i,j =
+h−1
+X
+k=0
+6
+X
+l=1
+y(t)i,j,k,l,
+(8)
+where the indices k and l, represent the height and
+exposition index, respectively. The positions-layer to
+feed the locations of all agents to the network is
+computed by
+(pos2D)k,l =
+ 1, if
+S
+i∈U ((pi)k,l = (k, l))
+0,
+otherwise
+. (9)
+• A 2D global map
+G2D : S × U →R⌊c
+g ⌋×⌊c
+g ⌋
+|
+{z
+}
+TAG
+× R⌊c
+g ⌋×⌊c
+g ⌋
+|
+{z
+}
+NFZG
+× R⌊c
+g ⌋×⌊c
+g ⌋
+|
+{z
+}
+posG
+,
+(10)
+where c = 2w −1, that combines the 2D NFZ, the TA
+and the positions layer to a tensor that is the result of
+the preprocessing step applied on the other maps and
+an additional pooling step described in [10]. Here, g
+represents the scaling factor of the map.
+• The movement budget
+The agent can also observe its movement budget
+b(t, i) ∈N.
+Hence, the function transforming the state to the observa-
+tion is defined by
+˜oi(st) = (L3D(st, i), L2D(st, i), G2D(st, i), b(t, i))
+(11)
+2) Policy: In our model, the actor-network approximates
+the policy function π while the critic network approximates
+the state-value function V . Our model architecture follows
+a sequence where all three observation maps are passed
+through a convolutional layer, followed by flattening. The
+flattened maps and the movement budget are concatenated
+to form the first layer of the fully connected network. Two
+hidden layers follow the first layer, and the final output of the
+action probabilities is obtained using the softmax activation
+function. The critic model architecture only differs from
+TABLE I: Hyperparameters used for the training/model
+Parameter
+Value
+w, d, h
+32, 32, 10
+movement budget range
+50 - 200
+ϵ
+0.2
+γ
+0.99
+training steps
+6e6
+g
+3
+c
+9
+c2
+16
+the actor model in the last layer, where only one neuron
+representing the state value is contained in the layer. As
+proposed in [9], a safe landing mechanism based on the
+Dijkstra algorithm is built on top of the policy. s
+3) Reward Function:
+The reward function R(s, s′) is
+defined by four components. Firstly, a positive constant is
+given for each newly covered cell. Secondly, a positive
+constant is assigned if full coverage of the area is achieved
+within the current time-step. Thirdly, a negative constant is
+given if the agent collides with the environment or other
+agents. Lastly, a negative reward is assigned if the agent tries
+to navigate into an NFZ. This reward function is designed
+to encourage the agent to explore new areas, achieve full
+coverage efficiently, avoid collisions, and adhere to flying
+regulations.
+D. Training Process
+In order to enhance the generalization of the model,
+it is trained on a set of randomly generated map repre-
+sentations. These maps are created by randomly sampling
+geometric shapes to generate the respective zones. The three-
+dimensional target zone is obtained by reversing the equation
+defined in (8). The height information used in the model is
+derived from data collected by the Austrian government as
+part of the Airborne Laser Scan project1. From a collection
+of point clouds, one is randomly selected and then restricted
+to a region of interest. The desired map size is determined
+by applying average pooling. Additionally, the map size can
+be further reduced by increasing the pooling filter size and
+stride. The movement budget for each episode is determined
+by drawing a sample from a predefined interval with a
+uniform distribution. Once the model has been trained for a
+specified number of episodes on a randomly generated map,
+a new one is generated. An overview of the final parameters
+is provided in Table I.
+E. Communication and execution
+Figure 1 illustrates the concurrent execution of three dis-
+tinct processes within each agent during the transition of the
+model onto hardware. Following the initiation of a mission
+by the user, the agent continually transmits its positional data,
+ongoing coverage status denoted by TA ∈M 6, and the map
+1https://www.tirol.gv.at/fileadmin/themen/sicherheit/geoinformation
+/Laserscandaten/ALS Tirol Onlinebericht.pdf
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+Fig. 1: Processes simultaneously running on each agent
+ID along with the corresponding map configuration. This
+transmission occurs iteratively at intervals of
+∆s =
+tbase
+n + narea
+seconds. In this context, tbase represents a predetermined
+baseline temporal value, n signifies the count of agents, and
+narea represents the expanse of the environmental area in
+hectares.
+Upon the user’s selection or modification of a polygon
+for the TA or SLZ, a new map ID is generated. This
+map ID is then linked to the relevant map configuration,
+delineating the minimum bounding rectangle encompassing
+the pertinent GPS locations. The process responsible for
+receiving communications from other agents and the user
+involves a reconstruction of the environment, transferring
+extant coverage information to the novel environmental map
+should there be a disparity in map IDs. In instances of
+updates, the agent loads specific point cloud files into RAM
+to facilitate the creation of elevation information for the map.
+Ultimately, the execution process involves the operation
+of the deep reinforcement learning model, followed by
+the issuance of control commands to the flight controller
+subsequent to their conversion into GPS commands.
+It is important to note that the efficacy of this framework
+is limited to smaller groups of agents, as the volume of mes-
+sages escalates rapidly with an increasing number of agents.
+In the case of larger agent groups, the transmission process
+should exclusively target neighboring agents, a subject that
+will be addressed in forthcoming research endeavors.
+Fig. 2: Comparison of the coverage ratio between the single-
+and multi- (n=3) agent system for various movement budgets
+and randomized maps
+III. RESULTS
+A. Simulation Results
+Just like [9] we define the coverage ratio as evaluation
+criteria. In this study, we conducted a Monte Carlo simulation
+[12] to evaluate and compare the performance of a single-
+agent system versus a multi-agent system for coverage path
+planning on randomly generated maps. Figure 2 presents
+the results of the simulation. They demonstrate that the
+multi-agent system’s coverage efficiency increases rapidly
+compared to the single-agent system as the agent is granted
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+more movement budget. This is evident from the steeper
+slope of the multi-agent system’s coverage ratio compared
+to the single-agent system, which indicates its superiority in
+covering more area within a given time frame. Furthermore,
+the smaller interquartile range of the multi-agent system
+suggests a lower variance and higher robustness, suggesting
+the system’s ability to perform consistently under varying
+conditions. Additionally, hardly any outliers in the multi-
+agent system are observed. As the TA, the SLZ, the move-
+ment budget and 3D structure of the map are generated
+randomly, the results of the Monte Carlo simulation also
+demonstrate that the model can generalize over all these
+parameters. Additionally this proves, as the prediction of at
+in the state st is independent of st−1, that the model can
+handle in-flight changes of agents positions or changes in
+the TA.
+B. Experimental Results
+Another objective of this study was to demonstrate the fea-
+sibility of running a dynamic system algorithm on hardware
+and to highlight the advantages of a dynamic system over
+a static one. To achieve this goal, we conducted a series of
+experiments using the Crazyflie 2.1 quadcopters [13] and the
+CrazySwarm framework [14]. The CrazySwarm framework
+is a system architecture that allows the control of an indoor
+swarm of miniature quadcopters with the assistance of a
+motion capture system. This system provides the ability to
+send control commands to selected agents and receive state
+information from them. Due to the limited computational
+resources of the micro UAVs, we ran the processes of the
+agents on a centralized computer with a relatively weak
+processor (i5 5th generation). The control commands and
+agent states were then streamed between the control station
+and the agents.
+In order to demonstrate the effectiveness of the system, we
+conducted an experiment with three agents in a generated
+environment. The results of the experiment are shown in
+Figure 3. The laboratory environment depicted in Figure
+3c displays the Crazyflie 2.1 quadcopters, positioned at
+their designated start and landing zones. The experimental
+procedure involved testing the agents’ capabilities based on
+the RL model, with the aim of covering over 99% of the
+target area while successfully returning to the respective start
+and landing zones within the movement constraints. The
+results of the first test run indicated a success in achieving the
+desired outcomes. The model simulation of the first test run
+is illustrated in Figure 3a, while the corresponding actual tra-
+jectories are displayed in Figure 3b. In a subsequent test run,
+a deliberate attempt was made to disrupt the functioning of an
+agent by intentionally causing the third agent (left trajectory
+in Figure 3d and 3e) to collide. Notably, a dynamic change
+in the trajectory of the remaining agents was observed.
+Therefore, the second agent managed to cover the area that
+was initially assigned to the third agent. This experiment
+demonstrated the adaptability of the model to environmental
+changes, as well as the successful transferability of the model
+to hardware.
+TABLE II: Symbol/color clarification for Fig. 3
+Symbol/Color
+Description
+TA
+NFZ
+SLZ
+Neutral zone
+Starting position of agent
+Terminal position of agent
+Covered cell
+Trajectory of agent
+IV. CONCLUSIONS AND FUTURE WORKS
+A. Conclusions
+In conclusion, our proposed algorithm for multi-agent
+coverage path planning with UAVs based on deep rein-
+forcement learning shows promising results in handling
+the challenges associated with dynamic and complex 3D
+environments. The structural configuration of the framework
+facilitates its applicability across diverse scenarios, such as
+building inspections or search and rescue missions, wherein
+the operator necessitates real-time adjustment of the TA mid-
+flight. The hardware testing validates its suitability for real-
+world applications.
+B. Future Works
+In the subsequent phase of this research, the proposed
+framework for multi-agent coverage path planning with un-
+manned aerial vehicles will be further evaluated in outdoor
+scenarios with autonomous UAVs equipped with companion
+computers. In order to enable complete autonomy of the
+agents, a communication protocol needs to be developed to
+allow the exchange of coverage information among them. To
+achieve this, we plan to utilize the emerging 5G and LoraWan
+communication technologies, which provide high-speed and
+long-range communication capabilities.
+Moreover, to further improve the efficiency and effective-
+ness of the proposed model, additional models that evaluate
+sensor information will be incorporated into the system. This
+integration of sensor models will enable the agents to detect
+changing environmental conditions and optimize coverage
+efficiency based on real-time sensor data. Currently, this
+research is being conducted in the Josef Ressel Center for
+multimedia analysis in the mobility domain, where various
+sensor models are being evaluated.
+REFERENCES
+[1] T. M. Cabreira, L. B. Brisolara, and F. J. Paulo R, “Survey on coverage
+path planning with unmanned aerial vehicles,” Drones, vol. 3, no. 1,
+p. 4, 2019.
+[2] D. Rojas Viloria, E. L. Solano-Charris, A. Mu˜noz-Villamizar, and
+J. R. Montoya-Torres, “Unmanned aerial vehicles/drones in vehicle
+routing problems: a literature review,” International Transactions in
+Operational Research, vol. 28, no. 4, pp. 1626–1657, 2021.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:19 UTC from IEEE Xplore.  Restrictions apply. 
+
+(a) First run simulation results
+(b) First run, actual trajectory
+(c) Lab setup
+(d) Second run, simulation results
+(e) Second run, actual trajectories
+Fig. 3: Experimantal results from the drone lab.
+[3] W. Jing, D. Deng, Y. Wu, and K. Shimada, “Multi-uav coverage path
+planning for the inspection of large and complex structures,” in 2020
+IEEE/RSJ International Conference on Intelligent Robots and Systems
+(IROS), pp. 1480–1486, 2020.
+[4] M. Li, A. Richards, and M. Sooriyabandara, “Reliability-aware multi-
+uav coverage path planning using a genetic algorithm,” in Proceedings
+of the 20th International Conference on Autonomous Agents and
+MultiAgent Systems, pp. 1584–1586, 2021.
+[5] A. G. Melo, M. F. Pinto, A. L. Marcato, L. M. Hon´orio, and F. O.
+Coelho, “Dynamic optimization and heuristics based online coverage
+path planning in 3d environment for uavs,” Sensors, vol. 21, no. 4,
+p. 1108, 2021.
+[6] L. Wang, K. Wang, C. Pan, W. Xu, N. Aslam, and L. Hanzo, “Multi-
+agent deep reinforcement learning-based trajectory planning for multi-
+uav assisted mobile edge computing,” IEEE Transactions on Cognitive
+Communications and Networking, vol. 7, no. 1, pp. 73–84, 2020.
+[7] H. Bayerlein, M. Theile, M. Caccamo, and D. Gesbert, “Multi-uav
+path planning for wireless data harvesting with deep reinforcement
+learning,” IEEE Open Journal of the Communications Society, vol. 2,
+pp. 1171–1187, 2021.
+[8] G. Sanna, S. Godio, and G. Guglieri, “Neural network based algorithm
+for multi-uav coverage path planning,” in 2021 International Confer-
+ence on Unmanned Aircraft Systems (ICUAS), pp. 1210–1217, IEEE,
+2021.
+[9] J. Bialas and M. Doller, “Coverage path planning for unmanned
+aerial vehicles in complex 3d environments with deep reinforcement
+learning,” in 2022 IEEE International Conference on Robotics and
+Biomimetics (ROBIO), pp. 1080–1085, IEEE, 2022.
+[10] M. Theile, H. Bayerlein, R. Nai, D. Gesbert, and M. Caccamo, “Uav
+path planning using global and local map information with deep
+reinforcement learning,” in 2021 20th International Conference on
+Advanced Robotics (ICAR), pp. 539–546, 2021.
+[11] M. Lauri, D. Hsu, and J. Pajarinen, “Partially observable markov
+decision processes in robotics: A survey,” IEEE Transactions on
+Robotics, vol. 39, no. 1, pp. 21–40, 2023.
+[12] R. L. Harrison, “Introduction to monte carlo simulation,” in AIP
+conference proceedings, vol. 1204, pp. 17–21, American Institute of
+Physics, 2010.
+[13] W. Giernacki, M. Skwierczy´nski, W. Witwicki, P. Wro´nski, and
+P. Kozierski, “Crazyflie 2.0 quadrotor as a platform for research
+and education in robotics and control engineering,” in 2017 22nd
+International Conference on Methods and Models in Automation and
+Robotics (MMAR), pp. 37–42, 2017.
+[14] J. A. Preiss, W. Honig, G. S. Sukhatme, and N. Ayanian, “Crazyswarm:
+A large nano-quadcopter swarm,” in 2017 IEEE International Con-
+ference on Robotics and Automation (ICRA), pp. 3299–3304, IEEE,
+2017.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:13:19 UTC from IEEE Xplore.  Restrictions apply. 

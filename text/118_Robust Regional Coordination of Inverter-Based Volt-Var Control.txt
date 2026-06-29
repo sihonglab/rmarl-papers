@@ -1,0 +1,1889 @@
+5420
+IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 6, NOVEMBER 2021
+Robust Regional Coordination of Inverter-Based
+Volt/Var Control via Multi-Agent Deep
+Reinforcement Learning
+Hangyue Liu
+, Graduate Student Member, IEEE, Cuo Zhang
+, Member, IEEE, Qingmian Chai
+,
+Ke Meng, Member, IEEE, Qinglai Guo
+, Senior Member, IEEE,
+and Zhao Yang Dong
+, Fellow, IEEE
+Abstract—Inverter-based Volt/Var control (VVC) methods can
+effectively address issues of voltage deviations and constraint
+violations, as well as reduce network power losses in active distri-
+bution networks. Conventional VVC mainly relies on rule-based,
+mathematical, or heuristic methods. However, these methods can
+be inefﬁcient or even infeasible for large-scale systems, especially
+when operational uncertainties are considered at both spatial
+and temporal scales. To this end, ﬁrstly, this paper formulates
+a multi-region coordinated VVC optimization problem to simul-
+taneously minimize bus voltage deviations and network power
+losses. Furthermore, with the problem being formulated as a par-
+tially observable Markov Game, a multi-agent deep deterministic
+policy gradient (MADDPG) algorithm is modiﬁed to solve this
+problem. Each region, which is a sub-network with a control cen-
+ter, is modeled as an agent and learns to optimize inverter reactive
+power output setpoints through exploration in virtual environ-
+ment and improved neural network training procedure. Spatial
+and temporal uncertainties of photovoltaic power generation
+and loads are modeled by stochastic programming as scenar-
+ios in the MADDPG algorithm. This algorithm can address the
+uncertainties to guarantee solution robustness. Thus, this paper
+eventually proposes a robust regionally coordinated VVC method,
+and numerical simulations indicate high computing efﬁciency and
+robust optimum.
+Index Terms—Active distribution network, deep reinforcement
+learning, regional coordination, uncertainty, Volt/Var control.
+Manuscript received December 16, 2020; revised April 15, 2021 and June
+17, 2021; accepted July 30, 2021. Date of publication August 11, 2021;
+date of current version October 21, 2021. This work was supported in
+part by the ARC Research Hub for Integrated Energy Storage Solutions
+under Grant IH180100020; in part by the UNSW Digital Grid Futures
+Institute; and in part by the UNSW-Tsinghua Collaborative Research Fund—
+Digital Grids. The work of Hangyue Liu and Qingmian Chai was supported
+by the Australian Government Research Training Program Scholarship.
+Paper no. TSG-01869-2020. (Corresponding author: Cuo Zhang.)
+Hangyue
+Liu,
+Cuo
+Zhang,
+Qingmian
+Chai,
+Ke
+Meng,
+and
+Zhao Yang Dong
+are
+with
+the
+School
+of
+Electrical
+Engineering
+and
+Telecommunications, University of New South Wales, Sydney, NSW 2052,
+Australia
+(e-mail:
+hangyue.liu@unsw.edu.au;
+cuo.zhang@unsw.edu.au;
+chaiqm1986@gmail.com; ke.meng@unsw.edu.au; zydong@ieee.org).
+Qinglai
+Guo
+is
+with
+the
+Department
+of
+Electrical
+Engineering,
+Tsinghua
+University,
+Beijing
+100084,
+China
+(e-mail:
+guoqinglai@tsinghua.edu.cn).
+Color versions of one or more ﬁgures in this article are available at
+https://doi.org/10.1109/TSG.2021.3104139.
+Digital Object Identiﬁer 10.1109/TSG.2021.3104139
+NOMENCLATURE
+Volt/Var Control
+M, m
+Set/Index of sub-networks.
+Nm, i, j
+Set/Index of nodes in sub-network m.
+Bm, ij
+Set/Index of branches in sub-network m.
+T, t
+Set/Index of operation timestep.
+U, u
+Set/Index
+of
+temporal
+uncertainty
+scenarios.
+δ
+Inverter reactive power capacity factor.
+vi, ϑi
+Voltage magnitude/angle on bus i.
+rij, xij, Gij, Bij
+Resistance/Reactance/Conductance/
+Susceptance of branch from bus i to
+bus j.
+SPV
+i
+Installed photovoltaic capacity on bus i.
+PPV/d
+i,max, QPV/d
+i,max
+Maximum active/reactive power genera-
+tion/demand on bus i.
+PMPP/d
+i,ζ
+/PMPP/d
+i,ζ
+,
+Q
+d
+i,ζ/Qd
+i,ζ
+Spatial uncertainty upper/lower bound of
+inverter maximum power point/active and
+reactive power demand on bus i.
+PMPP/d
+i,τ
+/PMPP/d
+i,τ
+,
+Q
+d
+i,τ/Qd
+i,τ
+Temporal
+uncertainty
+upper/lower
+bound
+of
+inverter
+maximum
+power
+point/active and reactive power demand
+on bus i.
+pd
+i,t, qd
+i,t
+Active/Reactive power demand.
+pPV
+i,t , qPV
+i,t
+Active/Reactive power generation.
+pMPP
+i,t
+Maximum PV active power at time t.
+ploss
+ij,t
+Active power loss on branch ij at time t.
+ω
+Weighting
+factor
+for
+multi-objective
+programming.
+V/loss
+m,t
+Normalized
+average
+voltage
+devia-
+tion/network power loss in sub-network
+m at time t. (In stochastic programming,
+sum of normalized values under all the
+scenarios.)
+V/loss
+m,t,u
+Normalized
+average
+voltage
+devi-
+ation/network
+power
+loss
+under
+scenario u.
+ϖ viol
+m,t
+Voltage
+violations
+in
+sub-network
+m
+at time t. (In stochastic programming,
+sum of voltage violations under all the
+scenarios.)
+1949-3053 c⃝2021 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 
+
+LIU et al.: ROBUST REGIONAL COORDINATION OF INVERTER-BASED Volt/Var CONTROL
+5421
+ϖ viol
+m,t,u
+Voltage violations under scenario u.
+ξu
+Occurrence probability of scenario u.
+Deep Reinforcement Learning
+Am, Om, O′
+m
+Action/Observation/Next
+Observation
+space of agent m.
+S/S′
+Whole system state/next state space.
+am, a′
+m
+Action/Next action taken by agent m.
+a, a′
+Action/Next action taken by all agents.
+om, o′
+m
+Observation/Next observation by agent m.
+s, s′
+Observation/Next
+observation
+by
+all
+agents.
+m, r
+Reward of agent m / all agents.
+γ
+Reward discount factor.
+πm(om)
+Policy network of agent m, input om,
+output am, network parameter θπm.
+Qm(s, a)
+Q network of agent m, input s and a,
+output Qm, network parameterθQm.
+π′
+m(o′
+m)
+Target policy network of agent m, input
+o′
+m, output a′
+m, network parameterθπ′
+m.
+Q′
+m(s′, a′)
+Target Q network of agent m, input s′ and
+a′, output Q′
+m, network parameterθQ′
+m.
+βπ, βQ
+Learning rate of policy/Q networks.
+dom, dam
+Dimension of observation/action space
+for agent m.
+I. INTRODUCTION
+W
+ITH signiﬁcantly increasing photovoltaic (PV) penetra-
+tion in active distribution networks (ADNs), a variety
+of Volt/Var control (VVC) methods has been developed to
+address voltage regulation issues and to reduce network
+power losses [1]. Amongst these methods, inverter-based
+VVC has been widely investigated, given its increasing avail-
+ability, ﬂexibility of Var compensation, and fast responding
+speed with advanced power electronics technologies. The
+inverter-based VVC can also be designed in collaboration
+with other VVC devices like on-load/under-load tap chang-
+ers (OLTCs/ULTCs) and capacitor banks (CBs) at different
+timescales [2]–[4].
+Inverter-based VVC optimization problems can be solved
+on a central level and such centralized optimization meth-
+ods [5] are developed. However, centralized methods require
+complicated communication networks, and they often suf-
+fer from privacy, complexity, and scalability issues, etc.
+Hence, distributed and decentralized VVC schemes as well
+as hybrid schemes have been growingly studied [6]. In [7]
+and [8], local voltage control strategies of distributed gen-
+eration (DG) units based on Q −V droop control curves
+and a model predictive control framework are developed,
+showing good efﬁciency. In [9] and [10], distributed VVC
+methods based on network partitions are developed, where
+each sub-network conducts optimization according to its
+own information and the data exchanged with neighbor sub-
+networks. In [11], a two-stage dynamic optimal power ﬂow
+model for multiple microgrids is developed, where a distri-
+butionally robust optimization method is applied to address
+uncertainties with an ambiguity set. Distributionally robust
+optimization is advanced in dealing with distributional ambi-
+guity and improving out-of-sample performance [12]. Authors
+in [13] propose a hierarchically-coordinated VVC structure
+combining centralized control dispatching reactive power set-
+points as well as droop functions for PV inverters, and
+decentralized droop control that responds to local voltage vari-
+ations during each central dispatch period. Similarly, a dual
+time-scale coordination of robust reactive power optimization
+and voltage control method is proposed in [3], working with
+ULTCs and CBs on a slow timescale, DG units and static Var
+compensators (SVCs) on a fast timescale. In [4], a three-stage
+VVC method is proposed with the ﬁrst stage coordinating
+OLTC and CBs, the second stage dispatching inverter reactive
+power setpoints, and the third stage implementing decentral-
+ized droop control. In most of the above literature, VVC
+optimization problems are formulated as mathematical prob-
+lems such as quadratic programming (QP) or second-order
+cone programming (SOCP) problems, then solved mathe-
+matically. It is worth noting that although some mathematic
+hybrid control methods have been proposed, these methods
+suffer from heavy computation burdens when systems become
+large and complex, or when uncertainties are considered [14].
+In particular, in some multi-timescale VVC methods such
+as [2], [15], the fast time-scale is still on a 15-minute basis,
+which fails to fulﬁll requirements of fast and robust control
+in ADNs.
+There have been many attempts to improve the compu-
+tational efﬁciency, including applications of reinforcement
+learning (RL) algorithms in solving power system opera-
+tion optimization problems, e.g., [16], [17]. However, the
+conventional RL algorithms suffer from scalability issues
+and the ‘curse of dimensionality’ for both state and action
+spaces [18]. Consequently, system model accuracy is often
+sacriﬁced, or system state and action spaces are usually sim-
+pliﬁed and discretized. To overcome these issues, and with
+advancements in deep (D-) RL in the recent decade, many
+DRL-based algorithms have been developed to solve VVC
+problems. In [19], discrete voltage setpoints are optimized
+with a deep Q network (DQN) algorithm for a VVC model
+including switching shunt elements, OLTC tap ratios, and gen-
+erator terminal voltage setpoints in a transmission system.
+Similarly, [20] applies a batch reinforcement learning algo-
+rithm for optimizing OLTC tap ratio settings. A constrained
+soft actor-critic algorithm has been proposed in [21], to solve
+a VVC problem containing OLTCs, CBs, and voltage regula-
+tors. Reference [22] proposes a two-timescale VVC method,
+in which the slow responsive CB switching control is based on
+DQN, while the fast responsive inverter reactive power con-
+trol is achieved with the SOCP algorithm. Moreover, [23]
+proposes an autonomous voltage control method based on
+DQN for OLTC tap ratios and switching shunt elements, as
+well as a deep deterministic policy gradient (DDPG) algo-
+rithm for voltage setpoints of distributed generators. However,
+most of the above DRL-based methods are applied for cen-
+tralized control frameworks, which are computationally expen-
+sive and suffer from privacy issues. Recently, [24] applies
+a multi-agent DDPG (MADDPG) algorithm [25] to solve
+fully decentralized inverter-based VVC, with each inverter
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 
+
+5422
+IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 6, NOVEMBER 2021
+modeled as an agent. The algorithm outperforms conven-
+tional programming based centralized and decentralized droop
+control methods. Further, an attention enabled MADDPG algo-
+rithm for decentralized inverter-based VVC has been proposed
+in [26], where a multi-agent twin delayed DDPG algorithm
+(MATD3) is developed for voltage regulation with unsuper-
+vised clustering based network partition. The simulations in
+this wok indicate advances over conventional centralized con-
+trol methods. The main advantages of applying an MADDPG
+algorithm is the improved computational efﬁciency with deep
+neural networks that can make decisions in milliseconds,
+regardless scales of distribution systems and complexity of
+operating conditions. Thus, it is scalable to solve decen-
+tralized VVC problems online for large-scale distribution
+networks, compared with conventional mathematical method-
+ologies and RL-based methodologies. Besides, unlike con-
+ventional mathematical methodologies that require accurately
+known models, the MADDPG algorithm is based on model-
+free Markov Game. Therefore, the MADDPG algorithm has
+higher applicability, especially when accurate models are not
+available.
+Nonetheless, temporal intermittencies and spatial variations
+of renewable power generation and loads are still not fully
+considered or addressed in the existing methods. Furthermore,
+most of the above works do not consider the usage of
+historical expert operation data or equivalent which could
+further improve the performance of DRL agents in the train-
+ing process. Considering the above unsolved issues, this
+paper aims to achieve real-time decision making with an
+improved DRL algorithm, and robustly regulate voltages and
+minimize network power losses under spatial and tempo-
+ral uncertainties of renewable power generation and loads.
+The main contributions of this paper are summarized as
+follows.
+1) A robust regionally coordinated (RRC-) VVC method
+is proposed and formulated into a partially observable
+Markov Game (POMG) problem. Then, a MADDPG
+algorithm is applied to solve the problem, with a frame-
+work of centralized training and decentralized execution
+for each sub-network in an ADN.
+2) Due to locational variations and real-time intermitten-
+cies of renewable power generation and loads, spa-
+tial and temporal uncertainties are fully considered
+and addressed in the proposed RRC-VVC method. To
+achieve robust solutions against uncertainties, a stochas-
+tic programming method is applied in the proposed
+MADDPG algorithm.
+3) The training performance is enhanced, in terms of the
+solution optimality, by applying behavior cloning, expert
+target Q value estimation, and prioritized experience
+replay.
+II. REGIONALLY COORDINATED VVC
+In this section, a multi-objective regionally coordinated
+VVC optimization model is proposed considering a PV
+inverter dispatch model as well as spatial and temporal
+uncertainties.
+Fig. 1.
+Framework of regionally coordinated VVC.
+A. Regionally Coordinated Framework
+As aforementioned, the conventional centralized frame-
+work of VVC suffers from communication and computation
+burdens, privacy issues, etc. To this end, this work pro-
+poses a regionally coordinated VVC framework which is
+illustrated in Fig. 1. This framework is characterized by cen-
+tralized training and decentralized execution. In detail, the
+proposed framework partitions a distribution network of N
+buses into M sub-networks. It is worth mentioning that the
+sub-networks remain interconnected with power ﬂows cou-
+pled, and the power ﬂow model presented in Section II-E
+works for the whole system. Then controllers of each sub-
+network are trained with system-wide information in a cen-
+tralized manner. During each operation period, the trained
+controllers implement VVC with local measurements within
+their corresponding sub-networks.
+B. Inverter Dispatch Model
+In the proposed framework, a practical inverter dispatch
+model with the Var-priority operation mode [27] is adopted. In
+this mode, inverters supply reactive power as the priority when
+required, so that active power will be curtailed if the reac-
+tive power compensation capacity is insufﬁcient. Furthermore,
+the reactive power output of each inverter is also limited to
+a preset proportion of its apparent power capacity, with the
+positive value representing injecting reactive power to the grid,
+and a negative one denoting absorbing reactive power from
+the grid. Therefore, the following inverter dispatch model is
+formulated and used as constraints.
+
+pPV
+i,t
+2 +
+
+qPV
+i,t
+2 ≤
+
+SPV
+i
+2,
+(1)
+0 ≤pPV
+i,t ≤pMPP
+i,t
+,
+(2)
+−δ SPV
+i
+≤qPV
+i,t ≤δ SPV
+i
+.
+(3)
+C. Multi-Objective Programming
+Aiming to improve power quality for end-users and allow
+utilities to reduce operation and maintenance costs, two
+VVC objectives are considered for each sub-network, i.e.,
+minimization of bus voltage deviations and network power
+losses. The objective function for sub-network m at time t can
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 
+
+LIU et al.: ROBUST REGIONAL COORDINATION OF INVERTER-BASED Volt/Var CONTROL
+5423
+be written as,
+min
+
+f V
+m,t , f loss
+m,t
+
+.
+(4)
+An average voltage deviation index f V
+m,t for sub-network m
+is deﬁned as,
+f V
+m,t =
+
+i∈Nm
+vi,t −Vref
+
+Nm
+,
+∀i, t,
+(5)
+where Vref denotes the reference bus voltage.
+Power loss of each branch is derived with bus voltages
+and branch impedance, and the total power loss f loss
+m,t
+of
+sub-network m is formulated as,
+f loss
+m,t =
+
+(ij)∈Bm
+ploss
+ij,t = Re(
+
+(ij)∈Bm
+
+vi,t −vj,t
+2
+rij −jxij
+),
+∀ij, t,
+(6)
+where Re means taking the real part of a complex number.
+As the above two objectives are conﬂicting [28], a classic
+weighted sum algorithm [29] is deployed to make a trade-
+off between them. This algorithm converts the multi-objective
+function to an equivalent single-objective one with weighting
+factors. To deal with different scales of these two objec-
+tives, Utopian and Nadir points are used to normalize these
+objectives as V
+m,t and loss
+m,t , respectively. Hence, a weighted
+sum of the normalized objectives is formulated below for
+sub-network m,
+min(ωV
+m,t + (1 −ω)loss
+m,t ),
+(7)
+where ω is a user-deﬁned weighting factor that trades-off
+between voltage deviations and network power losses.
+D. Spatial and Temporal Uncertainties
+Given the locational variations of renewable power gener-
+ation and loads, as well as the short-term intermittencies and
+ﬂuctuations, spatial and temporal uncertainties are considered
+and addressed in this paper to ensure operating constraints.
+System operating conditions, such as power injections vary
+geographically across the entire ADN. These variations are
+depending on uncertain inverter operating status, solar irradi-
+ance, end-user behaviors, etc. Hence, the spatial uncertainty
+model is ﬁrstly established. This model is based on predicted
+intervals of PV power generation and loads. In particular,
+pMPP
+i,t0 , pd
+i,t0, and qd
+i,t0 indicate possible uncertainty realizations
+at t0, and they are constrained within the predicted intervals as,
+PMPP/d
+i,ζ
+≤pMPP/d
+i,t0
+≤PMPP/d
+i,ζ
+,
+∀i,
+(8)
+Qd
+i,ζ ≤qd
+i,t0 ≤Q
+d
+i,ζ,
+∀i.
+(9)
+With the above spatial uncertainty model, optimization takes
+place at each decision timestep. However, as illustrated in
+Fig. 2, between two consecutive timesteps, there are commu-
+nication delays from state measurement to state reception by
+controllers, and from control signal dispatch to signal reception
+by inverters. In addition, inverter response time also causes
+a delay. During these delays, the system operating conditions
+may change, including PV power generation and loads. Hence,
+to eliminate impacts of these delays, temporal uncertainties at
+Fig. 2.
+Temporal uncertainties due to delays and intermittency.
+each decision timestep are fully considered in this paper and
+formulated as,
+PMPP/d
+i,τ
+≤pMPP/d
+i,t
+≤PMPP/d
+i,τ
+,
+∀i, t ̸= t0,
+(10)
+Qd
+i,τ ≤qd
+i,t ≤Q
+d
+i,τ,
+∀i, t ̸= t0.
+(11)
+The intervals in this temporal uncertainty model vary tempo-
+rally and are related to the real-time measurements at t.
+E. Regionally Coordinated VVC Optimization Model
+With the above models, an optimization problem for sub-
+network m can be formulated as follows.
+min
+pPV
+i,t ,qPV
+i,t
+
+t∈T
+(ωV
+m,t + (1 −ω)loss
+m,t + λϖ viol
+m,t )
+(12)
+s.t. (1)−(3), (5)−(6), (8)−(11),
+ϖ viol
+m,t =
+
+i∈Nm
+max{(vi,t −vi,max), 0, (vi,min −vi,t)},
+(13)
+pPV
+i,t −pd
+i,t =
+
+j∈Nm
+vi,t
+vj,t
+
+Gijcos
+
+ϑi,t −ϑj,t
+
++Bijsin
+
+ϑi,t −ϑj,t
+ 	
+,
+∀i,
+(14)
+qPV
+i,t −qd
+i,t =
+
+j∈Nm
+vi,t
+vj,t
+
+Gijsin
+
+ϑi,t −ϑj,t
+
+−Bijcos
+
+ϑi,t −ϑj,t
+ 	
+,
+∀i.
+(15)
+Objective function (12), containing calculation Eq. (5)
+and (6), aims to minimize bus voltage deviations and network
+power losses by taking voltage constraint violations as
+a penalty. Here, a user-deﬁned penalty factor λ is used to min-
+imize this penalty, so that voltage violations can be reduced
+to the maximum extent. Equation (13) calculates the bus volt-
+age deviations from the limits if any, and regards them as
+voltage violations for the penalty calculation in (12). The AC
+power ﬂow model – as described by Eq. (14) and (15), is uti-
+lized to obtain power ﬂow results, and it can be solved by the
+Newton-Raphson method.
+III. DATA-DRIVEN RRC-VVC
+In this section, ﬁrstly, a multi-agent Markov decision pro-
+cess (MDP) model – POMG is utilized to reformulate the
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 
+
+5424
+IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 6, NOVEMBER 2021
+proposed optimization problem of the regionally coordinated
+VVC. Secondly, a stochastic programming model is involved
+in the POMG model to address the spatial and temporal uncer-
+tainties. Then, an improved MADDPG algorithm is developed
+with expert operation data and a prioritized experience replay,
+and it is applied to solve the POMG-formulated optimization
+problem. Thus, a data-driven RRC-VVC method against the
+spatial and temporal uncertainties is proposed.
+A. POMG Formulation
+Different from the conventional MDP model that has four
+tuples for only one agent, i.e., state space, action space, reward
+function, and transition function {S, A, R, P}, in a POMG
+model of M agents, there are observation spaces O1, . . . , OM
+and action spaces A1, . . . , AM. With observation om retrieved
+from current state S in the environment, each agent m chooses
+action am with its policy πm. The next state S′ is achieved after
+actions of all agents are taken, according to the transition func-
+tion T: S × A1 × . . . × AM →S′ that denotes the probability
+matrix from a state S to a next state S′ with given actions.
+Each agent then obtains its reward
+m and updated observa-
+tion o′
+m accordingly. The aim of each agent is to maximize its
+expected return over time horizon T by,
+Rm =
+
+t∈T
+γ trm,t,
+(16)
+where γ is the reward discount factor that trades-off between
+current reward and future return.
+In a general RL framework, an agent’s performance is
+measured by the state value function Vπ(s) or the state-
+action value function Qπ(s, a), which are functions of the
+expected, discounted, and accumulated return on the current
+state or state-action pair [18]. The state-action value function
+is deﬁned as,
+Qπ(s, a) = Eπ{Rt | st = s, at = a}
+= Eπ
+
+T−t
+
+k=0
+γ krt+k
+ st = s, at = a
+
+.
+(17)
+B. Formulation Into POMG
+The regionally coordinated VVC optimization problem
+proposed
+in
+Section
+II
+can
+be
+reformulated
+into
+a POMG model.
+In this formulation, the controller of each sub-network is
+modeled as an agent that interacts with the environment.
+Observation space Om covers the dynamic information in
+sub-network m including vi,t, pd
+i,t, qd
+i,t, and pMPP
+i,t
+.
+Action space Am includes the continuous reactive power
+control decisions for each inverter in sub-network m, qPV
+i,t .
+Reward function
+m is modeled based on the proposed
+objective function (12). Since the reward is to be maximized
+in the POMG model, the reward function is modeled as,
+m,t = −(ωV
+m,t + (1 −ω)loss
+m,t + λϖ viol
+m,t ).
+(18)
+The transition function T represents the system dynamics
+and predicts the next state after agents taking actions at a state.
+In this VVC work, the transition function directly corresponds
+to the system operating constraints given in Section II-E.
+For DRL algorithms that are based on deterministic poli-
+cies such as MADDPG, the state-action value function given
+in (17) can be decomposed into the Bellman equation [18] as,
+Qπ∗(s, a) = r
+
+s, a, s′
++ γ max
+a′ Qπ∗(s′, a′),
+(19)
+where π∗represents the optimal policy.
+C. Stochastic Programming
+In this paper, stochastic programming is deployed to address
+the spatial and temporal uncertainties of PV power generation
+and loads.
+Firstly, before each operation period, spatial uncertainty sce-
+narios are randomly generated within the predicted intervals
+given in Eq. (8) and (9) via Monte Carlo sampling.
+Secondly, within each operation period, temporal uncer-
+tainty scenarios are generated via Monte Carlo sampling. It is
+worth noting that the delays are taken into account by using the
+intervals of temporal uncertainties given in Eq. (10) and (11).
+In each temporal uncertainty scenario, voltage deviations and
+network power losses can be calculated, so that the two objec-
+tives can be modiﬁed with the scenario occurrence probability.
+Considering U temporal uncertainty scenarios at each deci-
+sion timestep, and ξu as the occurrence probability of scenario
+u ∈U, the normalized objectives can be reformulated as,
+V/loss
+m,t
+=
+
+u∈U
+ξuV/loss
+m,t,u
+.
+(20)
+In addition, to ensure operation robustness by keeping all
+the operating constraints under the uncertainties, Eq. (13)
+is modiﬁed by summing up the voltage constraint violation
+occurrences under all the scenarios as,
+ϖ viol
+m,t =
+
+u∈U
+ϖ viol
+m,t,u.
+(21)
+In this work, temporal uncertainty realization scenarios are
+generated in a time sequence for the temporal correlation.
+In each sequence of temporal uncertainty scenarios, the later
+scenario is generated according to the previous one within real-
+time boundaries. Thus, the temporal correlation is considered
+and solved by the proposed MADDPG method. On the other
+hand, the spatial correlation can also be involved when neces-
+sary by applying well-developed scenario sampling methods
+with joint distribution, such as [30].
+D. Proposed MADDPG Algorithm
+For problems based on the POMG model, MADDPG algo-
+rithms can be deployed for agents to learn optimal policies
+under centralized training and provide optimal actions with
+only local observations. They do not require speciﬁc commu-
+nications between agents and can be applied for a cooperative
+environment [25]. Thus, an MADDPG algorithm is expected
+to solve the proposed VVC optimization problem.
+In an MADDPG algorithm, an experience replay and target
+networks are applied, which can effectively mitigate impacts
+of sample correlations on neural network training and thus
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 
+
+LIU et al.: ROBUST REGIONAL COORDINATION OF INVERTER-BASED Volt/Var CONTROL
+5425
+improving the overall optimization performance [31]. Hence,
+each agent has one set of neural networks including policy
+network πm, Q network Qm, target policy network π′
+m and
+target Q network Q′
+m, with their parameters denoted as θπm,
+θQm, θπ′
+m, and θQ′
+m, respectively. Each agent learns optimal
+behavior by adjusting its policy parameters θπm towards max-
+imizing the performance objective J(θπm) that is based on the
+Q value. In the perspective of neural networks, the parameters
+of policy network πm should be updated in the direction of
+∇θπm J(θπm), which is policy gradient and can be estimated
+as follows [25],
+∇θπm J
+
+θπm
+≈Es∼ρ,a∼θπm
+
+∇θπm logπm
+
+om
+ θπm
+Qm
+
+s, a|θQm
+ 
+,
+(22)
+Here, Q network Qm has two inputs, i.e., observations s =
+{o1, . . . , oM} and actions a = {a1, . . . , aM} from all agents. On
+the other hand, its output Qm(s, a|θQm) denotes the centralized
+state-action value. Besides, ρ denotes the state distribution.
+s ∼ρ and a ∼θπm refer to the states sampled from the state
+distribution and the actions sampled from the policy network
+πm given state s, respectively.
+Speciﬁcally, the neural networks are expected to be well
+initialized, which can boost up the training efﬁciency and
+the optimization performance. In practice, historical opera-
+tion data, either from expert operation records or mathematical
+optimization results, can be available and can accurately reﬂect
+the model and characteristics of practical ADNs. Hence, these
+operation data could provide good demonstrations for DRL
+agents and be utilized to obtain fair estimations for Q values.
+To this point, an improved MADDPG algorithm is developed
+by applying a behavior cloning algorithm [32], [33] and expert
+target Q value estimations, to pre-train the policy networks and
+the Q networks, respectively. The behavior cloning algorithm
+for the policy networks is an effective unsupervised learning
+algorithm with the following objective,
+min
+θπm
+
+E(om,a∗m)∼ρ∗Lπ
+m(a∗
+m, πm(om|θπm))
+
+.
+(23)
+Herein, (om, a∗
+m) are observation-action pairs sampled from an
+exogenous expert dataset ρ∗, and Lπ
+m(a∗
+m, πm(om|θπm)) repre-
+sents the policy loss function of expert action a∗
+m and policy
+network action πm(om|θπm)) given observation om.
+In regard to the Q networks, a pre-training process with
+the estimated expert target Q values is developed. Assuming
+the actions of expert agents a∗are optimal with no further
+adjustments required, the reward shall keep constant or slightly
+increased for each decision timestep t ∈T after transition
+(s, a∗, s′), i.e., rm,t ≥
+m
+
+s, a∗, s′
+∀t ∈T. Therefore, accord-
+ing to Eq. (19), the expert target Q values can be estimated
+as,
+Qπ∗
+m (s, a) =
+m
+
+s, a∗, s′
++
+T−1
+
+t=1
+γ t
+m,t
+= μ
+T−1
+
+t=0
+γ t
+m
+
+s, a∗, s′
+,
+(24)
+Algorithm 1: MADDPG for RRC-VVC
+1 Pre-train πm(om) via behavior cloning:
+min
+θπm
+
+E(o,a∗)∼ρ∗Lπ
+m(a∗, πm(om|θπm))
+
+2 Pre-train Qm(s, a) with estimated expert target Q:
+min
+θQm
+
+LQ
+m(μ
+T−1
+t=0 γ trm
+
+s, a∗, s′
+, Qm
+
+s, a∗ θQm
+)
+
+3 Initialize π′m(o′m), Q′m(s
+′, a
+′) by:
+θπ′m ←−θπm, θQ′m ←−θQm
+∀m ∈M
+4 Initialize experience replays M and Mf , action exploration process with
+Gaussian noise G(π
+
+o
+ θπ
+, ε)
+5 for each episode, do
+6
+Initialize a stochastic state st0 = {o1,t0, . . . , oM,t0}
+7
+Solve AC power ﬂow and update state as st0
+8
+for decision timestep t ∈T, do
+9
+∀om,t ∈st, determine action am,t = G(πm
+
+om,t
+ θπm
+, ε),
+constrained by
+
+am,t,min, am,t,max
+	
+∀m ∈M
+10
+Execute actions at = {a1,t, . . . , aM,t} in AC power ﬂow,
+observe new system state s′t
+11
+Generate U stochastic scenarios on state st
+12
+for scenario u ∈U, do
+13
+Execute actions at in AC power ﬂow
+14
+end for
+15
+Derive rewards rt = (r1,t, . . . , rM,t) with power ﬂow results
+under all stochastic scenarios
+16
+Update system state st ←s′t
+17
+if M is full, then
+18
+Stack transition {st, at, s′t, rt} in Mf
+19
+if Mf is full, then
+20
+Push transitions from Mf to M, replace ones with
+lowest priorities
+21
+Update priorities in M
+22
+end
+23
+Execute MADDPG Training procedure and decay
+exploration noise ε
+24
+else
+25
+Stack transition {st, at, s′t, rt} in M
+26
+end
+27
+end for
+28 end for
+where μ ≤1 is the estimation factor of target Q values.
+After initializing these neural networks, the agents can
+interact with the environment. To address the spatial and tem-
+poral uncertainties, this paper applies a stochastic state s0 =
+{o1,t0, . . . , oM,t0} for each episode in the exploration stage. In
+each operation period, the policy network πm ﬁrstly generates
+actions am,t for agent m according to its input observations
+om,t, network parameters θπm, and exploration noise ε. With
+the actions at = {a1,t, . . . , aM,t} being executed in the envi-
+ronment, the system reaches a new state s′
+t = {o′
+1,t, . . . , o′
+M,t}.
+Meanwhile, temporal uncertainty scenarios are generated with
+the environment based on state st and the predicted intervals
+given in Eq. (10) and (11). With the actions being taken into
+these scenarios, the reward set rt = (r1,t, . . . , rM,t) could
+be derived with the power ﬂow results under all these sce-
+narios by agent reward functions given in Eq. (18), (20)
+and (21). The transition {st, at, s′
+t, rt} is then stacked in the
+experience replay M for the later training progress. The
+whole proposed MADDPG algorithm is logically explained as
+Algorithm 1.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 
+
+5426
+IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 6, NOVEMBER 2021
+Algorithm 2: MADDPG Training procedure
+1 Sample a random minibatch of K transitions
+{sk, ak, s′k, rk} from M based on priorities
+2 for agent m ∈M do
+3
+Derive the target Q value:
+yk
+m = rk
+m + γ Q′
+m(s′k, a′k|θQ′
+m)
+4
+Derive the loss function for Q networks:
+LQ
+m = 1
+K
+
+k∈K
+
+yk
+m −Qm
+
+sk, ak  θQm
+2
+5
+Update the Q network by minimizing the
+loss:θQm ←−θQm −βQ∇θQmLm
+6
+Derive the sampled policy gradient:
+∇θπm J(θπm)
+≈1
+K
+
+k∈K
+∇akmQm
+
+sk, ak  θQm
+∇θπm πm
+
+ok
+m
+ θπm
+7
+Update policy network with the policy gradient:
+θπm ←−θπm + βπ∇θπmJ(θπm)
+8
+Update the target networks:
+θπ′
+m ←−σθπm + (1 −σ)θπ′
+m
+θQ′
+m ←−σθQm + (1 −σ)θQ′
+m
+9 end for
+With enough exploration, the networks start getting updated
+in the training procedure where simultaneous explorations are
+kept on. In this algorithm, a proportional prioritized expe-
+rience replay [34] is applied to improve the optimization
+performance, where the probability of sampling transition e
+is dependent on its priority pe:
+Pre =
+pe
+
+e∈M pe
+,
+(25)
+pe =
+
+
+m∈M
+ηe,m
+ + ϵ.
+(26)
+Herein, ηe,m is the temporal difference (TD) error that indi-
+cates the distance of the current Q value from its target Q
+value estimation for transition e and agent m, and ϵ is a small
+positive constant to ensure a non-zero probability for each
+transition.
+To avoid excessive recalculations of priority, this paper
+applies a prioritized ﬂash replay Mf , where the new transi-
+tions are temporarily stored when M is full. When reaching its
+capacity limit, Mf pushes the stored transitions into the main
+experience replay M, and in which the transitions with low
+priorities are replaced. After this, the priorities of transitions
+are recalculated in M.
+The training procedure is explained as Algorithm 2.
+In
+detail,
+ﬁrstly,
+a
+prioritized
+minibatch
+of
+K
+transi-
+tions {sk, ak, s′k, rk} are sampled from the main experience
+replay M. Then for each agent, Q network Qm evaluates the
+Fig. 3.
+Progress of proposed data-driven RRC-VVC.
+Q value for agent m of each {sk, ak}. On the other hand, target
+policy network π′
+m generates action a′
+m
+k for each o′
+m
+k from the
+sampled minibatch, and the target Q network Q′
+m then evalu-
+ates the target Q value for agent m with inputs {s′k, a′k, rk
+m}.
+After that, Q network Qm updates its parameters θQm via gradi-
+ent descent, by minimizing the loss function LQ
+m derived from
+these two Q values. Following this, policy network parame-
+ters θπm can be updated by the policy gradient derived from
+network πm and Qm. Once these two networks are updated,
+the corresponding target networks π′
+m and Q′
+m can be updated
+with a soft update velocity factor σ.
+E. Data-Driven RRC-VVC
+Finally, by applying the proposed MADDPG algorithm,
+a data-driven RRC-VVC method is proposed, and its complete
+progress is illustrated in Fig. 3.
+As mentioned in Section III-C, in each episode, the spatial
+uncertainty model is ﬁrstly established, and data are nor-
+malized for the neural network training purpose. With input
+data initialized, the initial power ﬂow is solved to check
+convergence and generate the initial state data. Note that if
+the power ﬂow does not converge, the corresponding state
+data cannot be used for training and hence should be re-
+initialized. If converging, the agents then start to interact
+with the simulated power ﬂow environment and accumulate
+knowledge in the exploration stage.
+According to the initialized system data, the reactive power
+setpoints in each sub-network are ﬁrstly generated by agents.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 
+
+LIU et al.: ROBUST REGIONAL COORDINATION OF INVERTER-BASED Volt/Var CONTROL
+5427
+In the following step, exploration noises are added onto
+the reactive power setpoints to ensure sufﬁcient explorations
+of agents. Subsequently, the action data are de-normalized
+according to the inverter reactive power compensation capaci-
+ties, and these dispatch decisions are sent to each PV inverters.
+Under Var-priority mode, the active power injection of each
+PV inverter is also updated, with active power curtailment
+when necessary. Once the system operating condition is
+updated, the AC power ﬂow is solved to transit from the
+current state to the next one. Meanwhile, the reactive power
+setpoints are taken into parallel temporal uncertainty scenar-
+ios, from which the power ﬂow results are obtained, and the
+rewards are calculated. It is worth mentioning that the aver-
+age reward derived with all the temporal uncertainty scenarios
+by using Eq. (18), (20), and (21) is different from a single-
+sampled reward. Firstly, the bus voltage violations across all
+the temporal uncertainty scenarios are summed up in Eq. (21),
+and hence the penalties of the voltage violations are imposed
+accordingly on the average reward. Secondly, since the power
+ﬂow model is non-linear, the mean value of power ﬂow results
+under all the temporal uncertainty scenarios could be differ-
+ent from the power ﬂow result under the mean scenario. With
+the above derived, the transition is stored in the prioritized
+experience replay.
+As the experience replay reaches its capacity limit, the train-
+ing process is involved with prioritized batch data sampled.
+The training process updates all the neural network parame-
+ters in each timestep, and the agents keep interacting with the
+environment with their updated policy networks. Note that the
+exploration noise is gradually reduced as agents get trained.
+Once the exploration reaches the training episode limit or the
+convergence condition, the training process terminates, and the
+well-trained model is saved for online optimization use. As
+aforementioned, the reward function of each agent consists
+of regional network power losses and bus voltage deviations,
+which are all related to the neighbor sub-networks. Thus, in the
+centralized training stage, while each agent learns to maximize
+its expected, discounted, and accumulated return, it also grad-
+ually establishes the behavior policy with coordination with
+other agents. Eventually, a regional coordination methodology
+is developed.
+This work focuses on the inverter-based VVC, but the
+proposed method is applicable to all Var resources with con-
+tinuous variables, including reactive power setpoints of DG
+units and energy storage systems.
+IV. CASE STUDY
+A. Testing System Description
+Numerical tests are conducted on the IEEE 123-node feeder
+system [35]. This distribution network is partitioned into 4 sub-
+networks [9] with interconnection, as displayed in Fig. 4.
+The PV penetration rate is set as 100%, i.e., PV systems
+are installed with the same capacities as peak loads on all
+buses. The inverter apparent power capacity on each bus SPV
+i
+is oversized to 110% of the installed PV active power capacity
+PPV
+i,max, allowing sufﬁcient reactive power compensation [28].
+Moreover, with reference to [27], the inverter reactive power
+Fig. 4.
+Network partition for IEEE 123-node distribution network.
+TABLE I
+UNCERTAINTY SETUP
+capacity factor δ is chosen as 0.6. All the other Var resources
+are not included in this VVC optimization model, and thus
+they are assumed as ﬁxed settings in the ADN. The weighting
+factor ω is set as 0.5 to achieve a trade-off between the two
+objectives. The voltage range is set as [0.95, 1.05] p.u. with
+the reference voltage Vref as 1 p.u. for all buses. The voltage
+constraint violation penalty factor λ is set as 10, and all the
+rewards are scaled up by 103.
+Two cases are investigated in the tests – the PV-peak case
+with 50% load and 100% PV power generation, as well as
+the load-peak case with 100% load and 0% PV power gen-
+eration. Considering the locational and short-term variations
+of solar irradiance and demand proﬁles, spatial and temporal
+uncertainties are set up accordingly in Table I. The intervals of
+spatial uncertainties are based on the day-ahead or hour-ahead
+predicted uncertainty boundaries. These intervals are propor-
+tional to the installed PV capacities and loads, and are different
+for the two cases. On the other hand, the intervals of tempo-
+ral uncertainties are based on real-time and small variations
+due to communication and inverter response delays, as illus-
+trated in Fig. 2. Thus, the intervals of temporal uncertainties
+are dependent on the real-time data at time t, which can be
+further sampled from the above spatial uncertainty scenarios.
+The probability distributions of spatial and temporal uncer-
+tainties are assumed to be known. Without loss of generality,
+uniform distributions are used in this paper. It is noted that
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 
+
+5428
+IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 6, NOVEMBER 2021
+distributional ambiguity can also be considered via an ambi-
+guity set of uncertainties [11], so that accurate probability
+distributions are not required.
+Refering to the settings in [25] and after sensitivity analy-
+sis, the hyperparameters in this work are ﬁnalized as follows.
+Each policy network πm has three fully connected layers,
+and four for Q network Qm. As the observation spaces have
+lager dimensions than action spaces, the dimensions of the
+hidden layers in the policy network πm are set as 2dom and
+dam. Similarly, the dimensions of hidden layers in Q networks
+are set as 2 
+m∈M (dom, dam), 
+m∈M (dom, dam), and 300. The
+Adam optimizer is applied [36], with the learning rates for pol-
+icy network βπ and Q network βQ both as 10−5, the reward
+discount factor γ as 0.9, and the soft update velocity fac-
+tor σ as 0.01. The target Q value estimation factor μ is set
+as 0.95. The capacity of the main experience replay and the
+ﬂash experience replay is 2×104 and 1×103, respectively, and
+the minibatch size is 128. The initial exploration noise vari-
+able ε is 6 and it starts to decay by 0.1% towards 0 at every
+timestep in the training stage. The input layers and hidden
+layers of both policy and Q networks deploy Rectiﬁed Linear
+Unit (ReLU) activation function φ(x) = max(0, x), and same
+for the target networks. On the other hand, the output layers
+of Q and target Q networks utilize linear activation function
+φ(x) = x, while the output layers of policy and policy tar-
+get networks utilize tanh activation function φ(x) = ex−e−x
+ex+e−x .
+Regarding data normalization and de-normalization process,
+since the operation ranges of the system data are given, the
+max-min normalization method is deployed.
+The simulations are conducted on a 64-bit PC with Intel
+Core 8-core 3.60GHz i7-9700K CPU and one NVIDIA Ge-
+Force RTX 2080 Ti GPU using Python platform, with the AC
+Power Flow solved by the PYPOWER solver [37].
+B. Data-Driven RRC-VVC Performance
+The performance of the proposed data-driven RRC-VVC
+method is analyzed through simulations under the original
+network topology shown in Fig. 4. By using the proposed
+MADDPG algorithm, the agents learn rapidly from the train-
+ing process with the prioritized experience replay, as well
+as the initialization stage with expert targe Q estimation and
+behavior cloning. The average voltage deviation and network
+power loss for the proposed method under both PV-peak and
+load-peak cases are shown in Figs. 5 and 6, respectively. The
+performance of the other two MADDPG algorithms with dif-
+ferent initialization processes are shown in these ﬁgures as
+well. To compare the convergence, the weighted sums of the
+normalized objectives are also included in these ﬁgures. The
+results from the random initialized and the self-training ini-
+tialized algorithms are denoted as Rand. Init. and Self. Init.,
+respectively.
+For the proposed method, the mean of absolute voltage devi-
+ations and the network power loss converge quickly in the
+PV-peak case, to around 0.011 p.u. and 0.005 p.u., whereas
+the other two algorithms would need much more episodes to
+reach convergence. On the other hand, in the load-peak case,
+the mean absolute voltage deviations and the network power
+Fig. 5.
+Data-driven RRC-VVC results under the PV-peak case.
+Fig. 6.
+Data-driven RRC-VVC results under the load-peak case.
+loss of the proposed algorithm decrease rapidly to 0.016 p.u.
+and 0.012 p.u., respectively, while the other algorithms reach
+convergence with the larger voltage deviations, network power
+losses, and weighted sum of the normalized objectives. These
+results validate efﬁcient convergence and high performance
+of the proposed algorithm with the developed prioritized
+experience replay and initialization process.
+To compare the optimization performance with the con-
+ventional mathematical method, a scenario-based stochastic
+optimization method is applied [38], with consideration of
+uncertainties, i.e., pMPP
+i,t
+, pd
+i,t, and qd
+i,t. The objective function is
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 
+
+LIU et al.: ROBUST REGIONAL COORDINATION OF INVERTER-BASED Volt/Var CONTROL
+5429
+TABLE II
+PERFORMANCE COMPARISON UNDER THE PV-PEAK CASE
+TABLE III
+PERFORMANCE COMPARISON UNDER THE LOAD-PEAK CASE
+set as the same with the proposed method, i.e., minimization
+of bus voltage deviations and network power losses with the
+same weighting factors. Besides, the control variables are
+inverter reactive power setpoints. This stochastic optimization
+method uses a ﬁnite number of representative scenarios for
+spatial uncertainty realizations of PV power generation and
+loads. With a branch ﬂow based SOCP model for the distri-
+bution network [39], a scenario-based stochastic optimization
+problem is formulated and solved by the GUROBI solver [40].
+In this case study, considering computing efﬁciency and
+optimization quality, 100 representative scenarios are gen-
+erated, where PV power outputs and loads are on differ-
+ent levels across the network to present spatial uncertainty
+characteristics.
+The optimization performance of the proposed data-driven
+RRC-VVC method is summarized in Tables II and III for the
+two cases, with maximum voltage deviation Vmax, mean of
+absolute voltage deviations Vmean, and network power loss
+Ploss derived from the average of last 100 episodes. For the
+purpose of comparison, the results given by the scenario-based
+stochastic optimization method, and those from the two con-
+ventional MADDPG algorithms are listed in column Math,
+MADDPG (Rand. Init), and MADDPG (Self. Init), respec-
+tively. The conventional stochastic optimization method and
+MADDPG based methods use the same objective function with
+the proposed data-driven RRC-VVC method. The training time
+in the tables refers to the CPU time of 4000-episode training
+process for the DRL algorithms, and the optimization time
+refers to the CPU time for solving the stochastic optimization
+problem or for all agents to determine agent actions under
+given observations.
+The effectiveness of the proposed method could be evalu-
+ated in terms of maximum bus voltage deviations, means of
+absolute bus voltage deviations, and network power losses.
+For the PV-peak case, all the data-driven based methods
+TABLE IV
+ROBUSTNESS CHECK UNDER THE PV-PEAK CASE
+TABLE V
+ROBUSTNESS CHECK UNDER THE LOAD-PEAK CASE
+achieve the similar results, but the proposed method is more
+effective on the reduction of bus voltage deviations. In com-
+parison with Math, the proposed method achieves much less
+network power loss. For the load-peak case, the proposed
+data-drive method fully outperforms Rand. Init, and it is com-
+petitive with Self. Init but with the less maximum voltage
+deviation. Compared with Math, the results of the proposed
+method are still acceptable with just a higher mean voltage
+deviation.
+In terms of training time, the proposed MADDPG algorithm
+has an additional initialization stage with behavior cloning and
+expert target Q value estimation, as well as recalculations of
+experience priorities for the prioritized experience replay, its
+training time is slightly longer compared to those conven-
+tional data-driven algorithms without the prioritized experi-
+ence replay. However, as discussed above, the performance of
+the proposed algorithm is better than the conventional ones,
+and the training processes of these conventional algorithms
+converge slowly under the PV-peak case. On the other hand,
+although the mathematical stochastic optimization method
+does not require such a training process, its optimization time
+is extremely longer than the MADDPG-based methods. These
+MADDPG-based methods have a similar optimization time of
+around 0.014 second, which is fully compatible and preferred
+for online use.
+C. Robustness Check
+To examine the operation performance and operating robust-
+ness against the spatial and temporal uncertainties, another
+5000 scenarios are sampled as uncertainty realizations by the
+Monte Carlo method for both PV-peak and load-peak cases.
+With these scenarios, the mathematical stochastic optimization
+(Math) and the proposed data-driven RRC-VVC methods
+are applied to obtain the VVC results, including Vmax,
+Vmean, and Ploss. Besides, numbers of violation scenarios
+are calculated to indicate the operation robustness against the
+uncertainties. the comparison results are shown in Tables IV
+and V.
+From these tables, for both PV-peak and load-peak cases,
+the proposed data-driven RRC-VVC method outperforms the
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 
+
+5430
+IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 6, NOVEMBER 2021
+TABLE VI
+SWITCH SETUP FOR NETWORK RECONFIGURATION CASES
+TABLE VII
+PERFORMANCE COMPARISON UNDER NETWORK RECONFIGURATION
+FOR THE PV-PEAK CASE
+TABLE VIII
+PERFORMANCE COMPARISON UNDER NETWORK RECONFIGURATION
+FOR THE LOAD-PEAK CASE
+mathematical one in terms of network power loss reduction.
+For the bus voltage deviations, the proposed method can
+provide comparable results. Besides, both the proposed data-
+driven method and the well-developed mathematical one can
+achieve no operating violation for all the scenarios. Thus,
+the proposed data-driven RRC-VVC method can achieve
+high operation performance and operating robustness against
+the spatial and temporal uncertainties, with high computing
+efﬁciency (as shown in Tables II and III).
+D. Performance Under Network Reconﬁguration
+As the network topology of an ADN could be changed fre-
+quently, performance analysis of the proposed method under
+network reconﬁguration is essential. To this point, another two
+cases with different network topologies of the IEEE 123-node
+feeder system are used for performance analysis and robust-
+ness check. As shown in Fig. 4 and Table VI, there are three
+switches considered in this paper. In each testing case, there is
+one switch open with the other two closed. Case-NR1 refers
+to the original network conﬁguration used above, while Case-
+NR2 and Case-NR3 refer to the network topologies with only
+SW1 open and SW2 open, respectively. The simulation results
+under these two cases are shown in Table VII and Table VIII,
+for PV-peak and load-peak cases, separately.
+According to the results below in Table VII and Table VIII,
+the proposed RRC-VVC algorithm shows high applicability
+and effectiveness under different network topologies, as well
+as better performance in comparison with the mathematical
+Fig. 7. Data-driven RRC-VVC results under Case-NR2 for the PV-peak case.
+stochastic optimization method. Particularly, for the load-peak
+case under topology Case-NR2, the bus voltage on bus 38
+and 40 could reach as low as 0.889 p.u. without VVC, since
+power supply to these busses has to ﬂow through sub-networks
+1, 3, and 4. With the mathematical optimization deployed, the
+mean of absolute bus voltage deviations is still 0.0232 p.u.,
+and the network power loss is 0.0222 p.u. On the other hand,
+the proposed method achieves much lower average of abso-
+lute voltage deviations and network power losses. Overall, the
+proposed method is applicable to network topological changes,
+so that it is suggested for practical use.
+The average voltage deviations, network power losses, and
+weighed sums of the normalized objectives under topology
+Case-NR2 are shown in Figs. 7 and 8, for PV-peak and load-
+peak cases, respectively. For the PV-peak case, the proposed
+algorithm demonstrates a stable and fast convergence result,
+compared to the Self. Init and Rand. Init algorithms. This could
+be particularly illustrated by the convergence of the weighed
+sum. Whereas in the load-peak case, the average voltage devi-
+ations and network power losses of all algorithms converge
+smoothly, similar to Case-NR1. However, the proposed algo-
+rithm achieves much lower average voltage deviation, network
+power loss, and weighted sum of the normalized objectives.
+These results demonstrate that the proposed algorithm outper-
+forms the other two conventional data-driven algorithms on
+both convergence and optimization performance.
+V. CONCLUSION
+This paper proposes a data-driven RRC-VVC method to
+optimize the Var dispatch within each sub-network in an
+ADN against spatial and temporal uncertainties. With the
+RRC-VVC optimization problem formulated into a POMG
+model, the agents in the proposed MADDPG algorithm are
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 
+
+LIU et al.: ROBUST REGIONAL COORDINATION OF INVERTER-BASED Volt/Var CONTROL
+5431
+Fig. 8.
+Data-driven RRC-VVC results under Case-NR2 for the load-peak
+case.
+trained to minimize bus voltage deviations and network power
+losses simultaneously. The simulations conducted on the IEEE
+123-node system under the PV-peak and load-peak cases val-
+idate the convergence of the proposed MADDPG algorithm.
+Besides, in comparison with existing mathematical and data-
+driven methods, the proposed data-driven RRC-VVC method
+can achieve high operation performance and robustness against
+the spatial and temporal uncertainties.
+In future works, VVC resources with discrete variables, such
+as OLTCs, switching CBs and soft open points, will be incor-
+porated with the proposed method to be compatible with the
+full suite of VVC devices and ADN control. Besides, distribu-
+tional ambiguity of spatial and temporal uncertainties will be
+considered in the proposed MADDPG algorithm. Furthermore,
+multiple conﬂicting optimization objectives would also be
+considered, with multi-tasking machine learning algorithms.
+APPENDIX
+For completeness, the decomposition process from Eq. (17)
+to Eq. (19) is clariﬁed below. As deﬁned in Section III,
+Qπ(s, a) is the expected return for the agent taking action
+a at state s, and then following policy π. Therefore, it could
+be reformulated as,
+Qπ(s, a) = Eπ
+
+T−t
+
+k=0
+γ krt+k
+ st = s, at = a
+
+= Eπ
+
+rt + γ rt+1 + γ 2rt+2 + · · · + γ T−trT
+ st = s, at = a
+
+= Eπ
+
+rt + γ
+
+rt+1 + γ rt+2 + . . . + γ T−t−1rT
+  st = s, at = a
+
+= Eπ
+
+rt + γ Qπ(st+1, at+1)
+ st = s, at = a
+
+=
+
+s′
+T
+
+s′  s, a
+
+(r
+
+s, a, s′
++ γ
+
+a′
+π
+
+a′  s′
+Qπ
+s′, a′
+)
+As
+explained
+in
+Section
+III-B,
+the
+transition
+function
+represents the system dynamics and predicts the next state
+after agents taking actions at the current state. In the power
+ﬂow environment, it is deterministic, which means one set of
+state and action corresponds to one deterministic set of next
+state and reward. Hence, there is:
+Qπ(s, a) = r
+
+s, a, s′
++ γ
+
+a′
+π
+
+a′  s′
+Qπ
+s′, a′
+.
+Assuming an optimal policy π∗exists, its state-action value
+function Qπ∗(s, a) must be the maximum state-action value
+that can be achieved by any policy for any state st = s
+and action at = a. Otherwise, π∗′ that makes Qπ∗′(s, a) >
+Qπ∗(s, a) should be the better policy than π∗. Hence,
+Qπ∗(s, a) = maxa Qπ(s, a), and there is:
+Qπ∗(s, a) = r
+
+s, a, s′
++ γ max
+a′ Qπ∗(s′, a′).
+REFERENCES
+[1] H. Sun et al., “Review of challenges and research opportunities for
+voltage control in smart grids,” IEEE Trans. Power Syst., vol. 34, no. 4,
+pp. 2790–2801, Jul. 2019.
+[2] D. Jin, H.-D. Chiang, and P. Li, “Two-timescale multi-objective coordi-
+nated volt/var optimization for active distribution networks,” IEEE Trans.
+Power Syst., vol. 34, no. 6, pp. 4418–4428, Nov. 2019.
+[3] W. Zheng, W. Wu, B. Zhang, and Y. Wang, “Robust reactive power
+optimisation and voltage control method for active distribution networks
+via dual time-scale coordination,” IET Gener. Transm. Distrib., vol. 11,
+no. 6, pp. 1461–1471, Apr. 2017.
+[4] C. Zhang, Y. Xu, Z. Dong, and J. Ravishankar, “Three-stage robust
+inverter-based voltage/var control for distribution networks with high-
+level PV,” IEEE Trans. Smart Grid, vol. 10, no. 1, pp. 782–793,
+Jan. 2019.
+[5] R. P. Xu, C. Zhang, Y. Xu, and Z. Y. Dong, “Rolling horizon based
+multi-objective robust voltage/VAR regulation with conservation volt-
+age reduction in high PV-penetrated distribution networks,” IET Gener.
+Transm. Distrib., vol. 13, no. 9, pp. 1621–1629, May 2019.
+[6] K. E. Antoniadou-Plytaria, I. N. Kouveliotis-Lysikatos, P. S. Georgilakis
+and N. D. Hatziargyriou, “Distributed and decentralized voltage control
+of smart distribution networks: Models, methods, and future research,”
+IEEE Trans. Smart Grid, vol. 8, no. 6, pp. 2999–3008, Nov. 2017.
+[7] H. Ji et al., “A centralized-based method to determine the local voltage
+control strategies of distributed generator operation in active distribution
+networks,” Appl. Energy, vol. 228, pp. 2024–2036, Oct. 2018.
+[8] P. Li et al., “MPC-based local voltage control strategy of DGs in active
+distribution networks,” IEEE Trans. Sustain. Energy, vol. 11, no. 4,
+pp. 2911–2921, Oct. 2020.
+[9] P. Li, C. Zhang, Z. Wu, Y. Xu, M. Hu, and Z. Dong, “Distributed adap-
+tive robust voltage/var control with network partition in active distribu-
+tion networks,” IEEE Trans. Smart Grid, vol. 11, no. 3, pp. 2245–2256,
+May 2020.
+[10] W. Zheng, W. Wu, B. Zhang, H. Sun, and Y. Liu, “A fully distributed
+reactive power optimization and control method for active distribu-
+tion networks,” IEEE Trans. Smart Grid, vol. 7, no. 2, pp. 1021–1033,
+Mar. 2016.
+[11] W. Huang, W. Zheng, and D. J. Hill, “Distributionally robust optimal
+power ﬂow in multi-microgrids with decomposition and guaranteed
+convergence,” IEEE Trans. Smart Grid, vol. 12, no. 1, pp. 43–55,
+Jan. 2021.
+[12] H. Saberi, C. Zhang, and Z. Y. Dong, “Data-driven distributionally robust
+hierarchical coordination for home energy management,” IEEE Trans.
+Smart Grid, early access, Jun. 11, 2021.
+[13] C. Zhang and Y. Xu, “Hierarchically-coordinated voltage/VAR control
+of distribution networks using PV inverters,” IEEE Trans. Smart Grid,
+vol. 11, no. 4, pp. 2942–2953, Jul. 2020.
+[14] T. Ding, Q. Yang, Y. Yang, C. Li, Z. Bie, and F. Blaabjerg, “A data-
+driven stochastic reactive power optimization considering uncertainties
+in active distribution networks and decomposition method,” IEEE Trans.
+Smart Grid, vol. 9, no. 5, pp. 4994–5004, Sep. 2018.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 
+
+5432
+IEEE TRANSACTIONS ON SMART GRID, VOL. 12, NO. 6, NOVEMBER 2021
+[15] Y. Xu, Z. Y. Dong, R. Zhang, and D. J. Hill, “Multi-timescale coor-
+dinated voltage/var control of high renewable-penetrated distribution
+systems,” IEEE Trans. Power Syst., vol. 32, no. 6, pp. 4398–4408,
+Nov. 2017.
+[16] J. G. Vlachogiannis and N. D. Hatziargyriou, “Reinforcement learning
+for reactive power control,” IEEE Trans. Power Syst., vol. 19, no. 3,
+pp. 1317–1325, Aug. 2004.
+[17] Y. Xu, W. Zhang, W. Liu, and F. Ferrese, “Multiagent-based reinforce-
+ment learning for optimal reactive power dispatch,” IEEE Trans. Syst.,
+Man, Cybern. C, Appl. Rev., vol. 42, no. 6, pp. 1742–1751, Nov. 2012.
+[18] Y. Li, “Deep reinforcement learning: An overview,” 2017. [Online].
+Available: arXiv:1701.07274.
+[19] R. Diao, Z. Wang, D. Shi, Q. Chang, J. Duan, and X. Zhang,
+“Autonomous voltage control for grid operation using deep rein-
+forcement
+learning,”
+in
+Proc.
+IEEE
+Power
+Energy
+Soc.
+Gen.
+Meeting (PESGM), Atlanta, GA, USA, 2019, pp. 1–5.
+[20] H. Xu, A. D. Domínguez-García, and P. W. Sauer, “Optimal tap setting
+of voltage regulation transformers using batch reinforcement learning,”
+IEEE Trans. Power Syst., vol. 35, no. 3, pp. 1990–2001, May 2020.
+[21] W. Wang, N. Yu, Y. Gao, and J. Shi, “Safe off-policy deep reinforcement
+learning algorithm for volt-VAR control in power distribution systems,”
+IEEE Trans. Smart Grid, vol. 11, no. 4, pp. 3008–3018, Jul. 2020.
+[22] Q. Yang, G. Wang, A. Sadeghi, G. B. Giannakis, and J. Sun, “Two-
+timescale voltage control in distribution grids using deep reinforcement
+learning,” IEEE Trans. Smart Grid, vol. 11, no. 3, pp. 2313–2323,
+May 2020.
+[23] J. Duan et al., “Deep-reinforcement-learning-based autonomous voltage
+control for power grid operations,” IEEE Trans. Power Syst., vol. 35,
+no. 1, pp. 814–817, Jan. 2020.
+[24] D. Cao, W. Hu, J. Zhao, Q. Huang, Z. Chen, and F. Blaabjerg, “A
+multi-agent deep reinforcement learning based voltage regulation using
+coordinated PV inverters,” IEEE Trans. Power Syst., vol. 35, no. 5,
+pp. 4120–4123, Sep. 2020.
+[25] R. Lowe, Y. I. Wu, A. Tamar, J. Harb, P. Abbeel, and I. Mordatch,
+“Multi-agent actor-critic for mixed cooperative-competitive environ-
+ments,” in Advances in Neural Information Processing Systems.
+Red Hook, NY, USA: Curran, 2017, pp. 6379–6390.
+[26] D. Cao, J. Zhao, W. Hu, F. Ding, Q. Huang, and Z. Chen, “Attention
+enabled multi-agent DRL for decentralized volt-VAR control of active
+distribution system using PV inverters and SVCs,” IEEE Trans. Sustain.
+Energy, vol. 12, no. 3, pp. 1582–1592, Jul. 2021.
+[27] F. Ding et al., “Photovoltaic impact assessment of smart inverter
+volt-VAR control on distribution system conservation voltage reduc-
+tion and power quality,” Nat. Renew. Energy Lab, Golden, CO, USA,
+Rep. NREL/TP-5D00-67296, 2016.
+[28] K. Turitsyn, P. Sulc, S. Backhaus, and M. Chertkov, “Options for control
+of reactive power by distributed photovoltaic generators,” Proc. IEEE,
+vol. 99, no. 6, pp. 1063–1073, Jun. 2011.
+[29] C. Zhang, Y. Xu, Z. Y. Dong, and R. Zhang, “Multi-objective adap-
+tive robust voltage/VAR control for high-PV penetrated distribution
+networks,” IEEE Trans. Smart Grid, vol. 11, no. 6, pp. 5288–5300,
+Nov. 2020.
+[30] M. Xie, J. Xiong, S. Ke, and M. Liu, “Two-stage compensation algo-
+rithm for dynamic economic dispatching considering copula correlation
+of multiwind farms generation,” IEEE Trans. Sustain. Energy, vol. 8,
+no. 2, pp. 763–771, Apr. 2017.
+[31] T. P. Lillicrap et al., “Continuous control with deep reinforcement
+learning,” 2015. [Online]. Available: arXiv:1509.02971.
+[32] F. Torabi, G. Warnell, and P. Stone, “Behavioral cloning from observa-
+tion,” 2018. [Online]. Available: arXiv:1805.01954.
+[33] Y. Yue and H. M. Le, “Imitation learning,” presented at the Int.
+Conf. Mach. Learn., Stockholm, Sweden, Jul. 2018. [Online]. Available:
+https://sites.google.com/view/icml2018-imitation-learning/
+[34] T. Schaul, J. Quan, I. Antonoglou, and D. Silver, “Prioritized experience
+replay,” 2015. [Online]. Available: arXiv:1511.05952.
+[35] K. P. Schneider et al., “Analytic considerations and design basis for the
+IEEE distribution test feeders,” IEEE Trans. Power Syst., vol. 33, no. 3,
+pp. 3181–3188, May 2018.
+[36] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,”
+2014. [Online]. Available: arXiv:1412.6980.
+[37] R. D. Zimmerman, C. E. Murillo-Sánchez, and R. J. Thomas,
+“MATPOWER: Steady-state operations, planning, and analysis tools
+for power systems research and education,” IEEE Trans. Power Syst.,
+vol. 26, no. 1, pp. 12–19, Feb. 2011.
+[38] Q. Chai, C. Zhang, Y. Xu, and Z. Y. Dong, “PV inverter reliability-
+constrained volt/var control of distribution networks,” IEEE Trans.
+Sustain. Energy, vol. 12, no. 3, pp. 1788–1800, Jul. 2021.
+[39] M. Farivar and S. H. Low, “Branch ﬂow model: Relaxations and
+convexiﬁcation—Part I,” IEEE Trans. Power Syst., vol. 28, no. 3,
+pp. 2554–2564, Aug. 2013.
+[40] GUROBI. Accessed: Jul. 2020. [Online]. Available: http://www.gurobi.
+com
+Hangyue
+Liu
+(Graduate
+Student
+Member,
+IEEE) received the B.E. degree from Southwest
+Jiaotong University, Chengdu, China, in 2014, and
+the M.E. degree in electrical engineering from
+The University of Sydney, Sydney, Australia, in
+2017. He is currently pursuing the Ph.D. degree
+in electrical engineering with the University of
+New South Wales, Sydney, Australia. His current
+research interests include power system opera-
+tion and planning, active distribution networks,
+microgrids, multienergy systems, and applications
+of deep reinforcement learning theory in these areas.
+Cuo Zhang (Member, IEEE) received the B.E.
+degree (Hons.) in electrical (power) engineering
+from The University of Sydney, Australia, in 2014,
+and the Ph.D. degree in electrical engineering
+from the University of New South Wales (UNSW),
+Australia, in 2018. He is currently a Research Fellow
+with UNSW. His research interests include power
+system planning and operation, voltage stability and
+control, demand side management, microgrids, mul-
+tienergy systems, and applications of optimization
+theory and artiﬁcial intelligence in these areas. He
+was a recipient of 2 IEEE PES General Meeting Best Conference Papers,
+the IEEE TRANSACTIONS ON SMART GRID Best Reviewer, the UNSW
+Promoting High Quality Research Papers Scheme Award, and the University
+Medal from The University of Sydney.
+Qingmian Chai received the B.Sc. and M.Sc.
+degrees
+in
+electrical
+engineering
+from
+Beijing
+Jiaotong University, Beijing, China, in 2008 and
+2010, respectively. He is currently pursuing the
+Ph.D. degree in electrical engineering with the
+University of New South Wales, Sydney, NSW,
+Australia. His research interests include power
+system planning and operation, voltage stability
+and control, reliability of power electronics, and
+applications of optimization theory in these areas.
+Ke Meng (Member, IEEE) received the Ph.D.
+degree in electrical engineering from The University
+of Queensland, Brisbane, QLD, Australia, in 2009.
+He is currently a Senior Lecturer with the School
+of Electrical Engineering and Telecommunications,
+University of New South Wales, Sydney, NSW,
+Australia. He was a Lecturer with the School
+of Electrical and Information Engineering, The
+University
+of
+Sydney,
+Camperdown,
+NSW,
+Australia.
+His
+research
+interests
+include
+elec-
+tric power system modeling, stability analysis,
+renewable energy systems, and grid integration.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 
+
+LIU et al.: ROBUST REGIONAL COORDINATION OF INVERTER-BASED Volt/Var CONTROL
+5433
+Qinglai Guo (Senior Member, IEEE) was born on
+March 6, 1979, in Jilin City, Jilin Province, China.
+He received the B.S. degree from the Department
+of
+Electrical
+Engineering,
+Tsinghua
+University,
+Beijing, China, in 2000, and the Ph.D. degree from
+Tsinghua University in 2005, where he is currently
+a Professor. His special ﬁelds of interest include
+smart grids, cyber–physical systems, and electrical
+power control center applications. He is currently a
+TCPC of Energy Internet Coordinating Committee
+of IEEE PES, the Co-Chair of IEEE PES Work
+Group on “Energy Internet,” IEEE PES Task Force on “Cyber–Physical
+Interdependence for Power System Operation and Control,” and IEEE PES
+Task Force on “Voltage Control for Smart Grid.” He is an Editorial Member
+of IEEE TRANSACTIONS ON POWER SYSTEMS, Renewable and Sustainable
+Energy Reviews, and IEEE TRANSACTIONS ON SMART GRID. He is currently
+an IET Fellow and a CIGRE member, and he is involved in ﬁve workgroups
+of these organizations.
+Zhao Yang Dong (Fellow, IEEE) received the Ph.D.
+degree from The University of Sydney, Australia, in
+1999. He is currently a SHARP Professor and the
+Director of UNSW Digital Grid Futures Institute,
+University of New South Wales, Australia. He
+was previously a Ausgrid Chair and the Director
+of the Ausgrid Centre for Intelligent Electricity
+Networks providing support for the Smart Grid,
+Smart City National Demonstration Project. His
+research interests include smart grid, power system
+planning and stability, renewable energy systems,
+electricity market, and computational methods for power engineering appli-
+cations. He is a Web of Science Highly Cited Researcher. He has served/is
+serving as an editor for a number of IEEE Transactions and IET journals.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:10:22 UTC from IEEE Xplore.  Restrictions apply. 

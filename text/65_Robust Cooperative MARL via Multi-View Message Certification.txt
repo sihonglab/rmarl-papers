@@ -1,0 +1,2051 @@
+ROBUST MULTI-AGENT COMMUNICATION VIA MULTI-VIEW
+MESSAGE CERTIFICATION
+A PREPRINT
+Lei Yuan1,2, Tao Jiang1, Lihe Li1, Feng Chen1, Zongzhang Zhang1, Yang Yu1,2,∗
+1 National Key Laboratory for Novel Software Technology, Nanjing University, Nanjing, China
+2 Polixir.ai
+{yuanl, jiangt, lilh, chenf}@lamda.nju.edu.cn, {zzzhang, yuy}@nju.edu.cn
+ABSTRACT
+Many multi-agent scenarios require message sharing among agents to promote coordination, hasten-
+ing the robustness of multi-agent communication when policies are deployed in a message perturba-
+tion environment. Major relevant works tackle this issue under speciﬁc assumptions, like a limited
+number of message channels would sustain perturbations, limiting the efﬁciency in complex sce-
+narios. In this paper, we take a further step addressing this issue by learning a robust Multi-Agent
+Communication policy via multi-view message Certiﬁcation, dubbed CroMAC. Agents trained un-
+der CroMAC can obtain guaranteed lower bounds on state-action values to identify and choose the
+optimal action under a worst-case deviation when the received messages are perturbed. Concretely,
+we ﬁrst model multi-agent communication as a multi-view problem, where every message stands
+for a view of the state. Then we extract a certiﬁcated joint message representation by a multi-view
+variational autoencoder (MVAE) that uses a product-of-experts inference network. For the opti-
+mization phase, we do perturbations in the latent space of the state for a certiﬁcate guarantee. Then
+the learned joint message representation is used to approximate the certiﬁcated state representation
+during training. Extensive experiments in several cooperative multi-agent benchmarks validate the
+effectiveness of the proposed CroMAC.
+1
+Introduction
+Many real-world problems are made up of multiple interactive agents, which could usually be modeled as a Multi-
+Agent Reinforcement Learning (MARL) problem [3, 89]. Further, when the agents hold a shared goal, this problem
+refers to cooperative MARL [43], which shows great progress in diverse domains like power management [66], multi-
+UAV control [86], dynamic algorithm conﬁguration [78], etc. Many methods are proposed to promote the coordination
+ability of MARL, including value-based methods [58, 51, 65], policy-gradient-based methods [33, 82, 81], and some
+variants [68, 4, 84, 70], showing great progress in many complex and challenging benchmarks [46, 17]. Neverthe-
+less, prior works hugely depend on the strength of Deep Neural Networks (DNNs), whose vulnerability might cause
+catastrophic results when any perturbation happens [41]. Recently this phenomenon has been tested in cooperative
+MARL [21], showing that a cooperative MARL system is of low robustness when encountering any perturbations
+(e.g., state, action, and reward).
+Robustness has been widely investigated in single-agent reinforcement learning (RL) [41], and many works have ap-
+plied different techniques to various aspects to investigate it. A prior popular way is to introduce an auxiliary adversary
+to play against the ego-system [48, 87, 63, 53], then model the process of policy learning as a minimax problem from
+the perspective of game theory [83], which may trigger performance deterioration or even unsafe behaviors when
+facing an unpredictable adversarial policy. Another kind of method tackles this issue by designing efﬁcient and useful
+regularizers in the training process [87, 42, 57, 73], showing efﬁcient robustness in various domains. Certiﬁcate-based
+methods furthermore apply some techniques like vector-ϵ-ball perturbations to obtain a certiﬁcate robustness guaran-
+∗Corresponding Author
+arXiv:2305.13936v1  [cs.MA]  7 May 2023
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+tee during the training and testing phases [12, 71, 55]. However, the MARL problem differs considerably from the
+single-agent setting, with multiple agents interacting with others [11].
+For the robustness of MARL, new challenges such as scalability [8] arise as multiple agents interact with others in
+the training phase. For example, in the auxiliary adversary training paradigm, the action space of adversary policy
+may grow dramatically with respect to the number of agents in an MARL system. Works on robust MARL should
+then consider both the robustness and the multi-agent speciﬁcity. Some works design efﬁcient mechanisms to obtain a
+robust policy to avoid overﬁtting to speciﬁc partners [62] or opponents [29], and others consider the Markov decision
+process (MDP) itself to get a robust policy in response to state [92], reward [88], and action [22, 23]. Nonetheless,
+the robustness of a communication policy is much more complex [93], as we should consider when to give what
+perturbations on which message channel(s) to adversarially train the communication policy. Prior works mainly in-
+vestigate the emergence of adversarial communication [2], or impose constraints like a limited number of message
+channels [56, 79] suffering from message perturbations. These approaches make progress somewhat, but the con-
+straints hinder the robustness’s completeness and are also far away from the real-world condition, as all the message
+channels could sustain perturbations [36]. Even worse, these approaches lack formal robustness guarantees or certiﬁ-
+cates between each agent’s received messages and decision-making.
+With this in mind, we propose to promote robustness in current multi-agent communication methods. We posit obtain-
+ing a robust communication policy where every messaging channel could suffer from perturbations at any time.
+Speciﬁcally, for any agent in an N-agent system, it will receive N −1 messages. As each message is a different view
+of the state, we model the message-receiving process as a multi-view (a.k.a. “multi-modal”) problem, then obtain joint
+message representations with robustness guarantees from each received message by a Multi-view Variational AutoEn-
+coder (MVAE) that uses a product-of-experts inference network. For the optimization phase, we ﬁrst encode the state
+into a latent space, and do perturbations in this space to obtain a certiﬁcate relationship between the latent variable and
+the agents’ Q-value. Then, we train the message representation by approximating the certiﬁcated latent variables, and
+ensure certiﬁcation between each message and the agents’ Q-value implicitly. As we directly impose perturbations
+in the latent space, the problem of speciﬁc action designing for any auxiliary adversaries can be avoided. For eval-
+uation, we conduct extensive experiments on various cooperative multi-agent benchmarks, including Hallway [67],
+Level-Based Foraging [46], Trafﬁc Junction [9], and two StarCraft Multi-Agent Challenge (SMAC) maps [67]. The
+results show that CroMAC achieves comparable or superior performance to multiple baselines. Moreover, visualiza-
+tion results show how CroMAC works, and more results demonstrate its high generality ability for different baselines
+on different conditions.
+2
+Related Work
+Multi-Agent Communication
+plays a promising role in multi-agent coordination under partial observability, which
+considers when to communicate with whom and what contents to share [93]. The early relevant works mainly
+consider designing different communication paradigms to improve communication efﬁciency [14, 54]. DIAL [14] is
+a simple communication mechanism where agents broadcast messages to all teammates, allowing the gradient to ﬂow
+among agents for end-to-end training with reinforcement learning. CommNet [54] proposes an efﬁcient centralized
+communication structure, where the outputs of the hidden layers from all the agents are collected and averaged to
+augment local observation. As the mentioned communication paradigm may cause message redundancy, some works
+employ techniques such as gate mechanisms [38, 10, 77] to explicitly decide whom to communicate with, or attention
+mechanisms [9, 39, 69] to weigh different messages. What messages to share among agents is another crucial issue.
+The most naive way is only to share local observations or their embeddings [14, 67], which inevitably causes bandwidth
+wasting or even degrades coordination efﬁciency. Towards a more efﬁcient communication protocol, some methods
+utilize techniques like teammate modeling to generate more succinct and efﬁcient messages [90, 91, 85]. For the
+robustness of message sharing in CMARL, Blumenkamp and Prorok [2] develop a new multi-agent learning model
+that integrates heterogeneous, potentially self-interested policies that share a differentiable communication channel to
+elicit the emergence of adversarial communications. Xue et al. [79] consider multi-agent adversarial communication,
+learning robust communication policy when some message senders are poisoned. A recent method named AME [56]
+is proposed to acquire a robust communication policy when less than half of the agents in the system sustain noise and
+potential attackers.
+Robustness in Single Agent Reinforcement Learning
+Moos et al. [41] involves perturbations that occur in differ-
+ent aspects in single agent reinforcement learning such as state, reward, policy, etc. Some prior methods introduce an
+adversary to achieve robustness via training the ego-system and the adversary in an alternative way [48, 44, 63, 87, 53].
+RARL [48] picks out speciﬁc robot joints that the adversary acts on to ﬁnd an equilibrium of the minimax objective
+using an alternative learning adversary. RAP [63] and GC [53] improve RARL by learning population-based augmen-
+2
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+tation to the Robust RL formulation. However, while these approaches provide better robust policies, it has been shown
+that such approaches can negatively impact policy performance in non-adversarial scenarios. Moreover, many unsafe
+behaviors may be exhibited during online attacks, potentially damaging the system controlled by the learning agent if
+adversarial training occurs in a physical rather than a simulated environment. Other methods improve robustness by
+designing useful and appropriate regularizers in the loss function [42, 57, 31]. Zhang et al. [87] formulate the problem
+of decision making under adversarial attacks on state observations as SA-MDP and learn a state-adversarial policy for
+multiple DRL methods like DDPG and DQN. RADIAL-RL [42] trains reinforcement learning agents with improved
+robustness against lp-norm bounded adversarial attacks, showing superior performance on multiple benchmarks.The
+mentioned approaches achieve robustness compared to adversarial training, improving the sample efﬁciency as they
+need not train an auxiliary adversary. Furthermore, these mentioned methods lack theoretical guarantee, hastening
+some recent certiﬁcate robustness methods [50, 12, 71, 72]. CARRL [50] develops an online certiﬁably robust policy
+that computes guaranteed lower bounds on state-action values during execution to identify and choose a robust action
+under a worst-case deviation in input space due to possible adversaries or noise. CROP [71] gives a solid theoretical
+guarantee for robust reinforcement learning and applies function smoothing techniques to train a robust policy.
+Multi-View (Modal) Representation Learning
+aims to learn feature representations from multi-view data using
+different views’ information. Its main difﬁculty is to explicitly measure the content similarity between the hetero-
+geneous samples. How to solve this problem roughly divides multi-view representation learning into three methods:
+alignment representation [47], joint representation [6], as well as shared and speciﬁc representation [76]. The key
+ideas of these methods are the same, which is establishing a common representation space by exploring the semantic
+relationship among the multi-view data. One popular and promising way is to use generative models like VAE [25],
+which generate this representation space in two ways: cross-view generation and joint-view generation. The former
+learns a conditional generative model over all views by applying techniques like conditional VAE [52]. Nevertheless,
+the latter learns the joint distribution of the multi-view data. For example, MVAE [74] models the joint posterior as a
+product-of-experts (POE), and JMVAE [59] learns a shared representation with a joint encoder. Please refer to [80, 1]
+for a comprehensive review. After the representation space is established by multi-view learning, some approaches
+use it to solve the modality missing problem [35], or obtain a compact representation from incomplete views [75]. Li
+et al. [28] extend the partially observable Markov decision processes (POMDPs) to support more than one observation
+model and propose two solutions through observation augmentation and cross-view policy transfer in a reinforcement
+learning problem. DRIBO [13] leverages the sequential nature of RL to learn robust representations that encode only
+task-relevant information from observations based on the unsupervised multi-view setting. Kinose et al. [26] introduce
+a novel reinforcement learning agent for integrated recognition and control from multi-view observations. To the best
+of our knowledge, none of any MARL approaches use multi-view learning to train the communication policy. We take
+a further step in this direction to get a robust message representation.
+Multi-agent Robustness
+Robustness also plays a promising role in MARL [21], but suffer from extra challenges
+that do not appear in the single-agent setting, as interactions exist among agents [20], leading to new and speciﬁc
+considerations such as non-stationarity [45], credit assignment [64], and scalability [8] when improving the robustness
+of any multi-agent system [21]. One type of relevant work aims to investigate the robustness of a learned coordination
+policy. Lin et al. [32] ﬁrst learn an observation attacker via RL, then use it to poison one manually selected agent,
+showing the multi-agent system is vulnerable to observation perturbation. Guo et al. [21] recently do more compre-
+hensive robustness testing on reward, state, and action for typical MARL methods like QMIX [51] and MAPPO [82].
+As for robustness improvement in MARL, research is conducted on multiple aspects. Many prior works focus on
+designing an efﬁcient approach to learning a robust coordination policy to avoid overﬁtting to speciﬁc partners [62] or
+opponents [29]. Akin to considering the MDP in a single-agent setting (e.g., state, reward, action), R-MADDPG [88]
+considers the model uncertainty of an MARL system, then introduces the concept of robust Nash equilibrium. Hu et al.
+[22] apply a heuristic rule to investigate the robustness of MARL when some agents suffer from action mistakes, and
+utilize correlated equilibrium theory to learn a robust coordination policy. Robustness in multi-agent communication
+has also attracted some attention in recent years. Mitchell et al. [40] apply a ﬁlter based on the Gaussian process to
+extract valuable content from noisy messages. Tu et al. [61] study robustness at the neural network level for secure
+multi-agent systems. Xue et al. [79] model multi-agent communication as a two-player zero-sum game and apply the
+policy-search response-oracle (PSRO) technique to learn a robust communication policy. The most related work to
+ours is Ablated Message Ensemble (AME) [56], which assumes no more than half of the message channels in the
+system may be attacked, then introduces an ensemble-based defense method to achieve robustness. However, we will
+show that this approach performs poorly in complex scenarios, as the constraints may impede robust efﬁciency.
+3
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+3
+Problem Formulation
+We consider a fully cooperative MARL communication problem, which can be formally modeled as a Decen-
+tralized Partially Observable MDP under Communication (Dec-POMDP-Com) [79] and formulated as a tuple
+⟨N, S, A, P, Ω, O, R, γ, M⟩, where N = {1, . . . , n}, S, A, and Ωare the sets of agents, states, actions, and ob-
+servations, respectively. O is the observation function, P denotes the transition function, R represents the reward
+function, γ ∈[0, 1) stands for the discounted factor, and M indicates the message set. Due to partially observable
+nature of the environment, each agent i ∈N can only obtain the local observation oi ∈Ω, and hold an individ-
+ual policy π(ai | τi, mi), where τi represents the output of a trajectory encoder (e.g., GRU [7]) which encodes
+(o1
+i , a1
+i , . . . , ot−1
+i
+, at−1
+i
+, ot
+i), and mi ∈M is the messages received by agent i and mij represents the message trans-
+mitted from j to i. As each agent can behave as a message sender as well as a message receiver, this paper considers
+learning useful message representation on the receiving end, and agents only use local information (e.g., τi, and we
+use m:,i for generality) as message m:,i to share within the team. We aim to ﬁnd an optimal policy under the setting
+where each message channel in the multi-agent system may suffer from perturbations. In line with the widely used
+state-adversarial MDP (SA-MDP) in single-agent RL [87, 49], we formulate this setting as a message-adversarial
+Dec-POMDP-Com (MA-Dec-POMDP-Com).
+In an MA-Dec-POMDP-Com, we introduce a message adversary v(m) : m →ˆm. The adversary perturbs the
+messages received by each agent, such that agent i takes action by π(ai|τi, ˆmi). The joint action a = ⟨a1, . . . , an⟩
+leads to the next state s′ ∼P(· | s, a) and the global reward R(s, a). The formal objective is to ﬁnd a joint policy
+π(τ, a) to maximize the global value function Qπ
+tot(τ, a) = Es,a [P∞
+t=0 γtR(s, a) | s0 = s, a0 = a, π], with τ =
+⟨τ1, . . . , τn⟩. If the adversary can perturb a message m arbitrarily without bounds, the problem becomes trivial.
+To ﬁt our method to the most realistic settings, we restrict the power of an adversary to a perturbation set B, i.e.,
+B = { ˆm | ∥m −ˆm∥p ≤ϵ}, where ϵ is the given perturbation magnitude and p determines the type of norm. Our
+experiments in this paper focus on p = ∞. Furthermore, since B(m) is usually a small set nearby m, our adversary
+applies FGSM [16] to learn a perturbation vector ∆, and we project m + ∆to B(m).
+4
+Method
+This section gives a detailed description of our proposed CroMAC (Fig. 1), a novel approach that achieves a robust
+communication policy under MA-Dec-POMDP-Com. As each message is a view of the state, we ﬁrst apply a multi-
+view variational autoencoder (MVAE) that uses a product-of-experts inference network to extract a joint message rep-
+resentation. Then we obtain the bounds between the joint message representation and each message by interval bound
+propagation [19]. In the training phase, we ﬁrst encode state st ∈S into a latent variable zst, then we impose pertur-
+bations in the latent space to gain a certiﬁcate guarantee between zst and each state-action value Qi(τi, zst ± κϵ; ai),
+where ±κϵ represents that the variable suffers from ℓ∞-norm perturbations within budget κϵ and κ is a constant. Fi-
+nally, the joint message representation zmsg is optimized by approximating zst via minimizing the Kullback-Leibler
+divergence between these two variables, endowing certiﬁcation between each message and each state-action value
+implicitly. In the execution phase, we only use the message aggregation module and the trajectory encoder to make
+decisions in a decentralized way.
+4.1
+Multi-view Multi-agent Communication
+We consider learning a robust communication policy in an MA-Dec-POMDP-Com. For each agent i, there are N −1
+message channels, thus each agent receives multiple available messages about the environment. Inspired by the widely
+used multi-view learning [30, 24], we apply the product-of-experts (POE) [18] technique to extract joint message
+representations. Formally, agent i receives multiple messages mt
+ij from teammate j ∈{1, · · · , i −1, i + 1, · · · , N}
+and holds its local history τ t
+i as mt
+ii at time t. We assume each message is conditioned on an unknown hidden variable
+zt
+ij, then the generation of multiple messages can be modeled as a multi-view variational autoencoder process. We
+then optimize the Evidence Lower BOund (ELBO) to maximize the marginal likelihood with a message encoder
+qφenc(zt
+ij|mt
+ij) parameterized with φenc, and a message decoder pφdec(mt
+ij|zt
+ij) with parameter φdec:
+ELBO(mt
+ij) ≜Eqφenc(zt
+ij|mt
+ij)
+
+log pφdec
+ mt
+ij | zt
+ij
+
+−KL
+
+qφenc(zt
+ij | mt
+ij), p(zt
+ij)
+
+,
+(1)
+where KL[p, q] is the Kullback-Leibler divergence between distributions p and q. The ﬁrst term in Eqn. 1 is the
+reconstruction likelihood, and the second term aims to guarantee that the output of the encoder is similar to the prior
+distribution p(zt
+ij), and can be regarded as a regularization term. The message encoder qφenc outputs parameters of
+an n-multivariate Gaussian distribution N(µt
+ij, σt
+ij), where µt
+ij and σt
+ij are the mean and standard deviation of p(zt
+ij),
+4
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+𝑄!(𝜏!, 𝑧"#±𝜅𝜖; 𝑎!)
+(𝑜!
+$, 𝑎!
+$%&)
+(a) The training phase
+×
+𝑧"#
+State
+Encoder
+𝑠$
+(𝑜!
+$, 𝑎!
+$%&)
+× Concatenate
+𝜏!
+$
+(c) The execution phase
+×
+𝜏!
+$
+(𝑜!
+$, 𝑎!
+$%&)
+Message
+Aggr. Module
+𝑚!&
+POE
+𝜇!
+𝜎!
+𝑚!&±𝜖
+𝑄!(𝜏!, 𝑧'"(; 𝑎!)
+𝑧'"(
+KL Regularization
+𝑚!)±𝜖
+Certified 
+Defense
+±𝜅𝜖
+𝑄!
+Action
+𝑎&
+𝑎*
+(optimal)
+𝑄! 𝑎"
+𝑄! 𝑎"
+𝑄! 𝑎#
+𝑄! 𝑎"
+𝑄! 𝑎#
+𝑄$%&&
+𝑄! 𝑎#
+(b) Message aggregation
+MLP
+𝜏!
+$%&
+𝜏!
+$
+𝜏!
+$
+GRU
+Trajectory
+Encoder
+MLP
+MARL Optimization
+(e.g., VDN, QMIX)
+…
+…
+MLP
+𝑧'"(
+Trajectory
+Encoder
+𝑚!*
+𝜇!" 𝜎!"
+𝑚!)
+𝜇!# 𝜎!#
+ℒ!"#
+ℒ(𝜙)
+Minimization
+Overlap
+𝜇!$ 𝜎!$
+𝐸$
+𝐸%
+𝐸&
+Figure 1: Structure of CroMAC. (a) During the training phase, we encode the state into latent variables zst, then perturb
+it to gain a certiﬁcate guarantee between zst and Qi(τi, zst ± κϵ; ai), and this process is optimized via minimizing the
+overlap between the output bounds of action values to get a large difference in the outcome. The whole process can be
+optimized by any value decomposition methods like QMIX [51], and the output of the message aggregation module
+zmsg is then used to approximate zst by minimizing their distance (e.g., KL divergence). (b) The message aggregation
+module. Each message mij is encoded into a latent space via a message encoder Ej, where j ∈{1, · · · , i −1, i +
+1, · · · , N}, and the parameters of Ej are regularized to obtain certiﬁcates between the joint message representation
+and each message. (c) After training, we use the learned message aggregation module and other shared modules like
+trajectory encoder to make a decision in a decentralized way.
+respectively. As all messages {mt
+i1, · · · , mt
+iN} are conditionally independent given the common latent variable zt
+i, we
+assume a generative model for all the messages in the form:
+p(mt
+i1, · · · , mt
+iN, zt
+i) = p(zt
+i)p(mt
+i1|zt
+i)p(mt
+i2|zt
+i) · · · p(mt
+iN|zt
+i).
+(2)
+Then Eqn. 1 can be extended as:
+ELBO(mt
+i) ≜Eqφenc(zt
+i|mt
+i)
+
+
+N
+X
+j=1
+log pφdec
+ mt
+ij | zt
+i
+
+
+−KL
+
+qφenc(zt
+i | mt
+i), p(zt
+i)
+
+,
+(3)
+where mt
+i = {mt
+i1, · · · , mt
+iN} is the set of messages agent i receives at time t and its local history mt
+ii (i.e., τ t
+i ).
+Then, this message generation process can be treated as a multi-view representation learning problem [59]. We use
+the inference network q(zt
+i | mt
+i) as a variational distribution to approximate the true posterior p(zt
+i | mt
+i), then get the
+5
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+relationship among the joint- and single- view posteriors as:
+p(zt
+i | mt
+i) = p(mt
+i | zt
+i)p(zt
+i)
+p(mt
+i)
+= p(zt
+i)
+p(mt
+i)
+N
+Y
+j=1
+p(mt
+ij | zt
+i)
+= p(zt
+i)
+p(mt
+i)
+N
+Y
+j=1
+p(zt
+i | mt
+ij)p(mt
+ij)
+p(zt
+i)
+=
+QN
+j=1 p(mt
+ij)
+p(mt
+i)
+QN
+j=1 p(zt
+i | mt
+ij)
+QN−1
+j=1 p(zt
+i)
+∝
+QN
+j=1 p(zt
+i | mt
+ij)
+QN−1
+j=1 p(zt
+i)
+≈
+QN
+j=1[q(zt
+i | mt
+ij)p(zt
+i)]
+QN−1
+j=1 p(zt
+i)
+= p(zt
+i)
+N
+Y
+j=1
+q(zt
+i | mt
+ij).
+(4)
+The last two lines in Eqn. 4 hold as we use q(zt
+i | mt
+ij)p(zt
+i) to approximate p(zt
+i | mt
+ij) so that the inference network
+is composed of N neural networks q(zt
+i | mt
+ij), and if each view is homogeneous, we can even replace them with only
+one network with shared parameters. Akin to the standard VAE [25], we apply a deep neural network (e.g., MLP)
+to model the message encoder qφenc(zt
+i|mt
+ij), which outputs the parameters of the Gaussian distribution µij, σ2
+ij. As
+for now, we can combine the multiple outputs of message encoder in a simple analytical way: a product of Gaussian
+experts is itself Gaussian [5]:
+µi = (
+N
+X
+j=1
+µijTij)(
+N
+X
+j=1
+Tij)−1,
+σ2
+i = (
+N
+X
+j=1
+Tij)−1,
+(5)
+where µi and σ2
+i are the mean and variance of the learned joint message representation’s Gaussian distribution, and
+µij and σ2
+ij are the mean and variance of the i-th agent’s j-th Gaussian distribution through message encoder, Tij =
+(σ2
+ij)−1 is the inverse of the variance. The detailed derivative process can be seen in A.
+4.2
+Message Certiﬁcates via Bound Propagation
+Though we have combined all the received messages into a joint message representation, the learned joint message
+representation still lacks a certiﬁcated guarantee with each received message under perturbation. In this part, we
+aim to achieve this using the interval bound propagation technique. Formally, consider agent i receives messages
+mi = {mi1, · · · , miN} under perturbations of ℓ∞-norm attack within given budget ϵ, the upper and lower bounds
+are mi = {mi1, · · · , miN} = {mi1 + ϵ, · · · , miN + ϵ} and mi = {mi1, · · · , miN} = {mi1 −ϵ, · · · , miN −ϵ},
+respectively. The averages and residuals of the upper and lower bounds can be denoted as:
+ˆµ0 = 1
+2(mi + mi) = mi,
+ˆr0 = 1
+2(mi −mi) = ϵ.
+(6)
+Here, we use “average” instead of “mean” to distinguish it from the one in VAE, and ˆµ and ˆr are used to represent
+averages and residuals, respectively. For simpliﬁcation of notation and mathematical derivation, we assume each
+message encoder has only one layer fully-connected network with shared parameters, and we can use any NNs with
+arbitrary depths and types (linear or non-linear) by getting a reasonable bound propagation mechanism [18]. Further,
+we here use Wm, bm, and Wv, bv to represent the parameters of the two separate fully connected layers in the message
+encoder, which output the means and variances of the Gaussian distributions, respectively. Thus we can propagate the
+bounds through the one MLP layer by matrix multiplication. The averages and residuals of the bounds come to be:
+ˆµm = {Wmˆµ0(1) + bm, · · · , Wmˆµ0(N) + bm},
+ˆrm = {|Wm|ˆr0(1), · · · , |Wm|ˆr0(N)},
+ˆµv = {Wv ˆµ0(1) + bv, · · · , Wv ˆµ0(N) + bv},
+ˆrv = {|Wv|ˆr0(1), · · · , |Wv|ˆr0(N)},
+(7)
+6
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+where (ˆµm, ˆrm) and (ˆµv, ˆrv) stand for the (average, residual) pairs of the mean outputs’ bounds and the variance
+outputs’ bounds, respectively, and | · | is the element-wise absolute value operator. We use ReLU as the activation
+function which is element-wise monotonic so that we can omit it as it will not affect the propagating bounds. Thus the
+upper and lower bounds of each single message representation (i.e., mean and variance) can be written as:
+zm = ˆµm + ˆrm = {Wmmi1 + bm + |Wm|ϵ, · · · , WmmiN + bm + |Wm|ϵ},
+zm = ˆµm −ˆrm = {Wmmi1 + bm −|Wm|ϵ, · · · , WmmiN + bm −|Wm|ϵ},
+zv = ˆµv + ˆrv = {Wvmi1 + bv + |Wv|ϵ, · · · , WvmiN + bv + |Wv|ϵ},
+zv = ˆµv −ˆrv = {Wvmi1 + bv −|Wv|ϵ, · · · , WvmiN + bv −|Wv|ϵ}.
+(8)
+Consider the relationship in Eqn. 5, we then have:
+ZM =
+  X
+i
+zm(i)zv(i)−1  X
+i
+zv(i)−1−1,
+ZV =
+  X
+i
+zv(i)−1−1,
+(9)
+where ZM, ZV represent the mean and variance of the joint message representation. However, we cannot get the upper
+and lower bounds as the POE we use is not afﬁne neural layers. Notice that ZV is actually the Harmonic Mean [15]
+of zv(i)
+N
+(the Harmonic Mean of variables xi is Hn =
+n
+1
+x1 + 1
+x2 +···+ 1
+xn ) while ZM is the Weighted Harmonic Mean
+of zm(i) with weights zm(i)
+zv(i) (the Weighted Harmonic Mean of xi with weights wi is Hn =
+m1+m2+···+mn
+m1
+x1 + m2
+x2 +···+ mn
+xn ). Here,
+variances zv(i) are non-negative and means zm(i) can be normalized to a positive range, therefore we can scale Eqn. 9
+appropriately by the properties of Harmonic Mean to infer the upper and lower bounds. We here prove one of them
+for simplicity. Take the variance term for example and simplify Wv, bv, ZV , zv as W, b, Z, z, we have:
+Z =
+  X
+i
+z(i)−1−1 ≤1 · max(z)
+N
+,
+Z =
+  X
+i
+z(i)−1−1 ≥1 · min(z)
+N
+.
+(10)
+Note that 1 is an all-1-vector with the same dimension as Z. (≤, ≥) signs here act on each element of vectors, and
+(max, min) operations ﬁnd the maximum or minimum number of vectors of the set. We can get the upper bound of
+the ﬁnal integration error:
+max(Z −Ztrue, Ztrue −Z) ≤Z −Z ≤1 · (max(z) −min(z))
+N
+,
+(11)
+where Ztrue stands for the ground truth value. Assume the p-th element of the j-th vector of z is max(z) and q-th
+element of the k-th vector of z is min(z), we get
+max(z) −min(z) = (Wmij + b + |W|ϵ)p −(Wmik + b −|W|ϵ)q
+= Wp,:mij −Wq,:mik + bp −bq + (|W|p,: −|W|q,:)ϵ,
+(12)
+where Wp,: means the p-th row of matrix W. We can notice that the integration error can be limited to a constant
+∥|W|p,: −|W|q,:∥1/N times ϵ if W, b, mi are bounded. Through subsequent experiments, we found that good robust-
+ness could be achieved when κ times the noise is considered in the integrated information with only W bounded to
+[C MIN, C MAX], here C MIN, C MAX, κ are hyperparameters and we let C MIN = −C MAX.
+4.3
+Robustness Training Scheme
+As we have obtained the theoretical guarantee between the received messages and the learned joint message represen-
+tation, now this subsection describes how to acquire a robust communication policy. Following the popular Centralized
+Training and Decentralized Execution (CTDE) paradigm [27, 34], during the training phase, we use a state encoder
+(e.g., additional VAE [25]) to encode the state s into a latent space with parameter ψ:
+L(ψ) = −Eqψenc(zst|s)[log pψdec(s | zst)] + KL [qψenc(zst | s), p(zst)] ,
+(13)
+where the operators are similar to Eqn. 1. We can then apply any robust single-agent RL algorithm to achieve robust-
+ness. We here implement our method on RADIAL-RL [42] as it principles a framework in adversarial training with
+7
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+strong theoretical guarantee and robustness performance. Then we can minimize the following loss to optimize each
+agent’s individual policy:
+Ladv = E(s,a,s′,r)
+"X
+i
+X
+y
+Qi
+diﬀ(τ, zst; y) · Ovli(τ, zst, κϵ; y)
+#
+,
+(14)
+with
+Qi
+diﬀ(τ, zst; y) = max(0, Qi(τ, zst; a) −Qi(τ, zst; y)),
+Ovli(τ, zst, κϵ; y) = max(0, Q
+i(τ, zst, κϵ; y) −Qi(τ, zst, κϵ; a)),
+(15)
+where i is the identiﬁcation of each agent, y is each action, a is the chosen action, and Q, Q can be computed by
+interval bound propagation under ℓ∞-norm perturbation within budget κϵ, which is readily available as there is only
+MLP network existing between the Q-values and (τ, zst). Ovl represents the overlap between the bounds of two
+actions which can be seen in Fig. 1, and Qdiﬀmeasures the relative quality between two actions as we can ignore the
+overlap if they are similar enough. We note that the model’s initial training will be hindered if we add the robust loss.
+Therefore, it is better to start robust training after the training is stable, and we use Tr to control it. Then we optimize
+the joint message representation by minimizing the KL divergence between zst and zmsg, and we use only the message
+encoder φenc to make the inference of the joint message representation:
+L(φ) = KL [sg(zst), qφenc(zmsg | m)] ,
+(16)
+where sg(·) denotes gradient stop, and zmsg is the joint message representations sampled from N(µi, σ2
+i ). Then the
+overall loss function is as follows:
+L = LTD(θ) + α1L(ψ) + α2L(φ) + I(t > Tr)α3Ladv.
+(17)
+Here, LTD(θ) is the temporal difference loss, α1, α2, and α3 are adjustable hyperparameters for each loss function
+accordingly, and I(·) is the indicator function. In the CTDE framework, the mixing network will be removed during
+the decentralized execution phase. To prevent the lazy-agent problem [58] and reduce model complexity, we make the
+local network have the same parameters for all agents. The pseudo-code is shown in B.
+1
+2
+3
+4
+1
+2
+2
+1
+(a) Hallway
+(b) LBF
+(c) Traffic Junction (TJ)
+(d) SMAC
+𝑐!
+𝑐"
+𝑐#
+…
+𝑏!
+𝑏"
+𝑏#
+…
+𝑎$
+𝑎"
+𝑎#
+…
+…
+…
+𝑔
+Figure 2: Multiple benchmarks used in our experiments.
+5
+Experimental Results
+In this section, we design experiments on multiple complex scenarios to evaluate the communication robustness for
+the following questions: (1) How is the robustness of our proposed method on multiple benchmarks compared with
+baselines (Sec. 5.2) ? (2) What is the generalization ability of CroMAC when encountering different message perturba-
+tions (Sec. 5.3) ? (3) Can CroMAC be integrated into multiple cooperative MARL methods in different communication
+conditions, and how does each hyperparameter inﬂuence its performance (Sec. 5.4) ?
+For empirical evaluation, we compare CroMAC with multiple baselines on different cooperative tasks, including Hall-
+way [67], Level-Based Foraging (LBF) [46], Trafﬁc Junction (TJ) [9], and two maps from StarCraft Multi-Agent
+Challenge (SMAC) [67]. CroMAC is implemented on QMIX if not speciﬁed based on PyMARL2. All results are
+illustrated with mean performance and standard error on 5 random seeds. Detailed network architecture and hyperpa-
+rameter choices are shown in C.
+2https://github.com/oxwhirl/pymarl
+8
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+0.0M
+0.4M
+0.8M
+1.2M
+1.6M
+2.0M
+Timesteps
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Mean Test Win Rate
+(a) Hallway: 4x5x6
+0.0M
+0.4M
+0.8M
+1.2M
+1.6M
+2.0M
+Timesteps
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+(b) LBF: 3p-1f
+0.0M
+0.4M
+0.8M
+1.2M
+1.6M
+2.0M
+Timesteps
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+(c) TJ: slow
+0.0M
+0.4M
+0.8M
+1.2M
+1.6M
+2.0M
+Timesteps
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+(d) SMAC: 1o10b vs 1r
+0.0M
+0.4M
+0.8M
+1.2M
+1.6M
+2.0M
+Timesteps
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Mean Test Win Rate
+(e) Hallway: 3x3x4x4
+0.0M
+0.4M
+0.8M
+1.2M
+1.6M
+2.0M
+Timesteps
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+(f) LBF: 4p-1f
+0.0M
+0.4M
+0.8M
+1.2M
+1.6M
+2.0M
+Timesteps
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+(g) TJ: fast
+0.0M
+0.4M
+0.8M
+1.2M
+1.6M
+2.0M
+Timesteps
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+(h) SMAC: 1o2r vs 4r
+Figure 3: Empirical Results of several algorithms tested in two different perturbation conditions on benchmarks. Note
+that Full-Comm, CroMAC w/o adv, and QMIX are tested in perturbation-free conditions, while CroMAC, CroMAC
+w/o robust, and AME suffer from message perturbations when testing. See text for more details.
+5.1
+Baselines and Environments
+We consider multiple baselines with different communication ability, where QMIX [51] is a value-based baseline,
+where no message sharing among agents, showing excellent performance on diverse multi-agent benchmarks [46].
+AME [56] is a recent strong method for the robustness of multi-agent communication, which assumes no more than
+half of the agents may suffer from message perturbations, and an ensemble-based defense approach is then introduced
+to realize the robustness goal. Full-Comm adopts a full communication paradigm, where each agent receives messages
+from all teammates at each timestep without message perturbations both in the training and testing phases, which
+can be seen as an upper-bound performance algorithm. For the ablation studies, we consider multiple variants of
+CroMAC. CroMAC w/o robust and CroMAC w/o adv are two variants of our proposed CroMAC, the former does
+not have the proposed robust training scheme while the latter is conducted in the non-perturbed condition in both
+the training and testing phases. We consider multiple benchmarks, where Hallway [67] is a cooperative environment
+under partial observability, with m agents are randomly initialized at different positions and required to arrive at
+the goal g simultaneously. We consider two scenarios with different numbers of agents and lengths of the hallway.
+LBF [46] is another cooperative, partially observable grid world game where agents should coordinate to collect food
+concurrently. As the original version focuses on exploration, here we modify it by making only one agent able to
+observe the map, which needs strong communication to complete this task. TJ [9] is another popular benchmark
+used to test communication ability, where multiple cars move along two-way roads with one or more road junctions
+following predeﬁned routes. We test on the modiﬁed slow and fast scenarios where different maps have a different
+probability of adding new cars. Two maps named 1o 2r vs 4r and 1o 10b vs 1r from SMAC [67] that require efﬁcient
+communication are also used to test the robustness in more complex scenarios. Details are presented in D.
+5.2
+Robustness Comparison and Analysis
+We ﬁrst compare CroMAC against multiple baselines to investigate the communication robustness on various bench-
+marks. As shown in Fig. 3, QMIX achieves the most inferior performance in all environments, demonstrating that
+communication is needed. Full-Comm can solve all the tasks under perturbation-free conditions, showing that these
+tasks need communication and can be solved by a simple communication mechanism. CroMAC w/o adv, an abla-
+tion of CroMAC where testing is conducted under perturbation-free conditions, can achieve comparable coordination
+ability with Full-Comm, validating the speciﬁc design of our CroMAC does not cause much performance degrada-
+9
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+(a) t=3
+(b) t=4
+(c) PCA projection (w/o robust)
+(d) PCA projection (w/ robust)
+still
+left
+right
+Agent 1
+0.22
+-924.43
+-11.52
+0.23
+-505.67
+1.78
+1.04
+2.40
+21.67
+-13.72
+-3984.29
+-89.09
+Agent 2
+0.15
+-829.25
+-11.23
+0.21
+-418.33
+2.88
+0.91
+4.16
+16.60
+-12.73
+-3886.47
+-87.82
+Agent 3
+-17.46
+-3.50
+-35.85
+-12.35
+-2.94
+-31.08
+13.05
+-1.33
+9.47
+-33.83
+-5.80
+-66.71
+still
+left
+right
+Agent 1
+-548.97
+0.39
+-159.88
+0.24
+-322.72
+-12.10
+0.54
+0.64
+14.30
+-1208.64
+-544.16
+-3523.17
+Agent 2
+-603.77
+0.38
+-175.25
+0.19
+-320.74
+-12.13
+-10.18
+0.69
+-41.10
+-1215.66
+-529.83
+-3542.15
+Agent 3
+-617.34
+0.39
+-174.57
+0.06
+-225.45
+-12.46
+-56.64
+0.74
+-112.33
+-1219.98
+-412.51
+-3558.12
+(e) Q-values (w/o robust)
+still
+left
+right
+Agent 1
+-1.79
+-37.59
+-2.60
+-1.77
+-24.69
+-2.85
+-1.76
+-12.43
+-2.12
+-1.81
+-62.74
+-3.08
+Agent 2
+-1.78
+-34.59
+-2.60
+-1.77
+-21.79
+-2.90
+-1.76
+-9.44
+-2.18
+-1.81
+-59.75
+-3.14
+Agent 3
+-11.26
+-8.44
+-15.79
+-10.66
+-8.47
+-15.23
+-9.88
+-8.28
+-14.03
+-12.95
+-8.56
+-19.59
+still
+left
+right
+Agent 1
+-73.13
+-8.02
+-1371.43
+40.38
+-8.05
+-877.14
+-19.43
+-6.63
+-513.75
+-129.83
+-15.48
+-2228.88
+Agent 2
+-76.88
+-7.97
+-1409.60
+-43.98
+-8.01
+-913.24
+-21.16
+-6.66
+-563.92
+-132.60
+-17.39
+-2255.06
+Agent 3
+-90.14
+-8.04
+-1499.88
+-57.26
+-8.08
+-1004.16
+-32.39
+-6.61
+-601.60
+-147.89
+-16.27
+-2398.04
+(f) Q-values (w/ robust)
+𝑐𝑛
+𝑐2
+𝑐1
+…
+𝑏𝑚
+𝑏2
+𝑏1
+…
+𝑎𝑙
+𝑎2
+𝑎1
+…
+𝑔
+𝑐𝑛
+𝑐2
+𝑐1
+…
+𝑏𝑚
+𝑏2
+𝑏1
+…
+𝑎𝑙
+𝑎2
+𝑎1
+…
+𝑔
+Figure 4: Visualization results. We take t = 3 and 4 in Hallway as shown in (a) and (b), where Agent 1 and Agent
+2 stand one step from the goal while Agent 3 needs to take two steps to reach the goal. (c) and (d) show the PCA
+projection [60] of the message representation zmsg for (a) and (b), with • and ⋆represent zmsg with and without
+perturbations, respectively. Note that zmsg is the same for agents without perturbations, and some • are darker because
+multiple ones overlap together. ▲, ▼represents the upper and lower bounds of zmsg, note that ellipses of the same
+color represent the same time step. (e) and (f) display the Q-values (multiplied by 100 for viewing) of each agent
+accordingly, where the ﬁrst row means the original Q-values of all actions, while the second row refers to them under
+perturbations with red fonts representing the selected actions in corresponding cases. The third and fourth rows show
+the upper and lower bounds of Q-values under ϵ-perturbation, where yellow squares are the lower bounds of Q-values
+over best actions while blue squares are the upper bounds of Q-values over other actions.
+tion for a communication goal. On the contrary, when message perturbations occur during the testing phase, it can
+be easily found that CroMAC w/o robust, a variant of our proposed method without an efﬁcient robust mechanism,
+suffers from severe performance degradation compared with Full-Comm and CroMAC w/o adv. However, CroMAC
+exhibits higher robustness than others, and it surprises us that AME also suffers from severe performance degradation
+under perturbations, which means an unreasonable constraint for robustness training cannot be applied in complex and
+severe message perturbation conditions.
+Furthermore, we conduct experiments on task Hallway to investigate how CroMAC learns a robust communication
+policy. As shown in Fig. 4, three agents coordinate to reach the goal. When suffering from perturbations, the message
+representation learned by methods without a robust mechanism will go out of the upper and lower bounds, leading to
+an unpredictable input for the local policy. Consequently, the message perturbation inﬂuences the action selection of
+each agent. Take Agent 1 in Fig. 4(e) as an example. It should keep still with Agent 2 at t = 3 to wait for Agent
+3 to go left together for success. However, when suffering from perturbations, the message representation jumps out
+of the normal range. It unexpectedly goes right, as the according Q-value 1.78 is dominant to others (0.23 for still
+and −505.67 for left). On the contrary, with our robustness scheme, the message representations can be bounded
+in a reasonable range, leading to a robust action selection compared with the perturbation-free setting, as shown in
+Fig. 4(f). The whole process shows our approach can obtain message certiﬁcation when any perturbations happen.
+5.3
+Robustness Under Various Perturbations
+As this study considers a setting where the number of attacks is ﬁxed during the training phase, we evaluate here the
+generalization ability when altering the perturbation budget and encountering different perturbation methods in the
+testing phase. Speciﬁcally, we conduct experiments on each benchmark with the same structures and hyperparameters
+10
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+Table 1: Average test win rates for CroMAC and AME under different message perturbation conditions. The results
+are averaged from 1000 test episodes among 5 random seeds, where FGSM (n) refers to methods under FGSM attack
+with different budgets. The details of each perturbation methods are shown in C.
+Environment Method
+Natural
+Random
+PGD
+FGSM (1) FGSM (2)
+FGSM
+FGSM (3) FGSM (4)
+Hallway
+4x5x6
+CroMAC 0.93±0.06 0.91±0.11 0.92±0.13 0.97±0.03 0.86±0.04 0.91±0.10 0.60±0.31 0.66±0.39
+AME
+0.98±0.01 0.93±0.04 0.43±0.20 0.66±0.34 0.61±0.34 0.62±0.31 0.36±0.10 0.10±0.20
+REC
+1.00±0.00 0.95±0.08 0.90±0.20 0.96±0.06 0.62±0.38 0.82±0.23 0.68±0.40 0.41±0.43
+LBF
+3p-1f
+CroMAC 0.71±0.05 0.72±0.03 0.61±0.09 0.71±0.07 0.67±0.09 0.64±0.13 0.43±0.15 0.30±0.08
+AME
+0.77±0.04 0.72±0.04 0.58±0.11 0.63±0.09 0.56±0.02 0.47±0.03 0.36±0.10 0.29±0.04
+TJ
+slow
+CroMAC 0.31±0.07 0.46±0.20 0.31±0.23 0.29±0.12 0.31±0.09 0.37±0.14 0.42±0.16 0.32±0.18
+AME
+0.12±0.07 0.13±0.03 0.15±0.06 0.13±0.06 0.13±0.06 0.12±0.06 0.08±0.02 0.13±0.06
+SMAC
+1o10b vs 1r
+CroMAC 0.65±0.10 0.64±0.12 0.53±0.07 0.56±0.04 0.52±0.18 0.59±0.08 0.41±0.14 0.34±0.03
+AME
+0.38±0.12 0.52±0.24 0.51±0.17 0.44±0.13 0.45±0.20 0.38±0.02 0.44±0.19 0.43±0.07
+VDN
+QMIX
+QPLEX
+Algorithms
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+Mean Test Win Rate
+w/o CroMAC
+w/ CroMAC
+(a) LBF: 3p-1f
+0.0M
+0.4M
+0.8M
+1.2M
+1.6M
+2.0M
+Timesteps
+0.00
+0.15
+0.30
+0.45
+0.60
+Mean Test Win Rate
+CroMAC (s9)
+QMIX (s9)
+CroMAC (s6)
+QMIX (s6)
+CroMAC (s3)
+QMIX (s3)
+(b) SMAC: 1o10b vs 1r
+Figure 5: (a) Average test success rates of CroMAC implemented with different value based MARL methods. (b)
+Performance comparison with varying sights, where sn means the sight range is n and the default sight range is 9.
+as Sec. 5.2 during training. As shown in Tab. 1, we consider eight communication situations, where “Natural” means
+no perturbation exist, FGSM is the training condition of the comparable approaches, and others like PGD are other
+conditions, details can be seen in C. We can ﬁnd that AME can achieve comparable or even superiority over CroMAC
+in the Natural setting without message perturbations and also maintain competitiveness when suffering from random
+perturbations, showing that AME possesses robustness for simple message perturbations. However, AME sustains a
+drastic performance degradation when we alter the perturbation budget like FGSM (4) or other perturbation models
+like PGD in the Hallway environment. On the other hand, our CroMAC achieves high superiority over AME in most
+environments under different perturbations, demonstrating its high generalization ability when encountering different
+perturbation budgets and perturbation methods.
+5.4
+Generality and Parameter Sensitivity
+CroMAC is a robust communication training paradigm and is agnostic to speciﬁc value decomposition MARL methods
+and any sight conditions. Here we treat it as a plug-in module and integrate it with existing MARL value decomposition
+methods like VDN [58], QMIX [51], and QPLEX [65]. As shown in Fig. 5a, when integrating with CroMAC, the
+performance of the baselines vastly improves on scenario LBF:3p-1f with message perturbations, indicating that the
+proposed training paradigm can signiﬁcantly enhance robustness for various MARL methods. It is worth mentioning
+that QPLEX shows instability when adding robust loss and we choose the best result in the training process for
+comparison. Furthermore, when we alter the agents’ sight range in the SMAC map 1o10b vs 1r, the results shown
+11
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+1
+3
+5
+7
+10
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Mean Test Win Rate
+(a) Sensitivity of κ
+0.01
+0.05
+0.1
+0.2
+1
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Mean Test Win Rate
+(b) Sensitivity of C MAX
+0.001
+0.01
+0.1
+1
+10
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Mean Test Win Rate
+(c) Sensitivity of α1
+0.00001
+0.0001
+0.001
+0.01
+0.1
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Mean Test Win Rate
+(d) Sensitivity of α2
+0.1
+0.2
+0.3
+0.4
+0.5
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Mean Test Win Rate
+(e) Sensitivity of α3
+Figure 6: Sensitivity of hyperparameters used in this paper.
+in Fig. 5b also demonstrate that CroMAC can improve the coordination robustness in different sight conditions for
+QMIX with communication, showing its high generality under different communication scenarios.
+As CroMAC includes multiple hyperparameters, here we conduct experiments on scenario Hallway: 4x5x6 to inves-
+tigate how each one inﬂuences the robustness. Where κ controls the attack strength added to the latent state space.
+If it is too small, we cannot guarantee good robustness in the testing phase, and if it is too large, the policy may be
+too smooth and not optimal anymore. As shown in Fig. 6a, we can ﬁnd that κ = 3 is the best choice in this scenario.
+Furthermore, the value range of the network weight W is used to get an approximate bound of the integration error.
+Fig. 6b shows that C MAX = 0.1 performs best. We can ﬁnd the most appropriate parameters for other scenarios in
+the same way. More details for other scenarios are shown in App. E. Besides, as there are multiple hyperparameters
+of each loss function, we show how each adjustable hyperparameter named α1, α2, and α3 inﬂuence the robustness of
+CroMAC, we continue to conduct experiments on the task Hallway: 4x5x6 to investigate how each hyperparameter α
+inﬂuences the robustness. As shown in Fig. 6c-6e, we can ﬁnd that when the parameter is slightly larger or smaller,
+the performance may suffer corresponding degradation and the stability will also decline.
+6
+Conclusion and Future Work
+Considering the great signiﬁcance of robustness for real-world policy deployment and the enormous potential of
+MARL, this paper takes a further step towards robustness in MARL communication. We ﬁrst model the multi-agent
+communication as a multi-view problem and apply a multi-view variational autoencoder that uses a product-of-experts
+inference network to obtain a joint message representation from the received messages, then a certiﬁcate guarantee be-
+tween the joint message representation and each received message is obtained via interval bound propagation. For the
+optimization phase, we ﬁrst encode the state into a latent space, and do perturbations in this space to get a certiﬁcate
+state representation. Then the learned joint message representation is used to approximate the certiﬁcate state repre-
+sentation. Extensive experimental results from multiple aspects demonstrate the efﬁciency of the proposed method. In
+terms of possible future work, as we learn the communication policy online, how we can learn a robust communication
+policy in ofﬂine MARL is challenging but of great value.
+Acknowledgements
+This work is partly supported by the National Key Research and Development Program of China (2020AAA0107200),
+the National Science Foundation of China (61921006, 61876119, 62276126), the Natural Science Foundation of
+12
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+Jiangsu (BK20221442), and the program B for Outstanding PhD candidate of Nanjing University. We thank Ziqian
+Zhang and Fuxiang Zhang for their useful suggestions.
+References
+[1] Khaled Bayoudh, Raja Knani, Fayc¸al Hamdaoui, and Abdellatif Mtibaa. 2022. A survey on deep multimodal
+learning for computer vision: advances, trends, applications, and datasets. The Visual Computer 38, 8 (2022),
+2939–2970.
+[2] Jan Blumenkamp and Amanda Prorok. 2021. The Emergence of Adversarial Communication in Multi-Agent
+Reinforcement Learning. In CoRL. 1394–1414.
+[3] Lucian Busoniu, Robert Babuska, and Bart De Schutter. 2008. A Comprehensive Survey of Multiagent Rein-
+forcement Learnin. IEEE Transactions on Systems, Man, and Cybernetics, Part C (Applications and Reviews)
+38, 2 (2008), 156–172.
+[4] Jiahan Cao, Lei Yuan, Jianhao Wang, Shaowei Zhang, Chongjie Zhang, Yang Yu, and De-Chuan Zhan.
+2021. LINDA: Multi-Agent Local Information Decomposition for Awareness of Teammates. arXiv preprint
+arXiv:2109.12508 (2021).
+[5] Yanshuai Cao and David J Fleet. 2014. Generalized Product of Experts for Automatic and Principled Fusion of
+Gaussian Process Predictions. arXiv preprint arXiv:1410.7827 (2014).
+[6] Ning Chen, Jun Zhu, Fuchun Sun, and Eric Poe Xing. 2012. Large-Margin Predictive Latent Subspace Learning
+for Multiview Data Analysis. IEEE transactions on pattern analysis and machine intelligence 34, 12 (2012),
+2365–2378.
+[7] Kyunghyun Cho, Bart van Merri¨enboer, Caglar Gulcehre, Dzmitry Bahdanau, Fethi Bougares, Holger Schwenk,
+and Yoshua Bengio. 2014. Learning Phrase Representations using RNN Encoder-Decoder for Statistical Machine
+Translation. In EMNLP. 1724–1734.
+[8] Filippos Christianos, Georgios Papoudakis, Muhammad A Rahman, and Stefano V Albrecht. 2021. Scaling
+Multi-Agent Reinforcement Learning with Selective Parameter Sharing. In ICML. 1989–1998.
+[9] Abhishek Das, Th´eophile Gervet, Joshua Romoff, Dhruv Batra, Devi Parikh, Mike Rabbat, and Joelle Pineau.
+2019. TarMAC:Targeted Multi-Agent Communication. In ICML. 1538–1546.
+[10] Ziluo Ding, Tiejun Huang, and Zongqing Lu. 2020. Learning Individually Inferred Communication for Multi-
+Agent Cooperation. In NeurIPS.
+[11] Ali Dorri, Salil S Kanhere, and Raja Jurdak. 2018. Multi-agent systems: A survey. IEEE Access 6 (2018),
+28573–28593.
+[12] Michael Everett, Bj¨orn L¨utjens, and Jonathan P. How. 2022. Certiﬁable Robustness to Adversarial State Uncer-
+tainty in Deep Reinforcement Learning. IEEE Transactions on Neural Networks and Learning Systems 33, 9
+(2022), 4184–4198.
+[13] Jiameng Fan and Wenchao Li. 2022. DRIBO: Robust Deep Reinforcement Learning via Multi-View Information
+Bottleneck. In ICML. 6074–6102.
+[14] Jakob N. Foerster, Yannis M. Assael, Nando de Freitas, and Shimon Whiteson. 2016. Learning to Communicate
+with Deep Multi-Agent Reinforcement Learning. In NeurIPS. 2137–2145.
+[15] Walter Gautschi. 1974. A harmonic mean inequality for the gamma function. SIAM Journal on Mathematical
+Analysis 5, 2 (1974), 278–281.
+[16] Ian J. Goodfellow, Jonathon Shlens, and Christian Szegedy. 2015. Explaining and Harnessing Adversarial Ex-
+amples. In ICLR.
+[17] Rihab Gorsane, Omayma Mahjoub, Ruan John de Kock, Roland Dubb, Siddarth Singh, and Arnu Pretorius.
+2022. Towards a Standardised Performance Evaluation Protocol for Cooperative MARL. In NeurIPS.
+[18] Sven Gowal, Krishnamurthy Dvijotham, Robert Stanforth, Rudy Bunel, Chongli Qin, Jonathan Uesato, Relja
+Arandjelovic, Timothy Mann, and Pushmeet Kohli. 2018. On the Effectiveness of Interval Bound Propagation
+for Training Veriﬁably Robust Models. arXiv preprint arXiv:1810.12715 (2018).
+[19] Sven Gowal, Krishnamurthy Dj Dvijotham, Robert Stanforth, Rudy Bunel, Chongli Qin, Jonathan Uesato, Relja
+Arandjelovic, Timothy Mann, and Pushmeet Kohli. 2019. Scalable Veriﬁed Training for Provably Robust Image
+Classiﬁcation. In ICCV. 4842–4851.
+[20] Sven Gronauer and Klaus Diepold. 2022. Multi-agent deep reinforcement learning: a survey. Artiﬁcial Intelli-
+gence Review 55, 2 (2022), 895–943.
+13
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+[21] Jun Guo, Yonghong Chen, Yihang Hao, Zixin Yin, Yin Yu, and Simin Li. 2022. Towards Comprehensive Test-
+ing on the Robustness of Cooperative Multi-agent Reinforcement Learning. arXiv preprint arXiv:2204.07932
+(2022).
+[22] Yizheng Hu, Kun Shao, Dong Li, Jianye Hao, Wulong Liu, Yaodong Yang, Jun Wang, and Zhanxing Zhu. 2021.
+Robust Multi-Agent Reinforcement Learning Driven by Correlated Equilibrium. https://openreview.net/
+forum?id=JvPsKam58LX
+[23] Yizheng Hu and Zhihua Zhang. 2022. Sparse Adversarial Attack in Multi-agent Reinforcement Learning. arXiv
+preprint arXiv:2205.09362 (2022).
+[24] HyeongJoo Hwang, Geon-Hyeong Kim, Seunghoon Hong, and Kee-Eung Kim. 2021. Multi-View Representa-
+tion Learning via Total Correlation Objective. In NeurIPS. 12194–12207.
+[25] Diederik P. Kingma and Max Welling. 2014. Auto-Encoding Variational Bayes. In ICLR.
+[26] Akira Kinose, Masashi Okada, Ryo Okumura, and Tadahiro Taniguchi. 2022. Multi-View Dreaming: Multi-View
+World Model with Contrastive Learning. arXiv preprint arXiv:2203.11024 (2022).
+[27] Landon Kraemer and Bikramjit Banerjee. 2016. Multi-agent reinforcement learning as a rehearsal for decentral-
+ized planning. Neurocomputing 190 (2016), 82–94.
+[28] Minne Li, Lisheng Wu, Jun Wang, and Haitham Bou Ammar. 2019. Multi-View Reinforcement Learning. In
+NeurIPS. 1418–1429.
+[29] Shihui Li, Yi Wu, Xinyue Cui, Honghua Dong, Fei Fang, and Stuart Russell. 2019. Robust Multi-Agent Rein-
+forcement Learning via Minimax Deep Deterministic Policy Gradient. In AAAI. 4213–4220.
+[30] Yingming Li, Ming Yang, and Zhongfei Zhang. 2018. A Survey of Multi-View Representation Learning. IEEE
+transactions on knowledge and data engineering 31, 10 (2018), 1863–1883.
+[31] Yongyuan Liang, Yanchao Sun, Ruijie Zheng, and Furong Huang. 2022. Efﬁcient Adversarial Training without
+Attacking: Worst-Case-Aware Robust Reinforcement Learning. In NeurIPS.
+[32] Jieyu Lin, Kristina Dzeparoska, Sai Qian Zhang, Alberto Leon-Garcia, and Nicolas Papernot. 2020. On the
+Robustness of Cooperative Multi-Agent Reinforcement Learning. In SPW. 62–68.
+[33] Ryan Lowe, Yi Wu, Aviv Tamar, Jean Harb Pieter Abbeel, and Igor Mordatch. 2017. Multi-Agent Actor-Critic
+for Mixed Cooperative-Competitive Environments. In NeurIPS. 6379–6390.
+[34] Xueguang Lyu, Yuchen Xiao, Brett Daley, and Christopher Amato. 2021. Contrasting Centralized and Decen-
+tralized Critics in Multi-Agent Reinforcement Learning. In AAMAS. 844–852.
+[35] Mengmeng Ma, Jian Ren, Long Zhao, Sergey Tulyakov, Cathy Wu, and Xi Peng. 2021. SMIL: Multimodal
+Learning with Severely Missing Modality. In AAAI. 2302–2310.
+[36] David J. C. MacKay. 2003. Information theory, inference, and learning algorithms. Cambridge University Press.
+[37] Aleksander Madry, Aleksandar Makelov, Ludwig Schmidt, Dimitris Tsipras, and Adrian Vladu. 2018. Towards
+Deep Learning Models Resistant to Adversarial Attacks. In ICLR.
+[38] Hangyu Mao, Zhengchao Zhang, Zhen Xiao, Zhibo Gong, and Yan Ni. 2020. Learning Agent Communication
+under Limited Bandwidth by Message Pruning. In AAAI. 5142–5149.
+[39] Hangyu Mao, Zhengchao Zhang, Zhen Xiao, Zhibo Gong, and Yan Ni. 2020. Learning multi-agent communi-
+cation with double attentional deep reinforcement learning. Autonomous Agents and Multi-Agent Systems 34, 1
+(2020), 1–34.
+[40] Rupert Mitchell, Jan Blumenkamp, and Amanda Prorok. 2020.
+Gaussian Process Based Message Filter-
+ing for Robust Multi-Agent Cooperation in the Presence of Adversarial Communication.
+arXiv preprint
+arXiv:2012.00508 (2020).
+[41] Janosch Moos, Kay Hansel, Hany Abdulsamad, Svenja Stark, Debora Clever, and Jan Peters. 2022. Robust
+Reinforcement Learning: A Review of Foundations and Recent Advances. Machine Learning and Knowledge
+Extraction 4, 1 (2022), 276–315.
+[42] Tuomas Oikarinen, Wang Zhang, Alexandre Megretski, Luca Daniel, and Tsui-Wei Weng. 2021. Robust Deep
+Reinforcement Learning through Adversarial Loss. In NeurIPS. 26156–26167.
+[43] Afshin OroojlooyJadid and Davood Hajinezhad. 2019. A Review of Cooperative Multi-Agent Deep Reinforce-
+ment Learning. arXiv preprint arXiv:1908.03963 (2019).
+[44] Xinlei Pan, Daniel Seita, Yang Gao, and John Canny. 2019. Risk Averse Robust Adversarial Reinforcement
+Learning. In ICRA. 8522–8528.
+14
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+[45] Georgios Papoudakis, Filippos Christianos, Arrasy Rahman, and Stefano V Albrecht. 2019. Dealing with Non-
+Stationarity in Multi-Agent Deep Reinforcement Learning. arXiv preprint arXiv:1906.04737 (2019).
+[46] Georgios Papoudakis, Filippos Christianos, Lukas Sch¨afer, and Stefano V Albrecht. 2021. Benchmarking Multi-
+Agent Deep Reinforcement Learning Algorithms in Cooperative Tasks. In NeurIPS.
+[47] Hyunjong Park, Sanghoon Lee, Junghyup Lee, and Bumsub Ham. 2021. Learning by Aligning: Visible-Infrared
+Person Re-identiﬁcation using Cross-Modal Correspondences. In ICCV. 12046–12055.
+[48] Lerrel Pinto, James Davidson, Rahul Sukthankar, and Abhinav Gupta. 2017. Robust Adversarial Reinforcement
+Learning. In ICML. 2817–2826.
+[49] You Qiaoben, Chengyang Ying, Xinning Zhou, Hang Su, Jun Zhu, and Bo Zhang. 2021. Understanding Adver-
+sarial Attacks on Observations in Deep Reinforcement Learning. arXiv preprint arXiv:2106.15860 (2021).
+[50] Zengyi Qin, Kaiqing Zhang, Yuxiao Chen, Jingkai Chen, and Chuchu Fan. 2020. Learning Safe Multi-agent
+Control with Decentralized Neural Barrier Certiﬁcates. In ICLR.
+[51] Tabish Rashid, Mikayel Samvelyan, Christian Schroeder, Gregory Farquhar, Jakob Foerster, and Shimon White-
+son. 2018. QMIX: Monotonic Value Function Factorisation for Deep Multi-Agent Reinforcement Learning. In
+ICML. 4295–4304.
+[52] Kihyuk Sohn, Honglak Lee, and Xinchen Yan. 2015. Learning Structured Output Representation using Deep
+Conditional Generative Models.. In NeurIPS. 3483–3491.
+[53] Yeeho Song and Jeff Schneider. 2022. Robust Reinforcement Learning via Genetic Curriculum. In ICRA. 5560–
+5566.
+[54] Sainbayar Sukhbaatar, Arthur Szlam, and Rob Fergus. 2016. Learning Multiagent Communication with Back-
+propagation. In NeurIPS. 2244–2252.
+[55] Chuangchuang Sun, Dong-Ki Kim, and Jonathan P How. 2022. ROMAX: Certiﬁably Robust Deep Multiagent
+Reinforcement Learning via Convex Relaxation. In ICRA. 5503–5510.
+[56] Yanchao Sun, Ruijie Zheng, Parisa Hassanzadeh, Yongyuan Liang, Soheil Feizi, Sumitra Ganesh, and Furong
+Huang. 2022. Certiﬁably Robust Policy Learning against Adversarial Communication in Multi-agent Systems.
+arXiv preprint arXiv:2206.10158 (2022).
+[57] Yanchao Sun, Ruijie Zheng, Yongyuan Liang, and Furong Huang. 2021. Who Is the Strongest Enemy? Towards
+Optimal and Efﬁcient Evasion Attacks in Deep RL. In ICLR.
+[58] Peter Sunehag, Guy Lever, Audrunas Gruslys, Wojciech Marian Czarnecki, Vin´ıcius Flores Zambaldi, Max
+Jaderberg, Marc Lanctot, Nicolas Sonnerat, Joel Z Leibo, Karl Tuyls, and Thore Graepel. 2018.
+Value-
+Decomposition Networks For Cooperative Multi-Agent Learning Based On Team Reward. In AAMAS. 2085–
+2087.
+[59] Masahiro Suzuki, Kotaro Nakayama, and Yutaka Matsuo. 2016. Joint Multimodal Learning with Deep Genera-
+tive Models. arXiv preprint arXiv:1611.01891 (2016).
+[60] Michael E Tipping and Christopher M Bishop. 1999. Probabilistic principal component analysis. Journal of the
+Royal Statistical Society: Series B (Statistical Methodology) 61, 3 (1999), 611–622.
+[61] James Tu, Tsunhsuan Wang, Jingkang Wang, Sivabalan Manivasagam, Mengye Ren, and Raquel Urtasun. 2021.
+Adversarial Attacks On Multi-Agent Communication. In ICCV. 7768–7777.
+[62] Tessa van der Heiden, Christoph Salge, Efstratios Gavves, and Herke van Hoof. 2020. Robust Multi-Agent
+Reinforcement Learning with Social Empowerment for Coordination and Communication.
+arXiv preprint
+arXiv:2012.08255 (2020).
+[63] Eugene Vinitsky, Yuqing Du, Kanaad Parvate, Kathy Jang, Pieter Abbeel, and Alexandre Bayen. 2020. Robust
+Reinforcement Learning using Adversarial Populations. arXiv preprint arXiv:2008.01825 (2020).
+[64] Jianhao Wang, Zhizhou Ren, Beining Han, Jianing Ye, and Chongjie Zhang. 2021. Towards Understanding
+Cooperative Multi-Agent Q-Learning with Value Factorization. In NeurIPS. 29142–29155.
+[65] Jianhao Wang, Zhizhou Ren, Terry Liu, Yang Yu, and Chongjie Zhang. 2021. QPLEX: Duplex Dueling Multi-
+Agent Q-Learning. In ICLR.
+[66] Jianhong Wang, Wangkun Xu, Yunjie Gu, Wenbin Song, and Tim C Green. 2021. Multi-Agent Reinforcement
+Learning for Active Voltage Control on Power Distribution Networks. In NeurIPS. 3271–3284.
+[67] Tonghan Wang, Jianhao Wang, Chongyi Zheng, and Chongjie Zhang. 2020. Learning Nearly Decomposable
+Value Functions Via Communication Minimization. In ICLR.
+15
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+[68] Yihan Wang, Beining Han, Tonghan Wang, Heng Dong, and Chongjie Zhang. 2021. DOP: Off-Policy Multi-
+Agent Decomposed Policy Gradients. In ICLR.
+[69] Yuanfei Wang, Jing Xu, Yizhou Wang, et al. 2021. ToM2C: Target-oriented Multi-agent Communication and
+Cooperation with Theory of Mind. In ICLR.
+[70] Muning Wen, Jakub Grudzien Kuba, Runji Lin, Weinan Zhang, Ying Wen, Jun Wang, and Yaodong Yang. 2022.
+Multi-Agent Reinforcement Learning is a Sequence Modeling Problem. In NeurIPS.
+[71] Fan Wu, Linyi Li, Zijian Huang, Yevgeniy Vorobeychik, Ding Zhao, and Bo Li. 2021. CROP: Certifying Robust
+Policies for Reinforcement Learning through Functional Smoothing. In ICLR.
+[72] Fan Wu, Linyi Li, Huan Zhang, Bhavya Kailkhura, Krishnaram Kenthapadi, Ding Zhao, and Bo Li. 2021. COPA:
+Certifying Robust Policies for Ofﬂine Reinforcement Learning against Poisoning Attacks. In ICLR.
+[73] Junlin Wu and Yevgeniy Vorobeychik. 2022. Robust Deep Reinforcement Learning through Bootstrapped Op-
+portunistic Curriculum. In ICML. 24177–24211.
+[74] Mike Wu and Noah Goodman. 2018. Multimodal Generative Models for Scalable Weakly-Supervised Learning.
+In NeurIPS. 5580–5590.
+[75] Chang Xu, Dacheng Tao, and Chao Xu. 2015. Multi-View Learning With Incomplete Views. IEEE Transactions
+on Image Processing 24, 12 (2015), 5812–5825.
+[76] Jinglin Xu, Wenbin Li, Xinwang Liu, Dingwen Zhang, Ji Liu, and Junwei Han. 2020. Deep Embedded Comple-
+mentary and Interactive Information for Multi-View Classiﬁcation. In AAAI. 6494–6501.
+[77] Di Xue, Lei Yuan, Zongzhang Zhang, and Yang Yu. 2022. Efﬁcient Multi-Agent Communication via Shapley
+Message Value. In IJCAI. 578–584.
+[78] Ke Xue, Jiacheng Xu, Lei Yuan, Miqing Li, Chao Qian, Zongzhang Zhang, and Yang Yu. 2022. Multi-agent
+Dynamic Algorithm Conﬁguration. In NeurIPS.
+[79] Wanqi Xue, Wei Qiu, Bo An, Zinovi Rabinovich, Svetlana Obraztsova, and Chai Kiat Yeo. 2022. Mis-spoke
+or mis-lead: Achieving Robustness in Multi-Agent Communicative Reinforcement Learning. In AAMAS. 1418–
+1426.
+[80] Xiaoqiang Yan, Shizhe Hu, Yiqiao Mao, Yangdong Ye, and Hui Yu. 2021. Deep multi-view learning methods: a
+review. Neurocomputing 448 (2021), 106–129.
+[81] Jianing Ye, Chenghao Li, Jianhao Wang, and Chongjie Zhang. 2022. Towards Global Optimality in Cooperative
+MARL with Sequential Transformation. arXiv preprint arXiv:2207.11143 (2022).
+[82] Chao Yu, Akash Velu, Eugene Vinitsky, Yu Wang, Alexandre Bayen, and Yi Wu. 2021. The Surprising Effec-
+tiveness of PPO in Cooperative Multi-Agent Games. arXiv preprint arXiv:2103.01955 (2021).
+[83] Jing Yu, Clement Gehring, Florian Sch¨afer, and Animashree Anandkumar. 2021. Robust Reinforcement Learn-
+ing: A Constrained Game-theoretic Approach. In L4DC. 1242–1254.
+[84] Lei Yuan, Chenghe Wang, Jianhao Wang, Fuxiang Zhang, Feng Chen, Cong Guan, Zongzhang Zhang, Chongjie
+Zhang, and Yang Yu. 2022. Multi-Agent Concentrative Coordination with Decentralized Task Representation.
+In IJCAI. 599–605.
+[85] Lei Yuan, Jianhao Wang, Fuxiang Zhang, Chenghe Wang, Zongzhang Zhang, Yang Yu, and Chongjie Zhang.
+2022. Multi-Agent Incentive Communication via Decentralized Teammate Modeling. In AAAI. 9466–9474.
+[86] Won Joon Yun, Soohyun Park, Joongheon Kim, Myungjae Shin, Soyi Jung, Aziz Mohaisen, and Jae-Hyun Kim.
+2022. Cooperative Multi-Agent Deep Reinforcement Learning for Reliable Surveillance via Autonomous Multi-
+UAV Control. IEEE Transactions on Industrial Informatics (2022).
+[87] Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Mingyan Liu, Duane Boning, and Cho-Jui Hsieh. 2020. Ro-
+bust Deep Reinforcement Learning against Adversarial Perturbations on State Observations. In NeurIPS. 21024–
+21037.
+[88] Kaiqing Zhang, Tao Sun, Yunzhe Tao, Sahika Genc, Sunil Mallya, and Tamer Basar. 2020. Robust Multi-Agent
+Reinforcement Learning with Model Uncertainty. In NeurIPS. 10571–10583.
+[89] Kaiqing Zhang, Zhuoran Yang, and Tamer Bas¸ar. 2021. Multi-Agent Reinforcement Learning: A Selective
+Overview of Theories and Algorithms. Handbook of Reinforcement Learning and Control (2021), 321–384.
+[90] Sai Qian Zhang, Qi Zhang, and Jieyu Lin. 2019. Efﬁcient Communication in Multi-Agent Reinforcement Learn-
+ing via Variance Based Control. In NeurIPS. 3230–3239.
+16
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+[91] Sai Qian Zhang, Qi Zhang, and Jieyu Lin. 2020. Succinct and Robust Multi-Agent Communication With Tem-
+poral Message Control. In NeurIPS. 17271–17282.
+[92] Ziyuan Zhou and Guanjun Liu. 2022. RoMFAC: A Robust Mean-Field Actor-Critic Reinforcement Learning
+against Adversarial Perturbations on States. arXiv preprint arXiv:2205.07229 (2022).
+[93] Changxi Zhu, Mehdi Dastani, and Shihan Wang. 2022. A Survey of Multi-Agent Reinforcement Learning with
+Communication. arXiv preprint arXiv:2203.08975 (2022).
+17
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+A
+Product of a Finite Number of Gaussians
+Suppose we have N Gaussian experts with means µi1, µi2, · · · , µiN and variances σ2
+i1, σ2
+i2, · · · , σ2
+iN, the product
+distribution is still Gaussian with mean µi and variance σ2
+i :
+µi =
+µi1
+σ2
+i1
++ µi2
+σ2
+i2
++ · · · + µiN
+σ2
+iN
+
+σ2
+i ,
+1
+σ2
+i
+= 1
+σ2
+i1
++ 1
+σ2
+i2
++ · · · +
+1
+σ2
+iN
+.
+(18)
+It can be proved by induction.
+Proof. We want to prove Eqn. 18 is true for all N ≥2.
+• Base case: Suppose N = 2 and p1(x) = N(x|µ1, σ1), p2(x) = N(x|µ2, σ2), then
+p1(x)p2(x) =
+1
+√
+2πσ1
+exp
+ 
+−(x −µ1)2
+2σ2
+1
+!
+·
+1
+√
+2πσ2
+exp
+ 
+−(x −µ2)2
+2σ2
+2
+!
+=
+1
+2πσ1σ2
+exp
+ 
+−
+ 
+(x −µ1)2
+2σ2
+1
++ (x −µ2)2
+2σ2
+2
+!!
+=
+1
+2πσ1σ2
+exp
+
+−
+x2 −2 µ1σ2
+2+µ2σ2
+1
+σ2
+1+σ2
+2
+x + µ2
+1σ2
+2+µ2
+2σ2
+1
+σ2
+1+σ2
+2
+2 σ2
+1σ2
+2
+σ2
+1+σ2
+2
+
+
+=
+1
+2πσ1σ2
+exp
+
+
+−
+
+x −µ1σ2
+2+µ2σ2
+1
+σ2
+1+σ2
+2
+2
+2 σ2
+1σ2
+2
+σ2
+1+σ2
+2
+−(µ1 −µ2)2
+2σ2
+1σ2
+2
+
+
+
+=
+exp
+
+−(µ1−µ2)2
+2(σ2
+1+σ2
+2)
+
+p
+2π (σ2
+1 + σ2
+2)
+·
+1
+√
+2π
+σ1σ2
+√
+σ2
+1+σ2
+2
+exp
+
+
+−
+
+x −µ1σ2
+2+µ2σ2
+1
+σ2
+1+σ2
+2
+2
+2 σ2
+1σ2
+2
+σ2
+1+σ2
+2
+
+
+
+= A ·
+1
+√
+2π
+σ1σ2
+√
+σ2
+1+σ2
+2
+exp
+
+
+−
+
+x −µ1σ2
+2+µ2σ2
+1
+σ2
+1+σ2
+2
+2
+2 σ2
+1σ2
+2
+σ2
+1+σ2
+2
+
+
+.
+(19)
+Eqn. 19 can be seen as PDF of N(µ, σ) times A where µ = ( µ1
+σ2
+1 + µ2
+σ2
+2 )σ2, 1
+σ2 =
+1
+σ2
+1 +
+1
+σ2
+2 .
+• Induction step: Suppose it is true when N = n, and the product distribution of n Gaussian experts has mean
+˜µ = ( µ1
+σ2
+1 + · · · + µn
+σ2n )˜σ2 and variance
+1
+˜σ2 =
+1
+σ2
+1 + · · · +
+1
+σ2n , then for n + 1 Gaussian experts:
+1
+σ2 = 1
+˜σ2 +
+1
+σ2
+n+1
+= 1
+σ2
+1
++ · · · + 1
+σ2n
++
+1
+σ2
+n+1
+,
+µ =
+ ˜µ
+˜σ2 + µn+1
+σ2
+n+1
+
+σ2 =
+µ1
+σ2
+1
++ · · · + µn
+σ2n
++ µn+1
+σ2
+n+1
+
+σ2.
+(20)
+• Eqn. 18 has been proved by the above derivation.
+If we write Tij = (σ2
+ij)−1, then Eqn. 18 can be written as:
+µi =
+ N
+X
+j=1
+µijTij
+ N
+X
+j=1
+Tij
+−1
+,
+σ2
+i =
+ N
+X
+j=1
+Tij
+−1
+,
+(21)
+18
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+and is exactly what we’re trying to prove.
+Algorithm 1 CroMAC
+Input: env, ϵ, κ, C MIN, C MAX, α1, α2, α3, T, Tr
+Initialize: Randomly initialize θ, ψenc, ψdec, φenc, and initialize empty replay buffer D
+1: t = 0
+2: while t < T do
+3:
+Collect trajectory h from env with θ(a|φenc(s)) and update replay buffer D
+4:
+for j = 1, 2, · · · do
+5:
+Sample a batch of Episodes from D
+6:
+Update policy network:
+7:
+θ ←θ −αθ∇θL(θ)
+8:
+Update VAE Φ:
+9:
+ψenc ←ψenc −α1∇ψenc (L(ψ) + L(θ))
+10:
+ψdec ←ψdec −α1∇ψdecL(ψ)
+11:
+Update MVAE φ:
+12:
+φenc ←φenc −α2∇φencL(φ)
+13:
+Clamp: φenc ←clamp(φenc, C MIN, C MAX)
+14:
+if t > Tr then
+15:
+Update policy network:
+16:
+θ ←θ −α3∇θLadv
+17:
+end if
+18:
+Update the target network θ−at regular intervals
+19:
+end for
+20:
+Update t
+21: end while
+B
+Algorithm
+The whole optimization process is shown in Alg. 1. Where lines 6 to 7 are used to train policy network with only TD-
+error such that it has nothing to do with robust training; lines 8 to 10 aim at encoding the state into a latent space, while
+lines 11 to 13 train the MVAE with only partial observation and the received messages for decentralized execution,
+where clamp(input, min, max) means clamping all elements in input into range [min, max]; we train the policy
+network to be robust with auxiliary loss from lines 14 to 17.
+C
+Implemention Detail and Hyperparameters
+We train our CroMAC agents based on PYMARL with its default network structure and hyperparameters setting,
+except that different environments have different RNN hidden sizes. We use Adam optimizer with learning rate 0.0005
+and other default hyperparameters. For the state encoder and decoder, we use an MLP with one hidden layer and ReLU
+activation. For the message encoder, we use the same structure as the state encoder with shared parameters. All the
+prior distributions in the experiment are set to standard normal distribution, i.e., N(0, 1). The other hyperparameters
+of our proposed CroMAC for different benchmarks are summarized in Tab. 2.
+Fast Gradient Sign Method (FGSM) [16] is a popular white-box method of generating adversarial examples, for MA-
+Dec-POMDP-Com, agent i receives multiple messages mt
+ij from teammate j ∈{1, · · · , i −1, i + 1, · · · , N} at time
+t, we can compute perturbations for each mt
+ij with individual Q-network θi:
+ηt
+ij = ϵ · sign(∇mt
+ijJ(θi, mt
+ij, y)),
+where y is the original selected action and the perturbed example is:
+ˆmt
+ij = mt
+ij + ηt
+ij.
+Projected Gradient Descent (PGD) [37] can be regarded as an advanced version of FGSM where we implement it by
+adding perturbations within budget ϵ
+3 to original message 3 times.
+19
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+Table 2: Hyperparameters in experiments.
+Hyperparameter
+Hallway: 4x5x6
+Hallway: 3x3x4x4
+LBF: 3p-1f
+LBF: 4p-1f
+TJ: slow
+TJ: fast
+1o10b vs 1r
+1o2r vs 4r
+RNN Hidden Dim
+16
+32
+32
+64
+Z Dim
+16
+32
+32
+64
+VAE Hidden Dim
+32
+64
+64
+128
+α1
+0.1
+0.01
+0.01
+0.01
+α2
+0.001
+0.001
+0.001
+0.01
+α3
+0.3
+0.3
+0.3
+0.3
+0.1
+κ
+5
+10
+5
+10
+10
+10
+C MAX
+0.1
+0.2
+0.3
+0.3
+0.6
+0.3
+0.2
+Robust Start Time Tr
+0.7M
+0.8M
+1.0M
+1.0M
+ϵ of FGSM (1)
+0.3
+\
+0.02
+\
+0.0003
+\
+0.0055
+\
+ϵ of FGSM (2)
+0.4
+\
+0.25
+\
+0.0004
+\
+0.0065
+\
+ϵ of FGSM
+0.5
+0.03
+0.05
+0.0005
+0.001
+0.0075
+0.015
+ϵ of FGSM (3)
+0.6
+\
+0.35
+\
+0.0006
+\
+0.00875
+\
+ϵ of FGSM (4)
+0.7
+\
+0.4
+\
+0.0007
+\
+0.01
+\
+D
+Details about Baselines and Benchmarks
+We compare CroMAC against different baselines and variants on diverse multi-agent benchmarks, and we introduce
+more details about these baselines here.
+AME. Ablated Message Ensemble (AME) is a recently proposed certiﬁable defense, which can guarantee agents’
+robustness when only part of communication messages may suffer from perturbations. Speciﬁcally, AME makes
+a mild assumption that the attacker can only manipulate no more than half of the communication messages, and
+trains a message-ablation policy which takes in a subset of messages from other agents and outputs a base action. In
+deployment, an ensemble policy is introduced by aggregating multiple base actions from multiple subsets of messages
+which achieves the robustness goal to some extent. The pseudocode can be seen in Alg.2 and Alg.3.
+We introduce four types of testing environments as shown in Fig. 2 in our paper, including Hallway [67], Level-
+Based Foraging (LBF) [46], Trafﬁc Junction (TJ) [9], and two maps named 1o2r vs 4r and 1o10b vs 1r requiring
+communication from StarCraft Multi-Agent Challenge (SMAC) [67]. In this part, we will describe the details of these
+used environments.
+Hallway. We design two instances of the Hallway environment, where agents can see nothing except its own location.
+In the ﬁrst instance, we apply three hallways with lengths of 4, 5, and 6, respectively. That means we let three agents
+a, b, c respectively initialized randomly at states a1 to a4, b1 to b5, and c1 to c6, and require them to arrive at state
+20
+
+Robust Multi-agent Communication via Multi-view Message Certiﬁcation
+Algorithm 2 AME in the training phase
+Input: env, ablation size k
+Initialize: Randomly initialize ˆπi for each agent i.
+1: t = 0
+2: while t < T do
+3:
+for i = 1 to N do
+4:
+Receive a set of messages m:→i, and update local history τi
+5:
+Randomly sample a subset of messages [m:→i]k ∼Uniform(Hk(m:→i))
+6:
+Take action based on τi and the message subset [m:→i]k, i.e., ai ←ˆπi(τi, [m:→i]k)
+7:
+Update replay buffer and policy ˆπi
+8:
+end for
+9: end while
+Algorithm 3 AME in the testing phase
+Input: env, ablation size k, trained message-ablation policy ˆπi for each agent i
+1: for i = 1 to N do
+2:
+Receive a set of messages m:→i with no more than C < N
+2 malicious messages, and update local history τi
+3:
+Discrete action space:
+4:
+Take action a ←arg maxa∈A
+P
+[m]k∈Hk(m) I[ˆπi(τi, [m]k) = a]
+5:
+Continuous Action Space:
+6:
+Take action a ←Median{ˆπi(τi, [m]k) : [m]k ∈Hk(m)}
+7: end for
+g simultaneously. In the second instance, 4 agents are distributed in four hallways with lengths of 3, 3, 4, and 4. A
+reward of 1 will be given if all the agents arrives at the goal g simultaneously. However, if any agent do not reach the
+goal g at the same time, the game will stop immediately, and obtain 0 reward.
+Level-Based Foraging (LBF). We use a variant version of the original environment, where only one agent can can
+observe the map and others can see nothing. On this basis, we use two environment instances with different conﬁgu-
+rations, both of which are 8 × 8 grid world, 1 foods, and at least 3 agents are required to catch the food. One of them
+contains 3 agents and they need to complete the task in 25 time-steps while the other contains 4 agents but only 15
+time-steps are provided for them.
+Trafﬁc Junction (TJ). We use the easy version of the Trafﬁc Junction environments as we mainly focus on the
+robustness of the algorithm. The slow version has an agent number limit to 5 and the max rate at which to add cars is
+0.3 while the fast version has an agent number limit to 4 and the max rate at which to add cars is 0.4. In both of these
+two instances, the road dimension is 7, and the sight of the agent is limited to 0, which means each agent can only
+observe a 1 × 1 ﬁeld of view around it.
+StarCraft Multi-Agent Challenge (SMAC). We use two maps named 1o2r vs 4r and 1o10b vs 1r in SMAC, which
+are introduced in NDQ [67]. In 1o2r vs 4r, an Overseer ﬁnds 4 Reapers, and the ally units, 2 Roaches, need to reach
+enemies and kill them. Similarly, 1o10b vs 1r is a map full of cliffs, where an Overseer detects a Roach, and the
+randomly spawned ally units, 10 Banelings, are required to reach and kill the enemy.
+21

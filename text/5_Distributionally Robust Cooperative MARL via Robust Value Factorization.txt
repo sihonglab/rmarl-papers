@@ -1,0 +1,2460 @@
+Published as a conference paper at ICLR 2026
+DISTRIBUTIONALLY ROBUST COOPERATIVE MULTI-
+AGENT REINFORCEMENT LEARNING
+VIA ROBUST
+VALUE FACTORIZATION
+Chengrui Qu∗
+Caltech
+Christopher Yeh∗
+Caltech
+Kishan Panaganti†
+Tencent AI Lab
+Eric Mazumdar∗
+Caltech
+Adam Wierman∗
+Caltech
+ABSTRACT
+Cooperative multi-agent reinforcement learning (MARL) commonly adopts cen-
+tralized training with decentralized execution, where value-factorization methods
+enforce the individual-global-maximum (IGM) principle so that decentralized
+greedy actions recover the team-optimal joint action. However, the reliability
+of this recipe in real-world settings remains unreliable due to environmental un-
+certainties arising from the sim-to-real gap, model mismatch, and system noise.
+We address this gap by introducing Distributionally robust IGM (DrIGM), a
+principle that requires each agent’s robust greedy action to align with the robust
+team-optimal joint action. We show that DrIGM holds for a novel definition of
+robust individual action values, which is compatible with decentralized greedy
+execution and yields a provable robustness guarantee for the whole system. Build-
+ing on this foundation, we derive DrIGM-compliant robust variants of existing
+value-factorization architectures (e.g., VDN/QMIX/QTRAN) that (i) train on ro-
+bust Q-targets, (ii) preserve scalability, and (iii) integrate seamlessly with existing
+codebases without bespoke per-agent reward shaping. Empirically, on high-fidelity
+SustainGym simulators and a StarCraft game environment, our methods consis-
+tently improve out-of-distribution performance. Code and data are available at
+https://github.com/crqu/robust-coMARL.
+1
+INTRODUCTION
+Multi-agent reinforcement learning (MARL) is a popular framework for studying how multiple agents
+compete or cooperate in complex environments such as video game playing (Vinyals et al., 2019),
+economic policy design (Zheng et al., 2022), wireless network communications (Qu et al., 2020),
+and power grid control (Gao et al., 2021), among others. In this work, we focus on the cooperative
+MARL setting, where each agent can only observe its local history, and agents must collaborate to
+achieve a joint goal. To address partial observability and reduce real-time communication costs, a
+widely used paradigm is centralized training with decentralized execution (CTDE) (Oliehoek et al.,
+2008). During training, agents may aggregate global information, coordinate credit assignment, and
+learn a team structure; at deployment, each agent must act myopically based on its own local history.
+The CTDE paradigm is typically realized through value factorization methods (e.g., VDN (Sunehag
+et al., 2017), QMIX (Rashid et al., 2020), QTRAN (Son et al., 2019)). A key concept that underpins
+the success of these methods is the individual-global-maximum (IGM) principle (Son et al., 2019),
+which aligns each agent’s greedy action with the team-optimal joint action via a suitable value
+factorization. However, most examples where the success of this principle is demonstrated are in
+virtual tasks (e.g., games (Vinyals et al., 2017) and grid worlds (Leibo et al., 2017)). It remains
+unclear whether this principle maintains its reliability in real-world domains, where modeling is
+imperfect and execution is noisy.
+∗Department of Computing Mathematical Sciences, California Institute of Technology, CA 91125, USA
+†Tencent AI Lab in Bellevue, WA, USA
+1
+arXiv:2602.11437v1  [cs.AI]  11 Feb 2026
+
+Published as a conference paper at ICLR 2026
+In practice, a major obstacle facing cooperative MARL is environmental uncertainty (Shi et al.,
+2024): team performance can drop sharply when the deployed environment deviates from the training
+environment due to model mismatch, system noise, and the sim-to-real gap (Zhang et al., 2020b;
+Balaji et al., 2019). While environmental uncertainty presents challenges in single-agent RL settings,
+it is a more significant hurdle in cooperative MARL, where partial observability and inter-agent
+coupling can cause small mismatches to cascade into coordination failures (Capitan et al., 2012; He
+et al., 2022).
+In single-agent RL, uncertainty in the environment is commonly addressed by distributionally robust
+RL (DR-RL) techniques (Wiesemann et al., 2013; Taori et al., 2020; Nilim & El Ghaoui, 2005;
+Panaganti & Kalathil, 2021a; Shi et al., 2023) which seek policies that perform well under adversarial
+perturbations of a nominal environment model. Single-agent DR-RL is well-explored, however
+extending DR-RL to the cooperative MARL setting is fundamentally more challenging. In particular,
+each agent acts on a local history yet shares a team reward coupled with teammates’ actions, making it
+nontrivial to define individual robust Q-functions that both evaluate worst-case outcomes and remain
+compatible with IGM for decentralized greedy execution. Reward engineering can help empirically,
+but only a narrow class of shaping functions can provably preserve optimality (Foerster et al., 2016),
+even in the single-agent setting. Thus, we seek a principled route to distributional robustness for
+cooperative MARL that remains compatible with decentralized greedy execution.
+Contributions. In this paper, we introduce a family of distributionally robust cooperative MARL
+algorithms for the CTDE setting. Our central technique is Distributionally robust IGM (DrIGM),
+a robustness principle that requires each agent’s robust greedy action to coincide with the robust
+team-optimal joint action, thereby preserving decentralized greedy execution.
+We first show, via a concrete counterexample, that na¨ıvely adopting individual robust action-value
+functions from single-agent DR-RL, where each agent considers its own worst case, does not
+guarantee decentralized alignment (IGM) in the cooperative multi-agent setting. We then provide a
+sufficient condition under which DrIGM holds: when individual robust action-value functions are
+defined with respect to the worst-case joint action-value function, DrIGM is guaranteed.
+Next, we derive DrIGM-compliant robust variants of existing value factorization architectures (VDN,
+QMIX, and QTRAN), by training on robust Q-targets while retaining the CTDE information structure.
+The resulting methods are scalable, easy to implement on top of existing codebases, and maintain
+robustness at execution without requiring bespoke individual robust value design.
+Finally, we evaluate our DrIGM-based algorithms on a realistic simulation an HVAC control task in
+SustainGym (Yeh et al., 2023), as well as on SMAC, a StarCraft II-based multi-agent game-playing
+environment (Samvelyan et al., 2019). Across out-of-distribution settings, our methods outperform
+non-robust value factorization baselines and a recent robust cooperative MARL baseline, consistently
+mitigating sim-to-real degradation on operational metrics.
+Brief discussion of related work.
+Robustness in cooperative MARL has been studied along several
+axes: adversarial or heterogeneous teammates (Li et al., 2019; Kannan et al., 2023; Li et al., 2024),
+state/observation and communication perturbations (Guo et al., 2024; Yu et al., 2024), risk-sensitive
+(tail-aware) objectives under a fixed model (Shen et al., 2023), and explicit model uncertainty (Kwak
+et al., 2010; Zhang et al., 2020b; 2021; Liu et al., 2025). Most of the works on model uncertainty
+adopt a distributionally robust optimization viewpoint and targets Nash solutions with provable
+algorithms, often assuming full observability or individual rewards (Zhang et al., 2020a; Kardes¸ et al.,
+2011; Ma et al., 2023; Blanchet et al., 2023; Shi et al., 2024; Liu et al., 2025). In this work, we focus
+on the cooperative CTDE regime with partial observability and a single team reward, providing a
+systematic framework for robustness to model uncertainty without real-time communication. Due to
+space constraints, we provide an extended discussion of related works in Section A.
+2
+BACKGROUND AND PROBLEM FORMULATION
+Notation.
+For a set X, |X| denotes its cardinality and ∆(X) the probability simplex over X.
+We write Q
+i Xi for the Cartesian product. For N ∈N, we let [N] := {1, . . . , N}. Let [x]+ :=
+max{0, x}.
+2
+
+Published as a conference paper at ICLR 2026
+Cooperative Dec-POMDPs.
+A cooperative multi-agent task with N agents is modeled as a Decen-
+tralized Partially Observable Markov Decision Process (Dec-POMDP):
+G = (S, {Ai}N
+i=1, P, r, {Oi}N
+i=1, {σi}N
+i=1, γ),
+with joint action space A := Q
+i∈[N] Ai. At time t, each agent i obtains an individual observation
+ot
+i := σi(st) from its observation space Oi, chooses an action at
+i ∈Ai, a bounded joint reward
+r(st, at) is received, where at := (at
+1, . . . , at
+N) ∈A is the joint action, and then the state evolves via
+st+1 ∼P(· | st, at). Here we assume the joint observation (o1, . . . , oN) can recover the full state.1
+Each agent i acts using a history-based policy πi(· | ht
+i) with ht
+i := (o0
+i , a0
+i , . . . , ot−1
+i
+, at−1
+i
+, ot
+i); the
+joint policy is π = ⟨π1, . . . , πN⟩. We use Ht
+i to denote the space of possible histories for agent i
+up to time t. In the following sections, we will omit the superscript t to avoid notational clutter.
+The joint action-observation history is denoted h ∈H := Q
+i∈[N] Hi. Given the current state s, the
+joint history h and the joint action a, we denote the joint action-value function under policy π by
+QP,π
+tot (h, a), which can be reduced to |S × A| dimension as we assume the joint observation can
+recover the full state. We use QP
+tot(h, a) := maxπ QP,π
+tot (h, a) to denote the optimal joint action
+value.
+CTDE.
+Centralized training with decentralized execution (CTDE) leverages global information
+during learning while executing individual policies from individual histories. A common CTDE
+approach is value factorization, which learns an optimal joint action-value QP
+tot(h, a) and individual
+action-value functions [QP
+i (hi, ai)]i∈[N] that satisfy the following individual-global-max (IGM)
+principle (Son et al., 2019).
+Definition 1 (IGM). We say that individual action-value functions [QP
+i : Hi × Ai →R]i∈[N] satisfy
+the individual-global-max (IGM) principle for an optimal joint action-value function QP
+tot : H×A →
+R under joint history h = (h1, . . . , hN) ∈H if
+
+arg max
+a1
+QP
+1 (h1, a1), . . . , arg max
+aN
+QP
+N(hN, aN)
+
+⊆arg max
+a
+QP
+tot(h, a).
+IGM ensures that greedy individual actions are jointly optimal w.r.t. QP
+tot, enabling decentralized
+execution without test-time communication.
+Robust Dec-POMDPs.
+To capture model error and deployment shift, we consider an uncertainty
+set P of environment models around a nominal P 0. In Dec-POMDPs, we work with a history-based
+view: let Ph,a(·) denote the transition kernel over next joint histories h′, given the current joint
+history h and the joint action a. We assume a history-action rectangular uncertainty set.
+P =
+Y
+(h,a)∈H×A
+Ph,a,
+Ph,a ⊆∆(H),
+(1)
+e.g., balls around P 0
+h,a under a probability metric with radius ρ > 0. This rectangularity assumption
+is widely adopted in DR-RL literature (Blanchet et al., 2023; Shi et al., 2024; Ma et al., 2023), and
+ensures that a robust policy exists.
+Given a function Q : H × A →R, define the robust Bellman operator T as
+(T Q)(h, a) := r(s, a) + γ
+inf
+Ph,a∈Ph,a Eh′∼Ph,a
+
+max
+a′∈A Q(h′, a′)
+
+.
+(2)
+Under standard assumptions (bounded rewards, γ ∈(0, 1)) and rectangularity in Eq. (1), T is a
+γ-contraction on the space of bounded Q, so it has a unique fixed point QP
+tot (Iyengar, 2005) which
+satisfies
+QP
+tot(h, a) = inf
+P ∈P QP
+tot(h, a),
+∀(h, a) ∈H × A.
+(3)
+We call QP
+tot the optimal robust joint action-value function for the Dec-POMDP, and it admits a
+deterministic robust greedy joint policy π∗(h) ∈arg maxa QP
+tot(h, a).
+1Formally, we assume that σ = (σ1(·), . . . , σN(·)) : S →Q
+i∈[N] Oi is injective. Equivalently, there exists
+a (deterministic) decoding map g : Q
+i∈[N] Oi →S such that g(σ(s)) = s for all s ∈S.
+3
+
+Published as a conference paper at ICLR 2026
+Robust Cooperative MARL.
+We study robust cooperative MARL under the CTDE setting. Given
+a model uncertainty set P, our goal is to learn decentralized policies that maximize QP
+tot. That is, we
+aim to find [π⋆
+i : Hi 7→Ai]i∈[N], such that
+⟨π⋆
+1, . . . , π⋆
+N⟩∈arg max
+a
+QP
+tot(·, a).
+Specifically, we seek a value factorization method that automatically generates robust individual
+action values, thereby enabling a decentralized policy. This is non-trivial for two reasons. First, no
+individual reward signals are available, so robust individual action values are ill-defined a priori.
+Second, directly defining robust individual action values from the single-agent DR-RL literature can
+break standard value factorization. As we demonstrate in Example 1, robust individual actions may
+not align with the robust joint action. These challenges motivate the central question of our work:
+Can we construct robust individual utilities and a mixing scheme such that decentralized greedy
+actions recover the joint maximizers of QP
+tot, thereby enabling a robust CTDE framework?
+3
+DISTRIBUTIONALLY ROBUST IGM (DRIGM)
+To address the question above, we propose a novel principle for robust value factorization that builds
+upon the IGM principle while explicitly incorporating robustness.
+3.1
+DISTRIBUTIONALLY ROBUST IGM (DRIGM) PRINCIPLE
+Definition 2 (DrIGM). Given an uncertainty set P, we say that robust individual action-value
+functions [Qrob
+i
+: Hi × Ai →R]i∈[N] satisfy the Distributionally robust IGM (DrIGM) principle
+for the optimal robust joint action-value function QP
+tot : H × A →R under joint history h =
+(h1, . . . , hN) ∈H if
+
+arg max
+a1
+Qrob
+1
+(h1, a1), . . . , arg max
+aN
+Qrob
+N (hN, aN)
+
+⊆arg max
+a
+QP
+tot(h, a).
+DrIGM extends classical IGM to the robust setting by requiring that the robust joint greedy action
+induced by QP
+tot factorizes into robust individual greedy actions from [Qrob
+i
+]i∈[N]. Note that when
+P = {P} is a singleton (i.e., there is no uncertainty), then DrIGM is equivalent to IGM.
+Satisfying DrIGM is nontrivial.
+In particular, the single-agent definition Qrob
+i
+(s, a)
+=
+infP ∈P QP
+i (s, a), commonly adopted in the DR-RL literature, does not ensure DrIGM when applied
+with a global uncertainty set. As shown in Example 1 in Section B, an adversarial model P ∈P that
+minimizes one agent’s value need not coincide with the adversarial model P ′ ∈P that minimizes
+the joint value. As a result, robust individual greedy actions may fail to align with the robust joint
+greedy action. Similar inconsistencies arise even under agent-wise uncertainty sets defined in Shi
+et al. (2024) for essentially the same reason. This highlights the need for a new formulation of robust
+individual action values to support a consistent robust CTDE framework.
+In robust cooperative MARL, the primary concern is the robustness of the entire system, as opposed
+to robustness of individual agents. Thus, it is sufficient to consider the worst case for the joint action
+value, rather than independently for each agent. Motivated by this idea, we show that the robust
+individual action value defined under a global worst-case model can guarantee DrIGM.
+Theorem 1. Given a global uncertainty set P defined in Eq. (1), suppose for all P ∈P, there exist
+[QP
+i ]i∈[N] satisfying IGM for QP
+tot under joint history h = (h1, . . . , hN) ∈H. Let
+P worst(h, a) ∈arg inf
+P ∈P QP
+tot(h, a),
+(4)
+¯a ∈arg max
+a
+QP
+tot(h, a),
+(5)
+denote the global worst-case model and the robust joint greedy action, respectively. For each agent
+i ∈[N], define the robust individual action-value functions Qrob
+i
+as
+Qrob
+i
+(hi, ai) := QP worst(h,¯a)
+i
+(hi, ai).
+(6)
+Then, [Qrob
+i
+]i∈[N] satisfy DrIGM for QP
+tot under joint history h.
+4
+
+Published as a conference paper at ICLR 2026
+The proof of Theorem 1 can be found in Section C.1. Theorem 1 demonstrates that by anchoring
+individual robust action values to the global worst-case model evaluated at the robust joint greedy
+action, individual robust greedy actions become aligned with the robust joint greedy action. This
+construction resolves the misalignment problem that occurs when individual adversaries differ from
+the global adversary. More broadly, the result highlights that robust CTDE is achieved not by
+independently robustifying each agent, but by coordinating all agents against a shared adversarial
+model tied to the team’s worst-case joint outcome. This perspective offers a principled foundation for
+designing robust value factorization methods that maintain decentralized execution while ensuring
+robustness guarantees.
+Common factorization methods satisfy DrIGM.
+Having established that robust individual ac-
+tion values can be consistently defined via Theorem 1, we now examine whether these values are
+compatible with standard factorization methods used in cooperative MARL.
+Theorem 2. Given P defined in Eq. (1), for a joint history h ∈H, suppose for all P ∈P, there
+exist individual action-value functions [QP
+i ]i∈[N] satisfying one of the following conditions for all
+a = (a1, . . . , aN) ∈A:
+QP
+tot(h, a) =
+X
+i∈[N]
+QP
+i (hi, ai),
+(VDN)
+∂QP
+tot(h, a)
+∂QP
+i (hi, ai) ≥0,
+∀i ∈[N],
+(QMIX)
+X
+i∈[N]
+QP
+i (hi, ai) −QP
+tot(h, a) + Vtot(h) =
+0,
+a = ¯a,
+≥0,
+a ̸= ¯a,
+(QTRAN)
+where ¯a := [¯ai]i∈[N] with ¯ai := arg maxai QP
+i (hi, ai) and Vtot(h) := maxa QP
+tot(h, a) −
+P
+i∈[N] QP
+i (hi, ai) with a = [ai]i∈[N]. Then [Qrob
+i
+]i∈[N] as defined in Eq. (6) satisfy DrIGM
+for QP
+tot under joint history h.
+The proof of Theorem 2 can be found in Section C.2. Theorem 2 shows that when the underlying
+individual Q-functions satisfy the structural conditions of VDN (Sunehag et al., 2017), QMIX (Rashid
+et al., 2020), or QTRAN (Son et al., 2019), the robust individual action values [Qrob
+i
+]i∈[N] constructed
+from Eq. (6) automatically satisfy DrIGM. This result ensures that robust CTDE can be realized
+directly within widely used value factorization frameworks, enabling principled distributionally
+robust extensions of existing algorithms. Moreover, as long as the test environment lies within the
+prescribed uncertainty set, this approach yields a provable robustness guarantee, as formalized in the
+next theorem.
+Theorem 3. Given P defined in Eq. (1), suppose the robust individual action values Qrob
+i
+satisfy
+Definition 2. If the test environment model Ptest is included in the uncertainty set (i.e., Ptest ∈P),
+then the robust joint action values provably lower bound the real joint action values in Ptest:
+QP
+tot(h, a) ≤QPtest
+tot (h, a),
+∀h ∈H, a ∈A.
+The proof of Theorem 3 can be found in Section C.3.
+3.2
+ROBUST BELLMAN OPERATORS UNDER SPECIFIC UNCERTAINTY SETS
+To design training loss functions, we next present the DrIGM-based robust Bellman operators for two
+common uncertainty designs: ρ-contamination and total variation (TV), which are well-studied in the
+single-agent distributionally robust RL literature (Yang et al., 2022; Panaganti & Kalathil, 2021b; Xu
+et al., 2023; Dong et al., 2022; Liu & Xu, 2024; Panaganti et al., 2022; Wang & Zou, 2022; Zhang
+et al., 2024). Both types of uncertainty sets consider perturbations of size ρ ∈(0, 1] around a nominal
+model P 0.
+The ρ-contamination uncertainty set is defined as (for all h ∈H and a ∈A)
+Ph,a =
+
+P ∈∆(H)
+ Ph,a = (1 −ρ)P 0
+h,a + ρνh,a, ν ∈∆(H) is arbitrary
+	
+,
+(7)
+with corresponding robust Bellman operator
+(T QP
+tot)(h, a)
+(a)
+= r(s, a) + γ(1 −ρ) Eh′∼P 0
+h,a
+
+max
+a′∈A QP
+tot(h′
+1, . . . , h′
+N, a′)
+
+5
+
+Published as a conference paper at ICLR 2026
+-greedy
+update parameters 
+robust loss
+  
+  
+robustness
+parameter
+target network
+ satisfy DrIGM w.r.t. 
+MLP
+LSTM
+MLP
+MLP
+LSTM
+MLP
+Figure 1: Overview of our robust value factorization algorithms. Because the robust individual
+action-value functions satisfy DrIGM, greedy actions can be computed efficiently in a decentralized
+manner while the function parameters are trained with a robust TD loss based on global reward.
+(b)
+= r(s, a) + γ(1 −ρ) Eh′∼P 0
+h,a
+
+QP
+tot(h′
+1, . . . , h′
+N, ¯a′
+1, . . . , ¯a′
+N)
+
+,
+(8)
+where ¯a′
+i = arg maxa′
+i Qrob
+i
+(h′
+i, a′
+i). Here, (a) follows from robust Bellman operator as in the single-
+agent setting due to the h × a-rectangularity from Eq. (1). (b) follows from the DrIGM principle
+where robust individual greedy actions are aligned with the robust joint greedy action.
+Similarly, the TV-uncertainty set is defined as (for all h ∈H and a ∈A)
+Ph,a =
+
+P ∈∆(H)
+ TV(P, P 0
+h,a) ≤ρ
+	
+,
+(9)
+with corresponding robust Bellman operator,
+(T QP
+tot)(h, a) = r(s, a) −
+inf
+η∈[0,
+2
+ρ(1−γ) ] γ Eh′∼P 0
+h,a
+
+−(1 −ρ)η(s, a)
++
+
+η(s, a) −QP
+tot(h′
+1, . . . , h′
+N, ¯a′
+1, . . . , ¯a′
+N)
+
++
+
+,
+(10)
+where η(s, a) is the dual variable.
+The derivation of the robust Bellman operators relies on a “fail state” assumption (Assumption 1); the
+proof is provided in Section D. In the next section, we show how DrIGM leads to practical robust
+value factorization algorithms.
+4
+ALGORITHMS: ROBUST VALUE FACTORIZATION
+Overall framework.
+Guided by DrIGM, we develop six robust value factorization algorithms
+by combining two types of uncertainty sets (ρ-contamination, TV-uncertainty) with three different
+value factorization architectures (VDN, QMIX, QTRAN). The overall framework is illustrated in
+Algorithm 1 and Fig. 1, while detailed pseudocode for each variant can be found in Section E.
+Concretely, we collect trajectories using ε-greedy exploration and train the robust individual action-
+value network using TD-learning (Sutton & Barto, 2018). For stability, robust one-step targets are
+evaluated using target networks, which are updated periodically.
+Robust individual action-value networks.
+Each agent i uses a DRQN (Deep Recurrent Q
+Network)-style network that maps its local history hi (observations and past actions) to action-
+values Qi(hi, ai), following an MLP encoder →LSTM core →MLP output architecture. For our
+training procedure, we follow the approach from Hausknecht & Stone (2015). We sample mini-
+batches of sub-trajectories from the replay buffer D and use bootstrapped random updates. We use 8
+burn-in steps to warm-start the LSTM state and only take the last step output to calculate the loss
+and update the networks. This procedure is computationally and memory efficient while achieving
+performance comparable to sequential updates from the start of each episode.
+Factorization networks.
+We instantiate three networks for robust value factorization:
+6
+
+Published as a conference paper at ICLR 2026
+Algorithm 1 Robust value factorization
+1: Input robustness parameter ρ, target network update frequency f, and ε
+2: Initialize replay buffer D
+3: Initialize robust individual action-value networks [Qrob
+i
+]i∈[N] with random parameters θ
+4: Initialize factorization networks that produce QP
+tot with random parameters θ
+5: Initialize target parameters θ−= θ
+6: for episode e = 1, . . . , E do
+7:
+Observe initial state s0 and observation o0
+i = σi(s0) for each agent i.
+8:
+for t = 1, . . . , T do
+9:
+Each agent i chooses its action at
+i using ε-greedy policy.
+10:
+Take joint action at, observe the next state st+1, reward rt and observation ot+1
+i
+= σi(st+1)
+for each agent i
+11:
+Store transition (ht, at, rt, ht+1) in replay buffer D
+12:
+Sample a mini-batch of transitions (h, a, r, h′) from D
+13:
+Calculate TD loss LTD using Eq. (14)
+14:
+Update θ by minimizing LTD
+15:
+Update θ−= θ with frequency f
+16:
+end for
+17: end for
+1. VDN factorizes the robust joint action-value as the sum of robust per-agent values,
+QP,VDN
+tot
+(h, a) =
+N
+X
+i=1
+Qrob
+i
+(hi, ai).
+2. Beyond direct summation, QMIX uses a monotone mixing network
+QP,QMIX
+tot
+(h, a) = fθ
+ Qrob
+1
+(h1, a1), . . . , Qrob
+N (hN, aN), s
+
+,
+(11)
+where s is the global state. A lightweight hypernetwork takes s as input and outputs the
+layer weights of fθ; to ensure ∂QP,QMIX
+tot
+/∂Qrob
+i
+≥0 (the QMIX monotonicity constraint),
+we enforce elementwise nonnegativity on these weights via an absolute-value (or softplus)
+transform. Biases remain unconstrained.
+3. QTRAN learns a separate joint action-value function QP,QTRAN
+tot
+(h, a) and a baseline Vtot(h).
+For efficiency and scalability, the joint network shares the encoder/head with the individual
+DRQN modules. In addition to the robust TD loss, QTRAN imposes two consistency terms to
+align the factorized and joint values:
+Lopt =
+
+QP,VDN
+tot
+(h, ¯a) −bQP,QTRAN
+tot
+(h, ¯a) + Vtot(h)
+2
+,
+(12)
+Lnopt =
+
+min
+
+QP,VDN
+tot
+(h, a) −bQP,QTRAN
+tot
+(h, a) + Vtot(h), 0
+2
+,
+(13)
+where the ˆQ is the detached Q value for training stability. Intuitively, Lopt enforces equality at
+the (robust) greedy joint action, while Lnopt penalizes positive slack elsewhere, recovering the
+QTRAN constraints in our robust setting.
+TD Loss.
+Given the robust Bellman operator T defined in Eq. (2) for a Dec-POMDP setting, the
+generic form of the TD-loss is
+LTD =
+ QP
+tot(h, a; θ) −(T QP
+tot(·, ·; θ−))(h, a)
+2 ,
+(14)
+where θ is the network parameters, and θ−is the target network parameters for training stability.
+Specifically, for ρ-contamination uncertainty sets, by the robust Bellman operator in Eq. (8), we have
+LTD =
+
+QP
+tot(h, a; θ) −(r(s, a) + γ(1 −ρ) Eh′∼P 0
+h,a QP
+tot(h′, ¯a′; θ−))
+2
+,
+(15)
+For TV uncertainty sets, by the robust Bellman operator in Eq. (10), we have
+LTD =
+
+QP
+tot(h, a; θ) −r(s, a) + γ Eh′∼P 0
+h,a
+
+−(1 −ρ)η(s, a)
+7
+
+Published as a conference paper at ICLR 2026
++ [η(s, a) −QP
+tot(h′, ¯a′; θ−)]+
+2
+,
+(16)
+where η : S × A →R is calculated by minimizing the following empirical loss:
+Ldual(η, QP
+tot) =
+1
+|D|
+X
+(h,a,h′)∈D
+h
+η(s, a) −max
+a′ QP
+tot(h′, a′)
+i
++ −(1 −ρ) η(s, a)
+
+.
+(17)
+5
+EXPERIMENTS
+5.1
+SUSTAINGYM
+We evaluate our proposed robust value factorization methods on SustainGym (Yeh et al., 2023), a
+recent benchmark suite designed to simulate real-world control tasks under distribution shift. We focus
+on multi-agent environments for smart building HVAC control, which inherently involve stochastic
+dynamics, distribution shifts, partial observability, and inter-agent coupling. These environments
+are particularly well-suited to test robustness, as the environmental models can vary across days
+and building locations (thus climate conditions). More details about the environment and the
+experiment setup are provided in Section F. Our code can be found at https://github.com/
+crqu/robust-coMARL.
+Evaluation protocol.
+To assess generalization under distribution shift (i.e., model uncertainty), we
+adopt the following protocol. In the training phase, each algorithm is trained on a single environment.
+For robust MARL baselines that require multiple environments, we follow their standard protocol and
+train them on a fixed set of environments. In the evaluation phase, trained policies are deployed on
+unseen configurations that differ from those used in training, simulating realistic deployment where
+distribution shifts inevitably arise. This design allows us to explicitly measure robustness to changes
+in environment dynamics rather than simple memorization of training conditions.
+Baselines.
+We compare our robust value factorization methods against:
+• Non-robust factorization methods: VDN, QMIX, and QTRAN trained without robustness
+considerations, representing the standard CTDE paradigm.
+• Existing robust CTDE baseline: the multi-agent group distributionally robust algorithm from
+Liu et al. (2025), which we refer to as “GroupDR”. While the original work used only the VDN
+architecture, we extend the algorithm to QMIX and QTRAN for completeness.
+TV uncertainty
+VDN
+QMIX
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Normalized Team Reward
+QTRAN
+env_1
+env_2
+env_3
+env_4
+env_5
+env_6
+shift level 
+-contamination
+env_1
+env_2
+env_3
+env_4
+env_5
+env_6
+shift level 
+env_1
+env_2
+env_3
+env_4
+env_5
+env_6
+shift level 
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Normalized Team Reward
+Non-robust
+GroupDR (baseline)
+Robust (ours)
+Figure 2: Normalized performance (averaged over 5 independent training runs, with error bars
+showing standard error) across different environment configurations for our robust MARL algorithms
+and other baselines. Each panel corresponds to one value factorization method. Robustness gain
+is the difference in reward (shaded area) between Robust (ours) and Non-robust, which shows the
+out-of-distribution performance improvement from the robust training.
+8
+
+Published as a conference paper at ICLR 2026
+Experiment 1: climatic shifts.
+We first test robustness under shifts induced by changes in climate
+conditions. Results (averaged over five seeds) are shown in Fig. 2. Our robust MARL algorithms con-
+sistently outperform both non-robust counterparts and the group DR baseline. Notably, performance
+degradation scales with the severity of the shift (e.g., env 6 deviates most from the training environ-
+ment, env 1), but our methods maintain relatively high returns. In contrast, the GroupDR baseline
+exhibits little sensitivity to shift severity, reflecting its reliance on worst-case rewards computed only
+from configurations encountered during training.
+Experiment 2: seasonal shifts.
+We next evaluate robustness to seasonal shifts, training algorithms
+on season 1 data and evaluating on season 2. Results are reported in Table 1, showing mean
+and standard error of normalized episodic returns. The results show that robust value factorization
+algorithms with TV uncertainty set achieve consistent robustness gain against seasonal shifts.
+Factorization Methods
+VDN
+QMIX
+QTRAN
+Non-robust
+0.877 ± 0.012
+0.895 ± 0.008
+0.816 ± 0.036
+baseline (GroupDR)
+0.624 ± 0.040
+0.499 ± 0.022
+0.508 ± 0.048
+Robust (TV-uncertainty)
+0.898 ± 0.008
+0.916 ± 0.006
+0.861 ± 0.006
+Robust (ρ-contamination)
+0.869 ± 0.013
+0.911 ± 0.005
+0.825 ± 0.028
+Table 1: Final Performances under seasonal shifts for our robust MARL algorithms and other
+baselines (mean ± standard error over 5 independent training runs). Values outperforming both the
+non-robust and group DR baselines are highlighted in bold.
+Experiment 3: climatic and seasonal shifts.
+Finally, we test on the most extreme case, where we
+have distribution shifts arising from climatic and seasonal shifts. The results are presented in Table 2,
+with our robust MARL algorithms achieving 10-40% higher average reward than the non-robust
+baseline. Notably, QTRAN-based robust MARL algorithms demonstrate strong out-of-distribution
+performance and stability.
+Factorization Methods
+VDN
+QMIX
+QTRAN
+Non-robust
+0.440 ± 0.040
+0.478 ± 0.052
+0.654 ± 0.066
+baseline (GroupDR)
+0.624 ± 0.056
+0.383 ± 0.053
+0.520 ± 0.049
+Robust (TV-uncertainty)
+0.627 ± 0.049
+0.520 ± 0.048
+0.733 ± 0.026
+Robust (ρ-contamination)
+0.551 ± 0.039
+0.500 ± 0.075
+0.682 ± 0.026
+Table 2: Final Performances under climatic and seasonal shifts for our robust MARL algorithms and
+other baselines (mean ± standard error over 5 independent training runs). Values outperforming both
+the non-robust and group DR baselines are highlighted in bold.
+Choice of ρ.
+Theoretically, ρ should be chosen based on prior estimation of the model uncertainty
+level. Practically, we select ρ by training on env 1 and validating on env 2 and env 3, which
+yields stable performance without overfitting to a single shift.
+Robustness in cooperative MARL.
+A noteworthy finding is that robustness in cooperative MARL
+does not necessarily entail reduced performance in the training environment. Unlike in single-agent
+robust RL, where conservatism often penalizes in-distribution returns, explicitly modeling robustness
+here mitigates errors from partial observability and decentralized execution. In several cases, robust
+training even improves in-distribution performance relative to non-robust baselines, suggesting that
+robustness can simultaneously enhance stability and adaptability in multi-agent systems.
+5.2
+STARCRAFT II
+We additionally conduct experiments in SMAC (Samvelyan et al., 2019), a well-known benchmark
+consisting of two teams of agents engaged in cooperative combat scenarios based on StarCraft II.
+We focus on the hard 3s vs 5z map. In the test environment, we introduce distribution shift by
+adding noise to each agent’s observation of every enemy unit’s normalized position, sampled from
+N(0, 0.752). Since QTRAN has been shown to perform poorly on SMAC (Son et al., 2020), we
+report results for the ρ-contamination uncertainty set using only VDN and QMIX (averaged over five
+seeds) in Fig. 3. The results demonstrate that for small values of ρ, our robust MARL algorithms
+significantly improve out-of-distribution performance.
+9
+
+Published as a conference paper at ICLR 2026
+0
+2
+4
+6
+8
+Environmental Steps
+1e6
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Win Rate
+non-robust
+rho=0.02
+rho=0.04
+rho=0.06
+rho=0.08
+rho=0.10
+(a) Robust VDN
+0
+2
+4
+6
+8
+Environmental Steps
+1e6
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Test Win Rate
+non-robust
+rho=0.02
+rho=0.04
+rho=0.06
+rho=0.08
+rho=0.10
+(b) Robust QMIX
+Figure 3: Performance of our robust MARL algorithms and their non-robust baselines in SMAC
+(3s vs 5z map). Each algorithm is evaluated every 10,000 environment steps, with each evaluation
+averaged over 32 episodes. Shaded regions denote the standard error across 5 random seeds. For
+small ρ, the robust algorithms significantly outperform their non-robust counterparts.
+Robustness parameter evaluation.
+We further compare the final performance of our algorithms
+against their non-robust baselines, reporting the improvement in the test win rate for different choices
+of ρ relative to the baseline. The results (averaged over five seeds) are shown in Fig. 4. Interestingly,
+the test win rate first increases as ρ grows, and then decreases. This observation aligns with our
+theory: when ρ is small relative to the shift level, explicitly modeling distribution shift during training
+yields improved out-of-distribution performance. However, when ρ becomes large, the robust MARL
+algorithms become overly conservative, leading to degraded performance.
+0.00
+0.02
+0.04
+0.06
+0.08
+0.10
+rho
+0.2
+0.0
+0.2
+0.4
+0.6
+Improvement in Test Win Rate
+(a) Robust VDN
+0.00
+0.02
+0.04
+0.06
+0.08
+0.10
+rho
+0.4
+0.2
+0.0
+0.2
+0.4
+Improvement in Test Win Rate
+(b) Robust QMIX
+Figure 4: Improvement in final test win rate of our robust MARL algorithms over their non-robust
+baselines in SMAC (3s vs 5z map) for different values of ρ. Error bars denote the standard error
+across 5 random seeds.
+6
+CONCLUSION
+In this work, we introduce Distributionally robust IGM (DrIGM), a robustness principle for cooper-
+ative MARL that extends the classical IGM property to settings with environmental uncertainties.
+Whereas na¨ıvely ”robustifying” individual agent policies fails to align robust individual policies with
+the joint robust policy, the DrIGM offers a principled framework for constructing robust individual
+action values that remain aligned with the joint robust policy, thereby enabling decentralized greedy
+execution under uncertainty.
+Building on this foundation, we derive DrIGM-based robust value factorization algorithms for
+VDN, QMIX, and QTRAN, trained via robust Bellman operators under standard uncertainty sets (ρ-
+contamination and total variation). Empirically, on a high-fidelity building HVAC control benchmark,
+our methods consistently mitigate out-of-distribution performance degradation arising from climatic
+and seasonal shifts. On a StarCraft II game-playing benchmark, our methods likewise improve
+10
+
+Published as a conference paper at ICLR 2026
+out-of-distribution performance under added observation noise. Unlike single-agent robust RL, where
+conservatism often harms in-distribution returns, we find that robustness in cooperative MARL can
+simultaneously enhance stability and adaptability.
+While we introduced the DrIGM framework for a global uncertainty set, we believe it may be possible
+to further extend this framework. Future work includes developing DrIGM-compliant algorithms
+under agent-wise uncertainty sets and exploring additional training paradigms (e.g., decentralized
+training) to further broaden applicability.
+REPRODUCIBILITY STATEMENT
+We release a github repository containing all code, configuration files, and scripts needed to reproduce
+our results, including data generation and figure plotting. All proofs for the main paper are stated in
+Section C. Algorithm pseudocode is also provided in Section E.
+ACKNOWLEDGMENT
+KP acknowledges support from the ‘PIMCO Postdoctoral Fellow in Data Science’ fellowship at
+the California Institute of Technology. The major part of this work was done while KP was at the
+California Institute of Technology. EM acknowledges support from NSF award 2240110. This work
+acknowledges support from NSF CNS-2146814, CPS-2136197, CNS-2106403, NGSDI-2105648,
+and funding from the Resnick Sustainability Institute as well as a Quad Fellowship.
+AUTHOR CONTRIBUTIONS
+Chengrui Qu led the technical development of the project, driving the theory and core methodology,
+running and analyzing the experiments, and taking a leading role in writing the paper.
+Christopher Yeh co-developed the project and contributed in all aspects of experiments and writing.
+Kishan Panaganti co-developed the project direction and prepared the initial proof of concept,
+advised CQ and CY, and played a significant role in paper writing.
+Eric Mazumdar co-developed the project direction, advised CQ and KP.
+Adam Wierman co-developed the project direction, advised CQ, CY, and KP, and played a significant
+role in paper writing.
+11
+
+Published as a conference paper at ICLR 2026
+REFERENCES
+Bharathan Balaji, Sunil Mallya, Sahika Genc, Saurabh Gupta, Leo Dirac, Vineet Khare, Gourav
+Roy, Tao Sun, Yunzhe Tao, Brian Townsend, Eddie Calleja, Sunil Muralidhara, and Dhanasekar
+Karuppasamy. Deepracer: Educational autonomous racing platform for experimentation with
+sim2real reinforcement learning. arXiv preprint arXiv:1911.01562, 2019. 2
+Dimitris Bertsimas, Vishal Gupta, and Nathan Kallus. Data-driven robust optimization. Mathematical
+Programming, 167(2):235–292, 2018. 17
+Jose Blanchet and Karthyek Murthy. Quantifying distributional model risk via optimal transport.
+Mathematics of Operations Research, 44(2):565–600, 2019. 17
+Jose Blanchet, Miao Lu, Tong Zhang, and Han Zhong. Double pessimism is provably efficient
+for distributionally robust offline reinforcement learning: Generic algorithm and robust partial
+coverage. Advances in Neural Information Processing Systems, 36, 2023. 2, 3, 17
+Albert Bou, Matteo Bettini, Sebastian Dittert, Vikash Kumar, Shagun Sodhani, Xiaomeng Yang,
+Gianni De Fabritiis, and Vincent Moens. Torchrl: A data-driven decision-making library for
+pytorch. arXiv preprint arXiv:2306.00577, 2023. 26
+Alexander Bukharin, Yan Li, Yue Yu, Qingru Zhang, Zhehui Chen, Simiao Zuo, Chao Zhang, Songan
+Zhang, and Tuo Zhao. Robust multi-agent reinforcement learning via adversarial regularization:
+Theoretical foundation and stable algorithms. In Thirty-seventh Conference on Neural Information
+Processing Systems, 2023. 17
+Jesus Capitan, Matthijs T.J. Spaan, Luis Merino, and Anibal Ollero. Decentralized multi-robot
+cooperation with auctioned pomdps. In 2012 IEEE International Conference on Robotics and
+Automation, pp. 3323–3328, 2012. doi: 10.1109/ICRA.2012.6224917. 2
+Esther Derman and Shie Mannor. Distributional robustness and regularization in reinforcement
+learning. arXiv preprint arXiv:2003.02894, 2020. 17
+Esther Derman, Daniel J Mankowitz, Timothy A Mann, and Shie Mannor. Soft-robust actor-critic
+policy-gradient. In AUAI press for Association for Uncertainty in Artificial Intelligence, pp.
+208–218, 2018. 17
+Jing Dong, Jingwei Li, Baoxiang Wang, and Jingzhao Zhang. Online policy optimization for robust
+MDP. arXiv preprint arXiv:2209.13841, 2022. 5, 17
+John Duchi and Hongseok Namkoong. Learning models with uniform performance via distributionally
+robust optimization. arXiv preprint arXiv:1810.08750, 2018. 17
+Jakob N. Foerster, Yannis M. Assael, Nando de Freitas, and Shimon Whiteson. Learning to com-
+municate with deep multi-agent reinforcement learning. In Proceedings of the 30th International
+Conference on Neural Information Processing Systems, NIPS’16, pp. 2145–2153, Red Hook, NY,
+USA, 2016. Curran Associates Inc. ISBN 9781510838819. 2
+Diego Fonseca and Mauricio Junca. Decision-dependent distributionally robust optimization. arXiv
+preprint arXiv:2303.03971, 2023. 17
+Rui Gao. Finite-sample guarantees for wasserstein distributionally robust optimization: Breaking the
+curse of dimensionality. arXiv preprint arXiv:2009.04382, 2020. 17
+Yuanqi Gao, Wei Wang, and Nanpeng Yu. Consensus Multi-Agent Reinforcement Learning for
+Volt-VAR Control in Power Distribution Networks. IEEE Transactions on Smart Grid, 12(4):
+3594–3604, July 2021. ISSN 1949-3061. doi: 10.1109/TSG.2021.3058996. Conference Name:
+IEEE Transactions on Smart Grid. 1
+Vineet Goyal and Julien Grand-Clement. Robust markov decision processes: Beyond rectangularity.
+Mathematics of Operations Research, 2022. 17
+Weiran Guo, Guanjun Liu, Ziyuan Zhou, Ling Wang, and Jiacun Wang. Enhancing the robustness
+of qmix against state-adversarial attacks. Neurocomputing, 572:127191, March 2024. ISSN
+0925-2312. doi: 10.1016/j.neucom.2023.127191. 2, 17
+12
+
+Published as a conference paper at ICLR 2026
+Songyang Han, Sanbao Su, Sihong He, Shuo Han, Haizhao Yang, and Fei Miao. What is the solution
+for state-adversarial multi-agent reinforcement learning? arXiv preprint arXiv:2212.02705, 2022.
+17
+Matthew J. Hausknecht and Peter Stone. Deep recurrent q-learning for partially observable mdps.
+CoRR, abs/1507.06527, 2015. 6, 26
+Keyang He, Prashant Doshi, and Bikramjit Banerjee. Reinforcement learning in many-agent settings
+under partial observability. In James Cussens and Kun Zhang (eds.), Proceedings of the Thirty-
+Eighth Conference on Uncertainty in Artificial Intelligence, volume 180 of Proceedings of Machine
+Learning Research, pp. 780–789. PMLR, 01–05 Aug 2022. 2
+Sihong He, Songyang Han, Sanbao Su, Shuo Han, Shaofeng Zou, and Fei Miao. Robust multi-agent
+reinforcement learning with state uncertainty. Transactions on Machine Learning Research, 2023.
+17
+Chin Pang Ho, Marek Petrik, and Wolfram Wiesemann. Fast bellman updates for robust mdps. In
+International Conference on Machine Learning, pp. 1979–1988. PMLR, 2018. 17
+Chin Pang Ho, Marek Petrik, and Wolfram Wiesemann. Partial policy iteration for l1-robust markov
+decision processes. Journal of Machine Learning Research, 22(275):1–46, 2021. 17
+Shariq Iqbal, Christian A. Schr¨oder de Witt, Bei Peng, Wendelin Boehmer, Shimon Whiteson, and
+Fei Sha. Randomized entity-wise factorization for multi-agent reinforcement learning. In ICML,
+2021. 17
+Garud N Iyengar. Robust dynamic programming. Mathematics of Operations Research, 30(2):
+257–280, 2005. 3, 17
+Shyam Sundar Kannan, Vishnunandan LN Venkatesh, and Byung-Cheol Min. Smart-llm: Smart
+multi-agent robot task planning using large language models. arXiv preprint arXiv:2309.10062,
+2023. 2, 17
+Erim Kardes¸, Fernando Ord´o˜nez, and Randolph W Hall. Discounted robust stochastic games and an
+application to queueing control. Operations research, 59(2):365–382, 2011. 2, 17
+David L Kaufman and Andrew J Schaefer. Robust modified policy iteration. INFORMS Journal on
+Computing, 25(3):396–410, 2013. 17
+Jun-Young Kwak, Rong Yang, Zhengyu Yin, Matthew E. Taylor, and Milind Tambe. Teamwork and
+coordination under model uncertainty in dec-pomdps. In Proceedings of the 3rd AAAI Conference
+on Interactive Decision Theory and Game Theory, AAAIWS’10-03, pp. 30–36. AAAI Press, 2010.
+2, 17
+Joel Z. Leibo, Vinicius Zambaldi, Marc Lanctot, Janusz Marecki, and Thore Graepel. Multi-agent
+reinforcement learning in sequential social dilemmas. In Proceedings of the 16th Conference on
+Autonomous Agents and MultiAgent Systems, AAMAS ’17, pp. 464–473, Richland, SC, 2017.
+International Foundation for Autonomous Agents and Multiagent Systems. 1
+Shihui Li, Yi Wu, Xinyue Cui, Honghua Dong, Fei Fang, and Stuart Russell. Robust multi-agent
+reinforcement learning via minimax deep deterministic policy gradient. In Proceedings of the
+AAAI conference on artificial intelligence, volume 33, pp. 4213–4220, 2019. 2, 17
+Simin Li, Jun Guo, Jingqiao Xiu, Ruixiao Xu, Xin Yu, Jiakai Wang, Aishan Liu, Yaodong Yang, and
+Xianglong Liu. Byzantine robust cooperative multi-agent reinforcement learning as a bayesian
+game. In The Twelfth International Conference on Learning Representations, 2024. 2, 17
+Guangyi Liu, Suzan Iloglu, Michael Caldara, Joseph W Durham, and Michael M. Zavlanos. Distribu-
+tionally robust multi-agent reinforcement learning for dynamic chute mapping. In Forty-second
+International Conference on Machine Learning, 2025. 2, 8, 17, 26
+Zhishuai Liu and Pan Xu. Distributionally robust off-dynamics reinforcement learning: Provable
+efficiency with linear function approximation. arXiv preprint arXiv:2402.15399, 2024. 5, 17
+13
+
+Published as a conference paper at ICLR 2026
+Miao Lu, Han Zhong, Tong Zhang, and Jose Blanchet. Distributionally robust reinforcement learning
+with interactive data collection: Fundamental hardness and near-optimal algorithms. In The
+Thirty-eighth Annual Conference on Neural Information Processing Systems, 2024. 21
+Shaocong Ma, Ziyi Chen, Shaofeng Zou, and Yi Zhou. Decentralized robust v-learning for solving
+markov games with model uncertainty. Journal of Machine Learning Research, 24(371):1–40,
+2023. 2, 3, 17
+Daniel J Mankowitz, Nir Levine, Rae Jeong, Yuanyuan Shi, Jackie Kay, Abbas Abdolmaleki, Jost To-
+bias Springenberg, Timothy Mann, Todd Hester, and Martin Riedmiller. Robust reinforcement
+learning for continuous control with model misspecification. arXiv preprint arXiv:1906.07516,
+2019. 17
+Peyman Mohajerin Esfahani and Daniel Kuhn. Data-driven distributionally robust optimization using
+the Wasserstein metric: Performance guarantees and tractable reformulations. Math. Program.,
+171(1–2):115–166, September 2018. ISSN 0025-5610. doi: 10.1007/s10107-017-1172-1. 17
+Arnab Nilim and Laurent El Ghaoui. Robust control of Markov decision processes with uncertain
+transition matrices. Operations Research, 53(5):780–798, 2005. 2
+Nilay Noyan, G´abor Rudolf, and Miguel Lejeune. Distributionally robust optimization under a
+decision-dependent ambiguity set with applications to machine scheduling and humanitarian
+logistics. INFORMS Journal on Computing, 34(2):729–751, 2022. doi: 10.1287/ijoc.2021.1096.
+17
+Frans A. Oliehoek, Matthijs T. J. Spaan, and Nikos Vlassis. Optimal and approximate q-value
+functions for decentralized pomdps. J. Artif. Int. Res., 32(1):289–353, May 2008. ISSN 1076-9757.
+1
+Kishan Panaganti and Dileep Kalathil. Robust reinforcement learning using least squares policy
+iteration with provable performance guarantees. In International Conference on Machine Learning
+(ICML), pp. 511–520, 2021a. 2, 17
+Kishan Panaganti and Dileep Kalathil. Sample complexity of model-based robust reinforcement
+learning. In 2021 60th IEEE Conference on Decision and Control (CDC), pp. 2240–2245, 2021b.
+5, 17
+Kishan Panaganti, Zaiyan Xu, Dileep Kalathil, and Mohammad Ghavamzadeh. Robust reinforcement
+learning using offline data. Advances in Neural Information Processing Systems (NeurIPS), 2022.
+5, 17, 21, 22, 26
+Chengrui Qu, Huiwen Jia, and Pengcheng You. Decision-dependent distributionally robust optimiza-
+tion with application to dynamic pricing. In 2025 IEEE 64th Conference on Decision and Control
+(CDC), pp. 693–698, 2025. doi: 10.1109/CDC57313.2025.11312514. 17
+Guannan Qu, Yiheng Lin, Adam Wierman, and Na Li. Scalable Multi-Agent Reinforcement Learning
+for Networked Systems with Average Reward. In Advances in Neural Information Processing
+Systems, volume 33, pp. 2074–2086. Curran Associates, Inc., 2020. 1
+Hamed Rahimian and Sanjay Mehrotra. Distributionally robust optimization: A review. arXiv
+preprint arXiv:1908.05659, 2019. 17
+Tabish Rashid, Mikayel Samvelyan, Christian Schroeder De Witt, Gregory Farquhar, Jakob Foerster,
+and Shimon Whiteson. Monotonic value function factorisation for deep multi-agent reinforcement
+learning. Journal of Machine Learning Research, 21(178):1–51, 2020. 1, 5, 17, 26
+Aurko Roy, Huan Xu, and Sebastian Pokutta. Reinforcement learning under model mismatch. In
+Advances in Neural Information Processing Systems, pp. 3043–3052, 2017. 17
+Mikayel Samvelyan, Tabish Rashid, Christian Schroeder de Witt, Gregory Farquhar, Nantas Nardelli,
+Tim G. J. Rudner, Chia-Man Hung, Philip H. S. Torr, Jakob Foerster, and Shimon Whiteson.
+The starcraft multi-agent challenge. In Proceedings of the 18th International Conference on
+Autonomous Agents and MultiAgent Systems, AAMAS ’19, pp. 2186–2188, Richland, SC, 2019.
+International Foundation for Autonomous Agents and Multiagent Systems. ISBN 9781450363099.
+2, 9
+14
+
+Published as a conference paper at ICLR 2026
+Siqi Shen, Mengwei Qiu, Jun Liu, Weiquan Liu, Yongquan Fu, Xinwang Liu, and Cheng Wang. Resq:
+A residual q function-based approach for multi-agent reinforcement learning value factorization.
+In NeurIPS, 2022. 17
+Siqi Shen, Chennan Ma, Chao Li, Weiquan Liu, Yongquan Fu, Songzhu Mei, Xinwang Liu, and Cheng
+Wang. Riskq: risk-sensitive multi-agent reinforcement learning value factorization. Advances in
+Neural Information Processing Systems, 36:34791–34825, 2023. 2, 17
+Laixi Shi, Gen Li, Yuting Wei, Yuxin Chen, Matthieu Geist, and Yuejie Chi. The curious price of
+distributional robustness in reinforcement learning with a generative model. Advances in Neural
+Information Processing Systems, 36, 2023. 2
+Laixi Shi, Eric Mazumdar, Yuejie Chi, and Adam Wierman. Sample-efficient robust multi-agent
+reinforcement learning in the face of environmental uncertainty. arXiv preprint arXiv:2404.18909,
+2024. 2, 3, 4, 17
+Elena Smirnova, Elvis Dohmatob, and J´er´emie Mary. Distributionally robust reinforcement learning.
+arXiv preprint arXiv:1902.08708, 2019. 17
+Kyunghwan Son, Daewoo Kim, Wan Ju Kang, David Earl Hostallero, and Yung Yi. Qtran: Learning to
+factorize with transformation for cooperative multi-agent reinforcement learning. In International
+conference on machine learning, pp. 5887–5896. PMLR, 2019. 1, 3, 5, 17, 26
+Kyunghwan Son, Sungsoo Ahn, Roben Delos Reyes, Jinwoo Shin, and Yung Yi. Qtran++: Im-
+proved value transformation for cooperative multi-agent reinforcement learning. arXiv preprint
+arXiv:2006.12010, 2020. 9
+Peter Sunehag, Guy Lever, Audrunas Gruslys, Wojciech Marian Czarnecki, Vinicius Zambaldi, Max
+Jaderberg, Marc Lanctot, Nicolas Sonnerat, Joel Z Leibo, Karl Tuyls, et al. Value-decomposition
+networks for cooperative multi-agent learning. arXiv preprint arXiv:1706.05296, 2017. 1, 5, 17,
+26
+Richard S Sutton and Andrew G Barto. Reinforcement learning: An introduction. MIT press, 2018. 6
+Aviv Tamar, Shie Mannor, and Huan Xu. Scaling up robust mdps using function approximation. In
+International Conference on Machine Learning, pp. 181–189, 2014. 17
+Rohan Taori, Achal Dave, Vaishaal Shankar, Nicholas Carlini, Benjamin Recht, and Ludwig Schmidt.
+Measuring robustness to natural distribution shifts in image classification. Advances in Neural
+Information Processing Systems, 33:18583–18599, 2020. 2
+Daniel Vial, Sanjay Shakkottai, and R Srikant. Robust multi-agent bandits over undirected graphs.
+Proceedings of the ACM on Measurement and Analysis of Computing Systems, 6(3):1–57, 2022. 17
+Oriol Vinyals, Timo Ewalds, Sergey Bartunov, Petko Georgiev, Alexander Sasha Vezhnevets, Michelle
+Yeo, Alireza Makhzani, Heinrich K¨uttler, John Agapiou, Julian Schrittwieser, John Quan, Stephen
+Gaffney, Stig Petersen, Karen Simonyan, Tom Schaul, Hado van Hasselt, David Silver, Timothy
+Lillicrap, Kevin Calderone, Paul Keet, Anthony Brunasso, David Lawrence, Anders Ekermo, Jacob
+Repp, and Rodney Tsing. Starcraft ii: A new challenge for reinforcement learning. arXiv preprint
+arXiv:1708.04782, 2017. 1
+Oriol Vinyals, Igor Babuschkin, Wojciech M. Czarnecki, Micha¨el Mathieu, Andrew Dudzik, Junyoung
+Chung, David H. Choi, Richard Powell, Timo Ewalds, Petko Georgiev, Junhyuk Oh, Dan Horgan,
+Manuel Kroiss, Ivo Danihelka, Aja Huang, Laurent Sifre, Trevor Cai, John P. Agapiou, Max
+Jaderberg, Alexander S. Vezhnevets, R´emi Leblond, Tobias Pohlen, Valentin Dalibard, David
+Budden, Yury Sulsky, James Molloy, Tom L. Paine, Caglar Gulcehre, Ziyu Wang, Tobias Pfaff,
+Yuhuai Wu, Roman Ring, Dani Yogatama, Dario W¨unsch, Katrina McKinney, Oliver Smith, Tom
+Schaul, Timothy Lillicrap, Koray Kavukcuoglu, Demis Hassabis, Chris Apps, and David Silver.
+Grandmaster level in StarCraft II using multi-agent reinforcement learning. Nature, 575(7782):
+350–354, November 2019. ISSN 1476-4687. doi: 10.1038/s41586-019-1724-z. 1
+Jianhao Wang, Zhizhou Ren, Terry Liu, Yang Yu, and Chongjie Zhang. Qplex: Duplex dueling
+multi-agent q-learning. In ICLR, 2021. 17
+15
+
+Published as a conference paper at ICLR 2026
+Yue Wang and Shaofeng Zou. Policy gradient method for robust reinforcement learning. In Interna-
+tional Conference on Machine Learning, pp. 23484–23526, 2022. 5, 17
+Wolfram Wiesemann, Daniel Kuhn, and Berc¸ Rustem. Robust Markov decision processes. Mathe-
+matics of Operations Research, 38(1):153–183, 2013. 2
+Eric M Wolff, Ufuk Topcu, and Richard M Murray. Robust control of uncertain markov decision
+processes with temporal logic specifications. In 2012 IEEE 51st IEEE Conference on Decision
+and Control (CDC), pp. 3372–3379. IEEE, 2012. 17
+Huan Xu and Shie Mannor. Distributionally robust Markov decision processes. Mathematics of
+Operations Research, 37(2):288–300, 2012. 17
+Zaiyan Xu, Kishan Panaganti, and Dileep Kalathil. Improved sample complexity bounds for distribu-
+tionally robust reinforcement learning. arXiv preprint arXiv:2303.02783, 2023. 5, 17
+Wenhao Yang, Liangyu Zhang, and Zhihua Zhang. Toward theoretical understandings of robust
+Markov decision processes: Sample complexity and asymptotics. The Annals of Statistics, 50(6):
+3223–3248, 2022. 5, 17
+Yaodong Yang, Jianye Hao, Ben Liao, Kun Shao, Guangyong Chen, Wulong Liu, and Hongyao
+Tang. Qatten: A general framework for cooperative multiagent reinforcement learning. CoRR,
+abs/2002.03939, 2020. 17
+Christopher Yeh, Victor Li, Rajeev Datta, Julio Arroyo, Nicolas Christianson, Chi Zhang, Yize
+Chen, Mehdi Hosseini, Azarang Golmohammadi, Yuanyuan Shi, Yisong Yue, and Adam Wierman.
+SustainGym: Reinforcement learning environments for sustainable energy systems. In Thirty-
+seventh Conference on Neural Information Processing Systems Datasets and Benchmarks Track,
+New Orleans, LA, USA, 12 2023. 2, 8, 22
+Lebin Yu, Yunbo Qiu, Quanming Yao, Yuan Shen, Xudong Zhang, and Jian Wang. Robust commu-
+nicative multi-agent reinforcement learning with active defense. In Proceedings of the Thirty-Eighth
+AAAI Conference on Artificial Intelligence and Thirty-Sixth Conference on Innovative Applica-
+tions of Artificial Intelligence and Fourteenth Symposium on Educational Advances in Artificial
+Intelligence, AAAI’24/IAAI’24/EAAI’24. AAAI Press, 2024. ISBN 978-1-57735-887-9. doi:
+10.1609/aaai.v38i16.29708. 2, 17
+Huan Zhang, Hongge Chen, Duane S Boning, and Cho-Jui Hsieh. Robust reinforcement learning
+on state observations with learned optimal adversary. In International Conference on Learning
+Representations, 2020a. 2, 17
+Huan Zhang, Hongge Chen, Duane Boning, and Cho-Jui Hsieh. Robust reinforcement learning on
+state observations with learned optimal adversary. arXiv preprint arXiv:2101.08452, 2021. 2
+Kaiqing Zhang, TAO SUN, Yunzhe Tao, Sahika Genc, Sunil Mallya, and Tamer Basar. Robust multi-
+agent reinforcement learning with model uncertainty. In H. Larochelle, M. Ranzato, R. Hadsell,
+M.F. Balcan, and H. Lin (eds.), Advances in Neural Information Processing Systems, volume 33,
+pp. 10571–10583. Curran Associates, Inc., 2020b. 2, 17
+Zhengfei Zhang, Kishan Panaganti, Laixi Shi, Yanan Sui, Adam Wierman, and Yisong Yue. Dis-
+tributionally robust constrained reinforcement learning under strong duality.
+arXiv preprint
+arXiv:2406.15788, 2024. 5, 17, 26
+Zhili Zhang, Yanchao Sun, Furong Huang, and Fei Miao. Safe and robust multi-agent reinforce-
+ment learning for connected autonomous vehicles under state perturbations.
+arXiv preprint
+arXiv:2309.11057, 2023. 17
+Stephan Zheng, Alexander Trott, Sunil Srinivasa, David C. Parkes, and Richard Socher. The AI
+Economist: Taxation policy design via two-level deep multiagent reinforcement learning. Science
+Advances, 8(18):eabk2607, May 2022. doi: 10.1126/sciadv.abk2607. 1
+Ziyuan Zhou and Guanjun Liu. Robustness testing for multi-agent reinforcement learning: State
+perturbations on critical agents. arXiv preprint arXiv:2306.06136, 2023. 17
+16
+
+Published as a conference paper at ICLR 2026
+A
+RELATED WORK
+Single-agent Distributionally Robust RL (DR-RL).
+The single-agent setting is typically for-
+malized as a robust Markov decision process (MDP). A substantial literature studies finite-sample
+guarantees for distributionally robust RL, exploring a variety of ambiguity-set designs (Iyengar, 2005;
+Xu & Mannor, 2012; Wolff et al., 2012; Kaufman & Schaefer, 2013; Ho et al., 2018; Smirnova et al.,
+2019; Ho et al., 2021; Goyal & Grand-Clement, 2022; Derman & Mannor, 2020; Tamar et al., 2014;
+Panaganti & Kalathil, 2021a; Roy et al., 2017; Derman et al., 2018; Mankowitz et al., 2019). Most
+relevant to our work are tabular robust MDPs with (s, a)-rectangular uncertainty sets defined by
+total-variation balls (Yang et al., 2022; Panaganti & Kalathil, 2021b; Xu et al., 2023; Dong et al.,
+2022; Liu & Xu, 2024; Panaganti et al., 2022) or ρ-contamination models (Wang & Zou, 2022; Zhang
+et al., 2024), for which minimax dynamic programming and learning algorithms admit provable
+performance bounds.
+Value factorization methods for cooperative MARL.
+Value factorization is the standard mech-
+anism for scalable cooperative MARL under CTDE. Early work adopts simple additivity (VDN
+(Sunehag et al., 2017)), while QMIX (Rashid et al., 2020) learn a state-conditioned monotone com-
+biner to enlarge the function class without violating the IGM requirement. QTRAN (Son et al., 2019)
+further relax the monotonicity assumption with consistency constraints. Other approaches include
+attention-based mixers (e.g., QAtten (Yang et al., 2020), REFIL (Iqbal et al., 2021)), dueling-style
+decompositions (QPlex (Wang et al., 2021)) and residual designs (ResQ (Shen et al., 2022)). Building
+on this body of work, we develop robust value-factorization algorithms with provable robustness
+guarantees under model uncertainty, enabling robust decentralized execution in partially observable
+cooperative settings.
+Robustness in MARL.
+In general MARL, robustness is typically studied within Markov games,
+where uncertainty can be modeled in different components, such as the state space (Han et al., 2022;
+He et al., 2023; Zhou & Liu, 2023; Zhang et al., 2023), other agents (Li et al., 2019; Kannan et al.,
+2023), and environmental dynamics (Zhang et al., 2020a; Liu et al., 2025). We refer readers to Vial
+et al. (2022) for an overview. This work considers robustness to model uncertainty, primarily studied
+via distributionally robust optimization (DRO) (Rahimian & Mehrotra, 2019; Gao, 2020; Bertsimas
+et al., 2018; Duchi & Namkoong, 2018; Blanchet & Murthy, 2019; Fonseca & Junca, 2023; Qu
+et al., 2025; Mohajerin Esfahani & Kuhn, 2018; Noyan et al., 2022), where most prior efforts target
+Nash equilibria and provide provable (actor–critic / Q-learning) algorithms (Zhang et al., 2020a;
+Kardes¸ et al., 2011; Ma et al., 2023; Blanchet et al., 2023; Shi et al., 2024; Liu et al., 2025), often
+under full observability or individually rewarded settings. We complement this line by addressing the
+cooperative, partially observable CTDE regime, where agents receive a single joint reward and act
+only local observations.
+In cooperative MARL, robustness has been modeled along several complementary axes, including
+adversarial (Byzantine) teammates (Li et al., 2024), state/observation disturbances (Guo et al.,
+2024), communication errors (Yu et al., 2024), risk-sensitive objectives that guard against tail events
+under a fixed model (Shen et al., 2023), and explicit model uncertainty Kwak et al. (2010); Zhang
+et al. (2020b). Focusing on the last category, Kwak et al. (2010) address model uncertainty with
+sparse, execution-time communication, whereas Zhang et al. (2020b) study settings in which each
+agent observes the full state and receives individual reward. Similarly, Bukharin et al. (2023) also
+considers settings where each agent receives individual reward, and they achieve robustness by
+controlling the Lipschitz constant of each agent’s policy. In contrast, our work targets robustness to
+model uncertainty in the cooperative CTDE setting, complementing prior approaches by providing
+a systematic framework that does not require real-time communication and operates under partial
+observability with a single team reward.
+B
+EXAMPLES
+Example 1 (Na¨ıve single-agent robust action values cannot guarantee DrIGM). Consider a robust
+cooperative two-agent task (illustrated in Fig. 5) with action spaces A1 = A2 = {1, 2}, state space
+S = {s0, s1, s2, s3, s4}, and uncertainty set P = {P1, P2}. Let s0 be the initial state, and let
+s1,s2,s3 and s4 all be absorbing states with zero reward. We assume each agent observes the full
+state. For P1, all the transitions are fully deterministic. P2 differs from P1 only in transitions on joint
+17
+
+Published as a conference paper at ICLR 2026
+actions (1, 2) and (2, 1), given by:
+P(S2 | 1, 2) = 1
+3, P(S3 | 1, 2) = 2
+3,
+P(S2 | 2, 1) = 2
+3, P(S3 | 2, 1) = 1
+3,
+As shown in Fig. 5, the optimal joint action value function at state s0 is (we omit the γ/(1 −γ) factor
+for clarity)
+QP1
+tot(s0, 1, 1) = 0.7,
+QP1
+tot(s0, 1, 2) = 0.4, QP1
+tot(s0, 2, 1) = 1.0,
+QP1
+tot(s0, 2, 2) = 0.7;
+QP2
+tot(s0, 1, 1) = 0.7,
+QP2
+tot(s0, 1, 2) = 0.8, QP2
+tot(s0, 2, 1) = 0.6,
+QP2
+tot(s0, 2, 2) = 0.7.
+Therefore, the robust joint action-value function QP
+tot(s, a) = infP ∈P QP
+tot(s, a) is given by:
+QP
+tot(s0, 1, 1) = 0.7,
+QP
+tot(s0, 1, 2) = 0.4, QP
+tot(s0, 2, 1) = 0.6,
+QP
+tot(s0, 2, 2) = 0.7,
+It is straightforward to check that the following individual action-value functions {QPj
+i }i,j∈[2] satisfy
+QP
+tot(s, a1, a2) = QP
+1 (s, a1) + QP
+2 (s, a2) for all s ∈S and P ∈P, which is a special case of the
+classical IGM property:
+QP1
+1 (s0, 1) = 0,
+QP1
+1 (s0, 2) = 0.3, QP1
+2 (s0, 1) = 0.7,
+QP1
+2 (s0, 2) = 0.4,
+QP2
+1 (s0, 1) = 0.2,
+QP2
+1 (s0, 2) = 0.1, QP2
+2 (s0, 1) = 0.5,
+QP2
+2 (s0, 2) = 0.6.
+Suppose the robust individual action-value function is defined as Qrob
+i
+(s, a) = infP ∈P QP
+i (s, a), as
+in the single-agent DR-RL literature. Therefore, the robust individual action-value functions are
+given by:
+Qrob
+1
+(s0, 1) = 0,
+Qrob
+1
+(s0, 2) = 0.1, Qrob
+2
+(s0, 1) = 0.5,
+Qrob
+2
+(s0, 2) = 0.4,
+At s0, these robustifications fail to satisfy DrIGM:
+(2, 1) =
+
+arg max
+a1
+Qrob
+1
+(s0, a1), arg max
+a2
+Qrob
+2
+(s0, a2)
+
+/∈arg max
+a
+QP
+tot(s0, a) = {(1, 1), (2, 2)}.
+S0
+r = 0.0
+S1
+r = 0.7
+S2
+r = 0.4
+S3
+r = 1.0
+S4
+r = 0.7
+a = (1, 1)
+a = (1, 2)
+a = (2, 1)
+a = (2, 2)
+1
+1
+1
+1
+(a)
+S0
+r = 0.0
+S1
+r = 0.7
+S2
+r = 0.4
+S3
+r = 1.0
+S4
+r = 0.7
+a = (1, 1)
+a = (2, 1) or a = (1, 2)
+a = (1, 2) or a = (2, 1)
+a = (2, 2)
+1
+1
+1
+1
+(b)
+Figure 5: Fig. 5a is the MDP under transition kernel P1, Fig. 5b is under P2. The two differ in their
+transition probabilities to s2 and s3.
+Example 2 (DrIGM can address cases where IGM fails.). Consider a similar robust cooperative
+two-agent task (illustrated in Fig. 6) with action spaces A1 = A2 = {1, 2}, state space S =
+{s0, s1, s2, s3, s4}, and uncertainty set P = {P1, P2}. Let P1 be the training and testing environment.
+For P1, all the transitions are fully deterministic, the optimal joint action value function at state s0 is
+(we omit the γ/(1 −γ) factor for clarity):
+QP1
+tot(s0, 1, 1) = 0.7, QP1
+tot(s0, 1, 2) = 0.4,
+QP1
+tot(s0, 2, 1) = 1.0, QP1
+tot(s0, 2, 2) = 0.5.
+P2 differs from P1 in that all actions leads to S4. Therefore, the optimal joint action value function at
+state s0 is (we omit the γ/(1 −γ) factor for clarity):
+QP2
+tot(s0, 1, 1) = 0.4, QP2
+tot(s0, 1, 2) = 0.4,
+QP2
+tot(s0, 2, 1) = 0.4, QP2
+tot(s0, 2, 2) = 0.4.
+It can be verified that P1 does not admit a VDN-style value decomposition, but the worst case, P2,
+admits a feasible VDN-style value decomposition.
+18
+
+Published as a conference paper at ICLR 2026
+S0
+r = 0.0
+S1
+r = 0.7
+S2
+r = 0.4
+S3
+r = 1.0
+S4
+r = 0.5
+a = (1, 1)
+a = (1, 2)
+a = (2, 1)
+a = (2, 2)
+1
+1
+1
+1
+(a)
+S0
+r = 0.0
+S1
+r = 0.7
+S2
+r = 0.4
+S3
+r = 1.0
+S4
+r = 0.5
+all actions
+1
+1
+1
+1
+(b)
+Figure 6: Fig. 6a is the MDP under transition kernel P1, Fig. 6b is under P2.
+C
+PROOFS
+C.1
+PROOF OF THEOREM 1
+Proof. Recall that for all a ∈A, we have
+QP
+tot(h, a) = inf
+P ∈P QP
+tot(h, a)
+(Eq. (3))
+P worst(h, a) ∈arg inf
+P ∈P QP
+tot(h, a).
+(Equation (4))
+Thus,
+QP worst(h,a)
+tot
+(h, a)
+=
+QP
+tot(h, a).
+In Equation (4),
+we also defined
+¯a
+∈
+arg maxa∈A QP
+tot(h, a). Since P worst(h, ¯a) ∈P, by assumption there exist [QP worst(h,¯a)
+i
+]i∈[N]
+that satisfy IGM for QP worst(h,¯a)
+tot
+under h. Therefore,
+
+arg max
+a1
+Qrob
+1
+(h1, a1), . . . , arg max
+aN
+Qrob
+N (hN, aN)
+
+=
+
+arg max
+a1
+QP worst(h,¯a)
+1
+(h1, a1), . . . , arg max
+aN
+QP worst(h,¯a)
+N
+(hN, aN)
+
+(Eq. (4))
+⊆arg max
+a
+QP worst(h,¯a)
+tot
+(h, a)
+(IGM)
+⊆arg max
+a
+QP worst(h,a)
+tot
+(h, a)
+(Eq. (4))
+= arg max
+a
+QP
+tot(h, a),
+which shows that [Qrob
+i
+]i∈[N] satisfy DrIGM under h.
+Remark 1. The statement of Theorem 1 assumes that for all P ∈P there exist [QP
+i ]i∈[N] satisfying
+IGM for QP
+tot under joint history h ∈H. However, we note here that this assumption can be relaxed
+to only requiring that there exist [Qi]i∈[N] satisfying IGM for QP worst
+tot
+under h.
+Remark 2. As shown in Example 1, an adversarial model P ∈P that minimizes one agent’s value
+need not coincide with the adversarial model P ′ ∈P that minimizes the joint value. Theorem 1
+circumvents this problem by directly considering the global worst case, i.e.,
+Qrob
+i
+(hi, ai) := QP worst(h,¯a)
+i
+(hi, ai).
+(18)
+Given this definition, a robust joint action is given by a = (1, 1) or (2, 2), and there exist robust
+individual action-value functions are given by:
+Qrob
+1
+(s0, 1) = 0.2,
+Qrob
+1
+(s0, 2) = 0.1, Qrob
+2
+(s0, 1) = 0.7,
+Qrob
+2
+(s0, 2) = 0.4,
+where the robust individual action is given by a1 = 1, a2 = 1. Alternatively, another set of individual
+action-value functions are given by:
+Qrob
+1
+(s0, 1) = 0,
+Qrob
+1
+(s0, 2) = 0.3, Qrob
+2
+(s0, 1) = 0.5,
+Qrob
+2
+(s0, 2) = 0.6,
+where the robust individual action is given by a1 = 2, a2 = 2. Either way, the robust individual
+actions are aligned with the joint actions.
+19
+
+Published as a conference paper at ICLR 2026
+C.2
+PROOF OF THEOREM 2
+Proof. We proceed by proving that IGM holds for under each of the three conditions given in
+Theorem 2. By Theorem 1, this suffices to show that DrIGM holds for under each of the three
+conditions given in Theorem 2.
+VDN condition.
+Given a joint history h ∈H, for any P ∈P, we have
+QP
+tot(h, a) =
+X
+i∈[N]
+QP
+i (hi, ai),
+∀a = (a1, . . . , aN) ∈A.
+Let ¯ai = arg maxai QP
+i (hi, ai) for i ∈[N], and let ¯a = [¯ai]i∈[N]. Then, for any a ∈A,
+QP
+tot(h, a) =
+X
+i∈[N]
+QP
+i (hi, ai),
+≤
+X
+i∈[N]
+QP
+i (hi, ¯ai)
+(Definition of ¯ai)
+= QP
+tot(h, ¯a).
+This implies that
+
+arg max
+a1
+QP
+1 (h1, a1), . . . , arg max
+aN
+QP
+N(hN, aN)
+
+⊆arg max
+a
+QP
+tot(h, a),
+so [QP
+i ]i∈[N] satisfy IGM for QP
+tot under h. Therefore, by Theorem 1, [Qrob
+i
+]i∈[N] satisfy DrIGM for
+QP
+tot under h.
+QMIX condition.
+Given a joint history h ∈H, for any P ∈P, suppose the following monotonicity
+property holds:
+∂QP
+tot(h, a)
+∂QP
+i (hi, ai) ≥0,
+∀i ∈[N], a = (a1, . . . , aN) ∈A.
+Let ¯ai
+=
+arg maxai QP
+i (hi, ai) for i
+∈
+[N], and let ¯a
+=
+[¯ai]i∈[N].
+Given that
+∂QP
+tot(h, a)/∂QP
+1 (h1, a1) ≥0 and ¯a1 = arg maxa1 QP
+1 (h1, a1), we have (for any a ∈A)
+QP
+tot(h, a) ≤QP
+tot(h, ¯a1, a2, . . . , aN).
+Applying the same logic to all i ∈[N] yields that for any a ∈A,
+QP
+tot(h, a) ≤QP
+tot(h, ¯a1, ¯a2, . . . , ¯aN)
+(19)
+= QP
+tot(h, ¯a).
+(20)
+This implies that
+
+arg max
+a1
+QP
+1 (h1, a1), . . . , arg max
+aN
+QP
+N(hN, aN)
+
+⊆arg max
+a
+QP
+tot(h, a),
+so [QP
+i ]i∈[N] satisfy IGM for QP
+tot under h. Therefore, by Theorem 1, [Qrob
+i
+]i∈[N] satisfy DrIGM for
+QP
+tot under h.
+QTRAN condition.
+Given a joint history h ∈H, for any P ∈P, we have (for all a =
+(a1, . . . , aN) ∈A):
+N
+X
+i=1
+QP
+i (hi, ai) −QP
+tot(h, a) + Vtot(h) =
+0,
+a = ¯a,
+≥0,
+a ̸= ¯a,
+(21)
+where ¯a = [¯ai]i∈[N] with ¯ai = arg maxai QP
+i (hi, ai) and Vtot(h) = maxa QP
+tot(h, a) −
+PN
+i=1 QP
+i (hi, ai). Therefore,
+QP
+tot(h, ¯a) =
+N
+X
+i=1
+QP
+i (hi, ¯ai) + Vtot(h)
+(Eq. (21))
+20
+
+Published as a conference paper at ICLR 2026
+= max
+a
+QP
+tot(h, a),
+(Definition of V (h))
+This implies that
+
+arg max
+a1
+QP
+1 (h1, a1), . . . , arg max
+aN
+QP
+N(hN, aN)
+
+⊆arg max
+a
+QP
+tot(h, a),
+so [QP
+i ]i∈[N] satisfy IGM for QP
+tot under h. Therefore, by Theorem 1, [Qrob
+i
+]i∈[N] satisfy DrIGM for
+QP
+tot under h.
+Combining the three cases concludes the proof of Theorem 2.
+C.3
+PROOF OF THEOREM 3
+Proof. Recall that given an uncertainty set P, the robust joint action value is defined as,
+QP
+tot(h, a) := inf
+P ∈P QP
+tot(h, a), ∀(h, a) ∈H × A.
+(22)
+Given that Ptest ∈P, we directly have:
+QP
+tot(h, a) ≤QPtest
+tot (h, a), ∀h ∈H, a ∈A.
+(23)
+This concludes the proof.
+D
+ROBUST BELLMAN OPERATORS
+We start by introducing the assumptions needed to derive the robust bellman operators.
+Assumption 1 (Fail-state (Panaganti et al., 2022)). The robust Dec-POMDP has a fail state sf such
+that
+r(sf, a) = 0
+and
+Psf ,a(sf) = 1,
+∀a ∈A, ∀P ∈P.
+(24)
+This requirement is mild, as fail states naturally arise in both simulated and physical systems. For
+example, in robotics, a configuration where the robot falls and cannot recover, whether in simulators
+such as MuJoCo or in real hardware, serves as a natural fail state. We can further relax it to the
+following assumption.
+Assumption 2 (Vanishing minimal value (Lu et al., 2024)). The underlying RMDP satisfies
+min
+s∈S V P
+tot(s) = 0.
+(25)
+Without loss of generality, we also assume that any initial state s1 /∈arg mins∈S V P
+tot(s).
+This assumption states that the lowest achievable robust value across all states is normalized to zero.
+The exclusion of the minimizing state as the starting point rules out the degenerate case where the
+agent begins with zero guaranteed return.
+ρ-contamination uncertainty set.
+Given a ρ-contamination uncertainty set defined in Eq. (7), the
+robust bellman operator can be expanded as:
+(T PQ)(h, a) = r(s, a) + γ
+inf
+Ph,a∈Ph,a Eh′∼Ph,a
+
+max
+a′∈A Q(h′, a′)
+
+.
+(26)
+= r(s, a) + γ(1 −ρ) Eh′∼P 0
+h,a
+
+max
+a′∈A Q(h′, a′)
+
+(27)
++ ρ min
+s′∈S V P
+tot(s′).
+(28)
+Under Assumption 1 (Assumption 2), we obtain that:
+(T PQ)(h, a) = r(s, a) + γ(1 −ρ) Eh′∼P 0
+h,a
+
+max
+a′∈A Q(h′, a′)
+
+(Assumption 1 (Assumption 2))
+= r(s, a) + γ(1 −ρ) Eh′∼P 0
+h,a [Q(h′, ¯a′)] ,
+(Definition 2)
+where ¯a′
+i = arg maxa′
+i Qrob
+i
+(h′
+i, a′
+i).
+21
+
+Published as a conference paper at ICLR 2026
+TV-uncertainty set.
+Leveraging Panaganti et al. (2022)[Proposition 1], given a TV-uncertainty set
+defined in Eq. (9), the robust bellman operator can be expanded as:
+(T QP
+tot)(h, a) = r(s, a) −
+inf
+η∈[0,
+2
+ρ(1−γ) ] γ Eh′∼P 0
+h,a
+
+ρ
+
+η(s, a) −inf
+s′′∈S V P
+tot(s′′)
+
++
+−η
++
+
+η(s, a) −max
+a′∈A QP
+tot(h′, a′)
+
++
+
+.
+(29)
+Under Assumption 1 (Assumption 2), we obtain that:
+(T QP
+tot)(h, a) = r(s, a) −
+inf
+η∈[0,
+2
+ρ(1−γ) ] γ Eh′∼P 0
+h,a
+
+−(1 −ρ)η(s, a)
++
+
+η(s, a) −max
+a′∈A QP
+tot(h′, a′)
+
++
+
+.
+(Assumption 1 (Assumption 2))
+= r(s, a) −
+inf
+η∈[0,
+2
+ρ(1−γ) ] γ Eh′∼P 0
+h,a
+
+−(1 −ρ)η(s, a)
++
+
+η(s, a) −max
+a′∈A QP
+tot(h′
+1, . . . , h′
+N, ¯a′
+1, . . . , ¯a′
+N)
+
++
+
+.
+(Definition 2)
+E
+ALGORITHMS
+We offer a full description of our algorithms in this section, presented in Algorithms 2 to 7.
+Algorithm 2 Robust VDN with ρ-contamination uncertainty set
+1: Input robustness parameter ρ, target network update frequency f and ε
+2: Initialize replay buffer D
+3: Initialize [Qrob
+i
+]i∈[N] with random parameters θ
+4: Initialize target parameters θ−= θ
+5: for episode e = 1, . . . , E do
+6:
+Observe initial state s0 and observation o0
+i = σi(s0) for each agent i.
+7:
+for t = 1, . . . , T do
+8:
+Each agent i choose its action at
+i using ε-greedy policy.
+9:
+Take joint action at, observe the next state st+1, reward rt and observation ot+1
+i
+= σi(st+1)
+for each agent i
+10:
+Store transition (ht, at, rt, ht+1) in replay buffer D
+11:
+Sample a mini-batch of transitions (h, a, r, h′) from D
+12:
+Set ¯a′ = [arg maxa′
+i Qrob
+i
+(h′
+i, a′
+i; θ−)]i∈[N]
+13:
+Set QP,VDN
+tot
+(h, a; θ) = P
+i∈[N] Qrob
+i
+(hi, ai; θ)
+14:
+Set QP,VDN
+tot
+(h′, ¯a′; θ−) = P
+i∈[N] Qrob
+i
+(h′
+i, ¯a′
+i; θ−)
+15:
+Set ytarget = r + γ(1 −ρ)QP,VDN
+tot
+(h′, ¯a′; θ−)
+16:
+Calculate TD loss LTD = (QP,VDN
+tot
+(h, a; θ) −ytarget)2
+17:
+Update θ by minimizing LTD
+18:
+Update θ−= θ with frequency f
+19:
+end for
+20: end for
+F
+EXPERIMENT DETAILS
+F.1
+TASK DESCRIPTION
+We test our algorithms and baseline algorithms in BuildingEnv in Yeh et al. (2023). This
+environment considers the control of the heat flow in a multi-zone building so as to maintain a
+desired temperature setpoint. Building temperature simulation uses first-principled physics models,
+to capture the real-world dynamics. The environmental model and reward functions can differ from
+three climate types and locations (San Diego, Tucson, New York), which jointly decide the climate.
+22
+
+Published as a conference paper at ICLR 2026
+Algorithm 3 Robust QMIX with ρ-contamination uncertainty set
+1: Input robustness parameter ρ, target network update frequency f and ε
+2: Initialize replay buffer D
+3: Initialize [Qrob
+i
+]i∈[N] and mixing network fθ with random parameters θ
+4: Initialize target parameters θ−= θ
+5: for episode e = 1, . . . , E do
+6:
+Observe initial state s0 and observation o0
+i = σi(s0) for each agent i.
+7:
+for t = 1, . . . , T do
+8:
+Each agent i choose its action at
+i using ε-greedy policy.
+9:
+Take joint action at, observe the next state st+1, reward rt and observation ot+1
+i
+= σi(st+1)
+for each agent i
+10:
+Store transition (ht, at, st, rt, ht+1, st+1) in replay buffer D
+11:
+Sample a mini-batch of transitions (h, a, s, r, h′, s′) from D
+12:
+Set ¯a′ = [arg maxa′
+i Qrob
+i
+(h′
+i, a′
+i; θ−)]i∈[N]
+13:
+Set QP,QMIX
+tot
+(h, a; θ) = fθ((Qrob
+i
+(hi, ai; θ))i∈[N], s)
+14:
+Set QP,QMIX
+tot
+(h′, ¯a′; θ−) = fθ−((Qrob
+i
+(h′
+i, ¯a′
+i; θ−))i∈[N], s′)
+15:
+Set ytarget = r + γ(1 −ρ)QP,QMIX
+tot
+(h′, ¯a′; θ−)
+16:
+Calculate TD loss LTD = (QP,QMIX
+tot
+(h, a; θ) −ytarget)2
+17:
+Update θ by minimizing LTD
+18:
+Update θ−= θ with frequency f
+19:
+end for
+20: end for
+Algorithm 4 Robust QTRAN with ρ-contamination uncertainty set
+1: Input robustness parameter ρ, target network update frequency f and ε
+2: Initialize replay buffer D
+3: Initialize [Qrob
+i
+]i∈[N], QP,QTRAN
+tot
+and V P,QTRAN
+tot
+with random parameters θ
+4: Initialize target parameters θ−= θ
+5: for episode e = 1, . . . , E do
+6:
+Observe initial state s0 and observation o0
+i = σi(s0) for each agent i.
+7:
+for t = 1, . . . , T do
+8:
+Each agent i choose its action at
+i using ε-greedy policy.
+9:
+Take joint action at, observe the next state st+1, reward rt and observation ot+1
+i
+= σi(st+1)
+for each agent i
+10:
+Store transition (ht, at, rt, ht+1) in replay buffer D
+11:
+Sample a mini-batch of transitions (h, a, r, h′) from D
+12:
+Set ¯a′ = [arg maxa′
+i Qrob
+i
+(h′
+i, a′
+i; θ−)]i∈[N]
+13:
+Set ytarget = r + γ(1 −ρ)QP,QTRAN
+tot
+(h′, ¯a′; θ−)
+14:
+Calculate TD loss LTD = (QP,QTRAN
+tot
+(h, a; θ) −ytarget)2
+15:
+Calculate Lopt using Eq. (12)
+16:
+Calculate Lnopt using Eq. (13)
+17:
+Update θ by minimizing L = LTD + Lopt + Lnopt
+18:
+Update θ−= θ with frequency f
+19:
+end for
+20: end for
+23
+
+Published as a conference paper at ICLR 2026
+Algorithm 5 Robust VDN with TV uncertainty set
+1: Input robustness parameter ρ, target network update frequency f and ε
+2: Initialize replay buffer D
+3: Initialize [Qrob
+i
+]i∈[N] with random parameters θ
+4: Initialize dual network ηξ with random parameters ξ
+5: Initialize target parameters θ−= θ
+6: for episode e = 1, . . . , E do
+7:
+Observe initial state s0 and observation o0
+i = σi(s0) for each agent i.
+8:
+for t = 1, . . . , T do
+9:
+Each agent i choose its action at
+i using ε-greedy policy.
+10:
+Take joint action at, observe the next state st+1, reward rt and observation ot+1
+i
+= σi(st+1)
+for each agent i
+11:
+Store transition (ht, at, st, rt, ht+1) in replay buffer D
+12:
+Sample a mini-batch of transitions (h, a, r, s, h′)
+13:
+Calculate dual loss Ldual using Eq. (17)
+14:
+Update ξ by minimizing Ldual
+15:
+Sample another mini-batch of transitions (h, a, s, r, h′) from D
+16:
+Set ¯a′ = [arg maxa′
+i Qrob
+i
+(h′
+i, a′
+i; θ−)]i∈[N]
+17:
+Set QP,VDN
+tot
+(h, a; θ) = P
+i∈[N] Qrob
+i
+(hi, ai; θ)
+18:
+Set QP,VDN
+tot
+(h′, ¯a′; θ−) = P
+i∈[N] Qrob
+i
+(h′
+i, ¯a′
+i; θ−)
+19:
+Set ytarget = r + γ(1 −ρ)ηξ(s, a) −γ[ηξ(s, a) −QP,VDN
+tot
+(h′, ¯a′; θ−)]+
+20:
+Calculate TD loss LTD = (QP,VDN
+tot
+(h, a; θ) −ytarget)2
+21:
+Update θ by minimizing LTD
+22:
+Update θ−= θ with frequency f
+23:
+end for
+24: end for
+Algorithm 6 Robust QMIX with TV uncertainty set
+1: Input robustness parameter ρ, target network update frequency f and ε
+2: Initialize replay buffer D
+3: Initialize [Qrob
+i
+]i∈[N] and mixing network fθ with random parameters θ
+4: Initialize dual network ηξ with random parameters ξ
+5: Initialize target parameters θ−= θ
+6: for episode e = 1, . . . , E do
+7:
+Observe initial state s0 and observation o0
+i = σi(s0) for each agent i.
+8:
+for t = 1, . . . , T do
+9:
+Each agent i choose its action at
+i using ε-greedy policy.
+10:
+Take joint action at, observe the next state st+1, reward rt and observation ot+1
+i
+= σi(st+1)
+for each agent i
+11:
+Store transition (ht, at, st, rt, ht+1) in replay buffer D
+12:
+Sample a mini-batch of transitions (h, a, r, h′)
+13:
+Calculate dual loss Ldual using Eq. (17)
+14:
+Update ξ by minimizing Ldual
+15:
+Sample another mini-batch of transitions (h, a, s, r, h′) from D
+16:
+Set ¯a′ = [arg maxa′
+i Qrob
+i
+(h′
+i, a′
+i; θ−)]i∈[N]
+17:
+Set QP,QMIX
+tot
+(h, a; θ) = fθ((Qrob
+i
+(hi, ai; θ))i∈[N], s)
+18:
+Set QP,QMIX
+tot
+(h′, ¯a′; θ−) = fθ−((Qrob
+i
+(h′
+i, ¯a′
+i; θ−))i∈[N], s′)
+19:
+Set ytarget = r + γ(1 −ρ)ηξ(s, a) −γ[ηξ(s, a) −QP,QMIX
+tot
+(h′, ¯a′; θ−)]+
+20:
+Calculate TD loss LTD = (QP,QMIX
+tot
+(h, a; θ) −ytarget)2
+21:
+Update θ by minimizing LTD
+22:
+Update θ−= θ with frequency f
+23:
+end for
+24: end for
+24
+
+Published as a conference paper at ICLR 2026
+Algorithm 7 Robust QTRAN with TV uncertainty set
+1: Input robustness parameter ρ, target network update frequency f and ε
+2: Initialize replay buffer D
+3: Initialize [Qrob
+i
+]i∈[N], QP,QTRAN
+tot
+and V P,QTRAN
+tot
+with random parameters θ
+4: Initialize dual network ηξ with random parameters ξ
+5: Initialize target parameters θ−= θ
+6: for episode e = 1, . . . , E do
+7:
+Observe initial state s0 and observation o0
+i = σi(s0) for each agent i.
+8:
+for t = 1, . . . , T do
+9:
+Each agent i choose its action at
+i using ε-greedy policy.
+10:
+Take joint action at, observe the next state st+1, reward rt and observation ot+1
+i
+= σi(st+1)
+for each agent i
+11:
+Store transition (ht, at, st, rt, ht+1) in replay buffer D
+12:
+Sample a mini-batch of transitions (h, a, r, s, h′, s′)
+13:
+Calculate dual loss Ldual using Eq. (17)
+14:
+Update ξ by minimizing Ldual
+15:
+Sample another mini-batch of transitions (h, a, s, r, h′) from D
+16:
+Set ¯a′ = [arg maxa′
+i Qrob
+i
+(h′
+i, a′
+i; θ−)]i∈[N]
+17:
+Set ytarget = r + γ(1 −ρ)ηξ(s, a) −γ[ηξ(s, a) −QP,QTRAN
+tot
+(h′, ¯a′; θ−)]+
+18:
+Calculate TD loss LTD = (QP,QTRAN
+tot
+(h, a; θ) −ytarget)2
+19:
+Calculate Lopt using Eq. (12)
+20:
+Calculate Lnopt using Eq. (13)
+21:
+Update θ by minimizing L = LTD + Lopt + Lnopt
+22:
+Update θ−= θ with frequency f
+23:
+end for
+24: end for
+Episode.
+In BuildingEnv, each episode runs for 1 day, with 5-minute time intervals. That is,
+the horizon length H = 288, and the time interval length τ = 5/60 hours. We set the discount factor
+γ ≃0.997 by using H as the effective horizon length H =
+1
+1−γ .
+State Space.
+For a building with N indoor zones, the state contains observable properties of the
+building environment at timestep t:
+s(t) = (T1(t), . . . , TN(t), TE(t), TG(t), QGHI(t), ¯Qp(t)),
+(30)
+where Ti(t) denotes zone i’s temperature at time step t, ¯Qp(t) is the heat acquisition from occupants’
+activities, QGHI(t) is the heat gain from the solar irradiance, and TG(t) and TE(t) denote the ground
+and outdoor environment temperature.
+Observation Space.
+For agent i, given the current state s(t), its observation oi(t) is given by:
+oi(t) = σi(s(t))
+= (Ti(t), TE(t), TG(t), QGHI(t), ¯Qp(t)).
+(31)
+That is, agent i can observe the tempature at zone i, the heat acquisition from occupants’ activities,
+the heat gain from the solar irradiance, and the ground and outdoor environment temperature.
+Action Space.
+At time t, agent i’s action is a scalar ai(t) ∈[−1, 1], which sets the controlled
+heating supplied to zone i. The joint action a(t) = (a1(t), . . . , aN(t))
+Reward Function.
+The objective is to reduce energy consumption while keeping the temperature
+within a given comfort range. Therefore, the reward function is a weighted average of these two
+goals:
+r(t) = −(1 −β)||a(t)||2 −β||T target −T(t)||2,
+(32)
+where T target = (T target
+1
+(t), . . . , T target
+N
+) are the target temperatures and T(t) = (T1(t), . . . , TN(t))
+are the actual zonal temperature, and || · ||2 denote the ℓ2 norm. We use the same default hyperparam-
+eter β across all experiments.
+25
+
+Published as a conference paper at ICLR 2026
+Environmental Uncertainty.
+The environmental model and reward functions can differ from
+three climate types and locations (San Diego, Tucson, New York), which jointly decide the climate.
+Besides, BuildingEnv contains distribution shifts in the ambient outdoor temperature profile TE
+incurred by seasonal shifts.
+F.2
+EXPERIMENTS SETUP.
+We implement distributionally robust algorithms with two types of uncertainty sets (ρ-contamination
+Zhang et al. (2024), TV-uncertaintyPanaganti et al. (2022)) and three different value factorization
+methods (VDN (Sunehag et al., 2017), QMIX (Rashid et al., 2020), QTRAN (Son et al., 2019)). We
+also implement the GroupDR MARL algorithm from (Liu et al., 2025), also with these three different
+value factorization methods. Each experiment is run independently with 5 different random seeds.
+Hyperparameters.
+Training lasts 600 episodes with parameter updates every 2 steps and target
+updates every 25k steps. Replay buffer size is 10k; batch size is 64. We use ε-greedy exploration
+with ε annealed from 1.0 to 0.01 over 120k steps. Hidden layer size is 64.
+Environment configurations.
+The environment configurations we use throughout the three experi-
+ments are shown in Table 3 where Env 1 is the training environment, and the other environments are
+numbered in order of how much they differ from Env 1.
+Environment
+Weather
+Location
+Env 1
+Hot Dry
+Tucson
+Env 2
+Hot Humid
+Tampa
+Env 3
+Very Hot Humid
+Honolulu
+Env 4
+Warm Dry
+El Paso
+Env 5
+Cool Marine
+Seattle
+Env 6
+Mixed Humid
+New York
+Table 3: Environment configurations for SustainGym BuildingEnv.
+Robust individual Q-networks.
+Each agent employs a recurrent Q-network (Hausknecht & Stone,
+2015), encoding its local observation concatenated with the previous action (one-hot). Features pass
+through a fully connected layer with ReLU, followed by a single-layer LSTM (hidden size 64). The
+final hidden state is projected into Q-values. We optimize with RMSprop (lr = 5 × 10−4).
+Mixing networks (QMIX).
+Following TorchRL (Bou et al., 2023), we use hypernetworks to
+generate state-dependent mixing weights while enforcing monotonicity. Per-agent Q-values are
+embedded, passed through ELU, and projected to a scalar joint Q. A state-conditioned bias is added
+via a two-layer MLP. Optimizer: RMSprop (lr = 5 × 10−4).
+QTRAN Networks.
+We implement joint action-value and state-value networks as in Son et al.
+(2019). The joint action is encoded by concatenated one-hots, projected with ReLU, and optionally
+combined with agent features. The state-value network processes the global state and summed agent
+features in parallel, concatenates them, and outputs a scalar. Both use Adam (lr = 10−3).
+Dual networks (TV uncertainty).
+The global state and joint action (concatenated one-hots) are
+separately embedded via ReLU MLPs, concatenated, and passed through another ReLU layer before
+a final linear projection to a scalar. Optimizer: Adam (lr = 10−3).
+GroupDR training.
+GroupDR first fits a contextual-bandit-based worst-case reward estimator to
+estimate the worst-case reward, using data from Env 1 to Env 5 collected under a VDN-trained
+behavior policy. Using this estimator, we then train the individual Q-networks by randomly sampling
+episodes from Env 1 to Env 5. (For fairness, Env 6 is never used for training by any method.)
+Normalized Return.
+Because the reward in BuildingEnv is negative, we normalize the returns
+to [0, 1] by the following transformation:
+Normalized return = Return + 9000
+9000
+.
+(33)
+26
+
+Published as a conference paper at ICLR 2026
+Experiment 1: climatic shifts.
+During training, we train each algorithm in Env 1 by sampling
+episodes from Day 1 to Day 200. During evaluation, we evaluate each algorithm in Env 1 to Env 6,
+by sampling 50 episodes from Day 1 to Day 200 in each environment. This setup demonstrates
+distribution shift induced by climate differences.
+Experiment 2: seasonal shifts.
+During training, we train each algorithm in Env 1 by sampling
+episodes from Day 1 to Day 200. During evaluation, we evaluate each algorithm in Env 1, by
+sampling 50 episodes from Day 400 to Day 600 in each environment. This setup demonstrates
+distribution shift induced by seasonality within the same location.
+Experiment 3: climatic and seasonal shifts.
+During training, we train each algorithm in Env 1 by
+sampling episodes from Day 1 to Day 200. During evaluation, we evaluate each algorithm in Env 6,
+by sampling 50 episodes from Day 400 to Day 600 in each environment. This setup demonstrates the
+combined effects of climate and seasonal shifts.
+G
+DISCLOSURE OF LLM USAGE
+To improve clarity and readability, we used a large language model (LLM) to assist in polishing the
+writing. The LLM was only employed for language refinement (e.g., grammar, style, and conciseness)
+and was not involved in designing methods, experiments, or drawing conclusions.
+27

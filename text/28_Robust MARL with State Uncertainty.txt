@@ -1,0 +1,3430 @@
+Published in Transactions on Machine Learning Research (06/2023)
+Robust Multi-Agent Reinforcement Learning with State Un-
+certainty
+Sihong He
+sihong.he@uconn.edu
+Department of Computer Science and Engineering
+University of Connecticut
+Songyang Han
+songyang.han@uconn.edu
+Department of Computer Science and Engineering
+University of Connecticut
+Sanbao Su
+sanbao.su@uconn.edu
+Department of Computer Science and Engineering
+University of Connecticut
+Shuo Han
+hanshuo@uic.edu
+Department of Electrical and Computer Engineering
+University of Illinois, Chicago
+Shaofeng Zou
+szou3@buffalo.edu
+Department of Electrical Engineering
+University at Buffalo, The State University of New York
+Fei Miao
+fei.miao@uconn.edu
+Department of Computer Science and Engineering
+University of Connecticut
+Reviewed on OpenReview: https: // openreview. net/ forum? id= CqTkapZ6H9
+Abstract
+In real-world multi-agent reinforcement learning (MARL) applications, agents may not have
+perfect state information (e.g., due to inaccurate measurement or malicious attacks), which
+challenges the robustness of agents’ policies. Though robustness is getting important in
+MARL deployment, little prior work has studied state uncertainties in MARL, neither in
+problem formulation nor algorithm design. Motivated by this robustness issue and the
+lack of corresponding studies, we study the problem of MARL with state uncertainty in
+this work. We provide the first attempt to the theoretical and empirical analysis of this
+challenging problem. We first model the problem as a Markov Game with state perturbation
+adversaries (MG-SPA) by introducing a set of state perturbation adversaries into a Markov
+Game. We then introduce robust equilibrium (RE) as the solution concept of an MG-SPA.
+We conduct a fundamental analysis regarding MG-SPA such as giving conditions under
+which such a robust equilibrium exists. Then we propose a robust multi-agent Q-learning
+(RMAQ) algorithm to find such an equilibrium, with convergence guarantees. To handle
+high-dimensional state-action space, we design a robust multi-agent actor-critic (RMAAC)
+algorithm based on an analytical expression of the policy gradient derived in the paper.
+Our experiments show that the proposed RMAQ algorithm converges to the optimal value
+function; our RMAAC algorithm outperforms several MARL and robust MARL methods in
+multiple multi-agent environments when state uncertainty is present. The source code is
+public on https://github.com/sihongho/robust_marl_with_state_uncertainty.
+1
+arXiv:2307.16212v1  [cs.LG]  30 Jul 2023
+
+Published in Transactions on Machine Learning Research (06/2023)
+1
+Introduction
+Figure 1: Motivation of considering state uncertainty in
+single-agent reinforcement learning.
+Reinforcement
+Learning
+(RL)
+recently
+has
+achieved remarkable success in many decision-
+making problems, such as robotics, autonomous
+driving, traffic control, and game playing (Espeholt
+et al., 2018; Silver et al., 2017; Mnih et al., 2015; He
+et al., 2022). However, in real-world applications,
+the agent may face state uncertainty in which ac-
+curate information about the state is unavailable.
+This uncertainty may be caused by unavoidable
+sensor measurement errors, noise, missing informa-
+tion, communication issues, and/or malicious at-
+tacks. A policy not robust to state uncertainty can
+result in unsafe behaviors and even catastrophic
+outcomes. For instance, consider the path planning
+problem shown in Figure 1, where the agent (green
+ball) observes the position of an obstacle (red ball)
+through sensors and plans a safe (no collision) and
+shortest path to the goal (black cross). In Fig-
+ure 1-(a), the agent can observe the true state s
+(red ball) and choose an optimal and collision-free
+curve a∗(in red) tangent to the obstacle. In com-
+parison, when the agent can only observe the perturbed state ˜s (yellow ball) caused by inaccurate sensing or
+state perturbation adversaries (Figure 1-(b)), it will choose a straight line ˜a (in blue) as the shortest and
+collision-free path tangent to ˜s. However, by following ˜a, the agent actually crashes into the obstacle. To
+avoid collision in the worst case, one can construct a state uncertainty set that contains the true state based
+on the observed state. Then the robustly optimal path under state uncertainty becomes the yellow curve ˜a∗
+tangent to the uncertainty set, as shown in Figure 1-(c).
+In single-agent RL, imperfect information about the state has been studied in the literature of partially
+observable Markov decision process (POMDP) (Kaelbling et al., 1998). However, as pointed out in recent
+literature (Huang et al., 2017; Kos & Song, 2017; Yu et al., 2021b; Zhang et al., 2020a), the conditional
+observation probabilities in POMDP cannot capture the worst-case (or adversarial) scenario, and the learned
+policy without considering state uncertainties may fail to achieve the agent’s goal. Dealing with state
+uncertainty becomes even more challenging for Multi-Agent Reinforcement Learning (MARL), where each
+agent aims to maximize its own total return during the interaction with other agents and the environment
+(Yang & Wang, 2020b). Even if one agent receives misleading state information, its action affects both its
+own return and the other agents’ returns (Zhang et al., 2020b) and may result in catastrophic failure. The
+existing literature of decentralized partially observable Markov decision process (Dec-POMDP) (Oliehoek
+et al., 2016) does not provide theoretical analysis or algorithmic tools for MARL under worst-case state
+uncertainties either.
+To better illustrate the effect of state uncertainty in MARL, the path planning problem in Figure 1 is modified
+such that two agents are trying to reach their individual goals without collision (a penalty or negative reward
+applied). When the blue agent knows the true position sg
+0 (the subscript denotes time, which starts from 0)
+of the green agent, it will get around the green agent to quickly reach its goal without collision. However, in
+Figure 2-(a), when the blue agent can only observe the perturbed position ˜sg
+0 (yellow circle) of the green
+agent, it would choose a straight line that it thought safe (Figure 2-(a1)), which eventually leads to a crash
+(Figure 2-(a2)). In Figure 2-(b), the blue agent adopts a robust trajectory by considering a state uncertainty
+set based on its observation. As shown in Figure 2-(b1), there is no overlap between (sb
+0, ˜sg
+0) or (sb
+T , ˜sg
+T ).
+Since the uncertainty sets centered at ˜sg
+0 and ˜sg
+T (the dotted circles) include the true state of the green agent,
+this robust trajectory also ensures no collision between (sb
+0, sg
+0) or (sb
+T , sg
+T ). The blue agent considers the
+interactions with the green agent to ensure no collisions at any time. Therefore, it is necessary to consider
+state uncertainty in a multi-agent setting where the dynamics of other agents should be considered.
+2
+
+Published in Transactions on Machine Learning Research (06/2023)
+Figure 2: Motivation of considering state uncertainty in MARL.
+In this work, we develop a robust
+MARL framework that accounts for
+state uncertainty.
+Specifically, we
+model the problem of MARL with state
+uncertainty as a Markov game with
+state perturbation adversaries (MG-
+SPA), in which each agent is associ-
+ated with a state perturbation adver-
+sary.
+One state perturbation adver-
+sary always plays against its correspond-
+ing agent by preventing the agent from
+knowing the true state accurately. We
+analyze the MARL problem with adver-
+sarial or worst-case state perturbations.
+Compared to single-agent RL, MARL
+is more challenging due to the interac-
+tions among agents and the necessity
+of studying equilibrium policies (Nash,
+1951; McKelvey & McLennan, 1996;
+Slantchev, 2008; Daskalakis et al., 2009;
+Etessami & Yannakakis, 2010).
+The
+contributions of this work are summa-
+rized as follows.
+Contributions: To the best of our knowledge, this work is the first attempt to systematically characterize
+state uncertainties in MARL and provide both theoretical and empirical analysis. First, we formulate the
+MARL problem with state uncertainty as a Markov game with state perturbation adversaries (MG-SPA). We
+define the solution concept of the game as a robust equilibrium (RE), where all players including the agents
+and the adversaries use policies from which no one has an incentive to deviate. In an MG-SPA, each agent not
+only aims to maximize its return when considering other agents’ actions but also needs to act against all state
+perturbation adversaries. Therefore, a robust equilibrium policy of one agent is robust to state uncertainties.
+Second, we study its fundamental properties and prove the existence of a robust equilibrium under certain
+conditions. We develop a robust multi-agent Q-learning (RMAQ) algorithm with a convergence guarantee
+and a robust multi-agent actor-critic (RMAAC) algorithm for handling high-dimensional state-action space.
+Finally, we conduct experiments in a two-player game to validate the convergence of the proposed Q-learning
+method RMAQ. We test our RMAAC algorithm in several benchmark multi-agent environments. We show
+that our RMAQ and RMAAC algorithms can learn robust policies that outperform baselines under state
+perturbations in multi-agent environments.
+Organization: The rest of the paper is organized as follows. The related work is presented in Section 2.
+In Section 3, we introduce some preliminary concepts in RL and MARL. The proposed methodology and
+corresponding analysis are in Section 4. The proposed algorithms are in Section 5 and experiments results
+are in Section 6. We discuss some future work in Section 7. In Section 8 we conclude.
+2
+Related work
+Robust Reinforcement Learning:
+Recent robust reinforcement learning studied different types of
+uncertainties, such as action uncertainties (Tessler et al., 2019) and transition kernel uncertainties (Sinha
+et al., 2020; Yu et al., 2021b; Hu et al., 2020; Wang & Zou, 2021; Lim & Autef, 2019; Nisioti et al., 2021;
+He et al., 2022). Some recent attempts at adversarial state perturbations for single-agent validated the
+importance of considering state uncertainty and improving the robustness of the learned policy in Deep
+RL (Huang et al., 2017; Lin et al., 2017; Zhang et al., 2020a; 2021; Everett et al., 2021). The works of
+Zhang et al. (2020a; 2021) formulate the state perturbation in single-agent RL as a modified Markov decision
+process, then study the robustness of single-agent RL policies. The works of Huang et al. (2017) and Lin
+et al. (2017) show that adversarial state perturbation undermines the performance of neural network policies
+3
+
+Published in Transactions on Machine Learning Research (06/2023)
+in single-agent reinforcement learning and proposes different single-agent attack strategies. In this work, we
+consider the more challenging problem of adversarial state perturbation for MARL, when the environment of
+an individual agent is non-stationary with other agents’ changing policies during the training process.
+Robust Multi-Agent Reinforcement Learning:
+There is very limited literature on the solution concept
+or theoretical analysis when considering adversarial state perturbations in MARL. Other types of uncertainties
+have been investigated in the literature, such as uncertainties about training partner’s type (Shen & How,
+2021), the other agents’ policies (Li et al., 2019; Sun et al., 2021; van der Heiden et al., 2020), and reward
+uncertainties (Zhang et al., 2020b). However, the policy considered in these papers relies on the true state
+information. Hence, the robust MARL considered in this work is fundamentally different since the agents do
+not know the true state information. Dec-POMDP enables a team of agents to optimize policies with the
+partial observable states (Oliehoek et al., 2016; Chen et al., 2022). The work of Lin et al. (2020) studies state
+perturbation in identical-interest MARL, and proposes an attack method to attack the state of one single
+agent in order to decrease the team reward. In contrast, we consider the worst-case scenario that the state of
+every agent can be perturbed by an adversary and focus on the theoretical analysis of robust MARL including
+the existence of optimal value function and robust equilibrium (RE). Our work provides formal definitions of
+the state uncertainty challenge in MARL, and derives both theoretical analysis and practical algorithms.
+Game Theory and MARL:
+MARL shares theoretical foundations with the game theory research field
+and a literature review has been provided to understand MARL from a game theoretical perspective (Yang
+& Wang, 2020a). A Markov game, sometimes called a stochastic game models the interaction between
+multiple agents (Owen, 2013; Littman, 1994). Algorithms to compute the Nash equilibrium (NE) in Dec-
+POMDP (Oliehoek et al., 2016), POSG (partially observable stochastic game) and analysis assuming that
+NE exists (Chades et al., 2002; Hansen et al., 2004; Nair et al., 2002) have been developed in the literature
+without proving the conditions for the existence of NE. The main theoretical contributions of this work include
+proving conditions under which the proposed MG-SPA has robust equilibrium solutions, and convergence
+analysis of our proposed robust multi-agent Q-learning algorithm. This is the first attempt to analyze the
+fundamental properties of MARL under adversarial state uncertainties.
+3
+Preliminary
+Q-learning is a model-free single-agent reinforcement learning algorithm (Sutton et al., 1998). The core of
+this method is a Bellman equation that q∗(s, a) = r(s, a) + γ P
+s′ maxa′∈A q∗(s′, a′). The Bellman equation
+encourages a simple value iteration update which uses the weighted average of old Q-value and the new one.
+Q-learning learns the optimal action-value function q∗(s, a) by value iteration: qnew(s, a) = (1 −α)qold(s, a) +
+α [r(s, a) + γ P
+s′ p(s′|s, a) maxa′∈A qold(s′, a′)], and the optimal action a∗(s) = arg maxa∈A q∗(s, a). Deep
+Q-Networks (DQN) use a neural network with parameter θ to approximate Q-value (Mnih et al., 2015).
+This allows the algorithm to handle larger state spaces. DQN minimizes the loss function defined in (1),
+where q′ is a target network that copies the parameter θ occasionally to make training more stable. D is an
+experience replay buffer. DQN uses experience replay, which involves storing and randomly sampling previous
+experiences to train the neural network, to improve the stability and efficiency of the learning process. The
+target network helps to prevent the algorithm from oscillating or diverging during training.
+L(θ) = Eτ∼D [y −q(s, a|θ)]2 ,
+y = r(s, a) + γ max
+a′∈A q′(s′, a′).
+(1)
+Actor-Critic (AC) is a single-agent reinforcement learning algorithm with two parts: an actor decides
+which action should be taken and a critic evaluates how well the actor performs (Sutton et al., 1998). The
+actor is parameterized by πθ(·|s) and iteratively updates the parameter θ to maximize the objective function
+J(θ) = Eτ∼p,a∼πθ[P∞
+t=1 γt−1rt(st, at)], where τ denotes a trajectory and p is the state transition probability
+distribution. The critic is parameterized by qϕ(s, a) and evaluates actions chosen by the actor by computing
+the Q-value i.e. action-value function. The critic can update itself by using (1). The actor updates its
+parameter by using the gradient: ∇θJ(θ) = Es∼p,a∼πθ [qπ(s, a)∇θ log πθ(a|s)].
+4
+
+Published in Transactions on Machine Learning Research (06/2023)
+Markov game (MG) is used to model the interaction between multiple agents (Littman, 1994).
+A Markov game, sometimes is called a stochastic game (Owen, 2013) defined as a tuple G
+:=
+(N, S, {Ai}i∈N , {ri}i∈N , p, γ), where S is the state space, N is a set of N agents, Ai is the action space of agent
+i, respectively (Littman, 1994; Owen, 2013).γ ∈[0, 1) is the discounting factor. We define A = A1 × · · · × AN
+as the joint action space. The state transition p : S × A →∆(S) is controlled by the current state and joint
+action, where ∆(S) represents the set of all probability distributions over the joint state space S. Each
+agent has a reward function, ri : S × A →R. At time t, agent i chooses its action ai
+t according to a policy
+πi : S →∆(Ai). For each agent i, it attempts to maximize its expected sum of discounted rewards, i.e. its
+objective function Ji(s, π) = E
+P∞
+t=1 γt−1ri
+t(st, at)|s1 = s, at ∼π(·|st)
+
+.
+4
+Methodology
+In this section, to solve the robust multi-agent reinforcement learning problem with state uncertainty, we
+first introduce the framework of the Markov game with state perturbation adversaries. We then provide
+characterization results for the proposed framework: Markov and history-dependent policies, the definition of
+a solution concept called robust equilibrium based on value functions, derivation of Bellman equations, as
+well as certain conditions for the existence of a robust equilibrium and the optimal value function.
+4.1
+Markov Game with State Perturbation Adversaries
+We use a tuple ˜G := (N, M, S, {Ai}i∈N , {B˜i}˜i∈M, {ri}i∈N , p, f, γ) to denote a Markov game with state
+perturbation adversaries (MG-SPA). In an MG-SPA, we introduce an additional set of adversaries
+M = {˜1, · · · , ˜N} to a Markov game (MG) with an agent set N. Each agent i is associated with an adversary
+˜i and can observe the true state s ∈S if without adversarial perturbation. Each adversary ˜i is associated
+with an action b˜i ∈B˜i and the same state s ∈S that agent i has. We define the adversaries’ joint action
+as b = (b˜1, ..., b ˜
+N) ∈B, B = B˜1 × · · · × B ˜
+N. At time t, adversary ˜i can manipulate the corresponding
+agent i’s state information. Once adversary ˜i gets state st, it chooses an action b˜i
+t according to a policy
+ρ˜i : S →∆(B˜i). According to a perturbation function f, adversary ˜i perturbs state st to ˜si
+t = f(st, b˜i
+t) ∈S.
+We use ˜st = (˜s1
+t, · · · , ˜sN
+t ) to denote a joint perturbed state and use the notation f(st, bt) = ˜st. We denote
+the adversaries’ joint policy as ρ(b|s) = Q
+˜i∈M ρ˜i(b˜i|s). The definitions of agent action and agents’ joint
+action are the same as their definitions in an MG. Agent i chooses its action ai
+t with ˜si
+t according to a policy
+πi(ai
+t|˜si
+t), πi : S →∆(Ai). We denote the agents’ joint policy as π(a|˜s) = Q
+i∈N π(ai|˜si). Agents execute
+the agents’ joint action at, then at time t + 1, the joint state st turns to the next state st+1 according to a
+transition probability function p : S × A × B →∆(S). Each agent i gets a reward according to a state-wise
+reward function ri
+t : S × A × B →R. Each adversary ˜i gets an opposite reward −ri
+t. In an MG, the transition
+probability function and reward function are considered as the model of the game. In an MG-SPA, the
+perturbation function f is also considered as a part of the model, i.e., the model of an MG-SPA consists of
+f, p and {ri}i∈N .
+Definition 4.1 (Value Functions).
+vπ,ρ = (vπ,ρ,1, · · · , vπ,ρ,N), qπ,ρ = (qπ,ρ,1, · · · , qπ,ρ,N) are defined as the state-value function or value
+function for short, and the action-value function, respectively. The ith element vπ,ρ,i and qπ,ρ,i are
+defined as following:
+qπ,ρ,i(s, a, b) = E
+" ∞
+X
+t=1
+γt−1ri
+t|s1 = s, a1 = a, b1 = b, at ∼π(·|˜st), bt ∼ρ(·|st), ˜st = f(st, bt)
+#
+,
+(2)
+vπ,ρ,i(s) = E
+" ∞
+X
+t=1
+γt−1ri
+t|s1 = s, at ∼π(·|˜st), bt ∼ρ(·|st), ˜st = f(st, bt)
+#
+.
+(3)
+To incorporate realistic settings into our analysis, we restrict the power of each adversary, which is a common
+assumption for state perturbation adversaries in the RL literature (Zhang et al., 2020a; 2021; Everett et al.,
+2021). We define perturbation constraints ˜si ∈Bdist(ϵ, s) ⊂S to restrict the adversary ˜i to perturb a
+5
+
+Published in Transactions on Machine Learning Research (06/2023)
+state only to a predefined set of states. Bdist(ϵ, s) is a ϵ-radius ball measured in metric dist(·, ·), which is
+often chosen to be the l-norm distance: dist(s, ˜si) = ∥s −˜si∥l. We omit the subscript dist in the following
+context. For each agent i, it attempts to maximize its expected sum of discounted rewards, i.e. its objective
+function Ji(s, π, ρ) = E
+P∞
+t=1 γt−1ri
+t(st, at)|s1 = s, at ∼π(·|˜st), ˜st = f(st, bt), bt ∼ρ(·|st)
+
+. Each adversary
+˜i aims to minimize the objective function of agent i and is considered as receiving an opposite reward
+of agent i, which also leads to a value function −Ji(s, π, ρ) for adversary ˜i. We further define the value
+functions in an MG-SPA as in Definition 4.1. Then we propose robust equilibrium (RE), a NE-structured
+solution as our solution concept for the proposed MG-SPA framework. We formally define RE in Definition 4.2.
+Definition 4.2 (Robust Equilibrium).
+Given a Markov game with state perturbation adversaries ˜G, a joint policy d∗= (π∗, ρ∗) where π∗=
+(π1
+∗, · · · , πN
+∗) and ρ∗= (ρ˜1
+∗, · · · , ρ ˜
+N
+∗) is said to be in robust equilibrium, or a robust equilibrium, if and
+only if, for any i ∈N, ˜i ∈M, s ∈S,
+v(π−i
+∗,πi
+∗,ρ−˜i
+∗,ρ
+˜i),i(s) ≥v(π−i
+∗,πi
+∗,ρ−˜i
+∗,ρ
+˜i
+∗),i(s) ≥v(π−i
+∗,πi,ρ−˜i
+∗,ρ
+˜i
+∗),i(s),
+(4)
+where −i/ −˜i represents the indices of all agents/adversaries except agent i/ adversary ˜i.
+As the maximin solution is also a popular solution concept in robust RL problems (Zhang et al., 2020a), here,
+we discuss why we choose a NE-structured solution other than a maximin solution. Firstly, we aim to propose
+a framework that can describe and model the interactions among agents when each agent has its own interest
+or reward function under state perturbations, and maximin solution may not be a general solution concept
+for robust MARL problems. A maximin solution is natural to use when considering robustness in single-agent
+RL problems and identical-interest MARL problems, but it fails to handle those MARL problems where each
+agent has its own interest or reward function. Secondly, the Nash equilibrium is also a commonly used robust
+solution concept in both single-agent RL and MARL problems (Tessler et al., 2019; Zhang et al., 2020b).
+Many papers have used NE as their solution concept to investigate robustness in RL problems, and to the
+best of our knowledge, the NE-structured solution is the only one used in robust non-identical-interest MARL
+problems (Zhang et al., 2020b). Lastly, for finite two-agent zero-sum games, it is known that NE, minimax,
+and maximin solution concepts all give the same answer (Yin et al., 2010; Owen, 2013).
+After defining RE, we seek to characterize the optimal value v∗(s) = (v1
+∗(s), · · · , vN
+∗(s)) defined by vi
+∗(s) =
+maxπi minρ˜i v(π−i
+∗,πi,ρ−˜i
+∗,ρ
+˜i),i(s). For notation convenience, we use vi(s) to denote v(π−i
+∗,πi,ρ−˜i
+∗,ρ
+˜i),i(s). The
+Bellman equations of an MG-SPA are in the forms of (5) and (6). The Bellman equation is a recursion for
+expected rewards, which helps us identify or find an RE.
+qi
+∗(s, a, b) = ri(s, a, b) + γ
+X
+s′∈S
+p(s′|s, a, b) max
+πi min
+ρ˜i E
+
+qi
+∗(s′, a′, b′)|a′ ∼π(·|˜s), b′ ∼ρ(·|s)
+
+,
+(5)
+vi
+∗(s) = max
+πi min
+ρ˜i E
+"X
+s′∈S
+p(s′|s, a, b)[ri(s, a, b) + γvi
+∗(s′)]|a ∼π(·|˜s), b ∼ρ(·|s)
+#
+,
+(6)
+for all i ∈N, ˜i ∈M, where π = (πi, π−i
+∗), ρ = (ρ˜i, ρ−˜i
+∗), and (πi
+∗, π−i
+∗, ρ˜i
+∗, ρ−˜i
+∗) is a robust equilibrium for ˜G.
+We prove them in the following subsection. The policies in(5) and (6) are defined to be Markov policies which
+only input the current state. The robust equilibrium is also based on Markov policies. History-dependent
+policies for MARL under state perturbations may improve agents’ ability to adapt to adversarial state
+perturbations and random sensor noise, by allowing agents to take into account past observations when
+making decisions. Therefore, we further discuss how the current MG-SPA frame and solution concept adapt
+to history-dependent policies in subsection 4.3.
+4.2
+Theoretical Analysis of MG-SPA
+In this subsection, we first introduce the vector notations we used in the theoretical analysis and define a
+minimax operator in Definition 4.3. We then introduce Assumption 4.4 which is considered in our theoretical
+6
+
+Published in Transactions on Machine Learning Research (06/2023)
+analysis. Later, we prove two propositions about the minimax operator and Theorem 4.7 which shows a
+series of fundamental characteristics of an MG-SPA under Assumption 4.4, e.g., the derivation of Bellman
+equations, the existence of optimal value functions and robust equilibrium.
+Vector Notations: To make the analysis easy to read, we follow and extend the vector notations in
+Puterman (2014). Let V denote the set of bounded real valued functions on S with component-wise partial
+order and norm ∥vi∥:= sups∈S |vi(s)|. Let VM denote the subspace of V of Borel measurable functions. For
+discrete state space, all real-valued functions are measurable so that V = VM. But when S is a continuum, VM
+is a proper subset of V . Let v = (v1, · · · , vN) ∈V be the set of bounded real valued functions on S × · · · × S,
+i.e. the across product of N state set and norm ∥v∥:= supj ∥vj∥. For discrete S, let |S| denote the number
+of elements in S. Let ri denote a |S|-vector, with sth component ri(s) which is the expected reward for agent
+i under state s. And P the |S| × |S| matrix with (s, s′)th entry given by p(s′|s). We refer to ri
+d as the reward
+vector of agent i, and Pd as the probability transition matrix corresponding to a joint policy d = (π, ρ).
+ri
+d + γPdvi is the expected total one-period discounted reward of agent i, obtained using the joint policy
+d = (π, ρ). Let z as a list of joint policy {d1, d2, · · · } and P 0
+z = I, we denote the expected total discounted
+reward of agent i using z as vi
+z = P∞
+t=1 γt−1P t−1
+z
+ri
+dt = ri
+d1 + γPd1ri
+d2 + · · · + γn−1Pd1 · · · Pdn−1ri
+tn + · · · . Now,
+we define the following minimax operator which is used in the rest of the paper.
+Definition 4.3 (Minimax Operator).
+For vi ∈V, s ∈S, we define the nonlinear operator Li on vi(s) by Livi(s) := maxπi minρ˜i[ri
+d +
+γPdvi](s), where d := (π−i
+∗, πi, ρ−˜i
+∗, ρ˜i). We also define the operator Lv(s) = L(v1(s), · · · , vN(s)) =
+(L1v1(s), · · · , LNvN(s)). Then Livi is a |S|-vector, with sth component Livi(s).
+For discrete S and bounded ri, it follows from Lemma 5.6.1 in Puterman (2014) that Livi ∈V for all vi ∈V .
+Therefore Lv ∈V for all v ∈V. And in this paper, we consider the following assumptions in Markov games
+with state perturbation adversaries.
+Assumption 4.4.
+(1) Bounded rewards; |ri(s, a, b)| ≤M i < M < ∞for all i ∈N, a ∈A, b ∈B, and s ∈S.
+(2) Finite state and action spaces: all S, Ai, B˜i are finite.
+(3) Stationary transition probability and reward functions.
+(4) f(s, ·) is a bijection for any fixed s ∈S.
+(5) All agents share one common reward function.
+Finite state and action spaces, bounded rewards, stationary transition kernels, and stationary reward
+functions are common assumptions in both reinforcement learning and multi-agent reinforcement learning
+literature (Puterman, 2014; Başar & Olsder, 1998). Additionally, the bijection property of perturbation
+functions implies that in a finite MG-SPA, adversaries that adopt deterministic policies provide a permutation
+on the state space. Collaboration and coordination among agents are often required in real-world scenarios
+to achieve a common goal. In such cases, a shared reward function can motivate agents to work together
+effectively. Moreover, the assumption of a shared reward function is necessary to transform an MG-SPA into
+a zero-sum two-agent extensive-form game in our proof. Although these assumptions do not always hold true
+in real-world applications, they provide good properties for an MG-SPA and enable the first attempt of
+theoretical analysis on an MG-SPA. The next two propositions characterize the properties of the minimax
+operator L and space V. We provide the proof in Appendix A.2. These contraction mapping and complete
+space results are used in the proof of RE existence for an MG-SPA.
+Proposition 4.5 (Contraction mapping).
+Suppose 0 ≤γ < 1, and Assumption 4.4 holds. Then L is a contraction mapping on V.
+7
+
+Published in Transactions on Machine Learning Research (06/2023)
+Proposition 4.6 (Complete Space). The space V is a complete normed linear space.
+In Theorem 4.7, we show some fundamental characteristics of an MG-SPA. In (1), we show that an optimal
+value function of an MG-SPA satisfies the Bellman equations by applying the Squeeze theorem [Theorem
+3.3.6, Sohrab (2003)]. Theorem 4.7-(2) shows that the unique solution of the Bellman equation exists, a
+consequence of the fixed-point theorem (Smart, 1980). Therefore, the optimal value function of an MG-SPA
+exists under Assumption 4.4. By introducing (3), we characterize the relationship between the optimal value
+function and a robust equilibrium. However, (3) does not imply the existence of an RE. To this end, in (4),
+we formally establish the existence of RE when the optimal value function exists. We formulate a 2N-player
+Extensive-form game (EFG) (Osborne & Rubinstein, 1994; Von Neumann & Morgenstern, 2007) based on the
+optimal value function such that its Nash equilibrium (NE) policy is equivalent to an RE policy of the MG-SPA.
+Theorem 4.7.
+Suppose 0 ≤γ < 1 and Assumption 4.4 holds.
+(1) (Solution of Bellman equation) A value function v∗∈V is an optimal value function if for all i ∈N,
+the point-wise value function vi
+∗∈V satisfies the corresponding Bellman Equation (6), i.e. v∗= Lv∗.
+(2) (Existence and uniqueness of optimal value function) There exists a unique v∗∈V satisfying Lv∗= v∗,
+i.e. for all i ∈N, Livi
+∗= vi
+∗.
+(3) (Robust equilibrium and optimal value function) A joint policy d∗= (π∗, ρ∗), where π∗= (π1
+∗, · · · , πN
+∗)
+and ρ∗= (ρ˜1
+∗, · · · , ρ ˜
+N
+∗), is a robust equilibrium if and only if vd∗is the optimal value function.
+(4) (Existence of robust equilibrium) There exists a mixed RE for an MG-SPA.
+Proof. The full proof of Theorem 4.7 is presented in Appendix A, specifically in A.3. We provide a high-level
+proof sketch here. Our proof consists of two main parts: 1. Constructing an extensive-form game that
+is connected to an MG-SPA. 2. Proof of Theorem 4.7. In the first part, we begin by constructing an
+extensive-form game (EFG) whose payoff function is related to the value functions of an MG-SPA (Appendix
+A.1). Using the EFG as a tool, we can analyze the properties of an MG-SPA. We provide insights into solving
+an MG-SPA by solving a constructed EFG: a robust equilibrium (RE) of an MG-SPA can be derived from
+a Nash equilibrium of an EFG when the EFG’s payoff function is related to the optimal value function of
+the MG-SPA (Lemma A.7 in Appendix). Thus, by providing conditions under which a Nash equilibrium
+of a well-constructed EFG exists (Appendix A.1.1), we can prove the existence of an RE of the MG-SPA
+(Theorem 4.7-(4)). The existence of an optimal value function is not yet proven and is left for the second
+part. In the second part, we prove Theorem 4.7-(1) by showing that for all i, there exists a vi ∈V such that
+vi ≥Lvi, then vi ≥vi
+∗, and there also exists a vi ∈V such that vi ≤Lvi, then vi ≤vi
+∗. Propositions 4.5 and
+4.6 enable us to use Banach Fixed-Point Theorem (Smart, 1980) to prove Theorem 4.7-(2). The proof of
+Theorem 4.7-(3) benefits from the definitions of the optimal value function and robust equilibrium, Theorem
+4.7-(1) and (2). Finally, given the existence of the optimal value function and the results from the first part,
+we prove the existence of an RE.
+Though the existence of NE in a stochastic game with perfect information has been investigated (Shapley,
+1953; Fink, 1964), it is still an open and challenging problem when players have partially observable
+information (Hansen et al., 2004; Yang & Wang, 2020a). There is a bunch of literature developing algorithms
+trying to find the NE in Dec-POMDP or partially observable stochastic game (POSG), and conducting
+algorithm analysis assuming that NE exists (Chades et al., 2002; Hansen et al., 2004; Nair et al., 2002)
+without proving the conditions for the existence of NE. Once established the existence of RE, we design
+algorithms to find it. In Section 5, we first develop a robust multi-agent Q-learning (RMAQ) algorithm with
+a convergence guarantee, then propose a robust multi-agent actor-critic (RMAAC) algorithm to handle the
+case with high-dimensional state-action spaces.
+8
+
+Published in Transactions on Machine Learning Research (06/2023)
+Remark 4.8 (Heterogeneous agents and adversaries). In the above problem formulation, we assume all
+agents have the same type of state perturbations (share one f), and all adversaries have the same level of
+perturbation power (share one ϵ), which made the notation more concise and the analysis more tractable.
+However, these assumptions are sometimes unrealistic in practice since agents/adversaries may have
+different capabilities. To introduce heterogeneous agents and adversaries to an MG-SPA, we let each agent
+i has its own perturbation function f i, and each adversary ˜i has its own perturbation power constraint
+ϵi, such that ˜si = f i(s, bi) ∈B(ϵi, s). We use f(s, b) = (f 1(s, b1), · · · , f N(s, bN)) = ˜s to denote the joint
+perturbation function. When all perturbation functions f i(s, ·) are bijective for any fixed s ∈S, the joint
+perturbation function f(s, ·) is also a bijection. Assumption 4.4-(4) still holds. When constructing an
+extensive-form game, the action set for player P1 is defined as ˜S = B1(ϵ1, s) × B2(ϵ2, s) × · · · BN(ϵN, s)
+instead of ˜S = B(ϵ, s) × · · · × B(ϵ, s). The subsequent proofs still hold and they are not affected by the
+introduction of heterogeneous agents and adversaries. After extending our MG-SPA framework to handle
+heterogeneous agents and adversaries, we can model more complex and realistic multi-agent systems.
+Remark 4.9 (A reduced case of MG-SPA: a single-agent system). When there is only one agent in
+the system, the MG-SPA problem reduces to a single-agent robust RL problem with state uncertainty,
+which has been studied in the literature (Zhang et al., 2020a; 2021). In this case, single-agent robust RL
+with state uncertainty can be seen as a specific and special instance of MG-SPA presented in this paper.
+However, the proposed analysis and algorithm in this paper provide a new perspective and approach
+to single-agent robust reinforcement learning, by explicitly modeling the adversary’s perturbations and
+optimizing the agent’s policy against them in a game-theoretic framework. Moreover, the presence of
+multiple agents and adversaries in the system can result in more complex and challenging interactions,
+joint actions and policies that do not present in single-agent RL problems. Our proposed MG-SPA
+framework allows for the modeling of a wide range of agent interactions, including cooperative, competitive,
+and mixed interactions.
+4.3
+History-dependent-policy-based Robust Equilibrium
+It is natural and desirable to consider history-dependent policies in robust MARL with state perturbations,
+since the agents may not fully capture the state uncertainty from the current state information, and a policy
+that only depends on the current state may not be sufficient for ensuring robustness. The history-dependent
+policy allows agents to take into account past observations when making decisions, which helps agents better
+reason about the adversaries’ possible strategies and intentions. This is particularly true in the case of
+Dec-POMDPs and POSGs, where the agent cannot fully observe the state. Therefore, we further extend the
+above Markov-policy-based RE to a history-dependent-policy-based robust equilibrium and discuss Theorem
+4.7 under history-dependent policies in this subsection. In Section 5, we also discuss how the proposed
+algorithms can adapt to historical state input. We further validate that a history-dependent-policy-based RE
+outperforms a Markov-policy-based RE in Section 6.
+In this subsection, we clarify the generalization steps of extending Markov-policy-based RE to history-
+dependent-policy-based RE. We first introduce the definition of history-dependent policy with a finite
+time horizon h in an MG-SPA. We then give the formal definition of a history-dependent-policy-based
+robust equilibrium.
+Finally, we show that Theorem 4.7 still holds when agents and adversaries adopt
+history-dependent policies.
+We consider an MG-SPA with a time horizon h, in which adversaries and agents respectively observe the states
+and perturbed states in the latest h time steps and adopt history-dependent policies. More concretely, adversary
+˜i can manipulate the corresponding agent i’s state at time t by using a history-dependent policy ρ˜i
+h(·|sh,t) and
+agent i chooses its actions using a history-dependent policy πi
+h(·|˜si
+h,t). Specifically, once adversary ˜i gets the
+true state st at time t, it chooses an action b˜i
+t according to a history-dependent policy ρ˜i
+h : Sh →∆(B˜i), where
+sh,t = (st, · · · , st−h+1) ∈Sh is a concatenated state consists of the latest h time steps of states. According to
+a perturbation function f, adversary ˜i perturbs state st to ˜si
+t = f(st, b˜i
+t) ∈S. The adversaries’ joint policy
+is defined as ρh(b|sh) = Q
+˜i∈M ρ˜i
+h(b˜i|sh). Agent i chooses its action ai
+t for ˜si
+h,t = (˜si
+t, · · · , ˜si
+t−h+1) ∈Sh with
+probability πi
+h(ai
+t|˜si
+h,t) according to a history dependent policy πi
+h : Sh →∆(Ai). The agents’ joint policy
+9
+
+Published in Transactions on Machine Learning Research (06/2023)
+is defined as πh(a|˜sh) = Q
+i∈N πi
+h(ai|˜si
+h). Then a joint history-dependent policy dh,∗= (πh,∗, ρh,∗) where
+πh,∗= (π1
+h,∗, · · · , πN
+h,∗) and ρh,∗= (ρ˜1
+h,∗, · · · , ρ ˜
+N
+h,∗) is said to be in a history-dependent-policy-based robust
+equilibrium if and only if, for any i ∈N,˜i ∈M, s ∈S,
+v(π−i
+h,∗,πi
+h,∗,ρ−˜i
+h,∗,ρ
+˜i
+h),i(s) ≥v(π−i
+h,∗,πi
+h,∗,ρ−˜i
+h,∗,ρ
+˜i
+h,∗),i(s) ≥v(π−i
+h,∗,πi
+h,ρ−˜i
+h,∗,ρ
+˜i
+h,∗),i(s).
+It is worth noting that the main differences between history-dependent-policy-based RE and Markov-policy-
+based RE are the definition and notation of policies and states. A Markov-policy-based RE is a special case of
+a history-dependent-policy-based RE by adopting the time horizon h = 1. We also notice that these two REs’
+definitions are the same if we remove the subscript h from the concatenated state and history-dependent
+policies. Therefore, in this paper, we use notations without the time horizon subscripts, i.e. Markov policy
+and Markov-policy-based RE, to avoid redundant and complicated notations. While in this subsection, we
+clarify the definitions of history-dependent policy and history-dependent-policy-based RE and show that
+Theorem 4.7 still holds when agents and adversaries use history-dependent policies in the following corollary.
+Corollary 4.9.1. Theorem 4.7 still holds when all agents and adversaries in an MG-SPA use history-
+dependent policies with a finite time horizon.
+Proof. See Appendix A.4.
+Remark 4.10 (MG-SPA, Dec-POMDP, and POSG). Decentralized Partially Observable Markov Decision
+Process (Dec-POMDP) enables a team of agents to optimize policies with partial observable states
+(Oliehoek et al., 2016; Nair et al., 2002), while a Partially Observable Stochastic Game (POSG)
+(Hansen et al., 2004; Emery-Montemerlo et al., 2004) is an extension of stochastic games with imperfect
+information that can handle partial observable states. We are inspired by them to consider history-
+dependent policies for our proposed MG-SPA problem. However, there are several differences between
+MG-SPA, Dec-POMDP and POSG. First, unlike Dec-POMDP, an MG-SPA does not restrict all agents
+to share the same interest or reward function. The proposed MG-SPA framework is applicable for
+modeling different relationships between agents, including cooperative, competitive, or mixed interactions.
+Second, neither Dec-POMDP nor POSG considers the worst-case state perturbation scenarios. In
+contrast, in an MG-SPA, state perturbation adversaries receive opposite rewards to the agents, which
+motivates them to find the worst-case state perturbations to minimize the agents’ returns. As we explained
+in the introduction, considering worst-case state perturbations is important for MARL. Third, while
+in a Dec-POMDP or a POSG, all agents cannot observe the true state information, in an MG-SPA,
+adversaries can access the true state and utilize it to select state perturbation actions. Based on these
+differences in problem formulation, Dec-POMDP and POSG methods cannot solve the proposed MG-SPA
+problem.
+5
+Algorithm
+5.1
+Robust Multi-Agent Q-learning (RMAQ) Algorithm
+By solving the Bellman equation, we are able to get the optimal value function of an MG-SPA as shown in
+Theorem 4.7. We therefore develop a value iteration (VI)-based method called robust multi-agent Q-learning
+(RMAQ) algorithm. Recall the Bellman equation using action-value function in (5), the optimal action-
+value q∗satisfies qi
+∗(s, a, b) := ri(s, a, b) + γE
+P
+s′∈S p(s′|s, a, b)qi
+∗(s′, a′, b′)|a′ ∼π∗(·|˜s′), b′ ∼ρ∗(·|s′)
+
+. As a
+consequence, the tabular-setting RMAQ update can be written as below,
+qi
+t+1(st, at, bt) = (1 −αt)qi
+t(st, at, bt)+
+(7)
+αt
+
+ri
+t + γ
+X
+at+1∈A
+X
+bt+1∈B
+πqt
+∗,t(at+1|˜st+1)ρqt
+∗,t(bt+1|st+1)qi
+t(st+1, at+1, bt+1)
+
+,
+where (πqt
+∗,t, ρqt
+∗,t) is an NE policy by solving the 2N-player extensive-form game (EFG) based on a payoff
+function (q1
+t , · · · , qN
+t , −q1
+t , · · · , −qN
+t ). The joint policy (πqt
+∗,t, ρqt
+∗,t) is used in updating qt. All related definitions
+10
+
+Published in Transactions on Machine Learning Research (06/2023)
+of the EFG (q1
+t , · · · , qN
+t , −q1
+t , · · · , −qN
+t ) are introduced in Appendix A.1. How to solve an EFG is out of the
+scope of this work, algorithms to do this exist in the literature (Čermák et al., 2017; Kroer et al., 2020). Note
+that, in RMAQ, each agent’s policy is related to not only its own value function, but also other agents’ value
+function. This multi-dependency structure considers the interactions between agents in a game, which is
+different from the Q-learning in single-agent RL that considers optimizing its own value function. Meanwhile,
+establishing the convergence of a multi-agent Q-learning algorithm is also a general challenge. Therefore,
+we try to establish the convergence of (7) in Theorem 5.2, motivated from Hu & Wellman (2003). Due to
+space limitation, in Appendix B.1, we prove that RMAQ is guaranteed to get the optimal value function
+q∗= (q1
+∗, · · · , qN
+∗) by updating qt = (q1
+t , · · · , qN
+t ) recursively using (7) under Assumptions 5.1.
+Assumption 5.1.
+(1) State and action pairs have been visited infinitely often. (2) The learning rate αt satisfies the
+following conditions: 0 ≤αt < 1, P
+t≥0 α2
+t ≤∞; if (s, a, b) ̸= (st, at, bt), αt(s, a, b) = 0. (3) An NE of
+the 2N-player EFG based on (q1
+t , · · · , qN
+t , −q1
+t , · · · , −qN
+t ) exists at each iteration t.
+Theorem 5.2.
+Under Assumption 5.1, the sequence {qt} obtained from (7) converges to {q∗} with probability 1, which
+are the optimal action-value functions that satisfy Bellman equations (5) for all i = 1, · · · , N.
+Assumption 5.1-(1) is a typical ergodicity assumption used in the convergence analysis of Q-learning (Littman
+& Szepesvári, 1996; Hu & Wellman, 2003; Szepesvári & Littman, 1999; Qu & Wierman, 2020; Sutton &
+Barto, 1998). And for Q-learning algorithm design papers that the exploration property is not the main
+focus, this assumption is also a common assumption (Fujimoto et al., 2019). For exploration strategies in RL
+(McFarlane, 2018), researchers use ϵ-greedy exploration (Gomes & Kowalczyk, 2009), UCB (Jin et al., 2018;
+Azar et al., 2017), Thompson sampling (Russo et al., 2018), Boltzmann exploration (Cesa-Bianchi et al.,
+2017), etc. For assumption 5.1-(3) in multi-agent Q-learning, researchers have found that the convergence is
+not necessarily so sensitive to the existence of NE for the stage games during training (Hu & Wellman, 2003;
+Yang et al., 2018). In particular, under Assumption 4.4, an NE of the 2N-player EFG exists, which has been
+proved in Lemma A.6 in Appendix A.1. We also provide an example in the experiment part (the two-player
+game) where assumptions are indeed satisfied, and our RMAQ algorithm successfully converges to an RE of
+the corresponding MG-SPA.
+5.2
+Robust Multi-Agent Actor-Critic (RMAAC) Algorithm
+According to the above descriptions of a tabular RMAQ algorithm, each learning agent has to maintain N
+action-value functions. The total space requirement is N|S||A|N|B|N if |A1| = · · · = |AN|, |B1| = · · · = |BN|.
+This space complexity is linear in the number of joint states, polynomial in the number of agents’ joint actions
+and adversaries’ joint actions, and exponential in the number of agents. The computational complexity
+is mainly related to algorithms to solve an extensive-form game (Čermák et al., 2017; Kroer et al., 2020).
+However, even for general-sum normal-form games, computing an NE is known to be PPAD-complete, which
+is still considered difficult in game theory literature (Daskalakis et al., 2009; Chen et al., 2009; Etessami &
+Yannakakis, 2010). These properties of the RMAQ algorithm motivate us to develop an actor-critic method to
+handle high-dimensional space-action spaces, which can incorporate function approximation into the update
+(Konda & Tsitsiklis, 1999).
+We consider each agent i’s policy πi is parameterized as πθi for i ∈N, and the adversary’s policy ρ˜i is
+parameterized as ρωi. We denote θ = (θ1, · · · , θN) as the concatenation of all agents’ policy parameters, ω
+has the similar definition. For simplicity, we omit the subscript θi, ωi, since the parameters can be identified
+by the names of policies. Then the value function vi(s) under policy (π, ρ) satisfies
+vπ,ρ,i(s) = Ea∼π,b∼ρ
+"X
+s′∈S
+p(s′|s, a, b)[ri(s, a, b) + γvπ,ρ,i(s′)]
+#
+.
+(8)
+11
+
+Published in Transactions on Machine Learning Research (06/2023)
+We establish the general policy gradient with respect to the parameter θ, ω in the following theorem. Then
+we propose our robust multi-agent actor-critic algorithm (RMAAC) which adopts a centralized-training
+decentralized-execution algorithm structure in MARL literature (Lowe et al., 2017; Foerster et al., 2018).
+Theorem 5.3 (Policy Gradient in RMAAC for MG-SPA). For each agent i ∈N and adversary ˜i ∈M,
+the policy gradients of the objective Ji(θ, ω) with respect to the parameter θ, ω are:
+∇θiJi(θ, ω) = E(s,a,b)∼p(π,ρ)
+
+qi,π,ρ(s, a, b)∇θi log πi(ai|˜si)
+
+(9)
+∇ωiJi(θ, ω) = E(s,a,b)∼p(π,ρ)
+h
+qi,π,ρ(s, a, b)[∇ωi log ρ
+˜i(b
+˜i|s) + reg]
+i
+(10)
+where reg = ∇˜si log πi(ai|˜si)∇b˜if(s, b˜i)∇ωiρ˜i(b˜i|s).
+Proof. See details in Appendix B.2.1.
+We put the pseudo-code of RMAAC in Appendix B.2.3.
+Remark 5.4 (History-dependent Policy). RMAAC can calculate history-dependent policies by using
+recent observations as the policy input. For example, DQN (Mnih et al., 2015) maps history–action pairs
+to scalar estimates of Q-value. It uses the history (4 most recent frames) of the states and the action as
+the inputs of the neural network.
+6
+Experiment
+We aim to answer the following questions through experiments: (1) Can RMAQ algorithm find an RE? (2)
+Are RE policies robust to state uncertainties? (3) Does RMAAC algorithm outperform other MARL and
+robust MARL algorithms in terms of robustness? The host machine used in our experiments is a server
+configured with AMD Ryzen Threadripper 2990WX 32-core processors and four Quadro RTX 6000 GPUs.
+All experiments are performed on Python 3.5.4, Gym 0.10.5, Numpy 1.14.5, Tensorflow 1.8.0, and CUDA 9.0.
+Our code is public on https://github.com/sihongho/robust_marl_with_state_uncertainty.
+6.1
+Robust Multi-Agent Q-learning (RMAQ)
+We show the performance of the proposed RMAQ algorithm by applying it to a two-player game. We first
+introduce the designed two-player game. Then, to answer the first and second questions, we investigate the
+convergence of this algorithm and compare the performance of robust equilibrium policies with other agents’
+policies under different adversaries’ policies.
+Figure 3: Two-player game: each player has two states
+and the same action set with size 2. Under state s0,
+two players get the same reward 1 when they choose
+the same action. At state s1, two players get the same
+reward 1 when they choose different actions. One state
+switches to another state only when two players get a
+reward.
+Two-player game: For the game in Figure 3, two
+players have the same action space A = {0, 1} and
+state space S = {s0, s1}. The two players get the
+same positive rewards when they choose the same ac-
+tion under state s0 or choose different actions under
+state s1. The state does not change until these two
+players get a positive reward. Possible Nash equilib-
+rium (NE) in this game can be π∗
+1 = (π1
+1, π2
+1) that
+player 1 always chooses action 1, player 2 chooses
+action 1 under state s0 and action 0 under state s1;
+or π∗
+2 = (π1
+2, π2
+2) that player 1 always chooses action
+0, player 2 chooses action 0 under state s0 and action
+1 under state s1. When using the NE policy, these
+two players always get the same positive rewards.
+The optimal discounted state value of this game is
+vi
+∗(s) = 1/(1 −γ) for all s ∈S, i ∈{1, 2}, γ is the reward discounted rate. We set γ = 0.99, then vi
+∗(s) = 100.
+12
+
+Published in Transactions on Machine Learning Research (06/2023)
+MG-SPA formulation for the two-player game:
+According to the definition of MG-SPA, we add two
+adversaries, one for each player to perturb the state and get a negative reward of the player. They have the
+same action space B = {0, 1}, where 0 means do not disturb, 1 means perturb the observed state to another
+one. Sometimes no perturbation would be a good choice for adversaries. For example, when the true state is
+s0, players are using π∗
+1, if adversary 1 does not perturb player 1’s observation, player 1 will still select action
+1. While adversary 2 changes player 2’s observation to state s1, player 2 will choose action 0 which is not the
+same as player 1’s action 1. Thus, players always fail the game and get no rewards. A robust equilibrium
+for MG-SPA would be ˜d∗= (˜π1
+∗, ˜π2
+∗, ˜ρ˜1
+∗, ˜ρ˜2
+∗) that each player chooses actions with equal probability and so
+do adversaries. The optimal discounted state value of corresponding MG-SPA is ˜vi
+∗(s) = 1/2(1 −γ) for all
+s ∈S, i ∈{1, 2} when players use robust equilibrium (RE) policies. We use γ = 0.99, then ˜vi
+∗(s) = 50. For
+more explanations of this two-player game and corresponding MG-SPA formulation, please see Appendix C.1.
+Implementing RMAQ on the two-player game:
+We initialize q1(s, a, b) = q2(s, a, b) = 0 for all s, a, b.
+After observing the current state, adversaries choose their actions to perturb the agents’ state. Then players
+execute their actions based on the perturbed state information. They then observe the next state and rewards.
+Then every agent updates its q according to (7). In the next state, all agents repeat the process above.
+The training stops after 7500 steps. When updating the Q-values, the agent applies a NE policy from the
+Extensive-form game based on (q1, q2, −q1, −q2).
+Figure 4: RE policy outperforms other policies in terms
+of total discounted rewards and total accumulated re-
+wards when strong state uncertainties exist.
+Training results:
+After 7000 steps of training,
+we find that agents’ Q-values stabilize at certain
+values. Since the dimension of q is a bit high as
+q ∈R32, we compare the optimal state value ˜v∗
+and the total discounted rewards in Table 1. The
+value of the total discounted reward converges to the
+optimal state value of the corresponding MG-SPA.
+This two-player game experiment result validates the
+convergence of our RMAQ method and the answer
+to the first question is ’Yes’.
+Testing results:
+We further test well-trained
+RE policy when ’strong’ adversaries exist. ’Strong’
+adversary means its probability of modifying play-
+ers’ observations is larger than the probability of no
+perturbations in the state information. We make
+two players play the game using 3 different poli-
+cies for 1000 steps under different adversaries. The
+accumulated rewards and total discounted rewards
+are calculated. We use the robust equilibrium (of
+the MG-SPA), the Nash equilibrium (of the original
+game), and a baseline policy (two players use deter-
+ministic policies) and report the result in Figure 4.
+The vertical axis is the accumulated/discounted re-
+ward, and the horizon axis is the probability that
+the adversary will attack/perturb the state. And we
+let these two adversaries share the same policy. We
+can see as the probability increase, the accumulated
+and discounted rewards of RE players are stable but
+those rewards of NE players and baseline players
+keep decreasing. These experimental results show
+that the RE policy is robust to state uncertainties.
+It turns out the answer to the second question is ’Yes’ as well.
+Discussion: Even for general-sum normal-form games, computing an NE is known to be PPAD-complete,
+which is still considered difficult in game theory literature (Conitzer & Sandholm, 2002; Etessami & Yannakakis,
+13
+
+Published in Transactions on Machine Learning Research (06/2023)
+Table 1: Convergence Values of Total Discounted Rewards when Training Ends
+v1(s0)
+v2(s0)
+v1(s1)
+v2(s1)
+˜v1
+∗(s0)
+˜v2
+∗(s0)
+˜v1
+∗(s1)
+˜v2
+∗(s1)
+value
+49.99
+49.99
+49.99
+49.99
+50.00
+50.00
+50.00
+50.00
+2010). Therefore, we do not anticipate that the RMAQ algorithm can scale to very large MARL problems. In
+the next subsection, we show RMAAC with function approximation can handle large-scale MARL problems.
+6.2
+Robust Multi-Agent Actor-Critic (RMAAC)
+To answer the third question, we compare our RMAAC algorithm with two benchmark MARL algorithms:
+MADDPG (https://github.com/openai/maddpg) (Lowe et al., 2017) which does not consider robustness,
+and M3DDPG (https://github.com/dadadidodi/m3ddpg) (Li et al., 2019), a robust MARL algorithm
+which considers uncertainties from opponents’ policies altering. M3DDPG utilizes adversarial learning to train
+robust policies. We run experiments in several benchmark multi-agent scenarios, based on the multi-agent
+particle environments (MPE) (Lowe et al., 2017). The hyper-parameters used to train RMAAC and the
+baseline algorithms are summarized in Appendix C.2.2, Table 4.
+Experiment procedure:
+We first train agents’ policies using RMAAC, MADDPG and M3DDPG,
+respectively. For our RMAAC algorithm, we set the constraint parameter ϵ = 0.5. And we choose two types
+of perturbation functions to validate the robustness of trained policies under different MG-SPA models. The
+first one is the linear noise format that f1(s, b˜i) := s + b˜i, i.e. the perturbed state ˜si is calculated by adding a
+random noise b˜i generated by adversary ˜i to the true state s. And f2(s, b˜i) := s + Gaussian(b˜i, Σ), where
+the adversary ˜i’s action b˜i is the mean of the Gaussian distribution. And Σ is the covariance, we set it as I,
+i.e. an identity matrix. We call it Gaussian noise format. These two formats f1, f2 are commonly used in
+adversarial training (Creswell et al., 2018; Zhang et al., 2020a; 2021). Then we test the well-trained policies in
+the optimally disturbed environment (injected noise is produced by those adversaries trained with RMAAC
+algorithm). The testing step is chosen as 10000 and each episode contains 25 steps. All hyperparameters used
+in experiments for RMAAC, MADDPG and M3DDPG are attached in Appendix C.2.2. Note that since the
+rewards are defined as negative values in the used multi-agent environments, we add the same baseline (100)
+to rewards for making them positive. Then it’s easier to observe the testing results and make comparisons.
+Those used MPE scenarios are Cooperative communication (CC), Cooperative navigation (CN), Physical
+deception (PD), Predator prey (PP) and Keep away (KA). The first two scenarios are cooperative games, the
+others are mixed games. To investigate the algorithm performance in more complicated situations, we also
+run experiments in a scenario with more agents, which is called Predator prey+ (PP+). More details of these
+games are in Appendix C.2.1.
+Experiment results:
+In Figure 5 and Table 2, we report the mean episode testing rewards and variance of
+10000 steps testing rewards, respectively. We will use mean rewards and variance for short in the following
+experimental report and explanations. In the table and figure, we use RM, M3, MA for abbreviations of
+RMAAC, M3DDPG and MADDPG, respectively. In Figure 5, the left five figures are mean rewards under the
+linear noise format f1, the right ones are under the Gaussian noise format f2. Under the optimally disturbed
+environment, agents with RMAAC policies get the highest mean rewards in almost all scenarios no matter
+what noise format is used. The only exception is in Keep away under linear noise. However, our RMAAC
+still achieves the highest rewards when testing in Keep away under Gaussian noise. In Figure 7, we show the
+comparison results in a complicated scenario with a larger number of agents and RMAAC policies are trained
+Figure 5: RMAAC outperforms baseline MARL algorithms in terms of mean episode testing rewards under
+different perturbation functions in most MPE scenarios.
+14
+
+Published in Transactions on Machine Learning Research (06/2023)
+Figure 6: Comparison of mean episode testing rewards using different algorithms and different perturbation
+functions, under cleaned environments.
+with the Gaussian noise format f2. As we can see that the RMAAC policies get the highest reward when
+testing under optimally perturbed environments, cleaned and randomly perturbed environments. Higher
+rewards mean agents are performing better. It turns out RMAAC policies outperform the other two baseline
+algorithms when there exist worst-case state uncertainties. In Table 2, the left three columns report the
+variance under the linear noise format f1, and the right ones are under the Gaussian noise format f2. RM1
+denotes our RMAAC policy trained with the linear noise format f1, RM2 denotes our RMAAC policy trained
+with the Gaussian noise format f2. The variance is used to evaluate the stability of the trained policies, i.e.
+the robustness to system randomness. Because the testing experiments are done in the same environments
+that are initialized by different random seeds. We can see that, by using our RMAAC algorithm, the agents
+can get the lowest variance in most scenarios under these two different perturbation formats. Therefore, our
+RMAAC algorithm is also more robust to the system randomness, compared with the baselines. In summary,
+our answer to the third question is ’Yes’.
+Figure 7: RMAAC outperforms baseline MARL algorithms in
+terms of mean episode testing rewards in complicated scenarios
+with a larger number of agents of MPE.
+Interesting
+results
+when
+testing
+under
+lighter
+perturbations
+and
+cleaned environments:
+We also pro-
+vide the testing results under a cleaned en-
+vironment (accurate state information can
+be attained) and a randomly disturbed
+environment (injecting standard Gaussian
+noise into agents’ observations). In Fig-
+ures 6 and 8, we respectively show the
+comparison of mean episode testing re-
+wards under a cleaned environment and
+a randomly disturbed environment by us-
+ing 4 different methods: RM1 denotes
+our RMAAC policy trained with the lin-
+ear noise format f1, RM2 denotes our
+RMAAC policy trained with the Gaussian
+noise format f2, MA denotes MADDPG,
+M3 denotes M3DDPG. We can see that
+only in the Predator prey scenario, our method outperforms others under a cleaned environment. In Figure 8,
+we can see that our method outperforms others in the Cooperative communication, Keep away and Predator
+prey scenarios, and achieves similar performance as others in the Cooperative navigation scenario under a
+randomly perturbed environment.
+This kind of performance also happens in robust optimization (Beyer & Sendhoff, 2007; Boyd & Vandenberghe,
+2004) and distributionally robust optimization (Delage & Ye, 2010; Rahimian & Mehrotra, 2019; Miao et al.,
+2021; He et al., 2020; 2023) where the robust solutions outperform other non-robust solutions in the worst-case
+15
+
+Published in Transactions on Machine Learning Research (06/2023)
+Figure 8: Comparison of mean episode testing rewards using different algorithms and different perturbation
+functions, under randomly perturbed environments.
+Table 2: Variance of Testing Rewards under optimal perturbed environment
+Perturbation function
+Linear noise f1
+Gaussian noise f2
+Algorithms
+RM1
+M3
+MA
+RM2
+M3
+MA
+Cooperative communication (CC)
+1.007
+1.311
+1.292
+0.872
+1.012
+0.976
+Cooperative navigation (CN)
+0.322
+0.357
+0.351
+0.322
+0.349
+0.359
+Physical deception (PD)
+0.225
+0.218
+0.217
+0.244
+0.161
+0.252
+Keep away (KA)
+0.161
+0.168
+0.175
+0.161
+0.17
+0.167
+Predator prey (PP)
+3.213
+0.161
+3.671
+2.304
+2.711
+2.811
+scenario. Similarly, for single-agent RL with state perturbations, robust policies perform better compared
+with baselines under state perturbations (Zhang et al., 2020b). However, there exists a trade-off between
+optimizing the average performance and the worst-case performance for robust solutions in general, and
+the robust solutions may get relatively poor performance compared with other non-robust solutions when
+there is no uncertainty or perturbation in the environment even in a single agent RL problem (Zhang et al.,
+2020b). Improving the robustness of the trained policy may sacrifice the performance of the decisions when
+perturbations or uncertainties do not happen. That’s why our RMAAC policies only beat all baselines in
+one scenario when the state uncertainty is eliminated. However, for many real-world systems, we can not
+assume that agents always have accurate information about the states. Hence, improving the robustness of
+the policies is very important for MARL as we explained in the introduction. It is worth noting that our
+RMAAC policies also work well in environments with random perturbations instead of only the worst-case
+perturbations. As shown in Fig. 8, the performance of our RMAAC policies outperforms the baselines in
+most scenarios when random noise is introduced into the state.
+More experimental results and explanations are provided in Appendix C.2.
+Ablation study:
+We conducted ablation studies for RMAAC algorithm. We first study the performance
+of RMAAC when it is used to train history-dependent policies. Other than using the current information
+as the input of the policy neural network, we also use history information in the latest three time steps,
+i.e. h = 4. In Table 3, we show the mean and variance of mean episode rewards in 10 runs. We use the
+same hyper-parameters in training history-dependent policies as training Markov policies. We can see that in
+Table 3: Means and Variances of Mean Episode Rewards using Different Polices
+Scenarios
+History-dependent policy
+Markov policy
+Cooperative communication (CC)
+-52.83 ± 1.51
+-54.75 ± 3.03
+Cooperative navigation (CN)
+-208.19 ± 1.68
+-210.41 ± 1.13
+Physical deception (PD)
+7.72 ± 0.33
+5.71 ± 0.19
+Keep away (KA)
+-20.69 ± 0.09
+-21.18 ± 0.14
+Predator prey (PP)
+7.10 ± 0.17
+6.116 ± 0.24
+16
+
+Published in Transactions on Machine Learning Research (06/2023)
+all five scenarios, history-dependent policies outperform Markov policies. Besides, we investigate how the
+robustness performance of RMAAC is affected by varying variances of Gaussian noise format Σ and the
+constraint parameter ϵ. We also investigate the performance of RMAAC under other types of attacks. Please
+check the experimental setups and results of these ablation studies in Appendix C.3.
+7
+Discussion
+Our proposed method provides a foundation for modeling robust agents’ interactions in multi-agent reinforce-
+ment learning with state uncertainty, and training policies robust to state uncertainties in MARL. However,
+there are still several urgent and promising problems to solve in this field.
+First, exploring heterogeneous agent modeling is an important research direction in robust MARL. Training
+a team of heterogeneous agents to learn robust control policies presents unique challenges, as agents may
+have different capabilities, knowledge, and objectives that can lead to conflicts and coordination problems
+(Lin et al., 2021). State uncertainty can exacerbate the impact of these differences, as agents may not be
+able to accurately estimate the state of the environment or predict the behavior of other agents. All of these
+factors make modeling heterogeneous agents in the presence of state uncertainty a challenging problem.
+Second, investigating methods for handling continuous state and action spaces can benefit both general
+MARL problems and our proposed method. While discretization is a commonly used approach for dealing
+with continuous spaces, it is not always an optimal method for handling high-dimensional continuous spaces,
+especially when state uncertainty is present. Adversarial state perturbation may disrupt the continuity on
+the continuous state space, which can lead to difficulties in finding globally optimal solutions using general
+discrete methods. This is because continuous spaces have infinite possible values, and discretization methods
+may not be able to accurately represent the underlying continuous structure. When state perturbation occurs,
+it may lead to more extreme values, which can result in the loss of important information. We will investigate
+more on methods for continuous state and action space robust MARL in the future.
+8
+Conclusion
+We study the problem of multi-agent reinforcement learning with state uncertainties in this work. We model
+the problem as a Markov game with state perturbation adversaries (MG-SPA), where each agent aims to find
+out a policy to maximize its own total discounted reward and each associated adversary aims to minimize that.
+This problem is challenging with little prior work on theoretical analysis or algorithm design. We provide the
+first attempt at theoretical analysis and algorithm design for MARL under worst-case state uncertainties. We
+first introduce robust equilibrium as the solution concept for MG-SPA, and prove conditions under which such
+an equilibrium exists. Then we propose a robust multi-agent Q-learning algorithm (RMAQ) to find such an
+equilibrium, with convergence guarantees under certain conditions. We also derive the policy gradients and
+design a robust multi-agent actor-critic (RMAAC) algorithm to handle the more general high-dimensional
+state-action space MARL problems. We also conduct experiments that validate our methods.
+Acknowledgments
+Sihong He, Songyang Han, Sanbao Su and Fei Miao are supported by the National Science Foundation under
+Grants CNS-1952096, CMMI-1932250, and CNS-2047354 grants. Shaofeng Zou is supported by the National
+Science Foundation under Grants CCF-2106560, and CCF-2007783.
+This material is based upon work supported under the AI Research Institutes program by National Science
+Foundation and the Institute of Education Sciences, U.S. Department of Education through Award # 2229873
+- National AI Institute for Exceptional Education. Any opinions, findings and conclusions or recommendations
+expressed in this material are those of the author(s) and do not necessarily reflect the views of the National
+Science Foundation, the Institute of Education Sciences, or the U.S. Department of Education.
+17
+
+Published in Transactions on Machine Learning Research (06/2023)
+References
+Mohammad Gheshlaghi Azar, Ian Osband, and Rémi Munos. Minimax regret bounds for reinforcement
+learning. In International Conference on Machine Learning, pp. 263–272. PMLR, 2017.
+Tamer Başar and Geert Jan Olsder. Dynamic noncooperative game theory. SIAM, 1998.
+Hans-Georg Beyer and Bernhard Sendhoff. Robust optimization–a comprehensive survey. Computer methods
+in applied mechanics and engineering, 196(33-34):3190–3218, 2007.
+Stephen Boyd and Lieven Vandenberghe. Convex Optimization. Cambridge University Press, USA, 2004.
+ISBN 0521833787.
+Jiří Čermák, Branislav Bošansky, and Viliam Lisy. An algorithm for constructing and solving imperfect recall
+abstractions of large extensive-form games. In Proceedings of the 26th International Joint Conference on
+Artificial Intelligence, pp. 936–942, 2017.
+Nicolò Cesa-Bianchi, Claudio Gentile, Gábor Lugosi, and Gergely Neu. Boltzmann exploration done right.
+Advances in neural information processing systems, 30, 2017.
+Iadine Chades, Bruno Scherrer, and François Charpillet. A heuristic approach for solving decentralized-pomdp:
+Assessment on the pursuit problem. In Proceedings of the 2002 ACM symposium on Applied computing, pp.
+57–62, 2002.
+Xi Chen, Xiaotie Deng, and Shang-Hua Teng. Settling the complexity of computing two-player nash equilibria.
+Journal of the ACM (JACM), 56(3):1–57, 2009.
+Xinning Chen, Xuan Liu, Canhui Luo, and Jiangjin Yin. Robust multi-agent reinforcement learning for noisy
+environments. Peer-to-Peer Networking and Applications, 15(2):1045–1056, 2022.
+Vincent Conitzer and Tuomas Sandholm. Complexity results about nash equilibria. arXiv preprint cs/0205074,
+2002.
+Antonia Creswell, Tom White, Vincent Dumoulin, Kai Arulkumaran, Biswa Sengupta, and Anil A Bharath.
+Generative adversarial networks: An overview. IEEE Signal Processing Magazine, 35(1):53–65, 2018.
+Constantinos Daskalakis, Paul W Goldberg, and Christos H Papadimitriou. The complexity of computing a
+nash equilibrium. SIAM Journal on Computing, 39(1):195–259, 2009.
+Erick Delage and Yinyu Ye. Distributionally robust optimization under moment uncertainty with application
+to data-driven problems. Operations Research, 58(3):595–612, 2010. doi: 10.1287/opre.1090.0741.
+Jay L Devore, Kenneth N Berk, and Matthew A Carlton. Modern mathematical statistics with applications,
+volume 285. Springer, 2012.
+Rosemary Emery-Montemerlo, Geoff Gordon, Jeff Schneider, and Sebastian Thrun. Approximate solutions for
+partially observable stochastic games with common payoffs. In Proceedings of the Third International Joint
+Conference on Autonomous Agents and Multiagent Systems, 2004. AAMAS 2004., pp. 136–143. IEEE,
+2004.
+Lasse Espeholt, Hubert Soyer, Remi Munos, Karen Simonyan, Vlad Mnih, Tom Ward, Yotam Doron, Vlad
+Firoiu, Tim Harley, Iain Dunning, et al. Impala: Scalable distributed deep-rl with importance weighted
+actor-learner architectures. In ICML, pp. 1407–1416. PMLR, 2018.
+Kousha Etessami and Mihalis Yannakakis. On the complexity of nash equilibria and other fixed points. SIAM
+Journal on Computing, 39(6):2531–2597, 2010.
+Michael Everett, Björn Lütjens, and Jonathan P How. Certifiable robustness to adversarial state uncertainty
+in deep reinforcement learning. IEEE Transactions on Neural Networks and Learning Systems, 2021.
+18
+
+Published in Transactions on Machine Learning Research (06/2023)
+Arlington M Fink. Equilibrium in a stochastic n-person game. Journal of science of the hiroshima university,
+series ai (mathematics), 28(1):89–93, 1964.
+Jakob Foerster, Gregory Farquhar, Triantafyllos Afouras, Nantas Nardelli, and Shimon Whiteson. Coun-
+terfactual multi-agent policy gradients. In Proceedings of the AAAI conference on artificial intelligence,
+volume 32, 2018.
+Scott Fujimoto, David Meger, and Doina Precup. Off-policy deep reinforcement learning without exploration.
+In International conference on machine learning, pp. 2052–2062. PMLR, 2019.
+Eduardo Rodrigues Gomes and Ryszard Kowalczyk. Dynamic analysis of multiagent q-learning with epsilon-
+greedy exploration. In ICML’09: Proceedings of the 26th international Conference on Machine Learning,
+volume 47, 2009.
+Eric A Hansen, Daniel S Bernstein, and Shlomo Zilberstein. Dynamic programming for partially observable
+stochastic games. In AAAI, volume 4, pp. 709–715, 2004.
+Sihong He, Lynn Pepin, Guang Wang, Desheng Zhang, and Fei Miao. Data-driven distributionally robust
+electric vehicle balancing for mobility-on-demand systems under demand and supply uncertainties. In 2020
+IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS), pp. 2165–2172. IEEE,
+2020.
+Sihong He, Yue Wang, Shuo Han, Shaofeng Zou, and Fei Miao. A robust and constrained multi-agent
+reinforcement learning framework for electric vehicle amod systems. arXiv preprint arXiv:2209.08230,
+2022.
+Sihong He, Zhili Zhang, Shuo Han, Lynn Pepin, Guang Wang, Desheng Zhang, John A Stankovic, and Fei
+Miao. Data-driven distributionally robust electric vehicle balancing for autonomous mobility-on-demand
+systems under demand and supply uncertainties. IEEE Transactions on Intelligent Transportation Systems,
+2023.
+Junling Hu and Michael P Wellman. Nash q-learning for general-sum stochastic games. Journal of machine
+learning research, 4(Nov):1039–1069, 2003.
+Yizheng Hu, Kun Shao, Dong Li, HAO Jianye, Wulong Liu, Yaodong Yang, Jun Wang, and Zhanxing Zhu.
+Robust multi-agent reinforcement learning driven by correlated equilibrium. 2020.
+Sandy Huang, Nicolas Papernot, Ian Goodfellow, Yan Duan, and Pieter Abbeel. Adversarial attacks on
+neural network policies. arXiv preprint arXiv:1702.02284, 2017.
+Chi Jin, Zeyuan Allen-Zhu, Sebastien Bubeck, and Michael I Jordan. Is q-learning provably efficient?
+Advances in neural information processing systems, 31, 2018.
+Leslie Pack Kaelbling, Michael L. Littman, and Anthony R. Cassandra. Planning and acting in partially
+observable stochastic domains. Artificial Intelligence, 101(1):99–134, 1998. ISSN 0004-3702. doi: https:
+//doi.org/10.1016/S0004-3702(98)00023-X. URL https://www.sciencedirect.com/science/article/
+pii/S000437029800023X.
+Vijay Konda and John Tsitsiklis. Actor-critic algorithms. Advances in neural information processing systems,
+12, 1999.
+Jernej Kos and Dawn Xiaodong Song. Delving into adversarial attacks on deep policies. ArXiv, abs/1705.06452,
+2017.
+Christian Kroer, Kevin Waugh, Fatma Kılınç-Karzan, and Tuomas Sandholm. Faster algorithms for extensive-
+form game solving via improved smoothing functions. Mathematical Programming, 179(1):385–417, 2020.
+Mu Li, Tong Zhang, Yuqiang Chen, and Alexander J Smola. Efficient mini-batch training for stochastic
+optimization. In Proceedings of the 20th ACM SIGKDD international conference on Knowledge discovery
+and data mining, pp. 661–670, 2014.
+19
+
+Published in Transactions on Machine Learning Research (06/2023)
+Shihui Li, Yi Wu, Xinyue Cui, Honghua Dong, Fei Fang, and Stuart Russell. Robust multi-agent reinforcement
+learning via minimax deep deterministic policy gradient. In Proceedings of the AAAI Conference on Artificial
+Intelligence, volume 33, pp. 4213–4220, 2019.
+Shiau Hong Lim and Arnaud Autef. Kernel-based reinforcement learning in robust markov decision processes.
+In International Conference on Machine Learning, pp. 3973–3981. PMLR, 2019.
+Chendi Lin, Wenhao Luo, and Katia Sycara. Online connectivity-aware dynamic deployment for heterogeneous
+multi-robot systems. In 2021 IEEE International Conference on Robotics and Automation (ICRA), pp.
+8941–8947. IEEE, 2021.
+Jieyu Lin, Kristina Dzeparoska, Sai Qian Zhang, Alberto Leon-Garcia, and Nicolas Papernot. On the
+robustness of cooperative multi-agent reinforcement learning. In 2020 IEEE Security and Privacy Workshops
+(SPW), pp. 62–68. IEEE, 2020.
+Yen-Chen Lin, Zhang-Wei Hong, Yuan-Hong Liao, Meng-Li Shih, Ming-Yu Liu, and Min Sun. Tactics of
+adversarial attack on deep reinforcement learning agents. In Proceedings of the 26th International Joint
+Conference on Artificial Intelligence, IJCAI’17, pp. 3756–3762. AAAI Press, 2017. ISBN 9780999241103.
+Michael L Littman. Markov games as a framework for multi-agent reinforcement learning. In Machine
+learning proceedings 1994, pp. 157–163. Elsevier, 1994.
+Michael L Littman and Csaba Szepesvári. A generalized reinforcement-learning model: Convergence and
+applications. In ICML, volume 96, pp. 310–318. Citeseer, 1996.
+Ryan Lowe, Yi I Wu, Aviv Tamar, Jean Harb, OpenAI Pieter Abbeel, and Igor Mordatch. Multi-agent
+actor-critic for mixed cooperative-competitive environments. Advances in neural information processing
+systems, 30, 2017.
+Roger McFarlane. A survey of exploration strategies in reinforcement learning. McGill University, 2018.
+Richard D McKelvey and Andrew McLennan. Computation of equilibria in finite games. Handbook of
+computational economics, 1:87–142, 1996.
+Fei Miao, Sihong He, Lynn Pepin, Shuo Han, Abdeltawab Hendawi, Mohamed E Khalefa, John A Stankovic,
+and George Pappas. Data-driven distributionally robust optimization for vehicle balancing of mobility-on-
+demand systems. ACM Transactions on Cyber-Physical Systems, 5(2):1–27, 2021.
+Volodymyr Mnih, Koray Kavukcuoglu, et al. Human-level control through deep reinforcement learning.
+nature, 518(7540):529–533, 2015.
+Facundo Mémoli. Some properties of gromov–hausdorff distances. Discrete & Computational Geometry, pp.
+1–25, 2012. ISSN 0179-5376. URL http://dx.doi.org/10.1007/s00454-012-9406-8. 10.1007/s00454-
+012-9406-8.
+R Nair, M Tambe, M Yokoo, D Pynadath, and S Marsella.
+Towards computing optimal policies for
+decentralized pomdps. In Notes of the 2002 AAAI Workshop on Game Theoretic and Decision Theoretic
+Agents, 2002.
+John Nash. Non-cooperative games. Annals of mathematics, pp. 286–295, 1951.
+Eleni Nisioti, Daan Bloembergen, and Michael Kaisers. Robust multi-agent q-learning in cooperative games
+with adversaries. In Proceedings of the AAAI Conference on Artificial Intelligence, 2021.
+Frans A Oliehoek, Christopher Amato, et al. A concise introduction to decentralized POMDPs, volume 1.
+Springer, 2016.
+Martin J Osborne and Ariel Rubinstein. A course in game theory. MIT press, 1994.
+Guillermo Owen. Game theory. Emerald Group Publishing, 2013.
+20
+
+Published in Transactions on Machine Learning Research (06/2023)
+Martin L Puterman. Markov decision processes: discrete stochastic dynamic programming. John Wiley &
+Sons, 2014.
+Guannan Qu and Adam Wierman. Finite-time analysis of asynchronous stochastic approximation and
+q-learning. In Conference on Learning Theory, pp. 3185–3205. PMLR, 2020.
+Hamed Rahimian and Sanjay Mehrotra. Distributionally robust optimization: A review. arXiv preprint
+arXiv:1908.05659, 2019.
+Daniel J Russo, Benjamin Van Roy, Abbas Kazerouni, Ian Osband, Zheng Wen, et al. A tutorial on thompson
+sampling. Foundations and Trends® in Machine Learning, 11(1):1–96, 2018.
+Burkhard C Schipper. Kuhn’s theorem for extensive games with unawareness. Available at SSRN 3063853,
+2017.
+Lloyd S Shapley. Stochastic games. Proceedings of the national academy of sciences, 39(10):1095–1100, 1953.
+Macheng Shen and Jonathan P How. Robust opponent modeling via adversarial ensemble reinforcement
+learning. In Proceedings of the International Conference on Automated Planning and Scheduling, volume 31,
+pp. 578–587, 2021.
+David Silver, Julian Schrittwieser, Karen Simonyan, Ioannis Antonoglou, Aja Huang, Arthur Guez, Thomas
+Hubert, Lucas Baker, Matthew Lai, Adrian Bolton, et al. Mastering the game of go without human
+knowledge. nature, 550(7676):354–359, 2017.
+Aman Sinha, Matthew O’Kelly, et al. Formulazero: Distributionally robust online adaptation via offline
+population synthesis. In ICML, pp. 8992–9004. PMLR, 2020.
+B Slantchev. Game theory: Perfect equilibria in extensive form games. UCSD script, 2008.
+David Roger Smart. Fixed point theorems, volume 66. Cup Archive, 1980.
+Houshang H Sohrab. Basic real analysis, volume 231. Springer, 2003.
+Chuangchuang Sun, Dong-Ki Kim, and Jonathan P How. Romax: Certifiably robust deep multiagent
+reinforcement learning via convex relaxation. arXiv preprint arXiv:2109.06795, 2021.
+Richard S Sutton and Andrew G Barto. Reinforcement learning: an introduction mit press. Cambridge, MA,
+22447, 1998.
+Richard S Sutton, Andrew G Barto, et al. Introduction to reinforcement learning, volume 135. MIT press
+Cambridge, 1998.
+Csaba Szepesvári and Michael L Littman. A unified analysis of value-function-based reinforcement-learning
+algorithms. Neural computation, 11(8):2017–2060, 1999.
+Chen Tessler, Yonathan Efroni, and Shie Mannor. Action robust reinforcement learning and applications in
+continuous control. In International Conference on Machine Learning, pp. 6215–6224. PMLR, 2019.
+Tessa van der Heiden, C Salge, Efstratios Gavves, and H van Hoof. Robust multi-agent reinforcement learning
+with social empowerment for coordination and communication. arXiv preprint arXiv:2012.08255, 2020.
+John Von Neumann and Oskar Morgenstern. Theory of games and economic behavior. In Theory of games
+and economic behavior. Princeton university press, 2007.
+Yue Wang and Shaofeng Zou. Online robust reinforcement learning with model uncertainty. Advances in
+Neural Information Processing Systems, 34:7193–7206, 2021.
+Yaodong Yang and Jun Wang. An overview of multi-agent reinforcement learning from game theoretical
+perspective. ArXiv, abs/2011.00583, 2020a.
+21
+
+Published in Transactions on Machine Learning Research (06/2023)
+Yaodong Yang and Jun Wang. An overview of multi-agent reinforcement learning from game theoretical
+perspective. arXiv preprint arXiv:2011.00583, 2020b.
+Yaodong Yang, Rui Luo, Minne Li, Ming Zhou, Weinan Zhang, and Jun Wang. Mean field multi-agent
+reinforcement learning. In International conference on machine learning, pp. 5571–5580. PMLR, 2018.
+Zhengyu Yin, Dmytro Korzhyk, Christopher Kiekintveld, Vincent Conitzer, and Milind Tambe. Stackelberg
+vs. nash in security games: interchangeability, equivalence, and uniqueness. In AAMAS, volume 10, pp. 6,
+2010.
+Chao Yu, Akash Velu, Eugene Vinitsky, Yu Wang, Alexandre Bayen, and Yi Wu. The surprising effectiveness
+of ppo in cooperative, multi-agent games. arXiv preprint arXiv:2103.01955, 2021a.
+Jing Yu, Clement Gehring, Florian Schäfer, and Animashree Anandkumar. Robust reinforcement learning:
+A constrained game-theoretic approach. In Learning for Dynamics and Control, pp. 1242–1254. PMLR,
+2021b.
+Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Mingyan Liu, Duane Boning, and Cho-Jui Hsieh. Robust
+deep reinforcement learning against adversarial perturbations on state observations. Advances in Neural
+Information Processing Systems, 33:21024–21037, 2020a.
+Huan Zhang, Hongge Chen, Duane Boning, and Cho-Jui Hsieh. Robust reinforcement learning on state
+observations with learned optimal adversary. arXiv preprint arXiv:2101.08452, 2021.
+Kaiqing Zhang, Tao Sun, Yunzhe Tao, Sahika Genc, Sunil Mallya, and Tamer Basar. Robust multi-agent
+reinforcement learning with model uncertainty. Advances in Neural Information Processing Systems, 33:
+10571–10583, 2020b.
+22
+
+Published in Transactions on Machine Learning Research (06/2023)
+Appendix for “Robust Multi-Agent Reinforcement
+Learning with State Uncertainty”
+There are three sections in the appendix: section A for theoretical proof, section B for algorithms, and section
+C for experiments.
+A
+Theory
+In this section, we give the full proof of all propositions and theorems in the theoretical analysis of an
+MG-SPA.
+In section A.1, we construct an extensive-form game (EFG) (Başar & Olsder, 1998; Osborne & Rubinstein,
+1994; Von Neumann & Morgenstern, 2007) whose payoff function is related to value functions of an MG-SPA.
+We then give certain conditions under which, a Nash equilibrium for the constructed EFG exists. In section
+A.2, we prove the propositions 4.5 and 4.6. In section A.3, we give the full proof of Theorem 4.7. In section
+A.4, we prove Corollary 4.9.1 that Theorem 4.7 applies to history-dependent-policy-based RE as well.
+To make the appendix self-contained, we re-show the vector notations and assumptions we have presented in
+section 4.2. Readers can also skip the repeated text and directly go to section A.1.
+We follow and extend the vector notations in Puterman (2014). Let V denote the set of bounded real valued
+functions on S with component-wise partial order and norm ∥vi∥:= sups∈S |vi(s)|. Let VM denote the
+subspace of V of Borel measurable functions. For discrete state space, all real-valued functions are measurable
+so that V = VM. But when S is a continuum, VM is a proper subset of V . Let v = (v1, · · · , vN) ∈V be
+the set of bounded real valued functions on S × · · · × S, i.e. the across product of N state set and norm
+∥v∥:= supj ∥vj∥. We also define the set Q and Q in a similar style such that qi ∈Q, q ∈Q.
+For discrete S, let |S| denote the number of elements in S. Let ri denote a |S|-vector, with sth component
+ri(s) which is the expected reward for agent i under state s. And P the |S| × |S| matrix with (s, s′)th
+entry given by p(s′|s). We refer to ri
+d as the reward vector of agent i, and Pd as the probability transition
+matrix corresponding to a joint policy d = (π, ρ). ri
+d + γPdvi is the expected total one-period discounted
+reward of agent i, obtained using the joint policy d = (π, ρ). Let z as a list of joint policy {d1, d2, · · · } and
+P 0
+z = I, we denote the expected total discounted reward of agent i using z as vi
+z = P∞
+t=1 γt−1P t−1
+z
+ri
+dt =
+ri
+d1 + γPd1ri
+d2 + · · · + γn−1Pd1 · · · Pdn−1ri
+tn + · · · . Now, we define the following minimax operator which is
+used in the rest of the paper.
+Definition A.1 (Minimax Operator, same as definition 4.3).
+For vi ∈V, s ∈S, we define the nonlinear operator Li on vi(s) by Livi(s) := maxπi minρ˜i[ri
+d +
+γPdvi](s), where d := (π−i
+∗, πi, ρ−˜i
+∗, ρ˜i). We also define the operator Lv(s) = L(v1(s), · · · , vN(s)) =
+(L1v1(s), · · · , LNvN(s)). Then Livi is a |S|-vector, with sth component Livi(s).
+For discrete S and bounded ri, it follows from Lemma 5.6.1 in Puterman (2014) that Livi ∈V for all vi ∈V .
+Therefore Lv ∈V for all v ∈V. And in this paper, we consider the following assumptions in Markov games
+with state perturbation adversaries.
+Assumption A.2 (Same as assumption 4.4).
+(1) Bounded rewards; |ri(s, a, b)| ≤M i < M < ∞for all i ∈N, a ∈A, b ∈B and s ∈S.
+(2) Finite state and action spaces: all S, Ai, B˜i are finite.
+(3) Stationary transition probability and reward functions.
+(4) f(s, ·) is a bijection for any fixed s ∈S.
+(5) All agents share one common reward function.
+23
+
+Published in Transactions on Machine Learning Research (06/2023)
+A.1
+Extensive-form game
+Figure 9: a team extensive-form game
+An extensive-form game (EFG) (Başar & Olsder, 1998; Osborne & Rubinstein, 1994; Von Neumann &
+Morgenstern, 2007) basically involves a tree structure with several nodes and branches, providing an explicit
+description of the order of players and the information available to each player at the time of his decision.
+Look at Figure 9, an EFG involves from the top of the tree to the tip of one of its branches. And a centralized
+nature player (P1) has | ˜S| alternatives (branches) to choose from, whereas a centralized agent (P2) has |A|
+alternatives, and the order of play is that the centralized nature player acts before the centralized agent
+does. The set A is the same as the agents’ joint action set in an MG-SPA, set ˜S is a set of perturbed states
+constrained by a constrained parameter ϵ. At the end of lower branches, some numbers will be given. These
+numbers represent the playoffs to the centralized agent (or equivalently, losses incurred to the centralized
+nature player) if the corresponding paths are selected by the players. We give the formal definition of an
+EFG we will use in the proof and the main text as follows:
+Definition A.3. An extensive-form game based on (v1, · · · , vN, −v1, · · · , −vN) under s ∈S is a finite
+tree structure with:
+1. A player P1 has a action set ˜S =
+N
+z
+}|
+{
+B(ϵ, s) × · · · × B(ϵ, s), with a typical element designed as ˜s.
+And P1 moves first.
+2. Another player P2 has an action set A, with a typical element designed as a. And P2 which
+moves after P1.
+3. A specific vertex indicating the starting point of the game.
+4. A payoff function gs(˜s, a)
+=
+(g1
+s(˜s, a), · · · , gN
+s (˜s, a)) where gi
+s(˜s, a)
+=
+ri(s, a, f −1
+s (˜s)) +
+P
+s′ p(s′|a, f −1
+s (˜s))vi(s′) assigns a real number to each terminal vector of the tree.
+Player
+P1 gets −gs(˜s, a) while player P2 gets gs(˜s, a).
+5. A partition of the nodes of the tree into two player sets (to be denoted by ¯N 1 and ¯N 2 for P1
+and P2, respectively).
+6. A sub-partition of each player set ¯N i into information set {ηi
+j}, such that the same number of
+immediate branches emanates from every node belonging to the same information set, and no
+node follows another node in the same information set.
+Note that fs(b) := f(s, b) = (f(s, b˜1), · · · , f(s, b ˜
+N)) is the vector version of the perturbation function f
+in an MG-SPA. Since in an MG-SPA, qi(s, a, b) = ri(s, a, b) + P
+s′ p(s′|s, a, b)vi(s′) for all i = 1, · · · , N,
+gi
+s(˜s, a) = qi(s, a, f −1
+s (˜s)) as well.
+We can also use (q1, · · · , qN, −q1, · · · , −qN) to denote an extensive-
+24
+
+Published in Transactions on Machine Learning Research (06/2023)
+form game based on (v1, · · · , vN, −v1, · · · , −vN). Then we define the behavioral strategies for P1 and P2,
+respectively in the following definition.
+Definition A.4. (Behavioral strategy) Let Ii denote the class of all information sets of Pi, with a
+typical element designed as ηi. Let U i
+ηi denote the set of alternatives of Pi at the nodes belonging to
+the information set ηi. Define U i = ∪U i
+ηi where the union is over ηi ∈Ii. Let Yη1 denote the set of
+all probability distributions on U 1
+η1, where the latter is the set of all alternatives of P1 at the nodes
+belonging to the information set η1. Analogously, let Zη2 denote the set of all probability distributions
+on U 2
+η2. Further define Y = ∪I1Yη1, Z = ∪I2Zη2. Then, a behavioral strategy λ for P1 is a mapping
+from the class of all his information sets I1 into Y , assigning one element in Y for each set in I1, such
+that λ(η1) ∈Yη1 for each η1 ∈I1. A typical behavioral strategy χ for P2 is defined, analogously, as a
+restricted mapping from I2 into Z. The set of all behavioral strategies for Pi is called his behavioral
+strategy set, and it is denoted by Γi.
+The information available to the centralized agent (P2) at the time of his play is indicated on the tree diagram
+in Figure 9 by dotted lines enclosing an area (i.e. the information set) including the relevant nodes. This
+means the centralized agent is in a position to know exactly how the centralized nature player acts. In this
+case, a strategy for the centralized agent is a mapping from the collection of his information sets into the set
+of his actions.
+And the behavioral strategy λ for P1 is a mapping from his information sets and action space into a probability
+simplex, i.e. λ(˜s|s) is the probability of choosing ˜s given s. Similarly, the behavioral strategy χ for P2 is
+χ(a|˜s), i.e. the probability of choosing action a when ˜s is given. Note that every behavioral strategy is a
+mixed strategy. We then give the definition of Nash equilibrium in behavioral strategies for an EFG.
+Definition A.5. (Nash equilibrium in behavioral strategies) A pair of strategies {λ∗∈Γ1, χ∗∈Γ2} is
+said to constitute a Nash equilibrium in behavioral strategies if the following inequalities are satisfied that
+for all i = 1, · · · , N, λ ∈Γ1, χ ∈Γ2, s ∈S:
+Ji(λi, λ−i
+∗, χi
+∗, χ−i
+∗) ≥Ji(λi
+∗, λ−i
+∗, χi
+∗, χ−i
+∗) ≥Ji(λi
+∗, λ−i
+∗, χi, χ−i
+∗)
+(11)
+where Ji(λ, χ) is the expected payoff i.e. Eλ,χ[gi
+s] when P1 takes λ, P2 takes χ, λ(˜s|s) = QN
+i=1 λi(˜si|s),
+χ(a|˜s) = QN
+i=1 χi(ai|˜si).
+In the following parts as well as the main text, when we mention a Nash equilibrium for an EFG, it refers
+to a Nash equilibrium in behavioral strategies. How to solve an EFG is out of our scope since it has been
+investigated in much literature (Başar & Olsder, 1998; Schipper, 2017; Slantchev, 2008). And policies λi
+and χi can be attained through the marginal probabilities calculation with chain rules (Devore et al., 2012;
+Mémoli, 2012).
+A.1.1
+Existence of NE for an EFG
+In Lemma A.6, we give conditions (partial items of Assumption 4.4) under which an NE of the EFG based
+on (v1, · · · , vN, −v1, · · · , −vN) exists.
+Lemma A.6. Suppose v1 = · · · = vN, and S, A are finite. An NE (λ∗, χ∗) of the EFG based on
+(v1, · · · , vN, −v1, · · · , −vN) exists.
+Proof. Since ˜S is a subset of S, ˜S is finite when S is finite. When v1 = · · · = vN, and ˜S, A are finite, an
+EFG based on (v1, · · · , vN, −v1, · · · , −vN) degenerates to a zero-sum two-person extensive-form game with
+finite strategies and perfect recall. Thus, an NE of this EFG exists (Başar & Olsder, 1998; Schipper, 2017;
+Slantchev, 2008).
+The following Lemma A.7 provides insights into solving an MG-SPA by solving a constructed EFG.
+25
+
+Published in Transactions on Machine Learning Research (06/2023)
+Lemma A.7. Suppose f is a bijection when s is fixed and an NE (λ∗, χ∗) exists for an EFG
+(v1, · · · , vN, −v1, · · · , −vN).
+We define a joint policy (πv
+∗, ρv
+∗) as the joint policy implied from the
+NE (λ∗, χ∗) , where ρv
+∗(b|s) = λ∗(˜s = fs(b)|s), πv
+∗(a|˜s = fs(b)) = χ∗(a|˜s). Then the joint policy (πv
+∗, ρv
+∗)
+satisfies Livi(s) = ri
+(πv∗,ρv∗)(s) + γ P
+s′∈S p(πv∗,ρv∗)(s′|s)vi(s′) for all s ∈S.
+Proof. The NE of the extensive-form game (λ∗, χ∗) implies that for all i = 1, · · · , N, s ∈S, λ ∈Γ1, χ ∈Γ2,
+we have
+Ji(λ, χ∗) ≥Ji(λ∗, χ∗) ≥Ji(λ∗, χ),
+where Ji(λ, χ) = E[ri(s, a, f −1
+s
+(˜s)) + P
+s′ p(s′|s, a, f −1
+s
+(˜s))vi(s′)|˜s ∼λ(·|s), a ∼χ(·|˜s)] according to Definition
+A.5. Let b denote f −1
+s
+(˜s), because f is a bijection when s is fixed, fs(b) = (fs(b˜1), · · · , fs(b ˜
+N)) is a bijection,
+and the inverse function f −1
+s
+(˜s) = (f −1
+s
+(˜s1), · · · , f −1
+s
+(˜sN)) exists and is a bijection as well, then we have
+Ji(λ∗, χ∗) =E
+"
+ri(s, a, f −1
+s
+(˜s)) +
+X
+s′
+p(s′|s, a, f −1
+s
+(˜s))vi(s′)|˜s ∼λ∗(·|s), a ∼χ∗(·|˜s)
+#
+=E
+"
+ri(s, a, b) +
+X
+s′
+p(s′|s, a, b)vi(s′)|b ∼λ∗(fs(b)|s), a ∼χ∗(·|fs(b))
+#
+=E
+"
+ri(s, a, b) +
+X
+s′
+p(s′|s, a, b)vi(s′)|b ∼ρv
+∗(·|s), a ∼πv
+∗(·|˜s)
+#
+Similarly, we have
+Ji(λ∗, χ) = E
+"
+ri(s, a, b) +
+X
+s′
+p(s′|s, a, b)vi(s′)|b ∼ρv
+∗(·|s), a ∼πv(·|˜s)
+#
+,
+Ji(λ, χ∗) = E
+"
+ri(s, a, b) +
+X
+s′
+p(s′|s, a, b)vi(s′)|b ∼ρv(·|s), a ∼πv
+∗(·|˜s)
+#
+,
+where πv, ρv are corresponding policies implied from behavioral strategies χ, λ, respectively. Recall the
+definition of the minimax operator of Livi(s), we have, for all s ∈S,
+Livi(s) = ri
+(πv∗,ρv∗)(s) + γ
+X
+s′∈S
+p(πv∗,ρv∗)(s′|s)vi(s′)
+Based on the proof, we also denote (πv
+∗, ρv
+∗) as an NE policy for the EFG (v1, · · · , vN, −v1, · · · , −vN) for
+convenience, instead of calling it the joint policy derived from an NE for the EFG (v1, · · · , vN, −v1, · · · , −vN).
+We can get a corollary from Lemma A.7 that when optimal value functions of an MG-SPA exist, we are
+able to get a joint policy that satisfies the Bellman equations of the MG-SPA by computing an NE for a
+constructed EFG (v1
+∗, · · · , vN
+∗, −v1
+∗, · · · , −vN
+∗). Later in Theorem 4.7, we show that a joint policy that satisfies
+the Bellman equations of an MG-SPA is in a robust equilibrium under Assumption 4.4. Therefore, Lemma
+A.7 provides insights into solving an MG-SPA by solving a corresponding EFG.
+In the following proof, we aim to prove the existence of optimal value functions for an MG-SPA under
+Assumption 4.4.
+26
+
+Published in Transactions on Machine Learning Research (06/2023)
+A.2
+Proof of two propositions
+Proposition A.8 (Contraction mapping, same as proposition 4.5 in the main text.). Suppose 0 ≤γ < 1
+and Assumption 4.4 hold. Then L is a contraction mapping on V.
+Proof. Let u and v be in V.
+Given Assumption 4.4, these two EFGs (u1, · · · , uN, −u1, · · · , −uN),
+(vi, · · · , vN, −vi, · · · , −vN) both have at least one mixed Nash equilibrium according to Lemma A.6. And let
+(πu
+∗, ρu
+∗) and (πv
+∗, ρv
+∗) be two Nash equilibriums for these two games, respectively. According to Lemma A.7,
+we have the following equations hold for all s ∈S,
+Livi(s) = ri
+(πv∗,ρv∗)(s) + γ
+X
+s′∈S
+p(πv∗,ρv∗)(s′|s)vi(s′)
+Liui(s) = ri
+(πu
+∗,ρu
+∗)(s) + γ
+X
+s′∈S
+p(πu
+∗,ρu
+∗)(s′|s)ui(s′)
+Then we have
+ri
+(πu
+∗,ρv∗)(s) + γ
+X
+s′∈S
+p(πu
+∗,ρv∗)(s′|s)vi(s′) ≤Livi(s) ≤ri
+(πv∗,ρu
+∗)(s) + γ
+X
+s′∈S
+p(πv∗,ρu
+∗)(s′|s)vi(s′),
+ri
+(πv∗,ρu
+∗)(s) + γ
+X
+s′∈S
+p(πv∗,ρu
+∗)(s′|s)ui(s′) ≤Liui(s) ≤ri
+(πu
+∗,ρv∗)(s) + γ
+X
+s′∈S
+p(πu
+∗,ρv∗)(s′|s)ui(s′),
+since (πu
+∗, ρv
+∗) and (πv
+∗, ρu
+∗) are derived from the Nash equilibrium of the EFG (vi, · · · , vN, −vi, · · · , −vN),
+and (πu
+∗, ρv
+∗) and (πv
+∗, ρu
+∗) are also derived from the Nash equilibrium of the EFG (ui, · · · , uN, −ui, · · · , −uN).
+We assume that Livi(s) ≤Liui(s), then we have
+0 ≤Liui(s) −Livi(s)
+≤
+"
+ri
+(πu
+∗,ρv∗)(s) + γ
+X
+s′∈S
+p(πu
+∗,ρv∗)(s′|s)ui(s′)
+#
+−
+"
+ri
+(πu
+∗,ρv∗)(s) + γ
+X
+s′∈S
+p(πu
+∗,ρv∗)(s′|s)vi(s′)
+#
+≤γ
+X
+s′∈S
+p(πu
+∗,ρv∗)(s′|s)(ui(s′) −vi(s′))
+≤γ||vi −ui||.
+Repeating this argument in the case that Liui(s) ≤Livi(s) implies that
+||Livi(s) −Liui(s)|| ≤γ||vi −ui||
+for all s ∈S, i.e. Li is a contraction mapping on V . Recall that ||v|| = supj ||vj||, then we have
+||Lv −Lu|| = sup
+j
+||Ljvj −Ljuj|| ≤γ sup
+j
+||vj −uj|| = γ||v −u||.
+L is a contraction mapping on V.
+Proposition A.9 (Complete Space, same as proposition 4.6 in the main text.). V is a complete normed
+linear space.
+Proof. Recall that V denote the set of bounded real-valued functions on S × · · · × S, i.e. the cross product of
+N state set with component-wise partial order and norm ||v|| := sups∈S supj |vi(s)|. Since V is closed under
+addition and scalar multiplication and is endowed with a norm, it is a normed linear space. Since every
+Cauchy sequence contains a limit point in V, V is a complete space.
+27
+
+Published in Transactions on Machine Learning Research (06/2023)
+A.3
+Proof of Theorem 4.7
+In this section, our goal is to prove Theorem 4.7. We first prove (1) the optimal value function of an MG-SPA
+satisfies the Bellman equation by applying the Squeeze theorem [Theorem 3.3.6, Sohrab (2003)] in A.3.1.
+Then we prove that a unique solution of the Bellman equation exists using fixed-point theorem (Smart,
+1980) in A.3.2. Thereby, the existence of the optimal value function gets proved. By introducing (3), we
+characterize the relationship between the optimal value function and a robust equilibrium. The proof of
+(3) can be found in A.3.3. However, (3) does not imply the existence of an RE. To this end, in (4), we
+formally establish the existence of RE when the optimal value function exists. We formulate a 2N-player
+Extensive-form game (EFG) (Osborne & Rubinstein, 1994; Von Neumann & Morgenstern, 2007) based on
+the optimal value function such that its Nash equilibrium (NE) is equivalent to an RE of the MG-SPA. The
+details are in A.3.4.
+Theorem A.10 (Same as theorem 4.7 in the main text).
+Suppose 0 ≤γ < 1 and Assumption 4.4 holds.
+(1) (Solution of Bellman equation) A value function v∗∈V is an optimal value function if for all i ∈N,
+the point-wise value function vi
+∗∈V satisfies the corresponding Bellman Equation (6), i.e. v∗= Lv∗.
+(2) (Existence and uniqueness of optimal value function) There exists a unique v∗∈V satisfying Lv∗= v∗,
+i.e. for all i ∈N, Livi
+∗= vi
+∗.
+(3) (Robust equilibrium and optimal value function) A joint policy d∗= (π∗, ρ∗), where π∗= (π1
+∗, · · · , πN
+∗)
+and ρ∗= (ρ˜1
+∗, · · · , ρ ˜
+N
+∗), is a robust equilibrium if and only if vd∗is the optimal value function.
+(4) (Existence of robust equilibrium) There exists a mixed RE for an MG-SPA.
+A.3.1
+(1) Solution of Bellman equation
+Proof. First, we prove that if there exists a vi ∈V such that vi ≥Lvi then vi ≥vi
+∗. vi ≥Lvi implies
+vi ≥max min[ri + γPvi] = ri
+d + γPdvi, where d = (πv,−i
+∗
+, πv,i
+∗, ρv,−˜i
+∗
+, ρv,˜i
+∗) is a Nash equilibrium for the EFG
+v = (v1, · · · , vN, −v1, · · · , −vN). We omit the superscript v for convenience when there is no confusion. We
+choose a list of policy i.e. z = (d1, d2, · · · ) where dj = (π−i
+∗, πi
+j, ρ−˜i
+∗, ρ˜i∗). Then we have
+vi ≥rd1 + γPd1vi ≥ri
+d1 + γPd1(ri
+d2 + γPd2vi) = ri
+d1 + γPd1ri
+d2 + γPd1Pd2vi
+By induction, it follows that, for n ≥1,
+vi ≥ri
+d1 + γPd1ri
+d2 + · · · + γn−1Pd1 · · · Pdn−1ri
+dn + γnP n
+z vi
+vi −vi
+z ≥γnP n
+z vi −
+∞
+X
+t=n
+γtP t
+zri
+dt+1
+(12)
+Since ||γnP n
+z vi|| ≤γn||vi|| and γ ∈[0, 1), for ϵ > 0, we can find a sufficiently large n such that
+ϵe/2 ≥γnP n
+z vi ≥−ϵe/2
+(13)
+where e denotes a vector of 1’s. And as a result of Assumption 4.4-(1), we have
+−
+∞
+X
+t=n
+γtP t
+zri
+dt+1 ≥−γnMe
+1 −γ
+(14)
+Then we have
+vi(s) −vi
+z(s) ≥−ϵ
+(15)
+28
+
+Published in Transactions on Machine Learning Research (06/2023)
+for all s ∈S and ϵ > 0. Let all dj the same, since ϵ was arbitrary, we have
+vi(s) ≥max
+πi min
+ρ˜i vi
+z(s) = vi
+∗(s)
+(16)
+Then we prove that if there exists a vi ∈V such that vi ≤Lvi then vi ≤vi
+∗. For arbitrary ϵ > 0 there exists
+a joint policy d′ = (π−i
+∗, πi
+∗, ρ−˜i
+∗, ρ˜i) and a list of policy z = (d′, d′, · · · ) such that
+vi ≤ri
+d′ + γPd′vi + ϵ
+(I −γPd′)vi ≤ri
+d′ + ϵ
+≤(I −γPd′)−1ri
+d′ + (1 −γ)−1ϵe = vi
+z + (1 −γ)−1ϵe
+≤vi
+∗+ (1 −γ)−1ϵe
+The equality holds because the Theorem 6.1.1 in Puterman (2014). Since ϵ was arbitrary, we have
+vi ≤vi
+∗
+(17)
+So if there exists a vi ∈V such that vi = Livi i.e. vi ≤Livi and vi ≥Livi, we have vi = vi
+∗, i.e. if vi satisfies
+the Bellman equation, vi is an optimal value function.
+A.3.2
+(2) Existence of optimal value function
+Proof. Proposition 4.5 and 4.6 establish that V is a complete normed linear space and L is a contraction
+mapping, so that the hypothesis of Banach Fixed-Point Theorem are satisfied (Smart, 1980). Therefore there
+exists a unique solution v∗∈V to Lv = v. From (1), we know if v∗satisfies the Bellman equation, it is an
+optimal value function. Therefore, the existence of the optimal value function is proved.
+A.3.3
+(3) robust equilibrium and optimal value function
+Proof. (i) robust equilibrium →Optimal value function.
+Suppose d∗is a robust equilibrium. Then vd∗= v∗. From (2), it follows that vd∗satisfies Lv = v. Thus vd∗
+is the optimal value function.
+(ii) Optimal value function →robust equilibrium.
+Suppose vd∗is the optimal value function, i.e., Lvd∗= vd∗. The proof of (1) implies that vd∗= v∗, so d∗is
+in robust equilibrium.
+A.3.4
+(4) Existence of robust equilibrium
+Proof. From (2), we know that there exists a solution v∗∈V to the Bellman equation Lv = v. Now, we
+consider an EFG based on (v1
+∗, · · · , vN
+∗, −v1
+∗, · · · , −vN
+∗). Under Assumption 4.4, we can get an NE policy
+(πv∗
+∗, ρv∗
+∗) by solving the EFG as a consequence of Lemma A.6. According to Lemma A.7, (πv∗
+∗, ρv∗
+∗) satisfies
+Livi
+∗(s) = ri
+(πv∗
+∗,ρv∗
+∗)(s) + γ
+X
+s′∈S
+p(πv∗
+∗,ρv∗
+∗)(s′|s)vi
+∗(s′),
+for all s ∈S. According to (3), (πv∗
+∗, ρv∗
+∗) is a robust equilibrium.
+29
+
+Published in Transactions on Machine Learning Research (06/2023)
+A.4
+Proof of Corollary 4.9.1
+Corollary A.10.1 (Same as Corollary 4.9.1).
+Theorem 4.7 still holds when all agents and adversaries in an MG-SPA use history-dependent policies
+with a finite time horizon.
+Proof. From subsection 4.3, we can find the main difference between history-dependent-policy-based RE and
+Markov-policy-based RE are the definitions and notations of policies and states. To prove Theorem 4.7, we
+construct an EFG based on the current state st. Similarly, to prove Corollary 4.9.1, we construct an EFG
+based on the concatenated states sh,t and ˜sh−1,t−1 that includes the current state st and historical state
+information st−1, · · · , st−h+1, ˜st−1, · · · , ˜st−h+1. Notice that h is a finite number. Hence, the concatenated
+state space is still finite. We now construct another extensive-form game in which a centralized nature player
+(P1) has | ˜S| alternatives (branches) to choose from, whereas a centralized agent (P2) has |A| alternatives,
+and the order of play is that the centralized nature player acts before the centralized agent does. The set A
+is the same as the agents’ joint action set in an MG-SPA, set ˜S is a set of perturbed states constrained by a
+constrained parameter ϵ.
+Definition A.11. An extensive-form game based on (v1, · · · , vN, −v1, · · · , −vN) under concatenated
+states sh,t = (st, · · · , st−h+1) ∈Sh and ˜sh,t−1 = (˜st−1, · · · , ˜st−h+1) ∈Sh−1 is a finite tree structure with:
+1. A player P1 has a action set ˜S =
+N
+z
+}|
+{
+B(ϵ, s) × · · · × B(ϵ, s), with a typical element designed as ˜s.
+And P1 moves first.
+2. Another player P2 has an action set A, with a typical element designed as a. And P2 which
+moves after P1.
+3. A specific vertex indicating the starting point of the game.
+4. A payoff function gs(˜s, a) = (g1
+s(˜s, a), · · · , gN
+s (˜s, a)) where s = st = sh,t[1] is the first element of
+sh,t, ˜s = ˜st ∈˜S, gi
+s(˜s, a) = ri(s, a, f −1
+s (˜s)) + P
+s′ p(s′|a, f −1
+s (˜s))vi(s′) assigns a real number to
+each terminal vector of the tree. Player P1 gets −gs(˜s, a) while player P2 gets gs(˜s, a).
+5. A partition of the nodes of the tree into two player sets (to be denoted by ¯N 1 and ¯N 2 for P1
+and P2, respectively).
+6. A sub-partition of each player set ¯N i into information set {ηi
+j}, such that the same number of
+immediate branches emanates from every node belonging to the same information set, and no
+node follows another node in the same information set.
+The definitions of behavioral strategy and Nash equilibrium keep the same. Then the behavioral strategy λ
+for P1 is a mapping from his information sets and action space into a probability simplex, i.e. λ(˜s|sh,t =
+(st, · · · , st−h+1)) is the probability of choosing ˜s given sh,t. Similarly, the behavioral strategy χ for P2 is
+χ(a|˜sh,t = (˜s, ˜st−1, · · · , ˜st−h+1)), i.e. the probability of choosing action a when ˜sh,t is given.
+Now let us check the correctness of Lemma A.6 when EFG is constructed following Definition A.11. We can
+find that Sh is a finite state space for any finite time horizon h since Sh is a product topology on finite spaces.
+Then Lemma A.6 still holds because the EFG degenerates to a zero-sum two-person extensive-form game
+with finite strategies and perfect recall.
+Then let us check Lemma A.7. We re-write it in Lemma A.12 in which the behavioral strategy χ(a|˜sh,t) and
+λ(˜s|sh,t) are used. The proof of Lemma A.12 is similar to that of Lemma A.7.
+30
+
+Published in Transactions on Machine Learning Research (06/2023)
+Lemma A.12. Suppose f is a bijection when s is fixed and an NE (λ∗, χ∗) exists for an EFG
+(v1, · · · , vN, −v1, · · · , −vN).
+We define a joint policy (πv
+∗, ρv
+∗) as the joint policy implied from the
+NE (λ∗, χ∗) , where ρv
+∗(b|sh) = λ∗(˜s = fs(b)|sh), πv
+∗(a|˜sh = (fs(b), ˜st−1, · · · , ˜st−h+1)) = χ∗(a|˜sh). Then
+the joint policy (πv
+∗, ρv
+∗) satisfies Livi(s) = ri
+(πv∗,ρv∗)(s) + γ P
+s′∈S p(πv∗,ρv∗)(s′|s)vi(s′) for all s ∈S.
+Proof. The NE of the extensive-form game (λ∗, χ∗) implies that for all i = 1, · · · , N, s ∈S, λ ∈Γ1, χ ∈Γ2,
+we have
+Ji(λ, χ∗) ≥Ji(λ∗, χ∗) ≥Ji(λ∗, χ),
+where Ji(λ, χ) = E[ri(s, a, f −1
+s (˜s)) + P
+s′ p(s′|s, a, f −1
+s (˜s))vi(s′)|˜s ∼λ(·|sh), a ∼χ(·|˜sh)] according to Defi-
+nition A.5. Let b denote f −1
+s (˜s), because f is a bijection when s is fixed, fs(b) = (fs(b˜1), · · · , fs(b ˜
+N)) is a
+bijection, and the inverse function f −1
+s
+(˜s) = (f −1
+s
+(˜s1), · · · , f −1
+s
+(˜sN)) exists and is a bijection as well, then we
+have
+Ji(λ∗, χ∗) =E
+"
+ri(s, a, f −1
+s
+(˜s)) +
+X
+s′
+p(s′|s, a, f −1
+s
+(˜s))vi(s′)|˜s ∼λ∗(·|sh), a ∼χ∗(·|˜sh)
+#
+=E
+"
+ri(s, a, b) +
+X
+s′
+p(s′|s, a, b)vi(s′)|b ∼λ∗(fs(b)|sh), a ∼χ∗(·|(fs(b), ˜st−1, · · · , ˜st−h+1))
+#
+=E
+"
+ri(s, a, b) +
+X
+s′
+p(s′|s, a, b)vi(s′)|b ∼ρv
+∗(·|sh), a ∼πv
+∗(·|˜sh)
+#
+Similarly, we have
+Ji(λ∗, χ) = E
+"
+ri(s, a, b) +
+X
+s′
+p(s′|s, a, b)vi(s′)|b ∼ρv
+∗(·|sh), a ∼πv(·|˜sh)
+#
+,
+Ji(λ, χ∗) = E
+"
+ri(s, a, b) +
+X
+s′
+p(s′|s, a, b)vi(s′)|b ∼ρv(·|sh), a ∼πv
+∗(·|˜sh)
+#
+,
+where πv, ρv are corresponding policies implied from behavioral strategies χ, λ, respectively. Recall the
+definition of the minimax operator of Livi(s), we have, for all s ∈S,
+Livi(s) = ri
+(πv∗,ρv∗)(s) + γ
+X
+s′∈S
+p(πv∗,ρv∗)(s′|s)vi(s′)
+Proposition 4.6 still holds when agents and adversaries adopt history-dependent policies since we do not
+require Markov policies in the proof. Propositions 4.5 also holds which can be proved by utilizing the
+properties of NE for EFGs defined in Definition A.11. Specifically, in the proof, we use EFGs defined in
+Definition A.11 instead of Definition A.3. The subsequent proof of Propositions 4.5 keeps the same.
+Then in the proof of Theorem 4.7, we are able to continue to utilize Propositions 4.6 and 4.5. Similarly,
+the EFGs used in the proof are replaced by Definition A.11. The definition of the minimax operator does
+not constrain the type of policies. The properties of the minimax operator can be continually used as
+well. The main body of proof keeps the same. Theorem 4.7 still holds when agents and adversaries adopt
+history-dependent policies.
+31
+
+Published in Transactions on Machine Learning Research (06/2023)
+B
+Algorithm
+B.1
+Robust multi-agent Q-learning (RMAQ)
+In this section, we prove the convergence of RMAQ under certain conditions. First, let’s recall the convergence
+theorem and certain assumptions.
+Assumption B.1 (Same as assumption 5.1).
+(1) State and action pairs have been visited infinitely often. (2) The learning rate αt satisfies the following
+conditions: 0 ≤αt < 1, P
+t≥0 α2
+t ≤∞; if (s, a, b) ̸= (st, at, bt), αt(s, a, b) = 0. (3) An NE of the EFG
+based on (q1
+t , · · · , qN
+t , −q1
+t , · · · , −qN
+t ) exists at each iteration t.
+Theorem B.2 (Same as theorem 5.2).
+Under Assumption B.1, the sequence {qt} obtained from (18) converges to {q∗} with probability 1, which
+are the optimal action-value functions that satisfy Bellman equations (5) for all i = 1, · · · , N.
+qi
+t+1(st, at, bt) = (1 −αt)qi
+t(st, at, bt)+
+(18)
+αt
+
+ri
+t + γ
+X
+at+1∈A
+X
+bt+1∈B
+πqt
+∗,t(at+1|˜st+1)ρqt
+∗,t(bt+1|st+1)qi
+t(st+1, at+1, bt+1)
+
+,
+Proof. Define the operator Tqt = T(q1
+t , · · · , qN
+t ) = (T 1q1
+t , · · · , T NqN
+t ) where the operator T i is defined as
+below:
+T iqi
+t(s, a, b) = ri
+t + γ
+X
+a′∈A
+X
+b′∈B
+πqt
+∗(a′|˜s′)ρqt
+∗(b′|s′)qi
+t(s′, a′, b′)
+(19)
+for i
+∈
+N,
+where (πqt
+∗, ρqt
+∗) is the tuple of Nash equilibrium policies for the EFG based on
+(q1
+t , · · · , qN
+t , −q1
+t , · · · , −qN
+t ) obtained from (18). Because of proposition B.3 and proposition B.4 the Lemma
+8 in Hu & Wellman (2003) or Corollary 5 in Szepesvári & Littman (1999) tell that qt+1 = (1 −αt)qt + αtTqt
+converges to q∗with probability 1.
+Proposition B.3 (Contraction mapping).
+Tqt = (T 1q1
+t , · · · , T NqN
+t ) is a contraction mapping.
+Proof. We omit the subscript t when there is no confusion. Assume T ipi ≥T iqi, we have
+0 ≤T ipi −T iqi
+=γ
+
+
+X
+a′∈A
+X
+b′∈B
+πp
+∗(a′|˜s′)ρp
+∗(b′|s′)pi(s′, a′, b′) −
+X
+a′∈A
+X
+b′∈B
+πq
+∗(a′|˜s′)ρq
+∗(b′|s′)qi(s′, a′, b′)
+
+
+≤γ
+
+
+X
+a′∈A
+X
+b′∈B
+πq
+∗(a′|˜s′)ρq
+∗(b′|s′)pi(s′, a′, b′) −
+X
+a′∈A
+X
+b′∈B
+πp
+∗(a′|˜s′)ρp
+∗(b′|s′)qi(s′, a′, b′)
+
+
+≤γ
+pi −qi .
+(20)
+Repeating the case T ipi ≤T iqi implies that T i is a contraction mapping such that ||T ipi −T iqi|| ≤γ||pi −qi||
+for all pi, qi ∈Q. Recall that ||p −q|| = supj ||pj −qj||
+||Tp −Tq|| = sup
+j
+||T jpj −T jqj|| ≤γ sup
+j
+||pj −qj|| = γ||p −q||
+T is a contraction mapping such that ||Tp −Tq|| ≤γ||p −q|| for all p, q ∈Q.
+32
+
+Published in Transactions on Machine Learning Research (06/2023)
+Proposition B.4 (A condition of Lemma 8 in Hu & Wellman (2003) also Corollary 5 in Szepesvári &
+Littman (1999)).
+q∗= E[Tq∗]
+(21)
+Proof.
+E
+
+T iqi
+∗(s, a, b)
+
+= E
+"
+ri(s, a, b) + γ
+X
+a′∈A
+X
+b′∈B
+π∗(a′|˜s′)ρ∗(b′|s′)qi
+∗(s′, a′, b′)
+#
+= ri(s, a, b) + γ
+X
+s′∈S
+p(s′|s, a, b)
+X
+a′∈A
+X
+b′∈B
+π∗(a′|˜s′)ρ∗(b′|s′)qi
+∗(s′, a′, b′)
+= qi
+∗(s, a, b)
+(22)
+Therefore q∗= E[Tq∗].
+33
+
+Published in Transactions on Machine Learning Research (06/2023)
+B.2
+Robust multi-agent actor-critic (RMAAC)
+In this section, we first give the details of policy gradients proof in MG-SPA and then list the Pseudo code of
+RMAAC.
+B.2.1
+Proof of policy gradients
+Recall the policy gradient in RMAAC for MG-SPA in the following:
+Theorem B.5 (Policy gradient in RMAAC for MG-SPA, same as the theorem 5.3). For each agent
+i ∈N and adversary ˜i ∈M, the policy gradients of the objective Ji(θ, ω) with respect to the parameter
+θ, ω are:
+∇θiJi(θ, ω) = E(s,a,b)∼p(π,ρ)
+
+qi,π,ρ(s, a, b)∇θi log πi(ai|˜si)
+
+(23)
+∇ωiJi(θ, ω) = E(s,a,b)∼p(π,ρ)
+
+qi,π,ρ(s, a, b)[∇ωi log ρi(bi|s) + reg]
+
+(24)
+where reg = ∇˜si log πi(ai|˜si)∇bif(s, bi)∇ωiρ(bi|s).
+Proof. We first start with the derivative of the state value function on θi:
+∇θivi,π,ρ(s)
+=∇θi
+"X
+a∈A
+X
+b∈B
+π(a|˜s)ρ(b|s)qi,π,ρ(s, a, b)
+#
+=
+X
+a∈A
+X
+b∈B
+
+∇θiπ(a|˜s)ρ(b|s)qi,π,ρ(s, a, b) + π(a|˜s)ρ(b|s)∇θiqi,π,ρ(s, a, b)
+
+=
+X
+a∈A
+X
+b∈B
+
+∇θiπ(a|˜s)ρ(b|s)qi,π,ρ(s, a, b) + π(a|˜s)ρ(b|s)∇θi
+X
+s′,r
+p(s′, r|s, a, b)(ri + vi,π,ρ(s′))
+
+
+=
+X
+a∈A
+X
+b∈B
+"
+∇θiπ(a|˜s)ρ(b|s)qi,π,ρ(s, a, b) + π(a|˜s)ρ(b|s)∇θi
+X
+s′
+p(s′|s, a, b)vi,π,ρ(s′)
+#
+(25)
+We use ϕθi(s) to denote P
+a∈A
+P
+b∈B[∇θiπ(a|˜s)ρ(b|s)qi,π,ρ(s, a, b)]. We use pπ,ρ(s →x, k) to denote the
+probability of transition from state s to state x with agents’ joint policy π and adversaries’ joint policy ρ after
+k steps. For example, pπ,ρ(s →s, k = 0) = 1 and pπ,ρ(s →s′, k = 1) = P
+a∈A
+P
+b∈B π(a|˜s)ρ(b|s)p(s′|s, a, b).
+In the following proof, we sometimes use the superscript i instead of ˜i to denote adversary ˜i when there is no
+confusion. Then we have:
+∇θivi,π,ρ(s)
+=ϕθi(s) +
+X
+a∈A
+X
+b∈B
+π(a|˜s)ρ(b|s)∇θi
+X
+s′∈S
+p(s′|s, a, b)vi,π,ρ(s′)
+=ϕθi(s) +
+X
+a∈A
+X
+b∈B
+X
+s′∈S
+π(a|˜s)ρ(b|s)p(s′|s, a, b)∇θivi,π,ρ(s′)
+=ϕθi(s) +
+X
+s′∈S
+pπ,ρ(s →s′, 1)∇θivi,π,ρ(s′)
+=ϕθi(s) +
+X
+s′∈S
+pπ,ρ(s →s′, 1)
+"
+ϕθi(s′) +
+X
+s′′∈S
+pπ,ρ(s′ →s′′, 1)∇θivi,π,ρ(s′′)
+#
+= · · ·
+=
+X
+x∈S
+∞
+X
+k=0
+pπ,ρ(s →x, k)ϕθi(x)
+(26)
+34
+
+Published in Transactions on Machine Learning Research (06/2023)
+By plugging in ∇θivi,π,ρ(s) = P
+x∈S
+P∞
+k=0 pπ,ρ(s →x, k)ϕθi(x) into the objective function Ji(θ, ω), we can
+get the following results:
+∇θiJi(θ, ω) = ∇θivi,π,ρ(s1)
+=
+X
+s∈S
+∞
+X
+k=0
+pπ,ρ(s1 →s, k)ϕθi(s)
+=
+X
+s∈S
+η(s)ϕθi(s)
+;Let η(s) =
+∞
+X
+k=0
+pπ,ρ(s1 →s, k)ϕθi(s)
+=
+ X
+s∈S
+η(s)
+! X
+s∈S
+η(s)
+P
+s∈S η(s)ϕθi(s)
+∝
+X
+s∈S
+η(s)
+P
+s∈S η(s)ϕθi(s)
+;
+ X
+s∈S
+η(s)
+!
+is a constant
+=
+X
+s∈S
+X
+a∈A
+X
+b∈B
+dπ,ρ(s)∇θiπ(a|˜s)ρ(b|s)qi,π,ρ(s, a, b)
+;Let dπ,ρ(s) =
+η(s)
+P
+s∈S η(s)
+=
+X
+s∈S
+X
+a∈A
+X
+b∈B
+dπ,ρ(s)∇θiπ(a|˜s)
+π(a|˜s)
+ρ(b|s)qi,π,ρ(s, a, b)π(a|˜s)
+=E(s,a,b)∼p(π,ρ)
+
+qi,π,ρ(s, a, b)∇θi log πi(ai|˜si)
+
+(27)
+Now we calculate the derivative of the state value function on ωi:
+∇ωivi,π,ρ(s)
+=∇ωi
+"X
+a∈A
+X
+b∈B
+π(a|˜s)ρ(b|s)qi,π,ρ(s, a, b)
+#
+=
+X
+a∈A
+X
+b∈B
+
+∇ωiρ(b|s)π(a|˜s)qi,π,ρ(s, a, b) + ∇ωiπ(a|˜s)ρ(b|s)qi,π,ρ(s, a, b) + ρ(b|s)π(a|˜s)∇ωiqi,π,ρ(s, a, b)
+
+(28)
+We let ψωi(s) = P
+a∈A
+P
+b∈B
+
+∇ωiρ(b|s)π(a|˜s)qi,π,ρ(s, a, b)
+
+and
+ϕωi(s) = P
+a∈A
+P
+b∈B
+
+∇ωiπ(a|˜s)ρ(b|s)qi,π,ρ(s, a, b)
+
+. Similar to ∇θivi,π,ρ(s), we have:
+∇ωivi,π,ρ(s)
+=ψωi(s) + ϕωi(s) +
+X
+a∈A
+X
+b∈B
+"
+π(a|˜s)ρ(b|s)∇θi
+X
+s′∈S
+p(s′|s, a, b)vi,π,ρ(s′)
+#
+=ψωi(s) + ϕωi(s) +
+X
+a∈A
+X
+b∈B
+X
+s′∈S
+π(a|˜s)ρ(b|s)p(s′|s, a, b)∇ωivi,π,ρ(s′)
+=ψωi(s) + ϕωi(s) +
+X
+s′∈S
+pπ,ρ(s →s′, 1)∇ωivi,π,ρ(s′)
+=ψωi(s) + ϕωi(s) +
+X
+s′∈S
+pπ,ρ(s →s′, 1)
+"
+ψωi(s′) + ϕωi(s′) +
+X
+s′∈S
+pπ,ρ(s′ →s′′, 1)∇ωivi,π,ρ(s′′)
+#
+= · · ·
+=
+X
+x∈S
+∞
+X
+k=0
+pπ,ρ(s →x, k)[ψωi(s) + ϕωi(s)]
+(29)
+35
+
+Published in Transactions on Machine Learning Research (06/2023)
+By plugging in ∇ωivi,π,ρ(s) = P
+x∈S
+P∞
+k=0 pπ,ρ(s →x, k)[ψωi(s)+ϕωi(s)] into the objective function Ji(θ, ω),
+we can get the following results:
+∇ωiJi(θ, ω) = ∇ωivi,π,ρ(s1)
+=
+X
+s∈S
+∞
+X
+k=0
+pπ,ρ(s1 →s, k)
+h
+ψωi(s) + ϕωi(s)
+i
+∝
+X
+s∈S
+X
+a∈A
+X
+b∈B
+dπ,ρ(s)
+
+∇ωiπ(a|˜s)ρ(b|s)qi,π,ρ(s, a, b) + ∇ωiρ(b|s)π(a|˜s)qi,π,ρ(s, a, b)
+
+=E(s,a,b)∼p(π,ρ)
+
+qi,π,ρ(s, a, b)∇ωi log ρ(b|s) + qi,π,ρ(s, a, b)∇ωi log π(a|˜s)
+
+=E(s,a,b)∼p(π,ρ)
+
+qi,π,ρ(s, a, b)∇ωi log ρi(bi|s) + qi,π,ρ(s, a, b)∇ωi log πi(ai|˜si)
+
+=E(s,a,b)∼p(π,ρ)
+
+qi,π,ρ(s, a, b)∇ωi log ρi(bi|s) + qi,π,ρ(s, a, b)∇˜siπi(ai|˜si)∇bif(s, bi)∇ωiρ(bi|s)
+πi(ai|˜si)
+
+=E(s,a,b)∼p(π,ρ)
+
+qi,π,ρ(s, a, b)[∇ωi log ρi(bi|s) + ∇˜si log πi(ai|˜si)∇bif(s, bi)∇ωiρ(bi|s)]
+	
+(30)
+B.2.2
+Policy gradients for deterministic polices
+Theorem B.6 (Policy gradients for deterministic polices in RMAAC for MG-SPA). For each agent
+i ∈N and adversary ˜i ∈M using deterministic policies, the policy gradients of the objective Ji(θ, ω)
+with respect to the parameter θ, ω are:
+∇θiJi(θ, ω) = 1
+T
+T
+X
+t=1
+∇aiqi(st, at, bt)∇θiπi(˜si
+t)|ai
+t=πi(˜si
+t),bi
+t=ρi(st)
+(31)
+∇ωiJi(θ, ω) = 1
+T
+T
+X
+t=1
+
+∇biqi(st, at, bt) + reg
+
+∇ωiρi(st)|ai
+t=πi(˜si
+t),bi
+t=ρi(st)
+(32)
+where reg = ∇bi
+tf(st, bi
+t)∇aiqi(st, at, bt)∇fπi(f).
+Proof. Note that we here parameterize all policies πi, ρ˜i as deterministic policies. Then we have:
+∇θiJi(θ, ω) = Es∼p(π,ρ)
+
+∇θiqi(s, a, b)
+
+= Es∼p(π,ρ)
+
+∇aiqi(s, a, b)∇θiπi(˜si)
+
+,
+(33)
+∇ωiJi(θ, ω) = Es∼p(π,ρ)
+
+∇ωiqi(s, a, b)
+
+= Es∼p(π,ρ)
+
+∇aiqi(s, a, b)∇˜siπi(˜si)∇bif(si, bi)∇ωiρi(s) + ∇biqi(s, a, b)∇ωiρi(s)
+
+= Es∼p(π,ρ)
+
+∇ωiρi(s)
+
+∇biqi(s, a, b) + reg
+
+,
+(34)
+where reg = ∇aiqi(s, a, b)∇˜siπi(˜si)∇bif(s, bi). When the actors are updated in a mini-batch fashion (Mnih
+et al., 2015; Li et al., 2014), (9) and (10) approximate (33) and (34), respectively.
+B.2.3
+Pseudo code of RMAAC
+We provide the Pseudo code of RMAAC with deterministic policies in Algorithm 1. The stochastic policy
+version RMAAC is similar to Algorithm 1 but uses different policy gradients.
+36
+
+Published in Transactions on Machine Learning Research (06/2023)
+Algorithm 1: RMAAC with deterministic policies
+1 Randomly initialize the critic network qi(s, a, b|ηi), the actor network πi(·|θi), and the adversary network
+ρi(·|ωi) for agent i. Initialize target networks qi′, πi′, ρi′;
+2 for each episode do
+3
+Initialize a random process N for action exploration;
+4
+Receive initial state s;
+5
+for each time step do
+6
+For each adversary i, select action bi = ρi(s) + N w.r.t the current policy and exploration.
+Compute the perturbed state ˜si = f(s, bi). Execute actions ai = π(˜si) + N and observe the
+reward r = (r1, ..., rn) and the new state information s′ and store(s, a, b, ˜s, r, s′) in replay buffer
+D. Set s′ →s;
+7
+for agent i=1 to n do
+8
+Sample a random minibatch of K samples (sk, ak, bk, rk, s′
+k) from D;
+9
+Set yi
+k = ri
+k + γqi′(s′
+k, a′
+k, b′
+k)|ai′
+k =πi′(˜si
+k),bi′
+k =ρi′(sk);
+10
+Update critic by minimizing the loss L = 1
+K
+P
+k
+
+yi
+k −qi(sk, ak, bk)
+2;
+11
+for each iteration step do
+12
+Update actor πi(·|θi) and adversary ρi(·|ωi) using the following gradients
+13
+θi ←θi + αa 1
+K
+P
+k ∇θiπi(˜si
+k)∇aiqi(sk, ak, bk) where ai
+k = πi(˜si
+k), bi
+k = ρi(sk);
+14
+ωi ←ωi −αb 1
+K
+P
+k ∇ωiρi(sk)
+
+∇biqi(sk, ak, bk) + reg
+
+where
+reg = ∇ai
+kqi(sk, ak, bk)∇˜si
+kπi(˜si
+k), ai
+k = πi(˜si
+k), bi
+k = ρi(sk);
+15
+end
+16
+end
+17
+Update all target networks: θi′ ←τθi + (1 −τ)θi′, ωi′ ←τωi + (1 −τ)ωi′.
+18
+end
+19 end
+37
+
+Published in Transactions on Machine Learning Research (06/2023)
+C
+Experiments
+C.1
+Robust multi-agent Q-learning (RMAQ)
+In this section, we first introduce the designed two-player game in that the reward function and transition
+probability function are formally defined.
+The MG-SPA based on the two-player game is also further
+explained. Then we show more experimental results about the proposed robust multi-agent Q-learning
+(RMAQ) algorithm, such as the training process of the RMAQ algorithm in terms of the total discounted
+rewards.
+C.1.1
+Two-player game
+Figure 10: Two-player game: each player has two states and the same action set with size 2. Under state s0,
+two players get the same reward 1 when they choose the same action. At state s1, two players get the same
+reward 1 when they choose different actions. One state switches to another state only when two players get a
+reward, i.e. two players always stay in the current state until they get the reward.
+Look at Figure 10 (same as Figure 3 in the main text.), this is how we run the designed two-player game.
+The reward function r and transition probability function p are defined as follows.
+These two players get the same rewards all the time, i.e. they share a reward function r.
+ri(s, a1, a2) =
+
+
+
+
+
+
+
+
+
+
+
+1,
+a1 = a2, and s = s0
+1,
+a1 ̸= a2, and s = s1
+0,
+a1 ̸= a2, and s = s0
+0,
+a1 = a2, and s = s1
+(35)
+The state does not change until these two players get a positive reward. So the transition probability function
+p is
+p(s1|s, a1, a2) =
+
+
+
+
+
+
+
+
+
+
+
+1,
+a1 = a2, and s = s0
+0,
+a1 ̸= a2, and s = s0
+1,
+a1 = a2, and s = s1
+0,
+a1 ̸= a2, and s = s1
+p(s0|s, a1, a2) =
+
+
+
+
+
+
+
+
+
+
+
+0,
+a1 = a2, and s = s0
+1,
+a1 ̸= a2, and s = s0
+0,
+a1 = a2, and s = s1
+1,
+a1 ̸= a2, and s = s1
+(36)
+Possible Nash Equilibrium can be π∗
+1 = (π1
+1, π2
+1) or π∗
+2 = (π1
+2, π2
+2) where
+π1
+1(a1|s) =
+
+
+
+
+
+
+
+
+
+
+
+1,
+a1 = 1, and s = s0
+0,
+a1 = 0, and s = s0
+1,
+a1 = 1, and s = s1
+0,
+a1 = 0, and s = s1
+π2
+1(a2|s) =
+
+
+
+
+
+
+
+
+
+
+
+1,
+a2 = 1, and s = s0
+0,
+a2 = 0, and s = s0
+0,
+a2 = 1, and s = s1
+1,
+a2 = 0, and s = s1
+(37)
+π1
+2(a1|s) =
+
+
+
+
+
+
+
+
+
+
+
+0,
+a1 = 1, and s = s0
+1,
+a1 = 0, and s = s0
+0,
+a1 = 1, and s = s1
+1,
+a1 = 0, and s = s1
+π2
+2(a2|s) =
+
+
+
+
+
+
+
+
+
+
+
+0,
+a2 = 0, and s = s0
+1,
+a2 = 1, and s = s0
+1,
+a2 = 0, and s = s1
+0,
+a2 = 1, and s = s1
+(38)
+38
+
+Published in Transactions on Machine Learning Research (06/2023)
+NE π∗
+1 means player 1 always selects action 1, player 2 selects action 1 under state s0 and action 0 under
+state s1. NE π∗
+2 means player 1 always selects action 0, player 2 selects action 0 under state s0 and action 0
+under state s1.
+According to the definition of MG-SPA, we add two adversaries for each player to perturb the player’s
+observations. And adversaries get negative rewards of players. We let adversaries share a same action space
+B1 = B2 = {0, 1}, where 0 means do not disturb, 1 means change the observation to the opposite one.
+Therefore, the perturbed function f in this MG-SPA is defined as:
+
+
+
+
+
+
+
+
+
+f(s0, b = 0) = s0
+f(s1, b = 0) = s1
+f(s0, b = 1) = s1
+f(s1, b = 1) = s0
+(39)
+Obviously, f is a bijective function when s is given.
+And the constraint parameter ϵ = ||S||, where
+||S|| := max |s −s′|∀s,s′∈S, i.e. no constraints for adversaries’ power.
+A Robust Equilibrium (RE) of this MG-SPA would be ˜d∗= (˜π1
+∗, ˜π2
+∗, ˜ρ1
+∗, ˜ρ2
+∗), where
+
+
+
+
+
+
+
+
+
+
+
+˜π1
+∗(a1|s) = 0.5,
+∀s ∈S
+˜π2
+∗(a2|s) = 0.5,
+∀s ∈S
+˜ρ1
+∗(b1|s) = 0.5,
+∀s ∈S
+˜ρ2
+∗(b2|s) = 0.5,
+∀s ∈S
+(40)
+C.1.2
+Training procedure
+In Figure 11, we show the total discounted rewards in the function of training episodes. We set the learning
+rate as 0.1 and train our RMAQ algorithm for 400 episodes. And each episode contains 25 training steps. We
+can see the total discounted rewards converges to 50, i.e. the optimal value in the MG-SPA, after about 280
+episodes or 7000 steps.
+Figure 11: The total discounted rewards converge to the optimal value after about 280 training episodes.
+39
+
+Published in Transactions on Machine Learning Research (06/2023)
+C.2
+Robust multi-agent actor-critic (RMAAC)
+In this section, we first briefly introduce the multi-agent environments we use in our experiments. Then we
+provide more experimental results and explanations, such as the testing results under a cleaned environment
+(accurate state information can be attained) and a randomly perturbed environment (injecting standard
+Gaussian noise in agents’ observations). In the last subsection, we list all hyper-parameters we used in the
+experiments, as well as the baseline source code.
+C.2.1
+Multi-agent environments
+Figure 12:
+Illustrations of the experimental scenarios and some games we consider, including a) Cooperative
+communication b) Cooperative navigation c) Predator prey d) Keep away e) Physical deception f) Navigate
+communication
+Cooperative communication (CC): This is a cooperative game. There are 2 agents and 3 landmarks of
+different colors. Each agent wants to get to their target landmark, which is known only by other agents. The
+reward is collective. So agents have to learn to communicate the goal of the other agent, and navigate to
+their landmark.
+Cooperative navigation (CN): This is a cooperative game. There are 3 agents and 3 landmarks. Agents
+are rewarded based on how far any agent is from each landmark. Agents are penalized if they collide with
+other agents. So, agents have to learn to cover all the landmarks while avoiding collisions.
+Physical deception (PD): This is a mixed cooperative and competitive task. There are 2 collaborative
+agents, 2 landmarks, and 1 adversary. Both the collaborative agents and the adversary want to reach the
+target, but only collaborative agents know the correct target. The collaborative agents should learn a policy
+to cover all landmarks so that the adversary does not know which one is the true target.
+Keep away (KA): This is a competitive task. There is 1 agent, 1 adversary, and 1 landmark. The agent
+knows the position of the target landmark and wants to reach it. The adversary is rewarded if it is close to
+the landmark, and if the agent is far from the landmark. The adversary should learn to push the agent away
+from the landmark.
+Predator prey (PP): This is a mixed game known as predator-prey. Prey agents (green) are faster and
+want to avoid being hit by adversaries (red). Predators are slower and want to hit good agents. Obstacles
+(large black circles) block the way.
+40
+
+Published in Transactions on Machine Learning Research (06/2023)
+Navigate communication (NC): This is a cooperative game that is similar to Cooperative communication.
+There are 2 agents and 3 landmarks of different colors. An agent is the ‘speaker’ that does not move but
+observes the goal of another agent. Another agent is the listener that cannot speak, but must navigate to the
+correct landmark.
+Predator prey+ (PP+): This is an extension of the Predator prey environment by adding more agents.
+There are 2 preys, 6 adversaries, and 4 landmarks. Prey agents are faster and want to avoid being hit by
+adversaries. Predators are slower and want to hit good agents. Obstacles block the way.
+C.2.2
+Experiments hyper-parameters
+In Table 4, we show all hyper-parameters we use to train our policies and baselines. We also provide our
+source code in the supplementary material. The source code of M3DDPG (Li et al., 2019) and MADDPG
+(Lowe et al., 2017) accept the MIT License which allows any person obtaining them to deal in the code
+without restriction, including without limitation the rights to use, copy, modify, etc. More information about
+this license refers to https://github.com/openai/maddpg and https://github.com/dadadidodi/m3ddpg.
+Table 4: Hyper-parameters
+Parameter
+RMAAC
+M3DDPG
+MADDPG
+optimizer
+Adam
+Adam
+Adam
+learning rate
+0.01
+0.01
+0.01
+adversarial learning rate
+0.005
+/
+/
+discount factor
+0.95
+0.95
+0.95
+replay buffer size
+106
+106
+106
+number of hidden layers
+2
+2
+2
+activation function
+Relu
+Relu
+Relu
+number of hidden unites per layer
+64
+64
+64
+number of samples per minibatch
+1024
+1024
+1024
+target network update coefficient τ
+0.01
+0.01
+0.01
+iteration steps
+20
+20
+20
+constraint parameter ϵ
+0.5
+/
+/
+episodes in training
+10k
+10k
+10k
+time steps in one episode
+25
+25
+25
+C.2.3
+More testing results
+In this subsection, we provide more testing results under a cleaned environment (accurate state information
+can be attained) and a randomly disturbed environment (injecting standard Gaussian noise into agents’
+observations).
+As we have reported the comparison of mean episode testing rewards under a cleaned environment by using 4
+different methods in the main manuscript (Figures 6 and 8), we further report the variance of testing results
+in the appendix. In Table 5 and 6, we also report the variances of testing rewards in different scenarios under
+different environment settings. Our method has the lowest variance in three of the five scenarios. Notice that
+RM1 denotes our RMAAC policy trained with the linear noise format f1, RM2 denotes our RMAAC policy
+trained with the Gaussian noise format f2, MA denotes MADDPG (https://github.com/openai/maddpg),
+M3 denotes M3DDPG (https://github.com/dadadidodi/m3ddpg).
+MAPPO is a multi-agent reinforcement learning algorithm that performs well in cooperative multi-agent set-
+tings (Yu et al., 2021a). We use MP to denote MAPPO (https://github.com/marlbenchmark/on-policy.).
+In Figure 13, we compare its performance with our RMAAC algorithm in two cooperative scenarios of MPE.
+The details of scenarios such as Cooperative navigation, Navigate communication can be found in the last
+section. We can see that under the optimally perturbed environment, RMAAC outperforms MAPPO in
+all scenarios. Additionally, the reason we included MAPPO in the Appendix but not in the main text
+41
+
+Published in Transactions on Machine Learning Research (06/2023)
+is that the current source code provider of MAPPO only provides instructions and codes for using it in
+cooperative environments. However, to validate our proposed method in different settings, we carefully
+selected experimental environments to include different game types: cooperative, competitive, and mixed.
+Due to the lack of MAPPO source codes/implementation in competitive and mixed environments, if we were
+to include the experimental results of MAPPO in the main text, it could disrupt the integrity and uniformity
+of the experiment section in the main text. Therefore, we included them in the appendix as supplementary
+content.
+In Figure 14 and Table 7, we compare the mean episode testing rewards and variances under different
+environments in the complicated scenario with a large number of agents between different algorithms. We
+adopt the Gaussian noise format in training RMAAC polices. We can see our method has the lowest variance
+under two of three environments and has the highest rewards under all environments.
+Table 5: Variance of testing rewards under cleaned environment
+Algorithms
+RM with f1
+RM with f2
+M3
+MA
+Cooperative communication (CC)
+0.383
+0.376
+0.295
+0.328
+Cooperative navigation (CN)
+0.413
+0.361
+0.416
+0.376
+Physical deception (PD)
+0.175
+0.165
+0.133
+0.143
+Keep away (KA)
+0.137
+0.134
+0.17
+0.145
+Predator prey (PP)
+5.139
+1.450
+4.681
+4.725
+Table 6: Variance of testing rewards under randomly perturbed environment
+Algorithms
+RM with f1
+RM with f2
+M3
+MA
+Cooperative communication (CC)
+0.592
+0.547
+1.187
+0.937
+Cooperative navigation (CN)
+0.336
+0.33
+0.328
+0.321
+Physical deception (PD)
+0.222
+0.292
+0.209
+0.184
+Keep away (KA)
+0.155
+0.155
+0.166
+0.161
+Predator prey (PP)
+4.629
+2.752
+3.644
+2.9
+Table 7: Variance of testing rewards under different environments in Predator prey+.
+Algorithm
+RM
+M3
+MA
+Optimally Perturbed Env
+4.199
+4.046
+3.924
+Randomly Perturbed Env
+4.664
+5.774
+6.191
+Cleaned Env
+3.928
+5.521
+6.006
+42
+
+Published in Transactions on Machine Learning Research (06/2023)
+Figure 13: Comparison of mean episode testing rewards using MAPPO and RMAAC under optimally
+perturbed environments.
+RMAAC outperforms MAPPO in all cooperative scenarios under optimally
+perturbed environments.
+Figure 14: Comparison of mean episode testing rewards using different algorithms under different environments
+in Predator prey+. RMAAC outperforms all MARL baseline algorithms in the complicated multi-agent
+scenario.
+C.3
+Ablation Study for RMAAC
+In this subsection, we first investigate the effect of using different values of constraint parameters ϵ in the
+implementation of the RMAAC algorithm, then the effect of using different values of variance σ. Finally, we
+study the performance of the RMAAC algorithm under other types of attacks.
+C.3.1
+Training Results Using Linear Noise with Different Constraint Parameters
+Training Setup: In this subsection, we train several RMAAC policies using linear noise format as the
+state perturbation function, i.e.
+f1(s, b˜i) = s + b˜i.
+The constraint parameter ϵ is respectively set as
+0.01, 0.05, 0.1, 0.5, 1 and 2, given other hyper-parameters unchanged. Other used hyper-parameters can be
+found in Table 4.
+Training Results: In Figure 15, 16, and 17, we show the training process in three scenarios: Cooperative
+communication (CC), Cooperative navigation (CN), Predator Prey (PP), respectively. The y-axis denotes
+the mean episode reward of the agents and the x-axis denotes the training episodes.
+From these figures, we can see that, in general, the smaller the used variance, the higher the mean episode
+rewards RMAAC can achieve. However, RMAAC has different sensitivities to the value of variance in
+different scenarios. When we use ϵ = 2, the RMAAC policies have the lowest mean episode rewards in all
+43
+
+Published in Transactions on Machine Learning Research (06/2023)
+three scenarios. Nevertheless, when we use the smallest constraint parameter ϵ = 0.01, the trained RMAAC
+policies do not achieve the highest mean episode rewards in all three scenarios. In these three scenarios, it
+is clear to see the performance of RMAAC using ϵ = 0.5 is better than or similar to the performance of
+RMAAC using ϵ = 1, and better than the performance of RMAAC using ϵ = 2, i.e. Performance(ϵ = 0.5)
+≥Performance(ϵ = 1) > Performance(ϵ = 2). The performance of the RMAAC policies is close when the
+constraint parameters are less or equal to than 0.1.
+C.3.2
+Testing Results Using Linear Noise with Different Constraint Parameters
+In this subsection, we test well-trained RMAAC policies in perturbed environments where adversaries adopt
+linear noise format and different constraint parameters.
+Testing Setup: The tested policy πtest is trained with the linear noise format f1(s, b˜i) = s + b˜i, constraint
+parameter is 0.5, where b˜i = ρ˜i
+test(s|ϵ = 0.5). The policy ρ˜i
+test is adversary ˜i’s policy which is trained with
+πtest in RMAAC, for all ˜i = ˜1, · · · , ˜N. We use ρtest to denote the joint policy of adversaries which is used in
+the testing. In summary, we test agents’ joint policy πscenario
+test
+(˜s) when adversaries adopt the joint policy
+ρscenario
+test
+(s|ϵ), and ϵ = 0.01, 0.05, 0.1, 0.5, 1, 2, scenario = Cooperative communication (CC), Cooperative
+navigation (CN), Predator Prey (PP), respectively. The testing is conducted over 400 episodes, and each
+episode has 25 time steps.
+Testing Results:
+In Figures 18, 19 and 20, we compare the performance of RMAAC, M3DDPG, and
+MADDPG in scenarios CC, CN, and PP with different values of constraint parameters. MADDPG is a
+MARL baseline algorithm. M3DDPG is a robust MARL baseline algorithm. The y-axis denotes the mean
+episode reward of the agents.
+From these figures, we can see that in all three scenarios, our RMAAC policies outperform the baseline MARL
+and robust MARL policies in terms of mean episode testing rewards under the attacks of linear noise format
+with different constraint parameters ϵ. Our proposed RMAAC algorithm is robust to the state information
+attacks of linear noise format with different constraint parameters.
+C.3.3
+Training Results Using Gaussian Noise with Different Variance
+Training Setup: In this subsection, we train several RMAAC policies using Gaussian noise format as the state
+perturbation function, i.e. f2(s, b˜i) = s+N(b˜i, σ). The variance σ is respectively set as 0.001, 0.05, 0.1, 0.5, 1, 2
+and 3, given other hyper-parameters unchanged. Other used hyper-parameters can be found in Table 4.
+Training Results: In Figure 21, 22 and 23, we show the training process of RMAAC in three scenarios:
+Cooperative communication (CC), Cooperative navigation (CN), Predator Prey (PP). The y-axis denotes the
+mean episode rewards of the agents and the x-axis denotes the training episodes.
+From the figures, we can see that, in general, the smaller the value of variance used, the higher the mean
+episode rewards RMAAC can achieve. However, RMAAC has different sensitivities to the value of variance
+in different scenarios. When we use σ = 3, the RMAAC policies have the lowest mean episode rewards in all
+three scenarios. Nevertheless, when we use the smallest magnitude 0.001, the trained RMAAC policies do not
+always achieve the highest mean episode rewards. In these three scenarios, it is clear to see the performance
+of RMAAC using σ = 1 is better than or close to that of using σ = 2, and better than that of using σ = 3,
+i.e. Performance(σ = 1) ≥Performance(σ = 2) > Performance(σ = 3). The performance of the RMAAC
+policies is close when the constraint parameters are less than or equal to 0.5.
+C.3.4
+Testing Results Using Gaussian Noise with Different Variance
+In this subsection, we test well-trained RMAAC policies in perturbed environments where adversaries adopt
+Gaussian noise format and different variances.
+Testing Setup: The tested policy πtest is trained with Gaussian noise format f2(s, b˜i) = s + N(b˜i, σ = 1),
+constraint parameter is 0.5, where b˜i = ρ˜i
+test(s|ϵ = 0.5). ρ˜i is adversary i’s policy which is trained with
+πtest in RMAAC, for all i = 1, · · · , N. We use ρtest to denote the joint policy of adversaries. In summary,
+we test agents’ joint policy πscenario
+test
+(˜s) when adversaries adopt the joint policy ρscenario
+test
+(s|ϵ = 0.5) and
+44
+
+Published in Transactions on Machine Learning Research (06/2023)
+Figure 15: We train RMAAC policies using different values of constraint parameters in the scenario Cooperative
+Communication. In general, the smaller the constraint parameter is used, the higher the mean episode
+rewards RMAAC can achieve.
+Figure 16: We train RMAAC policies using different values of constraint parameters in the scenario Cooperative
+Navigation. In general, the smaller the constraint parameter is used, the higher the mean episode rewards
+RMAAC can achieve.
+Figure 17: We train RMAAC policies using different values of constraint parameters in the scenario Predator-
+Prey. In general, the smaller the constraint parameter is used, the higher the mean episode rewards RMAAC
+can achieve.
+Gaussian noise format f2(s, b˜i) = s + N(b˜i, σ), where σ = 0.001, 0.05, 0.1, 0.5, 1, 2, 3, scenario = Cooperative
+communication (CC), Cooperative navigation (CN), Predator Prey (PP). The testing is conducted over 400
+episodes, and each episode has 25 time steps.
+45
+
+Published in Transactions on Machine Learning Research (06/2023)
+Testing Results:
+In Figures 24, 25 and 26, we respectively compare the performance of RMAAC, M3DDPG,
+and MADDPG in scenarios Cooperative communication, Cooperative navigation and Predator Prey with
+different values of constraint parameters. MADDPG is a MARL baseline algorithm. M3DDPG is a robust
+MARL baseline algorithm. The y-axis denotes the mean episode reward of the agents.
+From these figures, we can see that in all three scenarios with all different values of constraint parameters,
+our RMAAC policies outperform the MARL and robust MARL baseline policies in terms of mean episode
+rewards under the attacks of Gaussian noise format with different variance. Our proposed RMAAC algorithm
+is robust to the state information attacks of Gaussian noise format with different values of variance.
+C.3.5
+Testing Results under Different State Perturbation Functions
+In this subsection, we test the well-trained RMAAC policies in perturbed environments where adversaries
+adopt different noise formats and policies.
+Testing Setup: The tested agents’ joint policy πtest is trained with Gaussian noise format f2(s, b˜i) =
+s + Gaussian(b˜i, σ = 1), constraint parameter is 0.5, where b˜i = ρ˜i
+test(s|ϵ = 0.5). ρ˜i
+test is adversary ˜i’s policy
+which is trained with πtest in RMAAC, for all ˜i = ˜1, · · · , ˜N. We use ρtest to denote the joint policy of
+adversaries. In a summary, we test agents’ joint policy πscenario
+test
+(˜s) when adversaries adopt the joint policy
+ρscenario
+test
+(s|ϵ = 0.5), in three scenarios scenario = Cooperative communication (CC), Cooperative navigation
+(CN), Predator Prey (PP), under non-optimal Gaussian format f3, Uniform noise format f4, fixed Gaussian
+noise format f5 and Laplace noise format f6, respectively. These noise formats are defined in the following:
+f3(s, b
+˜i) = s + Gaussian(b
+˜i, 1)
+where
+b
+˜i = ρ
+˜i
+non−optimal(s|ϵ),
+f4(s, b
+˜i) = s + Uniform(−ϵ, +ϵ),
+f5(s, b
+˜i) = s + Gaussian(0, 1),
+f6(s, b
+˜i) = s + Laplace(b
+˜i, 1)
+where
+b
+˜i = ρ
+˜i
+test(s|ϵ),
+(41)
+where ρ˜i
+non−optimal is a non-optimal policy of adversary ˜i. ρ˜i
+non−optimal is randomly chosen from the training
+process. As we can see that f3 and f6 are independent of the optimal joint policy of adversaries, but f4 and
+f6 are not. The testing is conducted over 400 episodes, and each episode has 25 time steps.
+Testing Results: In Figures 27, 28, and 29, we compare the performance of RMAAC, M3DDPG and
+MADDPG in scenarios Cooperative communication, Cooperative navigation and Predator Prey under 4
+different noise formats, respectively. MADDPG is a MARL baseline algorithm. M3DDPG is a robust MARL
+baseline algorithm. The y-axis denotes the mean episode reward of the agents.
+As we can see from these figures, most of the time, our RMAAC policy outperforms the MARL (MADDPG)
+and robust MARL (M3DDPG) baseline policies. In Cooperative communication and Predator Prey, under
+all 4 different noise formats, RMAAC policies achieve the highest mean episode rewards. In Cooperative
+navigation, RMAAC policies have the highest mean episode rewards when the non-optimal Gaussian noise
+format and Laplace noise format are used. The only exception happens in Cooperative navigation when the
+Uniform noise format and fixed Gaussian noise format are used. However, we can find that the performance
+of RMAAC policies is close to that of the baseline policies in terms of mean episode testing rewards. In
+general, our RMAAC algorithm is robust to different types of state information attacks.
+46
+
+Published in Transactions on Machine Learning Research (06/2023)
+Figure 18: We test the performance of RMAAC(RM), MADDPG(MA), and M3DDPG(M3) policies under the
+attack of linear noise format when using different values of constraint parameters in the scenario Cooperative
+Communication. RM denotes our robust MARL algorithm, i.e. RMAAC. MA denotes MADDPG, a MARL
+baseline algorithm. M3 denotes M3DDPG, a robust MARL baseline algorithm. Our RMAAC algorithm
+outperforms baseline algorithms in terms of mean episode testing rewards under all situations using different
+values of constraint parameters.
+Figure 19: We test the performance of RMAAC(RM), MADDPG(MA), and M3DDPG(M3) policies under
+the attack of linear noise format when using different values of constraint parameters in the scenario
+Cooperative Navigation. RM denotes our robust MARL algorithm, i.e. RMAAC. MA denotes MADDPG,
+a MARL baseline algorithm. M3 denotes M3DDPG, a robust MARL baseline algorithm. Our RMAAC
+algorithm outperforms baseline algorithms in terms of mean episode testing rewards under all situations
+using different values of constraint parameters.
+Figure 20: We test the performance of RMAAC(RM), MADDPG(MA), and M3DDPG(M3) policies under the
+attack of linear noise format when using different values of constraint parameters in the scenario Predator-Prey.
+RM denotes our robust MARL algorithm, i.e. RMAAC. MA denotes MADDPG, a MARL baseline algorithm.
+M3 denotes M3DDPG, a robust MARL baseline algorithm. Our RMAAC algorithm outperforms baseline
+algorithms in terms of mean episode testing rewards under all situations using different values of constraint
+parameters.
+47
+
+Published in Transactions on Machine Learning Research (06/2023)
+Figure 21: We train RMAAC policies using different values of variance in the scenario Cooperative Commu-
+nication. In general, the smaller the variance is used, the higher the mean episode rewards RMAAC can
+achieve.
+Figure 22: We train RMAAC policies using different values of variance in the scenario Cooperative Navigation.
+In general, the smaller the variance is used, the higher the mean episode rewards RMAAC can achieve.
+Figure 23: We train RMAAC policies using different values of variance in the scenario Predator-Prey. In
+general, the smaller the variance is used, the higher the mean episode rewards RMAAC can achieve.
+48
+
+Published in Transactions on Machine Learning Research (06/2023)
+Figure 24: We test the performance of RMAAC(RM), MADDPG(MA), and M3DDPG(M3) policies under
+the attacks of Gaussian noise format with different variances in the scenario Cooperative Communication.
+RM denotes our robust MARL algorithm, i.e. RMAAC. MA denotes MADDPG, a MARL baseline algorithm.
+M3 denotes M3DDPG, a robust MARL baseline algorithm. Our RMAAC algorithm outperforms baseline
+algorithms in terms of mean episode testing rewards under all Gaussian noise formats with different variances.
+Figure 25: We test the performance of RMAAC(RM), MADDPG(MA), and M3DDPG(M3) policies under
+the attacks of Gaussian noise format with different variances in the scenario Cooperative Navigation. RM
+denotes our robust MARL algorithm, i.e. RMAAC. MA denotes MADDPG, a MARL baseline algorithm.
+M3 denotes M3DDPG, a robust MARL baseline algorithm. Our RMAAC algorithm outperforms baseline
+algorithms in terms of mean episode testing rewards under all Gaussian noise formats with different variances.
+Figure 26: We test the performance of RMAAC(RM), MADDPG(MA), and M3DDPG(M3) policies under
+the attacks of Gaussian noise format with different variances in the scenario Predator-Prey. RM denotes our
+robust MARL algorithm, i.e. RMAAC. MA denotes MADDPG, a MARL baseline algorithm. M3 denotes
+M3DDPG, a robust MARL baseline algorithm. Our RMAAC algorithm outperforms baseline algorithms in
+terms of mean episode testing rewards under all Gaussian noise formats with different variances.
+49
+
+Published in Transactions on Machine Learning Research (06/2023)
+Figure 27: We test the performance of RMAAC(RM), MADDPG(MA), and M3DDPG(M3) policies under
+the attacks of different noise formats in the scenario Cooperative Communication. RM denotes our robust
+MARL algorithm, i.e. RMAAC. MA denotes MADDPG, a MARL baseline algorithm. M3 denotes M3DDPG,
+a robust MARL baseline algorithm. Our RMAAC algorithm outperforms baseline algorithms in terms of
+mean episode testing rewards under all kinds of attacks.
+Figure 28: We test the performance of RMAAC policies under the attacks of different noise formats in the
+scenario Cooperative Navigation. RM denotes our robust MARL algorithm, i.e. RMAAC. MA denotes
+MADDPG, a MARL baseline algorithm. M3 denotes M3DDPG, a robust MARL baseline algorithm. Our
+RMAAC algorithm either outperforms or is close to baseline algorithms in terms of mean episode testing
+rewards under all kinds of attacks.
+Figure 29: We test the performance of RMAAC policies under the attacks of different noise formats in the
+scenario Predator-Prey. RM denotes our robust MARL algorithm, i.e. RMAAC. MA denotes MADDPG,
+a MARL baseline algorithm. M3 denotes M3DDPG, a robust MARL baseline algorithm. Our RMAAC
+algorithm outperforms baseline algorithms in terms of mean episode testing rewards under all kinds of attacks.
+50

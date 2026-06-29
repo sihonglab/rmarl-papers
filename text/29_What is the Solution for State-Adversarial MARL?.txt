@@ -1,0 +1,2618 @@
+Published in Transactions on Machine Learning Research (01/2024)
+What is the Solution for State-Adversarial
+Multi-Agent Reinforcement Learning?
+Songyang Han
+songyang.han@uconn.edu
+School of Computing
+University of Connecticut
+Sony AI
+Sanbao Su
+sanbao.su@uconn.edu
+School of Computing
+University of Connecticut
+Sihong He
+sihong.he@uconn.edu
+School of Computing
+University of Connecticut
+Shuo Han
+hanshuo@uic.edu
+Department of Electrical and Computer Engineering
+University of Illinois Chicago
+Haizhao Yang
+hzyang@umd.edu
+Department of Mathematics and Department of Computer Science
+University of Maryland College Park
+Shaofeng Zou
+szou3@buffalo.edu
+Department of Electrical Engineering and Department of Computer Science and Engineering
+University at Buffalo, The State University of New York
+Fei Miao
+fei.miao@uconn.edu
+School of Computing
+University of Connecticut
+Reviewed on OpenReview: https: // openreview. net/ forum? id= HyqSwNhM3x
+Abstract
+Various methods for Multi-Agent Reinforcement Learning (MARL) have been developed
+with the assumption that agents’ policies are based on accurate state information. However,
+policies learned through Deep Reinforcement Learning (DRL) are susceptible to adversarial
+state perturbation attacks. In this work, we propose a State-Adversarial Markov Game
+(SAMG) and make the first attempt to investigate different solution concepts of MARL under
+state uncertainties. Our analysis shows that the commonly used solution concepts of optimal
+agent policy and robust Nash equilibrium do not always exist in SAMGs. To circumvent this
+difficulty, we consider a new solution concept called robust agent policy, where agents aim to
+maximize the worst-case expected state value. We prove the existence of robust agent policy
+for finite state and finite action SAMGs. Additionally, we propose a Robust Multi-Agent
+Adversarial Actor-Critic (RMA3C) algorithm to learn robust policies for MARL agents under
+state uncertainties. Our experiments demonstrate that our algorithm outperforms existing
+methods when faced with state perturbations and greatly improves the robustness of MARL
+policies. Our code is public on https://songyanghan.github.io/what_is_solution/.
+1
+arXiv:2212.02705v5  [cs.AI]  12 Apr 2024
+
+Published in Transactions on Machine Learning Research (01/2024)
+1
+Introduction
+Multi-Agent Reinforcement Learning (MARL) has been successfully used to solve problems such as multi-robot
+coordination (Hüttenrauch & Šošić, 2017), resource management (Pretorius et al., 2020), etc. However, Deep
+Reinforcement Learning (DRL) policies are vulnerable to adversarial state perturbation attacks (Behzadan &
+Munir, 2017; Pattanaik & Tang, 2017; Huang et al., 2017; Lin et al., 2017; Xiao et al., 2019). Even small
+changes to the state can lead to drastically different actions (Huang et al., 2017; Lin et al., 2017). To address
+this, it is important to develop robust policies that can handle adversarial state perturbations. An example
+of this is shown in Fig. 1 where agents need to cooperate and avoid collisions while occupying landmarks. In
+(a) with no adversarial state, the agents are able to target different landmarks, but in (b) with adversarial
+state perturbations, agents head in the wrong direction.
+Figure 1: The agents’ goal is to occupy and cover all landmarks, requiring cooperation to decide which
+landmark to cover. Figure a) illustrates the optimal target landmark for each agent without state perturbation.
+However, in figure b), an adversary perturbs the state observation of agents, causing agents to head in the
+wrong direction and leaving landmark 1 as uncovered. Our work demonstrates that traditional agent policies
+can be easily corrupted by adversarial state perturbations. To counter this, we propose a robust agent policy
+that maximizes average performance under worst-case state perturbations.
+The adversarial state perturbation problem cannot be fully understood using existing research on the Partially
+Observable Markov Decision Process (POMDP) or Decentralized Partially Observable Markov Decision
+Process (Dec-POMDP) (Oliehoek et al., 2016; Lerer et al., 2020), as the conditional observation probability
+cannot capture the worst-case uncertainty under adversarial attacks. Adversarial perturbations have a greater
+impact on an agent’s policy than random noise (Kos & Song, 2017; Pattanaik et al., 2018). However, due to
+the complexity of interactions among agents and adversaries, it remains challenging to formally analyze the
+existence of optimal or equilibrium solutions under adversarial state perturbations in MARL. Therefore, it is
+essential to study the fundamental properties of MARL under adversarial state perturbations.
+To the best of our knowledge, we make the first attempt to investigate different solution concepts of robust
+MARL under adversarial state perturbations. We formulate a State-Adversarial Markov Game (SAMG) to
+study the properties and solution concepts of MARL under adversarial state perturbations. We prove that
+a state-robust totally optimal agent policy or robust total Nash equilibrium does not always exist in such
+scenarios. Instead, we consider a new solution concept, the robust agent policy, and prove its existence for
+finite state and action spaces. We design an algorithm, called Robust Multi-Agent Adversarial Actor-Critic
+(RMA3C), to train robust policies for all agents under adversarial state perturbations. The algorithm uses a
+Gradient Descent Ascent (GDA) optimizer to update each agent’s and adversary’s policy network. Results
+from our experiments show that the proposed RMA3C algorithm improves the robustness of the agents’
+policies compared to existing MARL methods.
+In summary, the main contributions of this work are:
+2
+
+Published in Transactions on Machine Learning Research (01/2024)
+• We study the fundamental properties of MARL under adversarial state perturbations and prove that
+widely used solution concepts such as optimal agent policy or robust Nash equilibrium do not always
+exist.
+• We consider a new solution concept, robust agent policy, where each agent aims to maximize the
+worst-case expected state value. We prove the existence of a robust agent policy for SAMGs with
+finite state and action spaces. We propose a Robust Multi-Agent Adversarial Actor-Critic (RMA3C)
+algorithm to solve the challenge of training robust policies under adversarial state perturbations
+based on gradient descent ascent algorithm.
+• We empirically evaluate our proposed RMA3C algorithm. Our algorithm outperforms baselines
+with random or adversarial state perturbations and improves agent policies’ robustness under state
+uncertainties.
+2
+Related Work
+Multi-Agent Reinforcement Learning (MARL)
+The MARL has a long history in the AI field (Littman,
+1994; Hu et al., 1998; Busoniu et al., 2008). Recent works have been investigated to encourage the collaboration
+of the agents by assigning rewards appropriately, such as a value decomposition network (Sunehag et al.,
+2018; Rashid et al., 2020; Su et al., 2021), subtracting a counterfactual baseline (Foerster & Farquhar, 2018),
+or an implicit method (Zhou et al., 2020). Multi-Agent Deep Deterministic Policy Gradient (MADDPG)
+proposes a centralized Q-function to alleviate the problem caused by the non-stationary environment (Lowe
+et al., 2017). The scalability issue of MARL can be alleviated by adding attention to the critic (Iqbal &
+Sha, 2019), using neighbor information (Qu et al., 2020), or using V-learning (Jin et al., 2021). The “team
+stochastic game” (Muniraj et al., 2018; Phan et al., 2020) splits the MARL agents into two teams to compete.
+However, during training, all methods assume that agents get the true state value. None of the recent MARL
+advances specifies how to deal with perturbed state values by malicious adversaries.
+Robust Reinforcement Learning
+Most existing robust MARL works focus on uncertainties in reward,
+transition dynamics, and training partners’ policies, while our work focuses on uncertainties in the state.
+Robust reinforcement learning can be traced back to Morimoto & Doya (2005) in the single-agent setting.
+With the advent of deep learning techniques, the robust MARL has been recently studied considering different
+types of uncertainties such as reward (Chen & Bowling, 2012; Zhang et al., 2020b), transition dynamics (Zhang
+et al., 2020b; Sinha et al., 2020; Hu et al., 2020; Yu et al., 2021; Wang et al., 2023), training partner’s
+type (Shen & How, 2021), training partners’ policies (Li et al., 2019; van der Heiden et al., 2020; Sun et al.,
+2021; 2022). The work in (Zhang et al., 2020b) considers the robust equilibrium of multi-agents with reward
+uncertainties where agents can access true state information at each stage. The work in Shen & How (2021)
+considers uncertain training partner’s type (e.g. adversary, neutral, or teammate) to the protagonist in
+two-player scenarios. The M3DDPG algorithm extends the MADDPG to get a robust policy for the worst
+situation by assuming all the training partners are adversaries (Li et al., 2019). However, none of the above
+MARL works consider the state perturbations.
+For adversarial state perturbations, there are some works (Mandlekar et al., 2017; Pinto et al., 2017; Pattanaik
+et al., 2018; Zhang et al., 2020a; 2021; Liang et al., 2022) considering a robust policy in single-agent
+reinforcement learning. Though the work (Lin et al., 2020a) studies state perturbation, only one single agent’s
+state observation can be perturbed in their MARL. The work (He et al., 2023) shows Nash equilibrium exists
+under a specific condition (bijective mapping for adversary policies). However, in this work, we show the
+Nash equilibrium is not a good solution concept as it can be corrupted by state perturbation adversaries. We
+also propose a new robust agent policy concept for state-adversarial MARL that is proven to exist.
+3
+State-Adversarial Markov Game (SAMG)
+We formulate a State-Adversarial Markov Game (SAMG) G = (N, S, A, r, Ps, p, γ, Pr(s0)) with n agents in
+the agent set N = {1, ..., n}. Each agent i is associated with an action ai ∈Ai. The global joint action is
+a = (a1, ..., an) ∈A, A := A1 × · · · × An. The global joint state is s ∈S. The probability distribution of the
+3
+
+Published in Transactions on Machine Learning Research (01/2024)
+initial state is Pr(s0). All agents share a stage-wise reward function r : S × A →R. We consider that each
+agent is associated with an adversary as shown in Fig. 2. Each adversary decides a perturbed state ρi ∈S
+for the corresponding agent as the agent’s perturbed knowledge or observation about the global state. We
+denote the joint perturbed state as ρ := [ρi]i∈N . We consider the admissible perturbed state as a task-specific
+“neighboring” state of s, e.g. the bounded sensor measurement errors, to model the challenges of getting
+accurate states for multi-agent systems like connected and autonomous vehicles and multi-robots systems (Liu
+et al., 2021; Kothandaraman et al., 2021). To analyze a realistic problem, the power of the state perturbation
+should also be limited (Everett et al., 2021; Zhang et al., 2020a). We define an admissible perturbed state set
+Ps to restrict the perturbed state only to be within a predefined subset of states such that ρ ∈Ps:
+Definition 3.1 (Admissible Perturbed State Set). We consider the set of admissible perturbed state for
+agent i at state s as Pi
+s ⊆S. Denote the joint admissible perturbed state set at state s as Ps := P1
+s ×· · ·×Pn
+s .
+Note that the true state is included in the admissible perturbed state set, i.e., s ∈Pi
+s for any i ∈N. For
+example, consider a 2-agent 3-state system with S = {s1, s2, s3}. When the current true state is s1 for both
+agents, adversary 1 perturbs agent 1’s state observation within P1
+s1 = {s1, s2}; adversary 2 perturbs agent 2’s
+state observation within P2
+s1 = {s1, s3}.
+Figure 2: Comparison between Dec-POMDP and SAMG. In Dec-POMDP, the observation probability
+function is fixed, and it will not change according to the change of the agent policy. However, in SAMG the
+adversary policy is not a fixed policy, it may change according to the agents’ policies and always select the
+worst-case state perturbation for agents. In SAMG, each agent is associated with an adversary to perturb its
+knowledge or observation of the true state. Agents want to find a policy π to maximize their total expected
+return while adversaries want to find a policy χ to minimize agents’ total expected return.
+The state perturbation reflects the state uncertainty from the perspective of each agent, but it does not
+change the true state of multi-agent systems. The state transition function is p : S × A →∆(S), where ∆(S)
+is a probability simplex denoting the set of all possible probability measures on S. The state still transits
+from the true state to the next state. Each agent is associated with a policy πi : S →∆(Ai) to choose
+an action ai ∈Ai given the perturbed state ρi. Note that the input of πi is the perturbed state ρi. The
+perturbed state affects each agent’s action. The set ∆(Ai) includes all possible probability measures on Ai.
+We use π = (π1, π2, ..., πn) to denote the joint agent policy.
+The adversary policy, i.e. the state perturbation policy, associated with agent i is χi(·|s) : S →∆(Pi
+s), where
+the input of χi is the true state s ∈S. The power of the adversary is limited by the admissible perturbed
+state set Pi
+s. We denote the joint adversary policy as χ = (χ1, χ2, ..., χn). The agents want to find a policy π
+to maximize their total expected return while adversaries want to find a policy χ to minimize the agents’
+total expected return. The total expected return is E[P∞
+t=0 γtrt+1(st, at)|s0, at ∼π(·|ρt), ρt ∼χ(·|st)] where
+γ is a discount factor.
+Our SAMG problem cannot be solved by the existing work for single-agent RL with adversarial state
+perturbations (Mandlekar et al., 2017; Pattanaik et al., 2018; Zhang et al., 2020a; 2021; Liang et al., 2022).
+Each agent’s action in SAMG is selected based on its own perturbed state observation and the state knowledge
+4
+
+Published in Transactions on Machine Learning Research (01/2024)
+Maximize State Value
+State-of-the-Art Solution Concepts
+Non-existence 
+(Theorem 4.3)
+Non-existence 
+(Theorem 4.7)
+Optimal Agent Policy 
+(Deﬁnition 4.2)
+Robust Nash Equilibrium 
+(Deﬁnition 4.6)
+State Value Function 
+(Equation 1)
+Robust State Value 
+Function (Deﬁnition 4.4)
+Uniqueness in Theorem 4.5; 
+No Agent Deviates Unilaterally
+Worst Case Expected 
+State Value (Deﬁnition 4.8)
+Existence of Robust Agent 
+Policy (Theorem 4.11)
+New Solution Concepts
+Robust Agent Policy 
+(Deﬁnition 4.9)
+Maximize
+Equivalent to a Maximin 
+Problem (Theorem 4.10)
+Figure 3: Solution concepts for the SAMGs. We first examine the widely used concepts (optimal agent policy
+and robust Nash Equilibrium) and demonstrate their non-existence under adversarial state perturbations. In
+response, we consider a new objective, the worst-case expected state value, and a new solution concept, the
+robust agent policy.
+of each agent can be different after adversarial perturbations, so the SAMG problem cannot be solved by the
+above single-agent RL where the agent has only one state observation at each stage.
+Our SAMG problem cannot be solved by the existing work in the Decentralized Partially Observable Markov
+Decision Process (Dec-POMDP) (Bernstein et al., 2002; Oliehoek et al., 2016) as shown in Fig. 2. In contrast,
+the policy in SAMG needs to be robust under a set of admissible perturbed states. The adversary aims to
+find the worst-case state perturbation policy χ to minimize the MARL agents’ total expected return, but the
+Dec-POMDP cannot characterize the worst-case state perturbations. Moreover, agents usually cannot get the
+true state s in Dec-POMDP, while in SAMG, the true state s is known by the adversaries. Adversaries can
+take the true state information and use it to select state perturbations for the MARL agents. The following
+proposition 3.2 shows that under a fixed adversarial policy, the SAMG problem becomes a Dec-POMDP.
+However, in SAMG the adversary policy is not a fixed policy, it may change according to the agents’ policies
+(see Theorem 4.1 for detail) and always select the worst-case state perturbation for agents. The proof of
+proposition 3.2 is in Appendix A. We also give a two-agent two-state SAMG that cannot be solved by
+Dec-POMDP in Appendix A.
+Proposition 3.2. When the adversary policy is a fixed policy, the SAMG problem becomes a Dec-
+POMDP (Oliehoek et al., 2016).
+Proposition 3.3. When the adversary policy is a fixed bijective mapping from S to S, the SAMG problem
+becomes a Markov game.
+Additionally, our SAMG problem cannot be solved by existing methods for robust Markov games considering
+the uncertainties from reward (Chen & Bowling, 2012; Zhang et al., 2020b), transition dynamics (Zhang et al.,
+2020b; Hu et al., 2020; Sinha et al., 2020; Yu et al., 2021; Wang et al., 2023), training partner’s policies (Li
+et al., 2019; van der Heiden et al., 2020). These methods are not applicable to our problem because the
+agents do not have access to the true state information after adversarial perturbations.
+4
+Solution Concepts
+In this section, we delve into the solution concepts of the SAMG. We formally define key concepts such as
+an optimal adversary policy, state-robust totally optimal agent policy, and robust total Nash equilibrium.
+However, we also demonstrate that under an optimal adversary policy, the existence of a state-robust totally
+optimal agent policy or robust total Nash equilibrium is not guaranteed as they can be easily corrupted by
+adversaries. Therefore, we introduce a new objective, the worst-case expected state value, and prove that
+there exists a robust agent policy to maximize it. A concept diagram of this section is shown in Fig. 3.
+We first introduce the widely used state value function concept for our proposed SAMG as follows:
+Vπ,χ(s) = Eat∼π(·|ρt),ρt∼χ(·|st)
+" ∞
+X
+t=0
+γtrt+1(st, at)|s0 = s
+#
+,
+(1)
+5
+
+Published in Transactions on Machine Learning Research (01/2024)
+where γ is the discount factor.
+4.1
+Optimal Adversary Policy
+For a fixed agent policy π, define the worst-case state value function ¯Vπ under π by
+¯Vπ(s) := min
+χ Vπ,χ(s)
+(2)
+for all s ∈S. An adversary policy χ∗is said to be optimal against an agent policy π if
+Vπ,χ∗(s) = ¯Vπ(s)
+(3)
+for all s ∈S. The following proposition shows the existence of an optimal adversary for an SAMG.
+Proposition 4.1 (Existence of Optimal Adversary Policy.). Given an SAMG, for any given agent
+policy, there exists an optimal adversary policy.
+The key process of the proof in Appendix B.4 is constructing an MDP for the adversary where the adversary
+gets the negative of the agent reward. Since for an MDP with finite state and finite action spaces, there
+always exists an optimal policy [Theorem 6.2.10 in Puterman (2014)], an optimal adversary policy of the
+corresponding SAMG always exists as well.
+4.2
+State-robust Totally Optimal Agent Policy
+An optimal adversary policy is very powerful and it can easily corrupt the MARL agents’ policies through
+state perturbations. We first define a state-robust totally optimal agent policy as follows:
+Definition 4.2 (State-robust Totally Optimal Agent Policy). An agent policy π∗is a state-robust
+totally optimal agent policy if ¯Vπ∗(s) ≥¯Vπ(s) for any π and all s ∈S.
+In the following theorem, we show that a state-robust totally optimal agent policy π∗does not always exist
+for SAMGs under an optimal state perturbation adversary.
+Theorem 4.3 (Non-existence of State-robust Totally Optimal Agent Policy). A state-robust totally
+optimal agent policy does not always exist for SAMGs.
+The proof in Appendix B.5 is done by constructing a counterexample where there is no optimal policy
+for the agents. A state-robust totally optimal agent policy is expected to maximize the state value for all
+states. However, under the adversarial state perturbations, sometimes agents have to make trade-offs between
+different state values and no agent policy can maximize all the state values.
+4.3
+Robust Total Nash Equilibrium
+Then we look at the widely-used Nash equilibrium concept in MARL for SAMGs. A Nash equilibrium is
+used to describe policies where no agent wants to deviate unilaterally. If an agent deviates from a Nash
+equilibrium, its total expected return won’t increase. Denote the agent policies and adversary policies of
+all other agents and adversaries except agent i and adversary i as π−i and χ−i respectively. Before giving
+the definition of a robust total Nash equilibrium, we first show that there exists a unique robust state value
+function for agent i given any π−i and χ−i.
+Definition 4.4 (Robust state value function). A state value function V i
+∗,π−i,∗,χ−i : S →R for agent i
+given π−i and χ−i is called a robust state value function if for all s ∈S,
+V i
+∗,π−i,∗,χ−i(s) = max
+πi min
+χi
+X
+ρ∈Ps
+χ(ρ|s)
+X
+a∈A
+π(a|ρ)
+ 
+r(s, a) + γ
+X
+s′∈S
+p(s′|s, a)V i
+∗,π−i,∗,χ−i(s′)
+!
+.
+Theorem 4.5 (Existence of Unique Robust State Value Function). For an SAMG with finite state
+and finite action spaces, for any i ∈N, given any π−i and χ−i of other agents and adversaries except agent i
+6
+
+Published in Transactions on Machine Learning Research (01/2024)
+and adversary i, there exists a unique robust state value function V i
+∗,π−i,∗,χ−i : S →R for agent i such that
+for all s ∈S,
+V i
+∗,π−i,∗,χ−i(s) = max
+πi min
+χi
+X
+ρ∈Ps
+χ(ρ|s)
+X
+a∈A
+π(a|ρ)
+ 
+r(s, a) + γ
+X
+s′∈S
+p(s′|s, a)V i
+∗,π−i,∗,χ−i(s′)
+!
+.
+The proof is based on the contraction mapping property and Banach’s fixed point theorem in Appendix C.1.
+The theorem could also follow from viewing the SAMG as an extensive form game under imperfect recall and
+applying the approaches used to analyze those games Chen & Bowling (2012).
+Based on the well-defined robust state value function, a robust total Nash equilibrium is defined considering
+each agent is associated with an adversary that tries to minimize its total expected return.
+Definition 4.6 (Robus Total Nash Equilibrium). For an SAMG, the policy (π∗, χ∗) is a robust total
+Nash equilibrium if for all s ∈S and all i ∈N and all πi and χi, it holds that
+V i
+πi,π−i∗,χi∗,χ−i∗(s) ≤V i
+πi∗,π−i∗,χi∗,χ−i∗(s) ≤V i
+πi∗,π−i∗,χi,χ−i∗(s),
+(4)
+where π−i and χ−i denotes the agent policies and adversary policies of all the other agents except agent i,
+respectively.
+Definition 4.6 shows that π∗is in a robust total Nash equilibrium if each agent’s policy is a robust best
+response to the other agents’ policies under adversarial state perturbations. When agent i is calculating its
+robust best response, it assumes a worst-case perspective of the state perturbations.
+Theorem 4.7 (Non-existence of Robust Total Nash Equilibrium). For SAMGs with finite state and
+finite action spaces, the robust total Nash equilibrium defined in Definition 4.6 does not always exist.
+The proof in Appendix C.3 is done by constructing a counterexample. For any state s ∈S, there exists
+a stage-wise equilibrium among the agents and adversaries (See the proof for a stage-wise equilibrium
+in Theorem C.6 in Appendix C.2). However, due to the uncertainty of the true state under adversarial
+state perturbations, it is possible that the stage-wise equilibrium in one state conflicts with the stage-wise
+equilibrium in another state. As a result, the agents may be required to make trade-offs between different
+states, making it impossible to find an equilibrium that holds for all states.
+4.4
+Robust Agent Policy
+The state-robust totally optimal agent policy and robust total Nash equilibrium concepts do not always
+exist in our SAMG problem according to the above non-existence analysis. To circumvent this difficulty, we
+consider another solution concept in which each agent adopts a policy (hereafter referred to as a robust agent
+policy) that maximizes the reward under the worst-case state perturbation. We further show that a robust
+policy always exists for all agents. We first introduce a new objective for SAMGs, the worst-case expected
+state value:
+Definition 4.8 (Worst-case Expected State Value). The worst-case expected state value under the
+optimal state perturbation adversary is: Es0∼Pr(s0)
+ ¯Vπ(s0)
+
+, where Pr(s0) is the probability distribution of
+the initial state.
+To account for the fact that a policy is not able to maximize all state values in SAMG, we can use the
+probability of each state as a measure of its importance, and balance the values of different states. The
+worst-case expected state value is calculated by taking a weighted sum of all state values based on their initial
+state distribution. The agent policy that aims to maximize this worst-case expected state value is referred to
+as a robust agent policy.
+Definition 4.9 (Robust Agent Policy). An agent policy π∗that maximizes the worst-case expected state
+value is called a robust agent policy:
+π∗∈arg max
+π
+Es0∼Pr(s0)
+ ¯Vπ(s0)
+
+.
+(5)
+7
+
+Published in Transactions on Machine Learning Research (01/2024)
+The following theorem shows finding a robust agent policy is equivalent to solving a maximin problem.
+Theorem 4.10. Finding an agent policy π to maximize the worst-case expected state value under an optimal
+adversary for π is equivalent to the maximin problem: maxπ minχ
+P
+s0 Pr(s0)Vπ,χ(s0).
+In the following theorem, we show the existence of a robust agent policy for finite state and finite action
+spaces.
+Theorem 4.11 (Existence of Robust Agent Policy). For SAMGs with finite state and finite action spaces,
+there exists a robust agent policy to maximize the worst-case expected state value defined in Definition 4.8.
+The proof in Appendix C.4 is based on the Weierstrass M-test (Rudin et al., 1976), uniform limit theo-
+rem (Rudin et al., 1976), and the extreme value theorem. Different from the definitions of the state-robust
+totally optimal agent policy and robust total Nash equilibrium, the worst-case expected state value objective
+does not require the optimality condition to hold for all states. Agents won’t get stuck in trade-offs between
+different states, therefore, we can find a robust agent policy to maximize the worst-case expected state value
+for the SAMG problem.
+The robust agent policy, while motivated in specific instances of non-existence theorems, is designed to offer
+broader applicability. The significance of the new solution concept lies in providing alternative solutions
+where traditional methods may falter or be inapplicable. This versatility is crucial in advancing the field,
+particularly in complex scenarios where standard solutions are inadequate.
+Multi-Agent Adversarial Actor-Critic (RMA3C) Algorithm
+In general, it is challenging to develop
+algorithms that compute optimal or equilibrium policies for MARL under uncertainties (Zhang et al., 2020b;
+2021). We design a RMA3C Algorithm based on our theoretical analysis above. Each agent has one critic
+network, one actor network πi and one adversary network χi. The critic Q takes in the true global state
+and global action during the training process. It returns a Q-value denoting the total expected return given
+s and a. We use Gradient Descent Ascent (GDA) optimizer (Lin et al., 2020b) to update parameters for
+each agent’s actor network and adversary network for the maximin problem maxπ minχ
+P
+s0 Pr(s0)Vπ,χ(s0)
+in Theorem 4.10. A detailed introduction for the RMA3C and pseudocode is included in Appendix D.
+Figure 4: Our RMA3C algorithm compared with several baseline algorithms in training. The results show
+that our RMA3C algorithm outperforms the baselines, achieving higher mean episode rewards and greater
+robustness to state perturbations. The baselines were trained under either random state perturbations or a
+well-trained adversary policy χ∗(adversaries that are trained for the maximum training episodes in RMA3C).
+Overall, our RMA3C algorithm achieved up to 58.46% higher mean episode rewards than the baselines.
+5
+Experiments
+To demonstrate the effectiveness of our algorithm, we utilize the multi-agent particle environments developed
+in Lowe et al. (2017) which consist of multiple agents and landmarks in a 2D world. The host machine
+adopted in our experiments is a server configured with AMD Ryzen Threadripper 2990WX 32-core processors
+and four Quadro RTX 6000 GPUs. Our experiments are performed on Python 3.5.4, Gym 0.10.5, Numpy
+1.14.5, Tensorflow 1.8.0, and CUDA 9.0. In our experiments, we consider the set of admissible perturbed
+8
+
+Published in Transactions on Machine Learning Research (01/2024)
+Table 1: Mean episode reward of 2000 episodes during testing. Our RMA3C policy achieves up to 46.56%
+higher mean episode rewards than the baselines with random state perturbations N.
+Environment
+CN
+ET
+KA
+PD
+MA Lowe et al. (2017)
+−388.59 ± 60.72
+−45.79 ± 23.50
+-8.80 ± 5.07
+3.03 ± 0.67
+M3 Li et al. (2019)
+-390.94 ± 59.83
+-39.55 ± 20.53
+-8.54 ± 5.04
+2.12 ± 1.04
+MP Yu et al. (2022)
+-381.70 ± 54.06
+-37.62 ± 18.94
+-
+-
+MADDPG (MA) w/ N
+-487.67 ± 72.28
+-55.79 ± 26.78
+-11.21 ± 6.82
+1.24 ± 0.47
+M3DDPG (M3) w/ N
+-478.96 ± 70.27
+-54.40 ± 26.64
+-11.28 ± 6.71
+1.30 ± 0.58
+MAPPO (MP) w/ N
+-523.83 ± 78.45
+-86.51 ± 30.86
+-
+-
+RMA3C w/ N (ours)
+-390.20 ± 64.82
+-46.23 ± 24.76
+-9.02 ±5.87
+2.48 ± 1.26
+state for agent i at state s as an ℓ∞norm ball around s: Pi
+s := {ρi ∈S : ∥ρi −s∥∞≤d} where d is a radius
+denoting the perturbation budget. In implementation, the adversary network takes in the true state s and
+learns a state perturbation vector ∆i and we project s + ∆i to Pi
+s. The environments used in our experiments
+include cooperative navigation (CN), exchange target (ET), keep-away (KA), and physical deception (PD). A
+detailed introduction to these environments can be found in Appendix E. All hyperparameters used in our
+experiments for RMA3C and the baselines are listed in Appendix E, along with additional implementation
+details and experiment results.
+5.1
+Baselines
+In our experiment, we have a total of 9 baselines: MADDPG Lowe et al. (2017), M3DDPG Li et al. (2019),
+MAPPO Yu et al. (2022), as well as versions of these algorithms with random and well-trained adversarial
+state perturbations. Detailed explanation of these baselines can be found in Appendix E.2. To evaluate
+robustness under state uncertainty, we add state noise to MADDPG, M3DDPG, and MAPPO produced
+by a truncated normal distribution N(0, λ, u, l) where λ is the uncertainty level, u and l are the upper and
+lower bounds to ensure noise’s compactness. This simulates adversaries selecting random state perturbations.
+In contrast, our RMA3C algorithm trains agents under adversaries that try to minimize the agents’ total
+expected return. We save the well-trained adversaries χ∗for each scenario in RMA3C to represent the optimal
+state perturbation adversaries. The well-trained adversaries are the adversary policies trained in the RMA3C
+algorithm when the algorithm reaches the maximum training episodes (100k episodes). We then use these
+adversaries to perturb the states for MADDPG, M3DDPG, and MAPPO to train and test their robustness
+under adversarial state perturbations. Because MAPPO provided in Yu et al. (2022) only works in fully
+cooperative tasks, we only report its results in cooperative navigation and exchange target. For both training
+and testing, we report statistics that are averaged across 10 runs in each scenario and algorithm.
+5.2
+Comparison Results
+Training Comparison Under different Perturbations
+We compare our RMA3C algorithm with
+baselines during the training process to demonstrate its superiority in terms of mean episode rewards under
+different state perturbations as shown in Fig. 4. As RMA3C has a built-in adversary to perturb states, we
+do not train it under random state perturbations. In comparison to other baselines with different state
+perturbations, RMA3C consistently achieved higher mean episode rewards, demonstrating its robustness under
+varying state perturbations. Furthermore, when comparing each baseline with random state perturbations to
+the same baseline with the well-trained adversary policy χ∗, we can see that the adversary policy trained by
+RMA3C is more effective than random state perturbations. This is because χ∗is designed to intentionally
+select state perturbations that minimize the agents’ total expected return. The mean episode rewards of the
+last 1000 episodes during training are shown in the table in Appendix E.5. Our RMA3C algorithm achieved
+up to 58.46% higher mean episode rewards than the baselines under different state perturbations.
+Training Comparison With More Agents
+Our RMA3C algorithm is compared with baselines in
+the cooperative navigation scenario with an increasing number of agents. As shown in Fig.4, the original
+cooperative navigation environment has 3 agents and our RMA3C algorithm outperforms the baselines in
+terms of mean episode rewards. In Fig.5(a), we present the results of training with 4 agents, where our
+9
+
+Published in Transactions on Machine Learning Research (01/2024)
+(a)
+(b)
+Figure 5: 5(a): Our RMA3C algorithm continues to achieve higher mean episode rewards, even with an
+increasing number of agents in the environment. 5(b):Our RMA3C algorithm is trained in the cooperative
+navigation environment with different perturbation budgets d. When d increases, adversaries get more
+advantage, and may further decrease agents’ total expected return.
+RMA3C algorithm still surpasses the baselines. We include the training results with 6 agents in Appendix E.6.
+Our RMA3C algorithm continues to achieve higher mean episode rewards, even with an increasing number of
+agents in the environment.
+Table 2: Our RMA3C policy achieves up to 54.02% higher mean episode reward than the baselines with
+well-trained χ∗.
+Environment
+CN
+ET
+KA
+PD
+MADDPG (MA) w/χ∗
+-537.56 ± 72.28
+-71.65 ± 42.50
+-14.72 ± 5.44
+-0.95 ± 1.32
+M3DDPG (M3) w/χ∗
+-515.85 ± 74.58
+-70.68 ± 41.54
+-13.51 ± 5.30
+-0.70 ± 0.96
+MAPPO (MP) w/χ∗
+-572.39 ± 79.34
+-109.26 ± 47.97
+-
+-
+RMA3C w/χ∗(ours)
+-400.82 ± 62.59
+-50.23 ± 26.97
+-9.64 ± 5.31
+1.23 ± 0.82
+Training Comparison With Different Perturbation Budgets
+We compare our algorithm with baselines
+in the cooperative navigation scenario with varying levels of perturbation budgets d. We consider the set of
+admissible perturbed state for agent i at state s as an ℓ∞norm ball around s: Pi
+s := {ρi ∈S : ∥ρi −s∥∞≤d}
+where d is a radius denoting the perturbation budget. As shown in Fig. 5(b), when d increases, adversaries
+have greater freedom to perturb the state within a larger admissible perturbed state set. As d increases,
+adversaries get more powerful and lead to a decrease in agents’ total expected return.
+Testing Comparison in different Environments
+Our RMA3C algorithm is tested in different envi-
+ronments to demonstrate its robustness under state perturbations. As shown in Table 1, the mean episode
+rewards are averaged across 2000 episodes and 10 test runs in each environment. The results of MADDPG,
+M3DDPG, and MAPPO, which are not designed to handle state perturbations, are shown as a reference for
+the no state perturbation scenario. These algorithms perform poorly when random state perturbations are
+introduced, indicating the need for an algorithm that can handle state perturbations. As seen in Table 2,
+the RMA3C policy achieves up to 46.56% higher mean episode rewards than the baselines in environments
+with random state perturbations. Additionally, we also test the learned policies using different algorithms in
+environments with well-trained adversary policies χ∗to perturb states. The results indicate that the RMA3C
+policy achieves up to 54.02% higher mean episode reward than the baselines with well-trained adversarial
+state perturbations. Overall, these tests demonstrate that the RMA3C algorithm achieves higher robustness
+in different environments with state perturbations.
+6
+Conclusion
+In this work, we propose a State-Adversarial Markov Game (SAMG) and investigate the fundamental
+properties of robust MARL under adversarial state perturbations. We prove that the widely used solution
+10
+
+Published in Transactions on Machine Learning Research (01/2024)
+concepts such as optimal agent policy and robust Nash equilibrium do not always exist for SAMGs. Instead,
+we consider a new solution concept (the robust agent policy) to maximize the worst-case expected state value
+and prove its existence. This is the primary theoretical contribution of our work. Additionally, we also propose
+a RMA3C algorithm to find a robust policy for MARL agents under state perturbations. Our numerical
+experiments demonstrate that the RMA3C algorithm improves the robustness of the trained policies against
+both random and adversarial state perturbations. Some discussions and future directions are provided in
+Appendix F.
+Acknowledgments
+Songyang Han, Sanbao Su, Sihong He, and Fei Miao are supported by the National Science Foundation under
+Grants CNS-1952096, and CNS-2047354 grants. Haizhao Yang was partially supported by the US National
+Science Foundation under awards DMS-2244988, DMS-2206333, and the Office of Naval Research Award
+N00014-23-1-2007.
+Shaofeng Zou is supported by the National Science Foundation under Grants CCF-2106560, and CCF-2007783.
+This material is based upon work supported under the AI Research Institutes program by National Science
+Foundation and the Institute of Education Sciences, U.S. Department of Education through Award # 2229873
+- National AI Institute for Exceptional Education. Any opinions, findings and conclusions or recommendations
+expressed in this material are those of the author(s) and do not necessarily reflect the views of the National
+Science Foundation, the Institute of Education Sciences, or the U.S. Department of Education.
+We extend our thanks to Peter Stone and Dustin Morrill in Sony AI for their assistance in proofreading this
+paper and for their insightful suggestions that have significantly enhanced the quality of this work. Their
+careful attention to detail and valuable feedback were greatly appreciated.
+References
+Vahid Behzadan and Arslan Munir. Vulnerability of deep reinforcement learning to policy induction attacks.
+In MLDM, pp. 262–275. Springer, 2017.
+Daniel S Bernstein, Robert Givan, Neil Immerman, and Shlomo Zilberstein. The complexity of decentralized
+control of markov decision processes. Mathematics of operations research, 27(4):819–840, 2002.
+Lucian Busoniu, Robert Babuska, and Bart De Schutter. A comprehensive survey of multiagent reinforcement
+learning. IEEE Trans. Syst., Man, Cybern. Syst., 38(2):156–172, 2008.
+Katherine Chen and Michael Bowling. Tractable objectives for robust policy optimization. Advances in
+Neural Information Processing Systems, 25, 2012.
+Gerard Debreu. A social equilibrium existence theorem. Proceedings of the National Academy of Sciences, 38
+(10):886–893, 1952.
+Michael Everett, Björn Lütjens, and Jonathan P How. Certifiable robustness to adversarial state uncertainty
+in deep reinforcement learning. IEEE Trans. Neural Netw. Learn. Syst., 2021.
+Ky Fan. Fixed-point and minimax theorems in locally convex topological linear spaces. Proceedings of the
+National Academy of Sciences of the United States of America, 38(2):121, 1952.
+Arlington M Fink. Equilibrium in a stochastic n-person game. Journal of science of the hiroshima university,
+series ai (mathematics), 28(1):89–93, 1964.
+Jakob Foerster and Gregory Farquhar. Counterfactual multi-agent policy gradients. In AAAI, 2018.
+Irving L Glicksberg. A further generalization of the kakutani fixed point theorem, with application to nash
+equilibrium points. Proceedings of the American Mathematical Society, 3(1):170–174, 1952.
+Delin Guo, Lan Tang, Xinggan Zhang, and Ying-Chang Liang. Joint optimization of handover control and
+power allocation based on multi-agent deep reinforcement learning. IEEE Trans. Veh. Technol., 69(11):
+13124–13138, 2020.
+11
+
+Published in Transactions on Machine Learning Research (01/2024)
+Sihong He, Songyang Han, Sanbao Su, Shuo Han, Shaofeng Zou, and Fei Miao.
+Robust multi-agent
+reinforcement learning with state uncertainty. Transactions on Machine Learning Research, 2023.
+Junling Hu, Michael P Wellman, et al. Multiagent reinforcement learning: theoretical framework and an
+algorithm. In ICML, volume 98, pp. 242–250. Citeseer, 1998.
+Yizheng Hu, Kun Shao, Dong Li, HAO Jianye, Wulong Liu, Yaodong Yang, Jun Wang, and Zhanxing Zhu.
+Robust multi-agent reinforcement learning driven by correlated equilibrium. 2020.
+Sandy Huang, Nicolas Papernot, Ian Goodfellow, Yan Duan, and Pieter Abbeel. Adversarial attacks on
+neural network policies. ICLR, 2017.
+Maximilian Hüttenrauch and Adrian Šošić. Guided deep reinforcement learning for swarm systems. arXiv
+preprint arXiv:1709.06011, 2017.
+Shariq Iqbal and Fei Sha. Actor-attention-critic for multi-agent reinforcement learning. In ICML, pp.
+2961–2970. PMLR, 2019.
+Garud N Iyengar. Robust dynamic programming. Mathematics of Operations Research, 30(2):257–280, 2005.
+Chi Jin, Praneeth Netrapalli, and Michael Jordan. What is local optimality in nonconvex-nonconcave minimax
+optimization? In ICML, pp. 4880–4889. PMLR, 2020.
+Chi Jin, Qinghua Liu, Yuanhao Wang, and Tiancheng Yu. V-learning–a simple, efficient, decentralized
+algorithm for multiagent rl. arXiv preprint arXiv:2110.14555, 2021.
+Erim Kardeş, Fernando Ordóñez, and Randolph W Hall.
+Discounted robust stochastic games and an
+application to queueing control. Operations research, 59(2):365–382, 2011.
+Jernej Kos and Dawn Song. Delving into adversarial attacks on deep policies. ICLR, 2017.
+Divya Kothandaraman, Rohan Chandra, and Dinesh Manocha. Ss-sfda: Self-supervised source-free domain
+adaptation for road segmentation in hazardous environments. In ICCV, pp. 3049–3059, 2021.
+Erwin Kreyszig. Introductory functional analysis with applications, volume 17. John Wiley & Sons, 1991.
+Adam Lerer, Hengyuan Hu, Jakob Foerster, and Noam Brown. Improving policies via search in cooperative
+partially observable games. In AAAI, volume 34, pp. 7187–7194, 2020.
+Shihui Li, Yi Wu, Xinyue Cui, Honghua Dong, Fei Fang, and Stuart Russell. Robust multi-agent reinforcement
+learning via minimax deep deterministic policy gradient. In AAAI, volume 33, pp. 4213–4220, 2019.
+Yongyuan Liang, Yanchao Sun, Ruijie Zheng, and Furong Huang. Efficient adversarial training without
+attacking: Worst-case-aware robust reinforcement learning. NeurIPS, 2022.
+Jieyu Lin, Kristina Dzeparoska, Sai Qian Zhang, Alberto Leon-Garcia, and Nicolas Papernot. On the
+robustness of cooperative multi-agent reinforcement learning. In 2020 IEEE Security and Privacy Workshops
+(SPW), pp. 62–68. IEEE, 2020a.
+Tianyi Lin, Chi Jin, and Michael Jordan. On gradient descent ascent for nonconvex-concave minimax
+problems. In International Conference on Machine Learning, pp. 6083–6093. PMLR, 2020b.
+Yen-Chen Lin, Zhang-Wei Hong, Yuan-Hong Liao, Meng-Li Shih, Ming-Yu Liu, and Min Sun. Tactics of
+adversarial attack on deep reinforcement learning agents. IJCAI, 2017.
+Michael L Littman. Markov games as a framework for multi-agent reinforcement learning. In Machine
+learning proceedings 1994, pp. 157–163. Elsevier, 1994.
+Ze Liu, Yingfeng Cai, Hai Wang, Long Chen, Hongbo Gao, Yunyi Jia, and Yicheng Li. Robust target
+recognition and tracking of self-driving cars with radar and camera information fusion under severe weather
+conditions. IEEE Trans. Intell. Transp. Syst., 2021.
+12
+
+Published in Transactions on Machine Learning Research (01/2024)
+Ryan Lowe, Yi I Wu, Aviv Tamar, Jean Harb, OpenAI Pieter Abbeel, and Igor Mordatch. Multi-agent
+actor-critic for mixed cooperative-competitive environments. In NeurIPS, pp. 6379–6390, 2017.
+Ajay Mandlekar, Yuke Zhu, Animesh Garg, Li Fei-Fei, and Silvio Savarese. Adversarially robust policy
+learning: Active construction of physically-plausible perturbations. In IROS, pp. 3932–3939. IEEE, 2017.
+Volodymyr Mnih, Koray Kavukcuoglu, et al. Human-level control through deep reinforcement learning.
+Nature, 518(7540):529–533, 2015.
+Jun Morimoto and Kenji Doya. Robust reinforcement learning. Neural computation, 17(2):335–359, 2005.
+Devaprakash Muniraj, Kyriakos G Vamvoudakis, and Mazen Farhood. Enforcing signal temporal logic
+specifications in multi-agent adversarial environments: A deep q-learning approach.
+In 2018 IEEE
+Conference on Decision and Control (CDC), pp. 4141–4146. IEEE, 2018.
+John Nash. Non-cooperative games. Annals of mathematics, pp. 286–295, 1951.
+Arnab Nilim and Laurent El Ghaoui. Robust control of markov decision processes with uncertain transition
+matrices. Operations Research, 53(5):780–798, 2005.
+Frans A Oliehoek, Christopher Amato, et al. A concise introduction to decentralized POMDPs, volume 1.
+Springer, 2016.
+Anay Pattanaik and Zhenyi Tang. Robust deep reinforcement learning with adversarial attacks. AAMAS,
+2017.
+Anay Pattanaik, Zhenyi Tang, Shuijing Liu, Gautham Bommannan, and Girish Chowdhary. Robust deep
+reinforcement learning with adversarial attacks. In AAMAS, pp. 2040–2042, 2018.
+Thomy Phan, Thomas Gabor, Andreas Sedlmeier, Fabian Ritz, Bernhard Kempter, Cornel Klein, Horst
+Sauer, Reiner Schmid, Jan Wieghardt, Marc Zeller, et al. Learning and testing resilience in cooperative
+multi-agent systems. In Proceedings of the 19th International Conference on Autonomous Agents and
+MultiAgent Systems, pp. 1055–1063, 2020.
+Lerrel Pinto, James Davidson, and Rahul Sukthankar. Robust adversarial reinforcement learning. In ICML,
+pp. 2817–2826. PMLR, 2017.
+Arnu Pretorius, Scott Cameron, et al. A game-theoretic analysis of networked system control for common-pool
+resource management using multi-agent reinforcement learning. In NeurIPS, volume 33, pp. 9983–9994,
+2020.
+Martin L Puterman. Markov decision processes: discrete stochastic dynamic programming. John Wiley &
+Sons, 2014.
+Guannan Qu, Yiheng Lin, Adam Wierman, and Na Li. Scalable multi-agent reinforcement learning for
+networked systems with average reward. In NeurIPS, volume 33, pp. 2074–2086, 2020.
+Tabish Rashid, Gregory Farquhar, Bei Peng, and Shimon Whiteson. Weighted qmix: Expanding monotonic
+value function factorisation for deep multi-agent reinforcement learning. In NeurIPS, December 2020.
+Meisam Razaviyayn, Tianjian Huang, Songtao Lu, Maher Nouiehed, Maziar Sanjabi, and Mingyi Hong.
+Nonconvex min-max optimization: Applications, challenges, and recent theoretical advances. IEEE Signal
+Process. Mag., 37(5):55–66, 2020.
+Walter Rudin et al. Principles of mathematical analysis, volume 3. McGraw-hill New York, 1976.
+Lloyd S Shapley. Stochastic games. Proceedings of the national academy of sciences, 39(10):1095–1100, 1953.
+Macheng Shen and Jonathan P How. Robust opponent modeling via adversarial ensemble reinforcement
+learning. In ICAPS, volume 31, pp. 578–587, 2021.
+13
+
+Published in Transactions on Machine Learning Research (01/2024)
+Aman Sinha, Matthew O’Kelly, et al. Formulazero: Distributionally robust online adaptation via offline
+population synthesis. In ICML, pp. 8992–9004. PMLR, 2020.
+Jianyu Su, Stephen Adams, and Peter Beling. Value-decomposition multi-agent actor-critics. In AAAI,
+volume 35, pp. 11352–11360, 2021.
+Chuangchuang Sun, Dong-Ki Kim, and Jonathan P How. Romax: Certifiably robust deep multiagent
+reinforcement learning via convex relaxation. arXiv preprint arXiv:2109.06795, 2021.
+Yanchao Sun, Ruijie Zheng, Parisa Hassanzadeh, Yongyuan Liang, Soheil Feizi, Sumitra Ganesh, and Furong
+Huang. Certifiably robust policy learning against adversarial communication in multi-agent systems. ICLR,
+2022.
+Peter Sunehag, Guy Lever, et al. Value-decomposition networks for cooperative multi-agent learning based
+on team reward. In AAMAS, pp. 2085–2087, 2018.
+Richard S Sutton, Andrew G Barto, et al. Introduction to reinforcement learning, volume 135. MIT press
+Cambridge, 1998.
+Tessa van der Heiden, C Salge, Efstratios Gavves, and H van Hoof. Robust multi-agent reinforcement learning
+with social empowerment for coordination and communication. arXiv preprint arXiv:2012.08255, 2020.
+Kaixin Wang, Uri Gadot, Navdeep Kumar, Kfir Levy, and Shie Mannor. Robust reinforcement learning via
+adversarial kernel approximation. ar@articlechen2012tractable, title=Tractable objectives for robust policy
+optimization, author=Chen, Katherine and Bowling, Michael, journal=Advances in Neural Information
+Processing Systems, volume=25, year=2012 Xiv preprint arXiv:2306.05859, 2023.
+Chaowei Xiao, Xinlei Pan, et al. Characterizing attacks on deep reinforcement learning. arXiv preprint
+arXiv:1907.09470, 2019.
+Chao Yu, Akash Velu, Eugene Vinitsky, Yu Wang, Alexandre Bayen, and Yi Wu. The surprising effectiveness
+of ppo in cooperative multi-agent games. NeurIPS, 2022.
+Jing Yu, Clement Gehring, Florian Schäfer, and Animashree Anandkumar. Robust reinforcement learning: A
+constrained game-theoretic approach. In Learning for Dynamics and Control, pp. 1242–1254. PMLR, 2021.
+Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Mingyan Liu, Duane Boning, and Cho-Jui Hsieh. Robust
+deep reinforcement learning against adversarial perturbations on state observations. NeurIPS, 33:21024–
+21037, 2020a.
+Huan Zhang, Hongge Chen, Duane Boning, and Cho-Jui Hsieh. Robust reinforcement learning on state
+observations with learned optimal adversary. arXiv preprint arXiv:2101.08452, 2021.
+Kaiqing Zhang, Tao Sun, Yunzhe Tao, Sahika Genc, Sunil Mallya, and Tamer Basar. Robust multi-agent
+reinforcement learning with model uncertainty. In NeurIPS, 2020b.
+Meng Zhou, Ziyu Liu, Pengwei Sui, Yixuan Li, and Yuk Ying Chung. Learning implicit credit assignment for
+cooperative multi-agent reinforcement learning. In NeurIPS, volume 33, pp. 11853–11864, 2020.
+14
+
+Published in Transactions on Machine Learning Research (01/2024)
+A
+Comparison with Dec-POMDP and Markov Games
+A.1
+Comparison with Dec-POMDP
+Our SAMG problem cannot be solved by the existing work in the Decentralized Partially Observable Markov
+Decision Process (Dec-POMDP) (Oliehoek et al., 2016). In contrast, the policy in our problem needs to
+be robust under a set of admissible perturbed states. The adversary aims to find the worst-case state
+perturbation policy χ to minimize the MARL agents’ total expected return. In the following proposition,
+we show that under certain additional conditions our proposed SAMG problem becomes a Dec-POMDP
+problem.
+Figure 6: Comparison between Dec-POMDP and SAMG. In Dec-POMDP, the observation probability
+function is fixed, and it will not change according to the change of the agent policy. However, in SAMG the
+adversary policy is not a fixed policy, it may change according to the agents’ policies and always select the
+worst-case state perturbation for agents.
+Proposition 3.2.
+When the adversary policy is a fixed policy, the SAMG problem becomes a Dec-
+POMDP (Oliehoek et al., 2016).
+Proof. When the adversary policy χ is a fixed policy, an SAMG (N, S, A, r, Ps, p, γ, Pr(s0)) becomes a Dec-
+POMDP (N, S, A, r, O, O, p, γ, Pr(s0)). The agent set N = {1, ..., n}. The global joint state is s ∈S. Each
+agent i is associated with an action ai ∈Ai. The global joint action is a = (a1, ..., an) ∈A, A := A1×· · ·×An.
+All agents share a stage-wise reward function r : S×A →R. The state transition function is p : S×A →∆(S),
+where ∆(S) is a probability simplex denoting the set of all possible probability measures on S. The state
+transits from the true state to the next state. The discount factor is γ. The joint observation set O is the same
+as the joint state set S. The observation probability function O(o|s) = χ(o|s) for any o ∈Ps and O(o|s) = 0
+for any o /∈Ps, where o is the observation given the state s. The Pr(s0) is the probability distribution of the
+initial state.
+In Dec-POMDP, the observation probability function is fixed, and it will not change according to the change
+of the agent policy. However, in SAMG the adversary policy is not a fixed policy, it may change according to
+the agents’ policies and always select the worst-case state perturbation for agents. In contrast to Dec-POMDP,
+the adversary’s policy χ is chosen to minimize the total expected return of the agents in our problem.
+Additionally, in Dec-POMDP the agents do not have access to the true state s, whereas in our problem, the
+adversaries are aware of the true state and can use it to select perturbed states.
+15
+
+Published in Transactions on Machine Learning Research (01/2024)
+A.2
+SAMG cannot be solved by Dec-POMDP: Two-Agent Two-State Game Example
+We use a two-agent two-state game to show the difference between Dec-POMDP and SAMG. Consider a
+game with two agents N = {1, 2} and two states S = {s1, s2} as shown in Fig. 7. Each agent has two actions
+A1 = A2 = {a1, a2}. The transition probabilities are defined below.
+p(s′ = s1|s = s1, a1 ̸= a2) = 1,
+p(s′ = s2|s = s1, a1 = a2) = 1,
+p(s′ = s2|s = s2, a1 ̸= a2) = 1,
+p(s′ = s1|s = s2, a1 = a2) = 1.
+(6)
+Specifically, a1 = a2 includes two cases: a1 = a2 = a1 or a1 = a2 = a2. Similarly, a1 ̸= a2 includes two cases:
+a1 = a1, a2 = a2 or a1 = a2, a2 = a1.
+𝑠!
+𝑠"
+𝑎! = 𝑎"
+𝑟= 1
+𝑎! = 𝑎"
+𝑟= 0
+𝑎! ≠𝑎"
+𝑟= 1
+𝑎! ≠𝑎"
+𝑟= 0
+Figure 7: A two-agent two-state game example. Agents get reward 1 at state s1 if they choose the same
+action. Agents get reward 1 at state s2 if they choose different actions.
+Two agents share the same reward function:
+r(s, a1, a2) =
+
+
+
+
+
+
+
+
+
+
+
+1,
+a1 = a2, and s = s1,
+0,
+a1 ̸= a2, and s = s1,
+0,
+a1 = a2, and s = s2,
+1,
+a1 ̸= a2, and s = s2.
+(7)
+In a SAMG, each agent is associated with an adversary to perturb its knowledge or observation of the true
+state. For the power of the adversary, we allow the adversary to perturb any state to the other state:
+P1
+s = P2
+s = {s1, s2}.
+(8)
+We use γ = 0.99 as the discount factor. Agents want to find a policy π to maximize their total expected
+return while adversaries want to find a policy χ to minimize agents’ total expected return.
+This problem cannot be formulated as a Dec-POMDP
+Consider one agent policy where both
+agents select the same action in s1 and select different actions in s2: π1(a1|s1) = π1(a1|s2) = π2(a1|s1) =
+π2(a2|s2) = 1. When there is no adversary, agents keep receiving rewards. The values for each state are
+˜V (s1) = ˜V (s2) =
+1
+1−γ = 100. Because agents share the same reward function, they also share the same
+values for each state. However, this policy receives V (s1) = V (s2) = 0 when agents are facing the worst-case
+adversaries χi(s1|s2) = χi(s2|s1) = 1 for i = 1, 2 and always taking the wrong actions with 0 reward.
+If the adversary policy is fixed at χi(s1|s2) = χi(s2|s1) = 1 for i = 1, 2, this problem becomes a Dec-POMDP
+with the observation space O = {o1 = s1, o2 = s2}. The observation function is oi(o1|s2) = oi(o2|s1) = 1 for
+i = 1, 2. The agent policy is π1(a1|o1) = π1(a1|o2) = π2(a1|o1) = π2(a2|o2) = 1.
+However, when we consider a different agent policy where both agents select the same action in s2 and
+select different actions in s1: π1(a1|s2) = π1(a1|s1) = π2(a1|s2) = π2(a2|s1) = 1, agents keep receiving 0
+rewards even when the adversary does nothing. For the new agent policy, the worst-case adversary policy is
+χi(s1|s1) = χi(s2|s2) = 1 for i = 1, 2. The corresponding observation function for the new adversary policy is
+oi(o1|s1) = oi(o2|s2) = 1 for i = 1, 2, which is completely different from the previous observation functions.
+Because the observation function in Dec-POMDP won’t change according to agents’ policies, therefore, the
+SAMG problem cannot be formulated by Dec-POMDP when adversary policy is not fixed.
+16
+
+Published in Transactions on Machine Learning Research (01/2024)
+Under different observation functions, Dec-POMDP can lead to contradictory agent policies.
+Besides the analysis of why this problem cannot be formulated as a Dec-POMDP, we also demonstrate that
+Dec-POMDPs fail to solve this problem from a different perspective.
+Let’s consider a Dec-POMDP with the observation space O = {o1 = s1, o2 = s2}. The observation function
+is defined as oi(o1|s2) = oi(o2|s1) = 1 for i = 1, 2. In this scenario, the optimal agent policy is to select the
+same action in response to o2 and choose different actions for o1. Agents keep receiving rewards based on
+this policy.
+Now let’s consider another Dec-POMDP with the observation space O = {o1 = s1, o2 = s2}. The observation
+function is defined as oi(o1|s1) = oi(o2|s2) = 1 for i = 1, 2. In this case, the optimal agent policy is to select
+the same action in response to o1 and choose different actions for o2. Agents keep receiving rewards based on
+this policy. However, the new optimal agent policy contradicts the previous one.
+By comparing these two Dec-POMDPs with different observation functions, we observe that Dec-POMDPs
+can yield different agent policies based on different observation functions. This implies that Dec-POMDPs
+do not address the problem of selecting an agent policy when the observation function is determined by an
+adversary.
+Furthermore, we will reanalyze this problem and demonstrate how a SAMG can solve this two-agent two-state
+game in Appendix B and C. The SAMG formulation addresses this problem by selecting the agent policy
+against the worst-case observation function.
+A.3
+Comparison with Markov Games
+Under a specific condition, when the adversary policy χ is a bijective mapping from S to S, the SAMG
+problem is equivalent to a Markov game, as demonstrated in the following proposition. This proposition
+illustrates the relationship between a SAMG and a Markov game with a particular form of state perturbation.
+When χ is a bijective mapping from S to S, the adversary policy follows χ(ρ|s) = 1 selecting the perturbed
+state ρ for the true state s with probability 1. Let us use the notation χ(s) = ρ for this special case.
+Proposition 3.3. When the adversary policy is a fixed bijective mapping from S to S, the SAMG problem
+becomes a Markov game.
+Proof. When the adversary policy χ is a fixed bijective mapping from S to S, an SAMG problem
+(N, S, A, r, Ps, p, γ, Pr(s0)) becomes a Markov game (Nnew, Snew, Anew, ri
+new, pnew, γ, Pr(snew,0)) that is con-
+structed as follows:
+Taking snew = ρ = χ(s) as the new state, the new global joint state set is Snew := S. The global joint action
+set Anew = A = A1 × · · · × An and the agent set Nnew = N stay the same.
+We can construct a new reward function ri
+new : Snew × Anew →R for each agent i as
+ri
+new(snew = χ(s), anew = a) = r(s, a),
+(9)
+and a new state transition function pnew : Snew × Anew →∆(Snew) defined as
+pnew(ρ′ = χ(s′)|ρ = χ(s), a) = p(s′|s, a).
+(10)
+The new probability of the initial state is
+Pr(snew,0 = χ(s0)) = Pr(s0).
+(11)
+Each agent uses a policy πi
+new : Snew →∆(Ai) to choose an action based on the new state. Hence, the
+SAMG problem becomes a Markov game.
+If the adversary’s policy χ is a fixed bijective mapping from S to S, the new global joint state set Snew is a
+perturbation of S and each state is assigned a new "label" by the adversary. Under this condition, the SAMG
+is equivalent to a Markov game.
+17
+
+Published in Transactions on Machine Learning Research (01/2024)
+B
+Optimal Adversary Policy and Optimal Agent Policy
+In this section, we analyze the existence of the optimal adversary policy and the optimal agent policy. We
+will utilize the two-agent two-state game introduced in Appendix A. For completeness, let us revisit this
+game with two agents N = {1, 2} and two states S = {s1, s2} as shown in Fig. 8. Each agent has two actions
+A1 = A2 = {a1, a2}. The transition probabilities are defined below.
+p(s′ = s1|s = s1, a1 ̸= a2) = 1,
+p(s′ = s2|s = s1, a1 = a2) = 1,
+p(s′ = s2|s = s2, a1 ̸= a2) = 1,
+p(s′ = s1|s = s2, a1 = a2) = 1.
+(12)
+Specifically, a1 = a2 includes two cases: a1 = a2 = a1 or a1 = a2 = a2. Similarly, a1 ̸= a2 includes two cases:
+a1 = a1, a2 = a2 or a1 = a2, a2 = a1.
+𝑠!
+𝑠"
+𝑎! = 𝑎"
+𝑟= 1
+𝑎! = 𝑎"
+𝑟= 0
+𝑎! ≠𝑎"
+𝑟= 1
+𝑎! ≠𝑎"
+𝑟= 0
+Figure 8: A two-agent two-state game example. Agents get reward 1 at state s1 if they choose the same
+action. Agents get reward 1 at state s2 if they choose different actions. This example was used in Appendix A
+to show the difference between Dec-POMDP and SAMG. We will revisit this game in Appendix B to discuss
+optimal adversary policy and optimal agent policy.
+Two agents share the same reward function:
+r(s, a1, a2) =
+
+
+
+
+
+
+
+
+
+
+
+1,
+a1 = a2, and s = s1,
+0,
+a1 ̸= a2, and s = s1,
+0,
+a1 = a2, and s = s2,
+1,
+a1 ̸= a2, and s = s2.
+(13)
+In a SAMG, each agent is associated with an adversary to perturb its knowledge or observation of the true
+state. For the power of the adversary, we allow the adversary to perturb any state to the other state:
+P1
+s = P2
+s = {s1, s2}.
+(14)
+We use γ = 0.99 as the discount factor. Agents want to find a policy π to maximize their total expected
+return while adversaries want to find a policy χ to minimize agents’ total expected return.
+B.1
+Optimal Agent Policy Without Adversaries
+When there is no adversary, the optimal policy for agents is to choose the same action in s1 and choose
+different actions in s2. One example is π1(a1|s1) = π1(a1|s2) = π2(a1|s1) = π2(a2|s2) = 1. The agents
+keep receiving rewards. The values for each state are ˜V (s1) = ˜V (s2) =
+1
+1−γ = 100. Because agents share
+the same reward function, they also share the same values for each state. However, this policy receives
+V (s1) = V (s2) = 0 when agents are facing adversaries χi(s1|s2) = χi(s2|s1) = 1 for i = 1, 2 and always taking
+the wrong actions with 0 reward.
+B.2
+A Stochastic Policy With Adversaries
+We consider a stochastic policy π1(a1|s1) = π1(a1|s2) = π2(a1|s1) = π2(a2|s2) = 0.5. Under this policy, the
+probabilities of taking the same or different actions are the same for each state Pr(a1 = a2 | s1) = Pr(a1 ̸=
+18
+
+Published in Transactions on Machine Learning Research (01/2024)
+a2 | s1) = Pr(a1 = a2 | s2) = Pr(a1 ̸= a2 | s2) = 0.5. Agents randomly stay or transit in each state and
+receive a positive reward with a 50% probability. The adversary has no power under this policy because π is
+the same for both states. The values for each state are V (s1) = V (s2) = ˜V (s1) = ˜V (s2) =
+0.5
+1−γ = 50.
+B.3
+Deterministic Policies With Adversaries
+Since each agent has two actions for each state, there are in total 24 = 16 possible deterministic policies for
+the two-agent two-state game example. All possible deterministic policies can be classified into three cases:
+(1) If agents select the same action in one state si and select different actions in the other state sj, then
+we always have V (s1) = V (s2) = 0. This is because adversaries can always use χk(s1|sj) = χk(s2|si) = 1
+for k = 1, 2 such that agents always receive a 0 reward.
+(2) If agents always select different actions
+in both states, then V (s1) = 0, V (s2) = 100.
+This is because agents never transit to the other state
+and keep receiving the same reward.
+(3) If agents always select the same action in both states, then
+V (s1) =
+1
+1−γ2 ≈50.25, V (s2) =
+γ
+1−γ2 ≈49.75. This is because agents circulate through both states and
+adversaries have no power to change it.
+B.4
+Optimal Adversary Policy
+In this section, we examine optimal policies for both the adversary and the agent in a State-Adversarial
+Markov Game (SAMG). The following proposition demonstrates the existence of an optimal adversary in an
+SAMG.
+Proposition 4.1 (Existence of Optimal Adversary Policy). Given an SAMG, for any given agent
+policy, there exists an optimal adversary policy.
+Proof. We prove this by constructing an MDP M = (S, ˆ
+A, ˆr, ˆp, γ) such that an optimal policy of M is an
+optimal adversary policy χ∗for the SAMG given the fixed π. In the MDP M, we take all adversaries as a
+joint adversary agent. The joint adversary learns a policy χ to find a joint perturbed state given the current
+true state. The action space ˆ
+A = S × S × · · · × S. Note that the joint admissible perturbed state set in
+Definition 3.1 Ps ⊆ˆ
+A.
+The reward function ˆr is defined as:
+ˆr(s, ˆa) = −
+X
+a∈A
+π(a|ˆa)r(s, a) for ˆa ∈Ps.
+(15)
+The transition probability ˆp is defined as
+ˆp(s′|s, ˆa) =
+X
+a∈A
+π(a|ˆa)p(s′|s, a) for ˆa ∈Ps.
+(16)
+The reward function is defined based on the intuition that when the agent receives r given s, a, the
+reward of the adversary is the negative of the agent reward, that is to say, ˆr = −r. Considering that
+r(s, a) = E[R|s, a] = −E[ ˆR|s, a],
+ˆr(s, ˆa) = E[ ˆR|s, ˆa]
+=
+X
+ˆ
+R
+ˆR
+X
+a∈A
+Pr[ ˆR|s, a]π(a|ˆa)
+=
+X
+a∈A
+
+X
+ˆ
+R
+ˆR Pr[ ˆR|s, a]
+
+π(a|ˆa)
+=
+X
+a∈A
+E[ ˆR|s, a]π(a|ˆa)
+= −
+X
+a∈A
+E[R|s, a]π(a|ˆa)
+19
+
+Published in Transactions on Machine Learning Research (01/2024)
+= −
+X
+a∈A
+r(s, a)π(a|ˆa).
+(17)
+Based on the properties of MDP (Sutton et al., 1998; Puterman, 2014), we know that the MDP M has an
+optimal policy χ∗that satisfies ˆVπ,χ∗(s) ≥ˆVπ,χ(s) for all s and all χ, where ˆVπ,χ is the state value function
+of the MDP M.
+The Bellman equation for the MDP M is
+ˆVπ,χ(s) =
+X
+ˆa∈Ps
+χ(ˆa|s)
+ 
+ˆr + γ
+X
+s′∈S
+ˆp(s′|s, ˆa) ˆVπ,χ(s′)
+!
+=
+X
+ˆa∈Ps
+χ(ˆa|s)
+X
+a∈A
+π(a|ˆa)
+ 
+−r + γ
+X
+s′∈S
+p(s′|s, a) ˆVπ,χ(s′)
+!
+.
+(18)
+By multiplying −1 on both sides, we have
+(−ˆVπ,χ(s)) =
+X
+ˆa∈Ps
+χ(ˆa|s)
+X
+a∈A
+π(a|ˆa)
+"
+r + γ
+X
+s′∈S
+p(s′|s, a)(−ˆVπ,χ(s′))
+#
+.
+(19)
+On the other side, for the SAMG, we have the Bellman equation for any fixed policies π and χ as
+Vπ,χ(s) =
+X
+ρ∈Ps
+χ(ρ|s)
+X
+a∈A
+π(a|ρ)
+ 
+r + γ
+X
+s′∈S
+p(s′|s, a)Vπ,χ(s′)
+!
+.
+(20)
+When π and χ are fixed, they can be taken together as a single policy, and the existing results from
+Dec-POMDP can be directly applied. Comparing Eq. (20) and (19), we know that Vπ,χ(s) = (−ˆVπ,χ(s)).
+An optimal adversary policy χ∗for the MDP M satisfies ˆVπ,χ∗(s) ≥ˆVπ,χ(s) for any s and any χ. Therefore,
+χ∗also satisfies Vπ,χ∗(s) ≤Vπ,χ(s) for any s and any χ, and an optimal policy of the MDP M is an optimal
+adversary policy for the SAMG given the fixed π.
+B.5
+Optimal Agent Policy With Adversaries
+We have established the existence of an optimal adversary in SAMGs. Next, we consider a state-robust
+totally optimal agent policy under this optimal adversary. The following proposition demonstrates that a
+deterministic agent policy is not always superior to a stochastic policy in SAMGs.
+Proposition B.1. There exists an SAMG and some stochastic policy π such that we cannot find a better
+deterministic policy π′ satisfying ¯Vπ′(s) ≥¯Vπ(s) for all s ∈S.
+Proof. We prove this theorem by giving a counter-example where no deterministic policy is better than a
+stochastic policy. As shown in the two-agent two-state game example in Fig. 8, all 16 deterministic policies
+are no better than the stochastic policy π1(a1|s1) = π1(a1|s2) = π2(a1|s1) = π2(a2|s2) = 0.5.
+Finally, we show a state-robust totally optimal agent policy π∗does not always exist such that ¯Vπ∗(s) ≥¯Vπ(s)
+for any π and all s ∈S in SAMGs in the following theorem.
+Theorem 4.3 (Non-existence of State-robust Totally Optimal Agent Policy). A state-robust totally
+optimal agent policy does not always exist for SAMGs.
+20
+
+Published in Transactions on Machine Learning Research (01/2024)
+Proof. We prove this theorem by showing that the two-agent two-state game in Fig. 8 does not have an
+optimal policy. We first show that the policy π1 : π1(a1|s1) = π1(a1|s2) = π2(a2|s1) = π2(a2|s2) = 1 is not an
+optimal policy. Because agents always select different actions in both states, agents always stay in the same
+state and adversaries have no power to change it. The values for each state are ¯Vπ1(s1) = 0, ¯Vπ1(s2) = 100.
+Now we consider the stochastic policy π2 : π1(a1|s1) = π1(a1|s2) = π2(a1|s1) = π2(a2|s2) = 0.5. The values
+for each state are ¯Vπ2(s1) = ¯Vπ2(s2) = 50. Because ¯Vπ2(s1) > ¯Vπ1(s1), the policy π1 is not an optimal policy
+for agents.
+If there exists an optimal policy π∗, then it must be better than π1 and have ¯Vπ∗(s1) > 0, ¯Vπ∗(s2) = 100. In
+order to have ¯Vπ∗(s2) = 100, agents must select different actions in s2 and keep receiving the positive rewards
+from each step. In order to have ¯Vπ∗(s1) > 0, agents must have a chance to select the same action in s1, i.e.,
+Pr(a1 = a2 | s1) > 0. However, if Pr(a1 = a2 | s1) > 0, then adversaries can have χi(s1|s2) > 0 for i = 1, 2 to
+perturb the state s2 to s1 and reduce ¯Vπ∗(s2). Therefore, no policy can do better than π1 and since π1 is not
+an optimal policy, there is no optimal policy for agents.
+In the comparison of π1 and π2 in the above proof, it is apparent that it is not always possible to maximize
+the state value of all states and that trade-offs may need to be made among different states. Using the
+traditional definition of an optimal policy, it is not possible to determine which policy, π1 or π2, is better.
+However, if we use the worst-case expected state value concept from Definition 4.8 and assume that the
+initial state is always s2, then we can conclude that π1 is an optimal agent policy, as it gives the maximum
+worst-case expected state value of 100 in this case.
+C
+Stage-wise Equilibrium, Robust Total Nash Equilibrium, and Robust Agent Policy
+In Theorem 4.3, it has been proven that a state-robust totally optimal agent policy does not always exist for
+SAMGs. This section explores alternative solution concepts for the agent policy in SAMGs. We begin by
+demonstrating the existence of a unique robust state value function for each agent in C.1. Building on this
+property, we establish the existence of a stage-wise equilibrium for each state in C.2. However, we show in C.3
+that the robust total Nash equilibrium may not always exist. As an alternative, we propose the concept of a
+robust agent policy and demonstrate its existence in C.4.
+We first give a review of the Nash equilibrium used in the literature. The Nash equilibrium is a widely
+used solution concept in game theory, first proposed by Nash in Nash (1951) for general-sum finite one-shot
+games. It states that each player selects the best response strategy to the others’ strategies and no player
+would want to deviate from the equilibrium, as doing so would result in a worse utility. This concept was
+later extended to infinite games by Debreu (Debreu, 1952), Glicksberg (Glicksberg, 1952), and Fan (Fan,
+1952). Markov games, which involve a sequential decision process in a two-player zero-sum setting, were first
+defined by Shapley in Shapley (1953). Fink extended the Nash equilibrium concept to Markov games in Fink
+(1964) and proved that an equilibrium point exists in n-player general-sum discounted Markov games. The
+uncertainty in transition dynamics of a Markov game was considered in Nilim & El Ghaoui (2005); Iyengar
+(2005) using a robust optimization approach, with independent proofs for the existence of the equilibrium
+point. Additionally, uncertainty in utility (or "reward" in reinforcement learning) was also taken into account
+in Kardeş et al. (2011) for n-player finite state/action discounted Markov games, with a proof for the existence
+of the equilibrium point.
+Despite the extensive study of the Nash equilibrium in game theory, the uncertainty in the state has not yet
+been explored in the context of Markov games. To the best of our knowledge, we are the first to formulate the
+problem of n-player finite state/action discounted Markov games with state uncertainty and to demonstrate
+the existence of a stage-wise equilibrium, as well as the non-existence of a robust total Nash equilibrium.
+We use the following Assumption C.1 throughout this section.
+Assumption C.1. The global state set S and the global action set A are finite sets.
+21
+
+Published in Transactions on Machine Learning Research (01/2024)
+C.1
+Unique Robust State Value Function
+Denote the agent policies and adversary policies of all other agents and adversaries except agent i and
+adversary i as π−i and χ−i respectively. We show that there exists a unique robust state value function for
+agent i given any π−i and χ−i.
+Definition 4.4 (Robust state value function). A state value function V i
+∗,π−i,∗,χ−i : S →R for agent i
+given π−i and χ−i is called a robust state value function if for all s ∈S,
+V i
+∗,π−i,∗,χ−i(s) = max
+πi min
+χi
+X
+ρ∈Ps
+χ(ρ|s)
+X
+a∈A
+π(a|ρ)
+ 
+r(s, a) + γ
+X
+s′∈S
+p(s′|s, a)V i
+∗,π−i,∗,χ−i(s′)
+!
+.
+(21)
+Note that we use π(a|ρ) = Πn
+i=1πi(ai|ρi) to denote the joint agent policy. We use χ(ρ|s) = Πn
+i=1χi(ρi|s) to
+denote the joint adversary policy.
+Before proving the existence of the unique robust state value function, we first introduce some notations
+for this proof. For a given state value function V i
+∗,π−i,∗,χ−i : S →R defined on a finite state set S, we can
+construct a state value vector vi = vec(V i
+∗,π−i,∗,χ−i) = [V i
+∗,π−i,∗,χ−i(s)]s∈S ∈V := R|S| by traversing all states,
+where vec(·) is a vectorization function. The infinity norm on V is ∥vi∥∞= maxs∈S |V i(s)|. Define the total
+expected return in state s for πi and χi as
+f i
+s(vi, πi, π−i, χi, χ−i) =
+X
+ρ∈Ps
+χ(ρ|s)
+X
+a∈A
+π(a|ρ)
+ 
+r(s, a) + γ
+X
+s′∈S
+p(s′|s, a)[vec−1(vi)](s′)
+!
+,
+(22)
+where π−i and χ−i denotes the agent policies and the adversary policies of all other agents except agent i.
+Define the robust state value in state s given π−i and χ−i as a function ψi
+s : V →R,
+ψi
+s(vi, π−i, χ−i) = max
+πi min
+χi f i
+s(vi, πi, π−i, χi, χ−i).
+(23)
+Note that ψi
+s gives a real number that denotes the total expected return in state s given π−i and χ−i. We can
+construct a mapping Ψi
+π,χ : V →V from any state value vector vi to a robust state value vector [Ψi
+π,χ(vi)]s∈S
+by traversing all s, that is to say, [Ψi
+π,χ(vi)]s∈S = ψi
+s(vi, π−i, χ−i).
+Lemma C.2. For any i ∈N, the function Ψi
+π,χ : V →V is a contraction mapping given any π−i and χ−i of
+other agents and adversaries except agent i and adversary i.
+Proof. Let us consider two vectors vi, zi ∈V. For any i ∈N, given any π−i and χ−i, for all s ∈S, we have
+ψi
+s(vi, π−i, χ−i) = max
+πi min
+χi f i
+s(vi, πi, π−i, χi, χ−i)
+= f i
+s(vi, πi∗, π−i, χi∗, χ−i),
+(24)
+where πi∗is the corresponding maximizer, and χi∗is the corresponding optimizer for πi∗. Similarly, with the
+optimizers ωi∗and φi∗
+1 for the following maximin optimization problem, we have
+ψi
+s(zi, π−i, χ−i) = max
+ωi min
+φi f i
+s(zi, ωi, π−i, φi, χ−i)
+= f i
+s(zi, ωi∗, π−i, φi∗
+1 , χ−i)
+≥f i
+s(zi, πi∗, π−i, φi∗
+2 , χ−i),
+(25)
+22
+
+Published in Transactions on Machine Learning Research (01/2024)
+where
+φi∗
+2 = arg min
+φi
+f i
+s(zi, πi∗, π−i, φi, χ−i).
+(26)
+Then, for any i ∈N, given any π−i and χ−i, for all s ∈S, it holds that
+ψi
+s(vi, π−i, χ−i) −ψi
+s(zi, π−i, χ−i)
+= f i
+s(vi, πi∗, π−i, χi∗, χ−i) −f i
+s(zi, ωi∗, π−i, φi∗
+1 , χ−i)
+≤f i
+s(vi, πi∗, π−i, χi∗, χ−i) −f i
+s(zi, πi∗, π−i, φi∗
+2 , χ−i)
+≤f i
+s(vi, πi∗, π−i, φi∗
+2 , χ−i) −f i
+s(zi, πi∗, π−i, φi∗
+2 , χ−i)
+=
+X
+ρ∈Ps
+φi∗
+2 (ρi|s)
+Y
+j̸=i
+χj(ρj|s)
+X
+a∈A
+πi∗(ai|ρi)×
+Y
+k̸=i
+πk(ak|ρk)
+ 
+r + γ
+X
+s′∈S
+p(s′|s, a)[vec−1(vi)](s′)
+!
+−
+X
+ρ∈Ps
+φi∗
+2 (ρi|s)
+Y
+j̸=i
+χj(ρj|s)
+X
+a∈A
+πi∗(ai|ρi)×
+Y
+k̸=i
+πk(ak|ρk)
+ 
+r + γ
+X
+s′∈S
+p(s′|s, a)[vec−1(zi)](s′)
+!
+=
+X
+ρ∈Ps
+φi∗
+2 (ρi|s)
+Y
+j̸=i
+χj(ρj|s)
+X
+a∈A
+πi∗(ai|ρi)×
+Y
+k̸=i
+πk(ak|ρk)γ
+X
+s′∈S
+p(s′|s, a)×
+
+[vec−1(vi)](s′) −[vec−1(zi)](s′)
+	
+≤
+X
+ρ∈Ps
+φi∗
+2 (ρi|s)
+Y
+j̸=i
+χj(ρj|s)
+X
+a∈A
+πi∗(ai|ρi)×
+Y
+k̸=i
+πk(ak|ρk)γ
+X
+s′∈S
+p(s′|s, a)∥vi −zi∥∞
+= γ∥vi −zi∥∞.
+(27)
+The second inequality in Eq. (27) follows
+χi∗= arg min
+χi
+f i
+s(vi, πi∗, π−i, χi, χ−i).
+(28)
+Because for any i ∈N, given any π−i and χ−i, for all s ∈S
+ψi
+s(vi, π−i, χ−i) −ψi
+s(zi, π−i, χ−i) ≤γ∥vi −zi∥∞,
+(29)
+Based on symmetry, we have
+ψi
+s(zi, π−i, χ−i) −ψi
+s(vi, π−i, χ−i) ≤γ∥zi −vi∥∞
+= γ∥vi −zi∥∞.
+(30)
+Thus, it holds that for any i ∈N, given any π−i and χ−i
+∥Ψi
+π,χ(vi) −Ψi
+π,χ(zi)∥∞≤γ∥vi −zi∥∞,
+(31)
+that is to say, the function Ψi
+π,χ is a contraction mapping.
+23
+
+Published in Transactions on Machine Learning Research (01/2024)
+Theorem 4.5 (Existence of Unique Robust State Value Function). For an SAMG with finite state
+and finite action spaces, for any i ∈N, given any π−i and χ−i of other agents and adversaries except agent i
+and adversary i, there exists a unique robust state value function V i
+∗,π−i,∗,χ−i : S →R for agent i such that
+for all s ∈S,
+V i
+∗,π−i,∗,χ−i(s) = max
+πi min
+χi
+X
+ρ∈Ps
+χ(ρ|s)
+X
+a∈A
+π(a|ρ)
+ 
+r(s, a) + γ
+X
+s′∈S
+p(s′|s, a)V i
+∗,π−i,∗,χ−i(s′)
+!
+.
+(32)
+Proof. For any i ∈N, there exists a state value function V i
+∗,π−i,∗,χ−i satisfying (32) if and only if vi =
+vec(V i
+∗,π−i,∗,χ−i) is a fixed point of Ψi
+π,χ : V →V, where [Ψi
+π,χ(vi)]s∈S = ψi
+s(vi, π−i, χ−i) and ψi
+s(vi, π−i, χ−i)
+is defined in (23). We use Banach’s fixed point theorem to prove this as follows.
+Because any finite-dimensional normed vector space is complete (Kreyszig, 1991), the (V, ∥· ∥∞) is a complete
+Banach space. Also, for any i ∈N, given any π−i and χ−i, the function Ψi
+π,χ is a contraction mapping
+according to Lemma C.2. Therefore, by Banach’s fixed point theorem, there is a unique fixed point vi such
+that Ψi
+π,χ(vi) = vi. In other words, for any i ∈N, given any π−i and χ−i, there exists a unique V i
+∗,π−i,∗,χ−i
+such that
+V i
+∗,π−i,∗,χ−i(s) = max
+πi min
+χi f i
+s(vi, πi, π−i, χi, χ−i).
+(33)
+Denote the state value function for agent i given any π−i and χ−i of other agents and adversaries except
+agent i and adversary i as
+V i
+πi,π−i,χi,χ−i(s) = f i
+s(vi, πi, π−i, χi, χ−i),
+(34)
+where vi = vec(V i
+∗,π−i,∗,χ−i). Then we have the following corollary for Theorem C.1.
+Corollary C.3. For an SAMG with finite state and finite action spaces, let V i
+∗,π−i,∗,χ−i be the unique robust
+state value function for agent i given any π−i and χ−i such that for all s ∈S,
+V i
+∗,π−i,∗,χ−i(s) = max
+πi min
+χi f i
+s(vi, πi, π−i, χi, χ−i)
+= f i
+s(vi, πi∗, π−i, χi∗, χ−i),
+(35)
+where vi = vec(V i
+∗,π−i,∗,χ−i), πi∗is the corresponding maximizer at state s, and χi∗is the corresponding
+optimizer for πi∗at state s, then for state s it holds that V i
+πi∗,π−i,χi∗,χ−i(s) ≥V i
+πi,π−i,χi∗,χ−i(s) for any πi,
+and V i
+πi∗,π−i,χi∗,χ−i(s) ≤V i
+πi∗,π−i,χi,χ−i(s) for any χi.
+C.2
+Existence of the Stage-wise Equilibrium
+Before we show the existence of the robust total Nash equilibrium, we first show a concept of the stage-wise
+equilibrium.
+Definition C.4 (Stage-wise Equilibrium). For an SAMG, the policy (π∗, χ∗) is a stage-wise equilibrium
+for state s if for all i ∈N and all πi and χi, it holds that
+V i
+πi,π−i∗,χi∗,χ−i∗(s) ≤V i
+πi∗,π−i∗,χi∗,χ−i∗(s)
+≤V i
+πi∗,π−i∗,χi,χ−i∗(s),
+(36)
+where π−i and χ−i denotes the agent policies and adversary policies of all the other agents except agent i,
+respectively.
+24
+
+Published in Transactions on Machine Learning Research (01/2024)
+The Nash equilibrium was originally proposed by Nash for finite one-shot games, in which the state transition
+of the environment is not considered. When the concept of Nash equilibrium is extended to Markov games,
+the existence of the equilibrium is shown through the existence of a state-wise equilibrium for each state. A
+policy that is a stage-wise equilibrium for all states is considered a Nash equilibrium for the Markov game.
+This idea brings the following proposition to show the relationship between the robust total Nash equilibrium
+and the stage-wise equilibrium for SAMGs.
+Proposition C.5. The policy (π∗, χ∗) is a robust total Nash equilibrium for an SAMG if the policy (π∗, χ∗)
+is a stage-wise equilibrium for all s ∈S.
+Proof. It is a natural result according to the Definition 4.6 and the Definition C.4.
+We show the existence of the stage-wise equilibrium defined in Definition C.4 in the following theorem.
+Theorem C.6 (Existence of Stage-wise equilibrium). For SAMGs with finite state and finite action
+spaces, the stage-wise equilibrium defined in Definition C.4 exists for any s ∈S.
+Proof. Let us construct a 2n player game for any s ∈S. We have n agents and n adversaries in the player
+set. We introduce uniform notations for the agents and adversaries to describe a 2n player game at state s.
+The player set I = {1, ..., n, n + 1, ..., 2n}. The first half of the player set {1, ..., n} represents agents, while
+the second half {n + 1, ..., 2n} represents adversaries. The set of available actions for player i is
+Ai
+s =
+
+
+
+
+
+Ai × Ai · · · × Ai
+|
+{z
+}
+total number: |Pis|
+,
+i = 1, ..., n;
+Pi−n
+s
+,
+i = n + 1, ..., 2n.
+(37)
+Each adversary’s action set includes all possible perturbed states in the admissible perturbed state set at
+state s. Each agent’s action set includes all possible joint actions given every possible perturbed state.
+Take the two-agent two-state game in Fig. 8 as an example, the player set I = {1, 2, 3, 4}. Player 3 is the
+adversary for agent player 1. Player 4 is the adversary for agent player 2. If the current true state is s1, then
+A1
+s1 = A2
+s1 = {(a1, a1), (a1, a2), (a2, a2), (a2, a1)} are the action sets for two agent players. In A1
+s1 for agent
+1, the joint action (a1, a2) means selecting a1 if the perturbed state for agent 1 is s1 and selecting a2 if the
+perturbed state for agent 1 is s2. For two adversary players, A3
+s1 = A4
+s1 = {s1, s2}, as adversaries can perturb
+the true state s1 to s2.
+We consider the mixed strategy σi
+s ∈∆(Ai
+s) for player i. Note that the mixed strategy for each adversary
+gives us the probability distribution of all possible perturbed states for state s, i.e. χi−n(ρi−n|s) = σi
+s(ρi−n)
+for i = n + 1, ..., 2n. Then we show how we can get each agent’s policy πi(ai|ρi) based on its mixed strategy
+σi
+s by calculating the marginal probabilities. Denote the total number of possible perturbed state for agent
+i at state s as P such that P = |Pi
+s|. Here we drop the subscript s in Ps for a concise representation.
+The perturbed state set for agent i is represented as {ρi
+1, ρi
+2, . . . , ρi
+P }. Denote the joint action of agent i as
+bi = (bi
+1, bi
+2, . . . , bi
+P ) where bi
+k is the action selected for the perturbed state ρi
+k ∈Pi
+s. Then the mixed strategy
+σi
+s(bi
+1, bi
+2, ..., bi
+P ) gives us the joint probability of selecting bi
+k for ρi
+k for all k = 1, 2, ..., P. We can get the
+marginal probability of selecting action ai given the perturbed state ρi
+k ∈Pi
+s as
+πi(ai|ρi
+k) =
+X
+{bi∈Ais|bi
+k=ai}
+σi
+s(bi
+1, bi
+2, ..., bi
+P ).
+(38)
+The marginal probability of selecting action ai given the perturbed state ρi
+k is calculated by summing up
+the joint probability over all joint actions in which agent i selects ai given the perturbed state ρi
+k. Take the
+two-agent two-state game in Fig. 8 as an example, if the current perturbed state for agent 1 is ρ1 = s1, then
+agent 1’s policy is
+π1(a1|ρ1 = s1) = σ1(a1, a1) + σ1(a1, a2)
+π1(a2|ρ1 = s1) = σ1(a2, a1) + σ1(a2, a2).
+(39)
+25
+
+Published in Transactions on Machine Learning Research (01/2024)
+Note that the mixed strategy σi
+s ∈∆(Ai
+s) only gives part of the agent and adversary policies. For example,
+the mixed strategy for the adversaries only gives a distribution of the perturbed states for st = s. We
+construct the complete agent and adversary policies as follows: For i = 1, ..., n, the agent i’s policy is
+πi(ai|ρi) =
+
+
+
+
+
+
+
+
+
+P
+{bi∈Ais|bi
+k=ai} σi
+s(bi
+1, bi
+2, ..., bi
+P ),
+for ρi = ρi
+k ∈Pi
+s;
+U(Ai),
+for ρi /∈Pi
+s,
+(40)
+where U(Ai) represents a uniform distribution on Ai. For i = 1, ..., n, the adversary i’s policy is
+χi(ρi|st) =
+(
+σi+n
+s
+(ρi),
+for st = s;
+U(Pi
+s),
+for st ̸= s,
+(41)
+where U(Pi
+s) represents a uniform distribution on Pi
+s.
+The utility function for player i is
+ui
+s(σi
+s, σ−i
+s ) =
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+f i
+s(vi∗, πi, π−i, χi, χ−i),
+for i = 1, ..., n;
+−f i−n
+s
+(v(i−n)∗, πi−n, π−(i−n),
+χi−n, χ−(i−n)),
+for i = n + 1, ..., 2n.
+(42)
+where σ−i
+s
+denotes the strategies of all other players except player i, vi∗= vec(V i
+∗,π−i,∗,χ−i), and V i
+∗,π−i,∗,χ−i
+is the unique robust state value function of agent i when the policies of other agents and adversaries are
+given by π−i and χ−i. The vi∗satisfies
+[vec−1(vi∗)](s) = max
+πi min
+χi f i
+s(vi∗, πi, π−i, χi, χ−i),
+(43)
+where f i
+s is defined for player i in (22) as
+f i
+s(vi, πi, π−i, χi, χ−i) =
+X
+ρ∈Ps
+χ(ρ|s)
+X
+a∈A
+π(a|ρ)
+ 
+r(s, a) + γ
+X
+s′∈S
+p(s′|s, a)[vec−1(vi)](s′)
+!
+.
+Note that σ−i
+s
+includes both π−i and χ−i for any i ∈I, and the existence of V i
+∗,π−i,∗,χ−i is guaranteed by
+Theorem C.1. Thus, the utility function is well-defined.
+Since the state set S is finite, Pi
+s ⊆S is a finite set for all i ∈N. Also, Ai is a finite set for all i ∈N. Therefore,
+∆(Ai
+s) is compact and convex for all i ∈I. Moreover, for all i ∈I, ui
+s(σi
+s, ·) is linear in σi
+s and therefore
+continuous and concave in σi
+s. According to the theorem (Debreu Debreu (1952), Glicksberg Glicksberg (1952),
+Fan Fan (1952)), the conditions for the existence of a Nash Equilibrium are satisfied, hence, there exists a
+Nash equilibrium σ∗
+s for this 2n player game for any s ∈S such that for any i ∈I, ui
+s(σi∗
+s , σ−i∗
+s
+) ≥ui
+s(σi
+s, σ−i∗
+s
+)
+for any σi
+s.
+Denote the agent and adversary policies as (π∗, χ∗) that are constructed following Eq. (40) and Eq. (41) by
+plugging in the Nash equilibrium (σi∗
+s , σ−i∗
+s
+). Substituting the (π∗, χ∗) into ui
+s(σi∗
+s , σ−i∗
+s
+) ≥ui
+s(σi
+s, σ−i∗
+s
+) and
+plugging in the definition of the utility functions, for any i = 1, 2, ..., n, it holds that
+f i
+s(vi∗, πi∗, π−i∗, χi∗, χ−i∗) ≥f i
+s(vi∗, πi, π−i∗, χi∗, χ−i∗),
+(44)
+for any πi. Also, for any i = 1, 2, ..., n, it holds that
+f i
+s(vi∗, πi∗, π−i∗, χi∗, χ−i∗) ≤f i
+s(vi∗, πi∗, π−i∗, χi, χ−i∗),
+(45)
+26
+
+Published in Transactions on Machine Learning Research (01/2024)
+for any χi. Therefore,
+max
+πi min
+χi f i
+s(vi∗, πi, π−i∗, χi, χ−i∗)
+=f i
+s(vi∗, πi∗, π−i∗, χi∗, χ−i∗).
+(46)
+According to Corollary C.3, for any πi, it holds that
+V i
+πi∗,π−i∗,χi∗,χ−i∗(s) ≥V i
+πi,π−i∗,χi∗,χ−i∗(s),
+(47)
+Also, for any χi, it holds that
+V i
+πi∗,π−i∗,χi∗,χ−i∗(s) ≤V i
+πi∗,π−i∗,χi,χ−i∗(s).
+(48)
+Thus, the stage-wise equilibrium defined in Definition C.4 exists for any s ∈S.
+C.3
+Non-existence of Robust Total Nash Equilibrium
+Theorem C.6 demonstrates the existence of a stage-wise equilibrium for any state s ∈S. In classic Markov
+games (Fink, 1964) and Markov games with reward/transition uncertainties (Kardeş et al., 2011; Nilim &
+El Ghaoui, 2005; Iyengar, 2005), this result naturally extends to the existence of a Nash equilibrium policy,
+as all agents’ and adversaries’ policies are based on the current true state. If a stage-wise equilibrium exists
+for any state s ∈S, then a Nash equilibrium can be constructed by taking the policies for each state s from
+their corresponding stage-wise equilibrium for state s (Fink, 1964; Kardeş et al., 2011; Nilim & El Ghaoui,
+2005; Iyengar, 2005). However, this natural extension cannot be used for our SAMG problem because the
+agent’s policy is based on the perturbed state instead of the true state. The problem is that the agent’s
+stage-wise equilibrium in one state may not be consistent with its stage-wise equilibrium in a different state.
+We illustrate this idea in the following theorem to show that the robust total Nash equilibrium does not
+always exist for SAMGs.
+Theorem 4.7 (Non-existence of Robust Total Nash Equilibrium). For SAMGs with finite state and
+finite action spaces, the robust total Nash equilibrium defined in Definition 4.6 does not always exist.
+Proof. We prove this theorem by showing that the following two-agent two-state game in Fig. 9 does not
+have a robust total Nash equilibrium. The two-agent two-state game in Fig. 9 is basically the same as the
+𝑠!
+𝑠"
+𝑎! = 𝑎"
+𝑟= 1
+𝑎! = 𝑎"
+𝑟= 0
+𝑎! ≠𝑎"
+𝑟= 1
+𝑎! ≠𝑎"
+𝑟= 0
+Figure 9: A new two-agent two-state game example. Agents get reward 1 at state s1 if they choose the same
+action. Agents get reward 1 at state s2 if they choose different actions.
+two-agent two-state game in Fig. 8. The only difference is we changed the state transition for the state s1.
+The new state transition functions for the state s1 are
+p(s′ = s2|s = s1, a1 ̸= a2) = 1,
+p(s′ = s1|s = s1, a1 = a2) = 1.
+(49)
+We first consider the stage-wise equilibriums for each state.
+For state s1, the stage-wise equilibrium requires Pr(a1
+t = a2
+t) = 1 for all t. One example of the agent policy is
+π1(a1|s1) = π1(a1|s2) = π2(a1|s1) = π2(a1|s2) = 1. Note that the agent should have a policy for both s1 and
+s2 even when considering the state-wise equilibrium for the state s1 (This means the current true state is s1).
+27
+
+Published in Transactions on Machine Learning Research (01/2024)
+This is because the adversary can perturb each agent’s state observation to be s2. There is no requirement
+for the adversary policy in the state-wise equilibrium because when Pr(a1
+t = a2
+t) = 1, the true state never
+transits. The state value for s1 is V (s1) = 100.
+Similarly, for state s2, the stage-wise equilibrium requires Pr(a1
+t ̸= a2
+t) = 1 for all t. One example of the agent
+policy is π1(a1|s1) = π1(a1|s2) = π2(a2|s1) = π2(a2|s2) = 1. There is no requirement for the adversary policy
+in the state-wise equilibrium of s2. The state value for s2 is V (s2) = 100.
+Since the stage-wise equilibriums have conflict requirements for the agent policy in s1 and s2, there is no
+agent policy satisfying the requirements of the stage-wise equilibriums in both s1 and s2 at the same time.
+Therefore, there is no robust total Nash equilibrium for agents in this two-agent two-state game.
+In the proof of Theorem 4.7, we intended to present a straightforward example for ease of understanding.
+However, more counter-examples can be more illustrative in demonstrating the prevalence of non-existence
+scenarios. As long as the two stage-wise equilibriums have different requirements (not necessarily contrary to
+each other), there is no Nash equilibrium.
+To elaborate, consider a 2-state 2-action game. If, for state s1, the stage-wise equilibrium necessitates choosing
+action a1 with probability 0.2 and a2 with probability 0.8, and for state s2, the stage-wise equilibrium requires
+choosing a1 with probability 0.6 and a2 with probability 0.4, then it’s clear that no Nash equilibrium can
+simultaneously satisfy these requirements. This example illustrates the absence of a robust Nash equilibrium
+in such a 2-state 2-action game scenario.
+Our conclusion is similar to that of Theorem 4.3, in that it is not always possible to find a policy that is a
+stage-wise equilibrium for all states. When facing adversarial state perturbations, trade-offs must be made
+among different states. As a result, the traditional solution concepts of an optimal agent policy and the
+robust total Nash equilibrium cannot be applied to SAMGs.
+C.4
+Existence of Robust Agent Policy
+We need to consider a new objective that is not state-dependent. Therefore, we propose a new objective, the
+worst-case expected state value, in Definition 4.8 as
+Es0∼Pr(s0)
+ ¯Vπ(s0)
+
+,
+where Pr(s0) is the probability distribution of the initial state.
+The new objective of "worst-case expected state value" is designed specifically for the state perturbation
+problem present in SAMGs. It is proposed as a response to our analysis of the non-existence of widely-used
+concepts. We demonstrate that these concepts can be easily corrupted by adversaries, requiring agents to
+make trade-offs between different states. This is the reason for introducing the new objective. The agent
+policy that aims to maximize this worst-case expected state value is referred to as a robust agent policy.
+In this section, we show the existence of a robust agent policy to maximize the worst-case expected state
+value. We first introduce lemmas for this proof.
+Denote pπ,χ,s0(st) as the probability of reaching state st given the agent policy π, adversary policy χ, and
+initial state s0. Let pπ,χ,s0(s0) = 1. The connection between pπ,χ,s0(st+1) and pπ,χ,s0(st) is:
+pπ,χ,s0(st+1) =
+X
+st∈S
+X
+at∈A
+X
+ρt∈P
+p(st+1|st, at)π(at|ρt)χ(ρt|st)pπ,χ,s0(st).
+(50)
+For a concise representation, we omit the subscript st of Pst in this section. Consider the function
+gs0
+t (π, χ) =
+X
+st∈S
+X
+at∈A
+X
+ρt∈P
+pπ,χ,s0(st)×
+π(at|ρt)χ(ρt|st)γtrt+1(st, at).
+(51)
+28
+
+Published in Transactions on Machine Learning Research (01/2024)
+Lemma C.7. The function gs0
+t
+is continuous on ∆(A) × ∆(P) for any t = 0, 1, 2, ..., n where n ∈N+.
+Proof. To prove the continuity, we construct some equivalent vectors as follows. We define a vector ⃗π ∈R|A||P|
+and ⃗π(a, ρ) = π(a|ρ) for a ∈A, ρ ∈P, and a vector ⃗χ ∈R|P||S| where ⃗χ(ρ, s) = χ(ρ|s) for ρ ∈P, s ∈S. And
+a vector constant ⃗r ∈R|S||A| where ⃗r(s, a) = r(s, a).
+⃗π⊤= [π(a1|ρ1), · · · , π(a|A||ρ1), π(a2|ρ1), · · · , π(a|A||ρ|P|)]
+⃗χ⊤= [χ(ρ1|s1), · · · , χ(ρ|P||s1), χ(ρ2|s1), · · · , χ(ρ|P||s|S|)]
+⃗pt = [pπ,χ,s0(st = s1), · · · , pπ,χ,s0(st = s|S|)]
+(52)
+Note that when ρ /∈Ps, then the entry χ(ρ|s) = 0. ⃗pt ∈R|S| can be expressed as a linear combination of
+⃗pt−1,⃗π and ⃗χ according to (50). Let’s first consider the case t = 0,
+gs0
+0 (π, χ) =
+X
+a0∈A
+X
+ρ0∈P
+π(a0|ρ0)χ(ρ0|s0)r(s0, a0)
+(53)
+Function gs0
+0 can be expressed as a linear combination of ⃗r,⃗π and ⃗χ. We consider the general case
+gs0
+t (π, χ) =
+X
+st∈S
+X
+at∈A
+X
+ρt∈P
+pπ,χ,s0(st)×
+π(at|ρt)χ(ρt|st)γtrt+1(st, at).
+(54)
+Function gs0
+t
+can be expressed as a linear combination of ⃗r, ⃗pt,⃗π and ⃗χ. Therefore, gs0
+t
+is continuous on
+∆(A) × ∆(P) for any t = 0, 1, 2, ..., n where n ∈N+.
+Lemma C.8. For any s0 ∈S, the series {Pn
+t=0 gs0
+t (π, χ)}, n = 1, 2, ..., converges uniformly on ∆(A)×∆(P).
+Proof. Consider M s0
+t (π, χ) = γtRmax, where Rmax is the largest absolute value of the rewards. We can check
+that |gs0
+t (π, χ)| ≤M s0
+t (π, χ) for t ≥0 as follows.
+|gs0
+t (π, χ)|
+=
+
+X
+st∈S
+X
+at∈A
+X
+ρt∈P
+pπ,χ,s0(st)π(at|ρt)χ(ρt|st)γtrt+1(st, at)
+
+≤
+
+X
+st∈S
+X
+at∈A
+X
+ρt∈P
+pπ,χ,s0(st)π(at|ρt)χ(ρt|st)γtRmax
+
+=γtRmax ×
+
+X
+st∈S
+X
+at∈A
+X
+ρt∈P
+pπ,χ,s0(st)π(at|ρt)χ(ρt|st)
+
+=γtRmax ×
+
+X
+st∈S
+X
+at∈A
+X
+ρt∈P
+Pr(st, at, ρt | s0, π, χ)
+
+=γtRmax × 1 = M s0
+t (π, χ).
+(55)
+Meanwhile,
+∞
+X
+t=0
+M s0
+t (π, χ) =
+∞
+X
+t=0
+γtRmax = Rmax
+1 −γ ,
+(56)
+29
+
+Published in Transactions on Machine Learning Research (01/2024)
+so P gs0
+t
+converges uniformly on ∆(A) × ∆(P) according to the Weierstrass M-test in Theorem 7.10 of Rudin
+et al. (1976).
+Lemma C.8 shows the series {Pn
+t=0 gs0
+t (π, χ)}, n = 1, 2, ..., converges uniformly on ∆(A) × ∆(P) for any
+s0 ∈S. In the following lemma, we show P∞
+t=0 gs0
+t (π, χ) is continuous on ∆(A) × ∆(P) for any s0 ∈S.
+Denote hs0(π, χ) = P∞
+t=0 gs0
+t (π, χ).
+Lemma C.9. The function hs0 is continuous on ∆(A) × ∆(P) for any s0 ∈S.
+Proof. Consider hs0
+n (π, χ) = Pn
+t=0 gs0
+t (π, χ) for n ∈N+. Since hs0
+n is a linear combination of {gs0
+t }t=0,1,2,··· ,n
+and gs0
+t
+is continuous on ∆(A) × ∆(P) for any t = 0, 1, 2, · · · , n according to Lemma C.7, the sequence {hs0
+n }
+is a sequence of continuous functions on ∆(A) × ∆(P). Meanwhile, hs0
+n →hs0 uniformly on ∆(A) × ∆(P) for
+any s0 ∈S according to Lemma C.8, therefore hs0 is continuous on ∆(A) × ∆(P) for any s0 ∈S according
+to the uniform limit theorem in Theorem 7.12 of Rudin et al. (1976).
+The following theorem shows finding a robust agent policy is equivalent to solving a maximin problem.
+Theorem 4.10. Finding an agent policy π to maximize the worst-case expected state value under an optimal
+adversary for π is equivalent to the maximin problem: maxπ minχ
+P
+s0 Pr(s0)Vπ,χ(s0).
+Proof. According to the Proposition 4.1, for any fixed agent policy π, there exists an optimal adversary policy
+χ∗such that ¯Vπ(s0) = minχ Vπ,χ(s0) for any s0 ∈S. Thus,
+max
+π
+Es0∼Pr(s0)
+ ¯Vπ(s0)
+
+= max
+π
+Es0∼Pr(s0)
+
+min
+χ Vπ,χ(s0)
+
+(Eq. (2))
+= max
+π
+X
+s0
+Pr(s0) min
+χ Vπ,χ(s0) (Definition of Expectation)
+= max
+π
+min
+χ
+X
+s0
+Pr(s0)Vπ,χ(s0),
+(Proposition 4.1)
+(57)
+Finally, we show the existence of the robust agent policy to maximize the worst-case expected state value in
+the following theorem.
+Theorem 4.11 (Existence of Robust Agent Policy). For SAMGs with finite state and finite action spaces,
+there exists a robust agent policy to maximize the worst-case expected state value defined in Definition 4.8.
+Proof. According to Theorem 4.10, finding an agent policy π to maximize the worst-case expected state value
+under an optimal adversary for π is equivalent to the following maximin problem:
+max
+π
+F(π)
+:= max
+π
+Es0∼Pr(s0)
+ ¯Vπ(s0)
+
+= max
+π
+min
+χ
+X
+s0
+Pr(s0)Vπ,χ(s0)
+= max
+π
+min
+χ J(π, χ),
+(58)
+where the objective function in (58) can be expanded as follows:
+J(π, χ)
+= Es0∼Pr(s0) [Vπ,χ(s0)]
+30
+
+Published in Transactions on Machine Learning Research (01/2024)
+=
+X
+s0
+Pr(s0)Vπ,χ(s0)
+=
+X
+s0
+Pr(s0) Eat∼π,ρt∼χ
+" ∞
+X
+t=0
+γtrt+1(st, at) | s0
+#
+=
+X
+s0
+Pr(s0)
+∞
+X
+t=0
+Eat∼π,ρt∼χ
+
+γtrt+1(st, at) | s0
+
+(linearity of the expectation)
+=
+X
+s0
+Pr(s0)
+∞
+X
+t=0
+X
+st∈S
+X
+at∈A
+X
+ρt∈P
+pπ,χ,s0(st)×
+π(at|ρt)χ(ρt|st)γtrt+1(st, at)
+=
+X
+s0
+Pr(s0)
+∞
+X
+t=0
+gs0
+t (π, χ)
+=
+X
+s0
+Pr(s0)hs0.
+(59)
+Because J(π, χ) is a linear combination of {hs0}s0∈S, S is finite, and hs0 is continuous on ∆(A) × ∆(P)
+for any s0 ∈S according to Lemma C.9, the objective function J(π, χ) = P
+s0 Pr(s0)hs0 is continuous on
+∆(A)×∆(P). Consider the function F(π) = minχ J(π, χ). Since the adversary policy space ∆(P) is compact,
+the function F is continuous in π. Meanwhile, the agent policy space ∆(A) is closed. Therefore, there exists
+an agent policy π to maximize F according to the extreme value theorem.
+Theorem 4.11 shows the existence of a robust agent policy. Different from the definitions of the state-robust
+totally optimal agent policy and robust total Nash equilibrium, the worst-case expected state value objective
+does not require the optimality condition to hold for all states. Agents won’t get stuck in trade-offs between
+different states, therefore, we can find a robust agent policy to maximize the worst-case expected state value
+for the SAMG problem.
+Now look back at the two-agent two-state game in Fig. 8. If we use the worst-case expected state value
+concept from Definition 4.8 and assume that the initial state is always s2, then we can conclude that π1 :
+π1(a1|s1) = π1(a1|s2) = π2(a2|s1) = π2(a2|s2) = 1 is a robust agent policy, as it gives the maximum
+worst-case expected state value of 100 for this game.
+D
+Robust Multi-Agent Adversarial Actor-Critic (RMA3C) Algorithm
+In general, it is challenging to develop algorithms that compute optimal or equilibrium policies for MARL
+under uncertainties (Zhang et al., 2020b; 2021). Our algorithm adopts centralized training and decentralized
+execution paradigm following the popular framework in Lowe et al. (2017). During training, there is a
+centralized critic Q(s, a) that records the total expected return given the global state s and global action a.
+The connection between Q(s, a) and V (s) is that for any i ∈N, s ∈S, a ∈A,
+Q(s, a) = r(s, a) + γ
+X
+s′∈S
+p(s′|s, a)V (s′).
+(60)
+Each agent’s state input for the actor is perturbed by an adversary χi(·|s) : S →∆(Pi
+s). During execution,
+each agent i selects action ai based on the perturbed state ρi ∈S using a trained policy πi : S →∆(Ai).
+We want to find a policy πi for each agent to maximize the worst-case expected state value in Definition 4.8
+under adversarial state perturbations.
+As shown in Alg. 1, our algorithm has a centralized critic network Q for training. Each agent has one actor
+network πi and one adversary network χi. The critic Q takes in the true global state and global action
+31
+
+Published in Transactions on Machine Learning Research (01/2024)
+Algorithm 1: Robust Multi-Agent Adversarial Actor-Critic (RMA3C) Algorithm
+1 Randomly initialize the critic network Q, the actor network πi, and the adversary network χi for each
+agent;
+2 Initialize target networks Q′, πi′, χi′;
+3 for each episode do
+4
+The initial state s0 ←sample from Pr(s0);
+5
+Initialize a random process X for action exploration;
+6
+for each time step do
+7
+for i=1 to n do
+8
+ρi ←sample from χi(·|s);
+9
+ai ←sample from πi(·|ρi) + X;
+10
+end
+11
+Execute actions a = (a1, ..., an);
+12
+Obtain the reward r and the next state s′;
+13
+D ←D ∪(s, a, r, s′);
+14
+s ←s′;
+15
+Q ←MGD_Optimizer(Q, D, Q′, π′, χ′);
+16
+/* Mini-batch gradient descent optimizer for critic.
+*/
+17
+π, χ ←GDA_Optimizer(Q, π, χ);
+18
+/* Gradient descent ascent optimizer for policies.
+*/
+19
+Update all target networks: θi′ ←τθi + (1 −τ)θi′.
+20
+end
+21 end
+during the training process. It returns a Q-value denoting the total expected return given s and a. The state
+transition experience is represented by (s, a, r, s′) where s′ is the next state. It is stored in a replay buffer
+D for the critic network’s training. We apply "replay buffer" and "target network" techniques (Mnih et al.,
+2015). The critic network is trained with a mini-batch gradient descent optimizer in line 15. In line 16, we
+use Gradient Descent Ascent (GDA) optimizer (Lin et al., 2020b) to update parameters for each agent’s actor
+network and adversary network for the maximin problem maxπ minχ
+P
+s0 Pr(s0)Vπ,χ(s0) in Theorem 4.10. A
+detailed introduction for the GDA optimizer is included in Appendix E.4.
+We have added an adversarial network that inputs the true state and outputs a perturbed state in RMA3C.
+This is in contrast to MADDPG and MAPPO, which do not include such a network. Compared to M3DDPG,
+which has a target policy network for each agent with outputs for the action space, our adversarial network’s
+output pertains to the state space, indicating a different computational load.
+E
+Implementation Detail
+All hyperparameters used in experiments are listed in table 3.
+E.1
+Environments
+We have tested our algorithm in environments provided by Lowe et al. (2017) as shown in Fig. 10.
+E.1.1
+Cooperative navigation (CN)
+This is a cooperative task. There are 3 agents and 3 landmarks. Agents want to occupy/cover all the
+landmarks. They need to cooperate through physical actions about their preferred landmark to cover. Also,
+they will be penalized when collisions happen.
+32
+
+Published in Transactions on Machine Learning Research (01/2024)
+Table 3: Hyperparameters for our RMA3C algorithm and the baselines.
+Parameter
+RMA3C
+M3DDPG
+MADDPG
+MAPPO
+optimizer for the critic network
+Adam
+Adam
+Adam
+Adam
+learning rate for agent policy π
+0.01
+0.01
+0.01
+0.0007
+learning rate for adversary policy χ
+0.001
+/
+/
+/
+discount factor
+0.95
+0.95
+0.95
+0.99
+replay buffer size
+106
+106
+106
+/
+activation function
+Relu
+Relu
+Relu
+Relu
+number of hidden layers
+2
+2
+2
+1
+number of hidden units per layer
+64
+64
+64
+64
+number of samples per minibatch
+1024
+1024
+1024
+1
+target network update coefficient τ
+0.01
+0.01
+0.01
+/
+GDA optimizer steps
+20
+/
+/
+/
+radius d
+1.0
+/
+/
+/
+uncertainty level λ
+0.5
+0.5
+0.5
+0.5
+upper boundary u
+1.0
+1.0
+1.0
+1.0
+lower boundary l
+-1.0
+-1.0
+-1.0
+-1.0
+episodes in training
+10k
+10k
+10k
+10k
+time steps in one episode
+25
+25
+25
+25
+Figure 10: Some environments to test our algorithm, including a) Cooperative navigation (CN) b) Exchange
+target (ET) c) Keep-away (KA) d) Physical deception (PD).
+E.1.2
+Exchange target (ET)
+This is a cooperative task. There are 2 agents and 3 landmarks. Each agent needs to get to its target
+landmark, which is known only by another agent. They have to learn communication and get to landmarks.
+Besides, both of them are generous agents that pay more attention to helping others, i.e. rewarded more if
+the other agent gets closer to the target landmark.
+33
+
+Published in Transactions on Machine Learning Research (01/2024)
+E.1.3
+Keep-away (KA)
+This is a competitive task. There is 1 agent, 1 adversary, and 1 landmark. The agent knows the position of
+the target landmark and wants to reach it. The adversary does not know the target landmark and wants to
+prevent the agent from reaching the target by pushing them away or occupying the target temporarily.
+E.1.4
+Physical deception (PD)
+This is a mixed cooperative and competitive task. There are 2 collaborative agents, 2 landmarks including
+a target, and 1 adversary. Both the collaborative agents and the adversary want to reach the target, but
+only collaborative agents know the correct target. The collaborative agents should learn a policy to cover all
+landmarks so that the adversary does not know which one is the true target.
+E.2
+Baselines
+We compare the performance of our algorithm with MADDPG (Lowe et al., 2017), M3DDPG (Li et al., 2019),
+and MAPPO (Yu et al., 2022) and follow their open-source implementation. We have a brief introduction of
+these methods in the following sections. There is no robustness considered in MADDPG and MAPPO. The
+M3DDPG considers the robustness of training partner’s policies, but it does not consider state uncertainty.
+The MAPPO is the multi-agent version of the Proximal Policy Optimization (PPO), a popular policy gradient
+algorithm. Because MAPPO only works in fully cooperative tasks, we only report its results in cooperative
+navigation and exchange target. Note that MAPPO is also used in Guo et al. (2020) but they do not provide
+an open-source implementation. Therefore, we select the latest implementation in Yu et al. (2022) with the
+open-source code.
+E.3
+Multi-Agent Deep Deterministic Policy Gradient (MADDPG)
+It is difficult to apply single-agent RL algorithms directly to the multi-agent case because the environment’s
+state transition is also influenced by the policy of other agents and it is non-stationary from a single agent’s
+view. To alleviate this problem and stabilize training, the MADDPG algorithm is proposed using a centralized
+Q function that has global state and global action information (Lowe et al., 2017). It assumes all agents are
+self-interested and every agent’s objective is to maximize its own total expected return. The objective for
+agent i is J(θi) = E[Ri] and its gradient is
+∇θiJ(θi) =
+(61)
+Ex,a∼D
+
+∇θiµi(oi)∇aiQi(x, a1, ..., an)|ai=µi(oi)
+
+,
+where Qi(x, a1, ..., an) is a centralized action-value function, x = (o1, . . . , on), and oi represents agent
+i’s observation. The experience replay buffer D contains transition experience x, a1, ..., an, x′, r1, ..., rn to
+decorrelate data. The centralized Qi can be trained using the Bellman loss:
+L(θi) = Ex,a,r,x′∼D[y −Qi(x, a1, ..., an)]2,
+y = ri + γQi′(x′, a1′, ..., an′)|aj′=µj′(oj),
+(62)
+where Qi′ is the target network whose parameters are copied from Q with a delay to stabilize the moving
+target. Note that this algorithm adopts a centralized training and decentralized execution paradigm. When
+testing, each agent can only access its local observation to select actions.
+In M3DDPG (Li et al., 2019), the uncertainty from the training partner’s policies is considered: all other
+partners are considered as adversaries that select actions to minimize the total expected return of the
+training agent. In other words, when updating both actor and critic, they select training partner’s actions by
+aj̸=i = arg minaj̸=i Qi(x, a1, ..., an).
+34
+
+Published in Transactions on Machine Learning Research (01/2024)
+E.4
+Gradient Descent Ascent (GDA)
+Gradient Descent Ascent (GDA) (Lin et al., 2020b) is currently one widely-used algorithm for solving the
+following minimax optimization problem:
+min
+x max
+y
+f(x, y).
+(63)
+GDA simultaneously performs gradient descent update on the variable x and gradient ascent update on the
+variable y according to (64) with step sizes ηx and ηy.
+xt+1 = xt −ηx∇xf(xt, yt),
+yt+1 = yt + ηy∇yf(xt, yt).
+(64)
+It has a variety of variants to accommodate different types of geometries of the minimax problem, such as
+convex-concave geometry, nonconvex-concave geometry, nonconvex-nonconcave geometry, etc.
+Figure 11: Our RMA3C algorithm compared with several baseline algorithms during the training process. The
+results showed that our RMA3C algorithm outperforms the baselines, achieving higher mean episode rewards
+and displaying greater robustness to state perturbations. The baselines were trained under either random
+state perturbations or a well-trained adversary policy χ∗(adversaries that are trained for the maximum
+training episodes in RMA3C). Overall, our RMA3C algorithm achieved up to 58.46% higher mean episode
+rewards than the baselines.
+E.5
+Training Comparison Under different Perturbations
+We first compare our algorithm with baselines during the training process to show that our RMA3C algorithm
+can outperform baselines to get higher mean episode rewards under different state perturbations. Note
+that our RMA3C algorithm has a built-in adversary to perturb states, so we do not train it under random
+state perturbations. Comparing RMA3C to other baselines with different state perturbations, the RMA3C
+gets higher mean episode rewards. It shows our RMA3C algorithm is more robust under different state
+perturbations. Comparing each baseline with random state perturbations to the same baseline with the
+well-trained adversary policy χ∗, we can see the adversary trained by the RMA3C is more powerful than
+the random state perturbations. Because the adversary policy χ∗intentionally selects state perturbations to
+minimize agents’ total expected return. The mean episode reward of the last 1000 episodes during training
+is shown in Table 4. Our RMA3C algorithm achieves up to 58.46% higher mean episode rewards than the
+baselines under different state perturbations.
+E.6
+Cooperative Navigation With 6 Agents
+We compare our RMA3C algorithm with baselines in the cooperative navigation scenario with more agents
+added. The original cooperative navigation environment has 3 agents and the training results are shown in
+Fig. 4. We show the training results with 6 agents in Fig. 12. After increasing the total number of agents
+35
+
+Published in Transactions on Machine Learning Research (01/2024)
+Table 4: Mean episode reward of the last 1000 episodes during the training. Our RMA3C algorithm achieves
+up to 58.46% higher mean episode rewards than the baselines. The corresponding figure is 11, and it is also
+included in the main content.
+CN
+ET
+KA
+RMA3C (ours)
+-401.7
+-47.02
+-8.93
+MADDPG w/ N
+-506.48
+-63.76
+-13.76
+M3DDPG w/ N
+-506.54
+-61.71
+-13.45
+MAPPO w/ N
+-569.07
+-94.28
+-
+MADDPG w/ χ∗
+-548.80
+-77.01
+-16.30
+M3DDPG w/ χ∗
+-547.99
+-75.87
+-16.26
+MAPPO w/ χ∗
+-585.83
+-113.19
+-
+Figure 12: Our RMA3C algorithm compared with baselines during the training process in the cooperative
+navigation scenario with 6 agents added. Our algorithm gets higher mean episode rewards in the environment
+with an increased agent number.
+in the environment, our RMA3C algorithm still gets higher mean episode rewards than baselines under
+adversarial state perturbations.
+We also test the learned policies in the 6-agent Cooperative Navigation (CN) environment to show our
+RMA3C policy is more robust under adversarial state perturbations. During testing, the mean episode
+rewards are averaged across 2000 episodes and 10 test runs for each algorithm. We put all the well-trained
+agents using different algorithms into the 6-agent CN environment with well-trained adversary policies χ∗
+to perturb states. The result is shown in Table 5. Our RMA3C policy achieves up to 9.57% higher mean
+episode reward than the baselines with well-trained adversarial state perturbations. The result shows that our
+RMA3C algorithm achieves higher robustness for a multi-agent system under adversarial state perturbations.
+F
+Discussions and Future Work
+In this section, we add several discussions of our work as a first attempt to study different solution concepts
+of the SAMG problem. We also point out several future directions for the SAMG problem.
+F.1
+GDA Convergence
+In our RMA3C algorithm, we use Gradient Descent Ascent (GDA) optimizer (Lin et al., 2020b) to update
+parameters for each agent’s actor network and the adversary network. Each agent updates the actor network to
+maximize the worst-case expected state value in Definition 4.8, while the corresponding adversary updates the
+adversary network to minimize the worst-case expected state value. How to solve a non-convex non-concave
+minimax problem is a very challenging and not yet well-solved problem. To the best of our knowledge, the
+GDA optimizer is currently one of the most widely used and accepted optimizers for this type of problem,
+36
+
+Published in Transactions on Machine Learning Research (01/2024)
+Table 5: Mean episode rewards of 2000 episodes during testing under well-trained adversarial state perturba-
+tions in the cooperative navigation environment with 6 agents. Our RMA3C policy achieves up to 9.57%
+higher mean episode reward than the baselines with well-trained χ∗.
+Environment
+CN with 6 agents
+MADDPG w/χ∗
+-3405.274 ± 66.18
+M3DDPG w/χ∗
+-3452.22 ± 80.16
+MAPPO w/χ∗
+-3121.90 ± 18.49
+RMA3C w/χ∗
+-3079.37 ± 16.16
+though it is not guaranteed to always converge (Jin et al., 2020; Razaviyayn et al., 2020; Lin et al., 2020b).
+Our RMA3C algorithm with GDA optimizer shows performance improvement in terms of policy robustness
+in our experiments. Note that we only use the GDA optimizer as a tool in our algorithm by leveraging
+the existing literature on solving non-convex non-concave minimax problems. Future advances of numerical
+algorithms and solvers for this kind of minimax problem will also benefit our algorithm by replacing the GDA
+optimizer with new advances.
+F.2
+Non-Markovian Policy
+In this work, we give the first attempt to focus on the Markovian policy under adversarial state perturbations.
+Dealing with the non-Markovian policy will significantly complicate the problem. We are aware of the
+suboptimality of Markovian policies, however, considering the computational cost of the non-Markovian
+policy of MARL, we decide to focus on Markovian policies in this work for computational tractability.
+Moreover, as shown in Proposition 3.2, our SAMG problem is different from a Dec-POMDP. Considering
+a non-Markovian policy based on the observation-action history may not give an advantage to the agents.
+For example, for the two-agent two-state game in Fig. 8, if the adversary randomly perturbs the state with
+χi(s1|s2) = 0.5 for i = 1, 2, then the agents still only have a 50% chance to guess the true state even with
+observation-action history. Considering another example for the two-agent two-state game in Fig. 8, if the
+adversary perturbs all states to state s1 with χi(s1|s2) = 1 and χi(s1|s1) = 1 for i = 1, 2, then the agents
+cannot get extra information for the true state even with observation-action history. We leave the formal
+analysis of non-Markovian, non-stationary policy as future work.
+F.3
+Non-collaborative Game
+In the problem formulation, we consider a collaborative game, where all agents share one stage-wise reward
+function. The new objective for the SAMG, the worst-case expected state value under state perturbations, is
+well-defined as proved in Theorem 4.11. For non-collaborative games, if each agent has its own reward function,
+and adversary i wants to minimize the total expected return of agent i, then for a fixed agent policy π, the n
+adversaries are playing a Markov game. In this case, only the Nash equilibrium exists among n adversaries,
+but optimal adversary policy may not exist. Therefore, for non-collaborative games, the worst-case expected
+state value is not well-defined. Even though the worst-case expected state value is not well-defined for
+non-collaborative games, the experiment results of the competitive games and mixed-cooperative-competitive
+game environments in Table 1 also show that our RMA3C algorithm can get larger mean episode rewards in
+non-collaborative games under adversarial state perturbations. Hence, our RMA3C algorithm can increase
+the robustness of policies of non-collaborative games in empirical experiments. We leave the formal analysis
+of the non-collaborative games as future work.
+37

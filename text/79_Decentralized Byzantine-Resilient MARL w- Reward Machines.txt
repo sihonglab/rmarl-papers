@@ -1,0 +1,1427 @@
+000
+001
+002
+003
+004
+005
+006
+007
+008
+009
+010
+011
+012
+013
+014
+015
+016
+017
+018
+019
+020
+021
+022
+023
+024
+025
+026
+027
+028
+029
+030
+031
+032
+033
+034
+035
+036
+037
+038
+039
+040
+041
+042
+043
+044
+045
+046
+047
+048
+049
+050
+051
+052
+053
+Under review as a conference paper at ICLR 2026
+DECENTRALIZED
+BYZANTINE-RESILIENT
+MULTI-
+AGENT REINFORCEMENT LEARNING WITH REWARD
+MACHINES IN TEMPORALLY EXTENDED TASKS
+Anonymous authors
+Paper under double-blind review
+ABSTRACT
+In resilient cooperative multi-agent reinforcement learning (c-MARL), a fraction
+of agents exhibit Byzantine behavior, sending fabricated or adversarially crafted
+information to hinder the learning process. Unlike existing approaches that often
+rely on a central controller or impose stringent behavior requirements on agents,
+we propose a fully decentralized method using reward machines (RMs) that can
+learn an optimal policy for temporally extended tasks. We introduce a belief-
+based Byzantine detection mechanism for discrete-time multi-agent reinforcement
+learning (MARL), where defender (non-Byzantine) agents iteratively update prob-
+abilistic suspicions of peers using observed actions and rewards. RMs allow us to
+encode the temporal dependencies in the reward structure of the task and guide the
+learning process. Our methods introduce tabular Q-learning and actor-critic algo-
+rithms with reward machines to learn a robust consensus mechanism to isolate the
+influence of Byzantine agents, in order to ensure effective learning by defender
+agents. We establish theoretical guarantees, demonstrating that our algorithms
+converge to an optimal policy. We further evaluate our method against baselines
+in two case studies to show its effectiveness and performance.
+1
+INTRODUCTION
+In multi-agent settings, where multiple learners interact within a shared environment, reinforce-
+ment learning (RL) enables collaborative exploration and policy optimization. However, real-world
+deployments, such as autonomous vehicle networks or distributed sensor arrays often involve dis-
+tributed systems where agents communicate locally. One main challenge in these settings arises
+from Byzantine agents, which may act arbitrarily or maliciously due to adversarial attacks or mal-
+function Lamport & Fischer (1982); Yin et al. (2018), transmitting corrupted data to undermine the
+collective learning objective.
+RL frameworks assume benign agents or centralized coordination, rendering them vulnerable to such
+adversarial disruptions. Recent advances, such as those in distributed RL Alsadat et al. (2025), have
+begun addressing robustness, yet many rely on a central server. This work tackles Byzantine-robust
+multi-agent RL in a fully decentralized setting, where agents communicate over a time-varying net-
+work without a central coordinator. We introduce two novel algorithms: BQL-RM (Belief-based Q-
+learning with Reward Machines) and BAC-RM (Belief-based Actor-Critic with Reward Machines)
+for resilient multi-agent reinforcement learning (MARL).
+In our methods, we use reward machines (RMs) Icarte et al. (2018), which are a type of Mealy
+machine that encode the task structure, and provide a structured approach to specify tasks with
+Markovian or non-Markovian reward functions for reinforcement learning agents. RMs provide a
+formal framework for representing complex Alsadat & Xu (2024), temporally extended tasks in a
+way that can guide reinforcement learning similar to temporal logic Aria & Xu (2025), but with the
+added advantage of learnable temporal dependencies and allows for transfer learning since it learns
+the task structure Icarte et al. (2018). By encoding the reward structure as a finite state machine, RMs
+make the temporal dependencies in the task explicit and learnable. This is particularly important
+for tasks that depend on temporal structure of the events or have long-term dependencies that are
+difficult to capture with standard Markovian reward functions.
+1
+
+054
+055
+056
+057
+058
+059
+060
+061
+062
+063
+064
+065
+066
+067
+068
+069
+070
+071
+072
+073
+074
+075
+076
+077
+078
+079
+080
+081
+082
+083
+084
+085
+086
+087
+088
+089
+090
+091
+092
+093
+094
+095
+096
+097
+098
+099
+100
+101
+102
+103
+104
+105
+106
+107
+Under review as a conference paper at ICLR 2026
+Related Work. In resilient RL, there are several main approaches to handle adversarial agents. One
+is to use robust aggregation Huang et al. (2024); Blanchard et al. (2017), another is to use a belief
+mechanism for Byzantine detection Li et al. (2023) or considering adversarial agents as uncertainty
+in the environment He et al. (2023). Our approach combines decentralized belief updates with RMs
+to handle temporally extended tasks without a central coordinator.
+Byzantine-Robust Distributed RL: Byzantine resilience in distributed systems traces to Lamport’s
+seminal work on fault-tolerant consensus Lamport & Fischer (1982). Recent RL adaptations, such
+as Byzan-UCBVI Zhang et al. (2021) requires episodic synchronization, incurring high communi-
+cation costs. On the other hand, clique-overweight (COW) Chen et al. (2023), proposes robust mean
+estimators for aggregating gradients from untrusted batches. While COW handles arbitrary batch
+sizes, it focuses on supervised settings and assumes a central server; a single point of failure in
+decentralized MARL. In contrast, our belief mechanism operates fully decentralized.
+Adversarial MARL: Adversarial methods like RADAR Phan et al. (2021) co-train the protagonist
+and antagonist agents, but require exhaustive adversary sampling, becoming intractable for large
+systems. M3DDPG Li et al. (2019) uses minimax optimization for worst-case perturbations but as-
+sumes fixed budgets, failing against adaptive adversaries. BARDec-POMDP Li et al. (2023) frames
+adversaries as Bayesian types but lacks convergence guarantees. COMA Foerster et al. (2018) and
+PPO-QMIX Rashid et al. (2020) excel in cooperation but require fixed agent numbers. Our work
+eliminates ratio assumptions and provides rigorous discrete-time analysis with convergence guaran-
+tees.
+Belief-Based Coordination: Belief systems in ad hoc teamwork Stone et al. (2010); Albrecht &
+Ramamoorthy (2015) enable agents to adapt to unknown teammate types. However, these methods
+presume cooperative agents with shared objectives, unlike our adversarial setting. Recent exten-
+sions Rahman et al. (2021) handle open teams (agents can enter and leave the team), but do not
+address Byzantine failures. Closest to our work is Tessler et al. (2018), which uses reward shaping
+for robustness, but their mechanism lacks theoretical grounding.
+We present a belief-based framework that uses reward machines to encode task structure and guide
+learning in cooperative MARL. We further propose a robust Byzantine-detection mechanism over
+an augmented state space with provable guarantees. Using these components, we develop two al-
+gorithms, a Q-learning approach and an actor-critic method that integrate RMs with our detection
+scheme. We provide theoretical proofs establishing convergence to an optimal policy.
+2
+PROBLEM FORMULATION
+We model the environment as a multi-agent labeled Markov decision process (MDP).
+Labeled Markov Decision Processes. We define a multi-agent labeled MDP as a tuple M =
+(S, N, sI, A, p, γ, P, L) which consists of a finite set of states denoted by S, a finite set of agents
+denoted by N such that N = {1, . . . , N} where N ∈N is the total number of agents, initial states
+denoted by sI = {s0
+I, . . . , sN
+I} where for each agent i ∈N we have si
+I ∈S, a finite set of joint
+actions denoted by A = Q
+i∈N Ai, a transition probability function denoted by P : S × Ai × S →
+[0, 1], a discount factor denoted by γ ∈[0, 1), a finite set of atomic propositions denoted by P, and
+a labeling function denoted by L : S × Ai × S →2P that maps transitions to sets of propositions.
+Reward machines (RMs) are a type of Mealy machine that encode Markovian and non-Markovian
+reward functions. They process a sequence of labels to produce rewards.
+Definition 1 (Reward machine) A reward machine (RM) is defined as A = ⟨U, uI, 2P, M, δ, σ⟩
+where U is a finite set of states, uI ∈U is the initial state, 2P is the input alphabet, M ⊆R is
+the output alphabet (which represents its reward), δ : U × 2P 7→U is the transition function, and
+σ : U × 2P 7→M is the output function mapping to reward.
+An RM Ai for agent i processes a label sequence li
+0li
+1 . . . li
+k to generate a sequence of RM states
+ui
+0ui
+1 . . . ui
+k and a corresponding reward sequence ri
+0ri
+1 . . . ri
+k. The initial RM state is ui
+0 = ui
+I,
+and subsequent states are determined by ui
+k+1 = δi(ui
+k, li
+k+1). Rewards are computed as ri
+k =
+σi(ui
+k, li
+k+1). The reward function of the labeled MDP for agent i is replaced with the reward ma-
+2
+
+108
+109
+110
+111
+112
+113
+114
+115
+116
+117
+118
+119
+120
+121
+122
+123
+124
+125
+126
+127
+128
+129
+130
+131
+132
+133
+134
+135
+136
+137
+138
+139
+140
+141
+142
+143
+144
+145
+146
+147
+148
+149
+150
+151
+152
+153
+154
+155
+156
+157
+158
+159
+160
+161
+Under review as a conference paper at ICLR 2026
+chine Ai that maps a trajectory si
+0ai
+0si
+1ai
+1 . . . si
+kai
+ksi
+k+1 with labels li
+0li
+1 . . . li
+k to the reward sequence
+ri
+0ri
+1 . . . ri
+k, as defined by Ai(li
+0li
+1 . . . li
+k).
+A policy πi(si, ui, ai) for agent i defines the probability of taking action ai ∈Ai in MDP state si ∈
+S given RM state ui ∈U. Under policy πi, agent i in MDP state si and RM state ui reaches MDP
+state s′ and RM state u′ with probability P(si, ui, ai, si,′, ui,′) after taking action ai. We denote a
+trajectory by si
+0ui
+0ai
+0si
+1ui
+1ai
+1 . . . si
+kui
+kai
+ksi
+k+1ui
+k+1 where k ∈N represents a sequence of states and
+actions visited by agent i. The corresponding label sequence to a trajectory is λi = l0l1 . . . lk where
+lk = L(si
+k, ai
+k, si
+k+1). A trace is a pair (λi, ρi) consisting of a label sequence λi and corresponding
+reward sequence ρi = ri
+0ri
+1 . . . ri
+k.
+3
+METHODOLOGY
+In cooperative multi-agent systems, it may be the case that some of the agents are improvised or
+malicious, i.e., they are not following the specified policy either due to a malfunction or adversarial
+attacks; therefore, experience Byzantine failures Yin et al. (2018); Xue et al. (2021). We characterize
+the Byzantine agents by their type θi ∈{0, 1}, 0 is for defender agents and 1 is for Byzantine agents.
+We denote the finite set of types by Θ = ×i∈Nθi. In our setting, we assume that the Byzantine
+agents can send fabricated or adversarially crafted or adversarially crafted information to hinder the
+learning process of defender agents. At the beginning of each episode, we randomly select a fraction
+of agents to be Byzantine, i.e., θi = 1 for i ∈NB where NB ⊆N is the set of Byzantine agents.
+We apply Assumption 1 to ensure that the number of Byzantine agents is less than the number of
+defenders, so that the defender can learn a robust policy against Byzantine agents.
+Assumption 1 (Byzantine agents number) We apply the constraint to the number of Byzantine
+agents, i.e., |N| −|NB| ≥M|NB| + 1 where M ∈Z+ \ {0} ensures that the number of defender
+agents is at least M times the number of Byzantine agents.
+For the Byzantine agents, we assume that they can send fabricated or adversarially crafted or adver-
+sarially crafted information to hinder the learning process of defender agents, namely, we character-
+ize this attack in our setting by sampling an action from the Byzantine agent’s policy ˆπi(· | si, ui, bi),
+i.e., ˆai
+k ∼ˆπi(· | si, ui, bi) and replacing the defender agent’s action ak with ˆai
+k. Therefore, the
+Byzantine agents at time k can send messages to the defender agents, where the defender agents can
+use these messages to update their policy. Agents execute the actions simultaneously and transition
+to the next state with probability p(si
+k+1, ui
+k+1, bi
+k+1 | si
+k, ui
+k, bi
+k, ˆai
+k). By executing the Byzantine
+agent’s action, the defender agents can be misled to learn a suboptimal policy. We assume that the
+Byzantine agents can send fabricated information to the defender agents. This assumption is com-
+mon in Byzantine-robust RL literature Chen et al. (2023); Zhang et al. (2021). We can write the
+value function for each type as follows:
+Vθi(si, ui, bi) = Eˆai
+k∼ˆπθi(·|si
+k,ui
+k,bi
+k)
+" ∞
+X
+k=0
+γkri
+k
+#
+(1)
+Across the current literature, some methods assume that the Byzantine agents can only send ad-
+versarial information to the defender agents, such as M3DDPG Li et al. (2019) and ROMAX Sun
+et al. (2022). Our method also uses state-adversarial MDP Zhang et al. (2020) since it considers the
+adversary during the decision-making process.
+3.1
+ADVERSARIAL ATTACK MODEL
+There have been studies for single-agent and multi-agent reinforcement learning where adversarial
+attacks are in the form of action perturbations Tessler et al. (2019); Li et al. (2019). Moreover, au-
+thors in Li et al. (2019) extend the action perturbation model to multi-agent reinforcement learning
+by offering a more dynamic and a less conservative alternative to existing methods by treating agent
+types as uncertain and using belief updates while remaining robust against adversarial attacks. Ac-
+tion uncertainties, often modeled as adversarial attacks like adversarial policies Gleave et al. (2019);
+3
+
+162
+163
+164
+165
+166
+167
+168
+169
+170
+171
+172
+173
+174
+175
+176
+177
+178
+179
+180
+181
+182
+183
+184
+185
+186
+187
+188
+189
+190
+191
+192
+193
+194
+195
+196
+197
+198
+199
+200
+201
+202
+203
+204
+205
+206
+207
+208
+209
+210
+211
+212
+213
+214
+215
+Under review as a conference paper at ICLR 2026
+Wu et al. (2021); Guo et al. (2021) or non-oblivious adversaries Dinh et al. (2023), represent a
+practical and disruptive form of attack that is difficult to mitigate. Building upon these works, we
+propose a realistic threat model with specific assumptions regarding attackers and defenders.
+Assumption 2 (Adversarial Model) During an episode, a fraction of agents are Byzantine, i.e.,
+θi = 1 for i ∈NB, and they can send fabricated information to the defender agents. The defender
+agents are unaware of the types of other agents and must learn a robust policy against the worst-
+case adversary. The type θi is determined by nature and cannot be changed during an episode Li
+et al. (2023).
+In our work, there can be more than one Byzantine agent as long as Assumption 1 holds. Despite
+similar methods such as Li et al. (2019), we assume that in each episode, more than one agent could
+be Byzantine. Additionally, the type space may be more complex, having a non-binary type space
+Xie et al. (2022), perturbing actions irregularly Lin et al. (2017). In a resilient cooperative multi-
+agent reinforcement learning setting with fixed policies, there exists a worst-case adversary that can
+cause the most harm to the defender agents Li et al. (2023). We also assume limitations in defender
+agents’ capabilities and information access during the training.
+Assumption 3 (defenders’ limitations) We assume that the defender agents can communicate with
+each other only through local communication and can only observe their own actions and rewards
+and their neighbors’ actions and rewards. The defender agents do not have access to the type θi of
+other agents. The defender agents can only observe the labels associated with their own actions. We
+also assume that the policy of defender agents is fixed against the Byzantine agents’ policies, ˆπi,⋆.
+3.2
+BELIEF-BASED BYZANTINE DETECTION
+In this section, we introduce our belief-based mechanism for detecting Byzantine agents. Each agent
+i ∈N maintains a belief state bi
+j ∈B where B is a finite set of beliefs for each of its neighbors j ∈N.
+This value represents agent i’s belief that neighbor j is Byzantine. At the start of each episode, the
+belief state is initialized to a prior value p ∈(0, 1). It is then updated iteratively based on the
+observed actions and rewards of the neighbors, following the update rules described below.
+ζi
+j(k + 1) =
+(
+ζi
+j(k) + γ+α(1 −ζi
+j(k))
+if aj
+k ̸= a⋆,j
+k ,
+ζi
+j(k) −γ−αζi
+j(k)
+if aj
+k = a⋆,j
+k ,
+(2)
+If the neighbor agent j takes a non-optimal action (by comparing it against its own optimal action in
+the same state), that is, aj
+k ̸= a⋆,j
+k , the belief state is increased by a factor of γ+α(1 −bi
+j(k)), where
+γ+ > 0 is the update rate for non-optimal actions and α ∈(0, 1) is the learning rate. Conversely, if
+the neighbor agent j takes an optimal action, i.e., aj
+k = a⋆,j
+k , the belief state is decreased by a factor
+of γ−αbi
+j(k), where γ−> 0 is the update rate for optimal actions. After each update, the belief
+state is discretized into three categories: if bi
+j(k + 1) ≤βl, the agent i considers the neighbor agent
+j as a defender, i.e., Bi
+j = 0; if βl < bi
+j(k + 1) ≤βu, the agent i considers the neighbor agent j
+as suspicious , i.e., Bi
+j = 1; and if bi
+j(k + 1) > βu, the agent i considers the neighbor agent j as
+Byzantine, i.e., Bi
+j = 2 where βl, βu ∈[0, 1] and βl < βu are the lower and upper thresholds for the
+belief state, respectively. Theorem 1 shows that the belief update mechanism converges.
+Theorem 1 (Belief Update Convergence) The belief update mechanism in equation 2 converges to
+the ground truth belief state, where each agent i ∈N maintains a belief state bi
+j ∈B for each of its
+neighbors j ∈N.
+Proof of Theorem 1 is provided in the Appendix.
+Algorithm 1 shows how each agent updates its belief state to detect Byzantine agents. Each agent
+i maintains a belief bi about which other agents may be Byzantine, based on observed actions and
+rewards. The algorithm allows agents to identify and isolate those sending fabricated or faulty
+information. Each agent maintains a probabilistic belief about whether the other agents are Byzan-
+tine, updating these beliefs iteratively based on observed actions and rewards. The algorithm be-
+gins by initializing the belief states for each agent i ∈N at time k = 0, where for every agent
+4
+
+216
+217
+218
+219
+220
+221
+222
+223
+224
+225
+226
+227
+228
+229
+230
+231
+232
+233
+234
+235
+236
+237
+238
+239
+240
+241
+242
+243
+244
+245
+246
+247
+248
+249
+250
+251
+252
+253
+254
+255
+256
+257
+258
+259
+260
+261
+262
+263
+264
+265
+266
+267
+268
+269
+Under review as a conference paper at ICLR 2026
+Algorithm 1 Belief update for detecting Byzantine agents
+Input: Agent set N, initial belief prior p ∈(0, 1)
+Parameter: learning rate α ∈(0, 1), suspicion threshold β ∈(0, 1), update rates γ+, γ−, γr > 0
+Output: {ζi
+j}, {i, j ∈N}
+1: Function BeliefUpdate()
+2: for i ∈N ∧k = 0 do
+3:
+for j ∈N, j ̸= i do
+4:
+ζi
+j(0) ←p
+5:
+end for
+6:
+ζi
+i(0) ←0
+7: end for
+8: for i ∈N do
+9:
+for j ∈N ∧j ̸= i do
+10:
+Observe aj
+k and rj
+k
+11:
+Compute optimal action a⋆,j
+k
+12:
+// Action-based belief update (Equation (2))
+13:
+if aj
+k ̸= a⋆,j
+k
+then
+14:
+ζi
+j(k + 1) ←ζi
+j(k) + γ+α(1 −ζi
+j(k))
+15:
+else
+16:
+ζi
+j(k + 1) ←ζi
+j(k) −γ−αζi
+j(k)
+17:
+end if
+18:
+// Discretize belief state
+19:
+if ζi
+j(k + 1) ≤βl then
+20:
+Bi
+j ←0 // Defender
+21:
+else if βl < ζi
+j(k + 1) ≤βu then
+22:
+Bi
+j ←1 // Suspicious
+23:
+else
+24:
+Bi
+j ←2 // Byzantine
+25:
+end if
+26:
+end for
+27: end for
+28: return {ζi
+j}, {i, j ∈N}
+j ̸= i, agent i assigns an initial belief probability ζi
+j(0) = p, with p ∈(0, 1) as a prior (Lines
+2 to 4), and sets its belief about itself to zero, i.e., ζi
+i(0) = 0 (Line 6). We then iterate over all
+agent pairs i and j ̸= i at each time step (Lines 8 to 9) to update belief states for each i and j
+at time step k. Agent i observes j’s action aj
+k (sampling action from Byzantine agents Li et al.
+(2023)) and reward rj
+k (Line 10), and then, using its own value function, each agent i determines
+whether the action taken by another agent j was optimal (Line 11). If the observed action differs
+from the optimal (Line 13), the belief is increased (i.e., the suspicion that the agent j is Byzan-
+tine increases) via ζi
+j(k + 1) ←ζi
+j(k) + γ+α(1 −ζi
+j(k)) (Line 14); otherwise, it decreases via
+ζi
+j(k + 1) ←ζi
+j(k) −γ−αζi
+j(k) (Line 16). The belief is then discretized into defender (0), suspi-
+cious (1), or Byzantine (2) using thresholds for lower and upper bounds, i.e., βl and βu (Lines 19 to
+24), assigning Bi
+j accordingly. Finally, the algorithm returns the set of beliefs probabilities {ζi
+j} for
+all agent pairs (Line 28), enabling robust decision-making in the presence of Byzantine agents.
+3.3
+Q-LEARNING WITH REWARD MACHINES AND BELIEF STATES
+In this section, we present our Q-learning algorithm that incorporates reward machines and belief
+states to learn robust policies in the presence of Byzantine agents. We extend the standard Q-
+learning algorithm to handle reward machines and belief states. The Q-learning algorithm learns a
+Q-function Qi(si, ui, bi, ai) for each agent i ∈N, which represents the expected cumulative reward
+for taking action ai in state si with RM state ui and belief state bi. The Q-function is updated using
+the Bellman equation shown in Definition 3.
+5
+
+270
+271
+272
+273
+274
+275
+276
+277
+278
+279
+280
+281
+282
+283
+284
+285
+286
+287
+288
+289
+290
+291
+292
+293
+294
+295
+296
+297
+298
+299
+300
+301
+302
+303
+304
+305
+306
+307
+308
+309
+310
+311
+312
+313
+314
+315
+316
+317
+318
+319
+320
+321
+322
+323
+Under review as a conference paper at ICLR 2026
+We also incorporate the belief update mechanism from Algorithm 1 to update the belief states of the
+agents based on the observed actions and rewards of their neighbors.
+Definition 2 (Q-function) The Q-function for agent i is defined as Qi(si, ui, bi, ai), which repre-
+sents the expected cumulative reward for taking action ai in state si with RM state ui and belief
+state bi.
+Definition 3 (Q-learning update) The Q-learning update for agent i is defined as:
+Qi(si, ui, bi, ai) ←(1 −αQ) · Qi(si, ui, bi, ai)+
+αQ · (ri
+k + γ · max
+ai,′∈Ai Qi(si,′, ui,′, bi,′, ai,′))
+(3)
+where αQ ∈(0, 1) is the learning rate, γ ∈[0, 1) is the discount factor, si,′ is the next MDP state,
+ui,′ is the next RM state, and bi,′ is the next belief state.
+We use Algorithm 2 to train agents using Q-learning with reward machines and belief states. The
+proposed algorithm, BQL-RM (belief-based Q-learning with reward machines), is designed to learn
+decentralized optimal policies in cooperative multi-agent systems with Byzantine agents. First, we
+initialize the algorithm by initializing the Q-function Qi(si, ui, bi, ai) for each agent i ∈N across
+all states si, RM states ui, belief states bi, and actions ai (Line 2). Then we set the initial RM state
+to ui
+0 = uI (Line 3), and initializes belief states bi
+0 (Line 3). Afterwards, we iterate over Q episodes
+(Line 5) where we reset the environment state to si
+0 (Line 6), reinitialize RM states (Line 7), and
+resets belief states using Algorithm 1. Within each episode, a time step loop from k = 0 to T (Line
+9) initializes action and belief lists (Line 10), selects actions via an epsilon greedy policy (Line 13),
+and updates lists (Line 14). Then each agent executes its action and transitions to a new MDP state
+si
+k+1 (Line 18) and receives a label li
+k+1 from the environment (Line 19). By receiving the label, the
+agent then updates its RM state (Line 21) and receives a reward ri
+k (Line 21). We then update the
+belief states every m ∈Z+ steps (Lines 23 to 25) in order to find and isolate the Byzantine agent.
+Afterwards, the Q-values are updated using equation 3 to learn the optimal action-value functions
+(Line 31). We then transition to the next time step, following the state updates (Line 32). Finally,
+the BQL-RM returns the Q-functions {Qi}i∈N (Line 36), encoding optimal action-value functions
+for each agent’s task, in the adversarial context, ensuring robust learning against Byzantine agents.
+4
+ALGORITHMS
+We analyze the convergence properties of BQL-RM and BAC-RM, establishing theoretical guaran-
+tees for learning in Byzantine environments. BQL-RM converges to optimal policies under tabular
+assumptions, while BAC-RM converges to stationary points with function approximation. Detailed
+proofs are in the appendix.
+4.1
+LEARNING GUARANTEES FOR BQL-RM
+BQL-RM convergence analysis extends classical Q-learning results to augmented state spaces with
+Byzantine agents and belief updates. First, we require finite state spaces S, U, and B to ensure finite
+Q-table dimensions, which is practical since reward machines have finite states and belief spaces
+can be discretized.
+Second, we require that all state-action pairs (si, ui, bi, ai) are visited infinitely often with probabil-
+ity 1. This exploration condition can be satisfied through appropriate ϵ-greedy policies with ϵ > 0
+and proper belief update mechanisms that ensure sufficient exploration of the augmented state space.
+Assumption 4 (Infinite Visitation) For each agent i ∈N and each state-action pair (si, ui, bi, ai)
+in the augmented state space, the pair is visited infinitely often:
+p
+ ∞
+X
+k=0
+I[(si
+k, ui
+k, bi
+k, ai
+k) = (s, u, b, a)] = ∞
+!
+= 1
+(4)
+where I[·] is the indicator function.
+6
+
+324
+325
+326
+327
+328
+329
+330
+331
+332
+333
+334
+335
+336
+337
+338
+339
+340
+341
+342
+343
+344
+345
+346
+347
+348
+349
+350
+351
+352
+353
+354
+355
+356
+357
+358
+359
+360
+361
+362
+363
+364
+365
+366
+367
+368
+369
+370
+371
+372
+373
+374
+375
+376
+377
+Under review as a conference paper at ICLR 2026
+Algorithm 2 BQL-RM, Belief-based Q-learning with RM
+Input: Agent set N, reward machine A, belief update function
+Parameter: learning rate αQ ∈(0, 1), discount factor γ ∈[0, 1), exploration rate ϵ ∈(0, 1)
+Output: Q-functions {Qi}i∈N
+1: for i ∈N do
+2:
+Qi(s, u, b, a) ←InitQ () for all (s, u, b, a)
+3:
+ui
+0 ←InitRMState (uI) , bi
+0 ←InitBelS ()
+4: end for
+5: for episode = 1, . . . , Q do
+6:
+Initialize environment state si
+0 for all i ∈N
+7:
+Reset RM states ui
+0 ←uI for all i ∈N
+8:
+Reset belief states using belief update function
+9:
+for k = 0, . . . T do
+10:
+ak ←{}; bk ←{}
+11:
+for i ∈N do
+12:
+// Action selection with ϵ-greedy policy
+13:
+ai
+k ←GetGreedyAction(Ai)
+14:
+ak ←ak ∪{ai
+k}, bk ←bk ∪{bi
+k}
+15:
+end for
+16:
+// Environment transition
+17:
+for i ∈N do
+18:
+si
+k+1 ←ExecuteAction(ai
+k, si
+k)
+19:
+li
+k+1 = Li(si
+k, ai
+k, si
+k+1)
+20:
+// Reward machine transition
+21:
+ui
+k+1 ←δi(ui
+k, li
+k+1) , ri
+k ←σi(ui
+k, li
+k+1)
+22:
+end for
+23:
+if
+mod (k, m) = 0 then
+24:
+// Update belief state based on observations
+25:
+bk+1 ←BeliefUpdate(bk, ak)
+26:
+end if
+27:
+// Update Q-values
+28:
+for i ∈N do
+29:
+Qi(si
+k, ui
+k, bi
+k, ai
+k) ←
+30:
+(1 −αQ)Qi(si
+k, ui
+k, bi
+k, ai
+k)+
+31:
+αQ
+
+ri
+k + γ maxai,′ Qi(si
+k+1, ui
+k+1, bi
+k+1, ai,′)
+
+32:
+si
+k ←si
+k+1, ui
+k ←ui
+k+1, bi
+k ←bi
+k+1
+33:
+end for
+34:
+end for
+35: end for
+36: return {Qi}i∈N
+Third, we assume the learning rate sequence {αQ(k)} satisfies the Robbins-Monro conditions, en-
+suring appropriate convergence. Additionally, we require that the belief update mechanism provide
+asymptotically correct estimates of Byzantine agents.
+Under the stated assumptions, we establish the following convergence result:
+Theorem 2 (Convergence of BQL-RM) The Q-function learned by BQL-RM converges almost
+surely (i.e., with probability 1) to the optimal Q-function:
+lim
+k→∞Qi(si, ui, bi, ai) = Qi,∗(si, ui, bi, ai)
+(5)
+where Qi,∗is the optimal Q-function.
+The proof of Theorem 2 (detailed proof in Appendix Section BQL-RM Convergence) follows from
+the contraction property of the Bellman operator in the augmented state space and the Markov prop-
+erty preservation when beliefs are included as state representation.
+7
+
+378
+379
+380
+381
+382
+383
+384
+385
+386
+387
+388
+389
+390
+391
+392
+393
+394
+395
+396
+397
+398
+399
+400
+401
+402
+403
+404
+405
+406
+407
+408
+409
+410
+411
+412
+413
+414
+415
+416
+417
+418
+419
+420
+421
+422
+423
+424
+425
+426
+427
+428
+429
+430
+431
+Under review as a conference paper at ICLR 2026
+0
+1
+2
+a
+b
+c
+d
+e
+Agents
+a
+bc
+de
+Figure 1: Grid environment showing three agents (orange triangles numbered 0, 1, 2) at their initial
+positions and five objects (colored circles labeled a-e) across the grid.
+4.2
+LEARNING GUARANTEES FOR BAC-RM
+For BAC-RM, we use two-timescale stochastic approximation theory where critic updates occur
+faster than actor updates. We require Lipschitz continuity of both the policy and Q-function with
+respect to their parameters, ensuring stability of the gradient-based updates. Assuming appropriate
+two-timescale learning rates with critic updates faster than actor updates, we establish:
+Theorem 3 (Convergence of BAC-RM) The parameters learned by BAC-RM converge almost
+surely (i.e., with probability 1) to a stationary point (ϕi,∗, ψi,∗) of the objective function:
+lim
+k→∞∥∇ϕiJ(ϕi
+k)∥= 0
+(6)
+where J(ϕi) is the objective function, ϕi is the actor parameter, and ψi is the critic parameter.
+The proof of Theorem 3 uses two-timescale analysis (detailed proof in Appendix Section Actor-
+Critic Convergence), where belief-based Byzantine detection ensures unbiased gradient estimates
+despite adversarial agents.
+5
+EXPERIMENTS
+We evaluate our proposed algorithms, BQL-RM and BAC-RM, in a cooperative multi-agent setting
+with Byzantine agents using a grid-world where three agents cooperate while one provides fabricated
+information. The environment tests agents’ ability to identify Byzantine behavior while maximizing
+rewards. Our second experiment (Search and Rescue) is presented in the Appendix.
+5.1
+FORAGING
+We consider a foraging scenario where agents navigate a 6 × 4 grid-world to collect resources while
+dealing with Byzantine agents. This is a variation of level-based foraging (LBF) Papoudakis et al.
+(2020) where agents must cooperate to collect assigned resources.
+Figure 3 shows results for the foraging task. Both BQL-RM and BAC-RM outperform baselines
+without reward machines. PPO-QMIX achieves the highest baseline performance, while COMA
+and M3DDPG show limited effectiveness due to the inability to capture temporal dependencies.
+Figure 3: Cumulative rewards for the foraging task with Byzantine agents. BQL-RM outperforms
+baselines using reward machines and belief states.
+The BQL-RM algorithm achieves higher cumulative rewards and converges faster than baselines,
+demonstrating the effectiveness of reward machines and belief states in Byzantine-robust c-MARL.
+8
+
+432
+433
+434
+435
+436
+437
+438
+439
+440
+441
+442
+443
+444
+445
+446
+447
+448
+449
+450
+451
+452
+453
+454
+455
+456
+457
+458
+459
+460
+461
+462
+463
+464
+465
+466
+467
+468
+469
+470
+471
+472
+473
+474
+475
+476
+477
+478
+479
+480
+481
+482
+483
+484
+485
+Under review as a conference paper at ICLR 2026
+v0
+start
+v1
+v2
+v3
+v4
+(a1, 0)
+(c2, 0)
+(¬a1 ∧¬c2 ∧¬d3, 0)
+(d3, 0)
+(c2 ∨d3, 0)
+(¬c2 ∧¬d3, 0)
+(a1 ∨d3, 0)
+(¬a1 ∧¬d3, 0)
+(b12 ∧e3, 1)
+(¬(b12 ∧e3), 0)
+(⊤, 0)
+Figure 2: Team-level reward machine for the foraging task. Label a1 indicates Agent 1 has visited
+location ′a′, c2 indicates Agent 2 has visited location ′c′, d3 indicates Agent 3 has visited location
+′d′, b12 indicates both Agents 1 and 2 have visited location ′b′, and e3 indicates Agent 3 has visited
+location ′e′. The team receives a reward only when at least two agents have completed their assigned
+tasks.
+BAC-RM also performs well but converges more slowly, indicating both algorithms effectively learn
+robust policies against Byzantine agents.
+5.2
+LIMITATIONS AND DISCUSSIONS
+Our experiments demonstrate that integrating reward machines with a belief-based detection mech-
+anism provides an effective solution for temporally extended tasks in decentralized settings with
+local communication. Our proposed framework preserves formal guarantees in the tabular cases
+and provides two algorithms, BQL-RM and BAC-RM. These methods strike different trade-offs be-
+tween sample efficiency and scalability, yielding faster convergence and higher cumulative returns
+across the evaluated benchmarks. While our algorithms perform well in the tabular setting, they
+may not scale well to large state and action spaces. Extending the tabular BQL-RM to settings
+with function approximation would enable scaling to larger state and action spaces. The current
+belief update mechanism compactly models agent types from observed actions, but richer inference
+strategies could yield more robust detection under noisy or ambiguous observations. As agent num-
+bers increase, network constraints are likely to play a more central role, underscoring the need for
+communication-efficient designs. Finally, while our theoretical guarantees hold under the stated
+assumptions, we find that empirical performance can be sensitive to hyperparameter choices and
+environment dynamics.
+6
+CONCLUSIONS
+We study decentralized Byzantine-resilient cooperative MARL for temporally extended tasks by us-
+ing reward machines with a belief-based Byzantine detection mechanism under local agent-to-agent
+communication. We demonstrated that our belief update mechanism can effectively identify Byzan-
+tine agents over time, enabling robust cooperation among defenders. We introduce two classes of
+algorithms, Belief-based Q-learning with Reward Machines (BQL-RM) and Belief-based Actor-
+Critic with Reward Machines (BAC-RM) that augment the agent state with RM and belief informa-
+tion to isolate malicious influences. We show the convergence of BQL-RM in the tabular setting and
+established that BAC-RM converges to stationary points under the stated assumptions. Empirical
+results on a foraging grid-world and a search and rescue task shows that our methods learn robust
+cooperative behaviors and outperform baseline approaches in the presence of diverse adversaries.
+Future work will focus on scaling to large state/action spaces with function approximation, learning
+reward-machine structure from data Neider et al. (2021), and transferring the decentralized resilient
+framework to real multi-robot and networked systems Li et al. (2022).
+9
+
+486
+487
+488
+489
+490
+491
+492
+493
+494
+495
+496
+497
+498
+499
+500
+501
+502
+503
+504
+505
+506
+507
+508
+509
+510
+511
+512
+513
+514
+515
+516
+517
+518
+519
+520
+521
+522
+523
+524
+525
+526
+527
+528
+529
+530
+531
+532
+533
+534
+535
+536
+537
+538
+539
+Under review as a conference paper at ICLR 2026
+REFERENCES
+Stefano V Albrecht and Subramanian Ramamoorthy. A game-theoretic model and best-response
+learning method for ad hoc coordination in multiagent systems. arXiv preprint arXiv:1506.01170,
+2015.
+Shayan Meshkat Alsadat and Zhe Xu.
+Multi-agent reinforcement learning in non-cooperative
+stochastic games using large language models. IEEE Control Systems Letters, 2024.
+Shayan Meshkat Alsadat, Vivek Sunil Kulkarni, and Zhe Xu. Swarm-level task learning via gener-
+alized moments in reinforcement learning with reward machines. IEEE Control Systems Letters,
+2025.
+Hadi Partovi Aria and Zhe Xu. Mining causal signal temporal logic formulas for efficient reinforce-
+ment learning with temporally extended tasks. Proceedings of Machine Learning Research vol
+vvv, 1:19, 2025.
+Peva Blanchard, El Mahdi El Mhamdi, Rachid Guerraoui, and Julien Stainer. Machine learning
+with adversaries: Byzantine tolerant gradient descent. Advances in neural information processing
+systems, 30, 2017.
+Yiding Chen, Xuezhou Zhang, Kaiqing Zhang, Mengdi Wang, and Xiaojin Zhu. Byzantine-robust
+online and offline distributed reinforcement learning. In International Conference on Artificial
+Intelligence and Statistics, pp. 3230–3269. PMLR, 2023.
+Le Cong Dinh, David Henry Mguni, Long Tran-Thanh, Jun Wang, and Yaodong Yang. Online
+markov decision processes with non-oblivious strategic adversary. Autonomous Agents and Multi-
+Agent Systems, 37(1):15, 2023.
+Jakob Foerster, Gregory Farquhar, Triantafyllos Afouras, Nantas Nardelli, and Shimon Whiteson.
+Counterfactual multi-agent policy gradients. In Proceedings of the AAAI conference on artificial
+intelligence, number 1, 2018.
+Adam Gleave, Michael Dennis, Cody Wild, Neel Kant, Sergey Levine, and Stuart Russell. Adver-
+sarial policies: Attacking deep reinforcement learning. arXiv preprint arXiv:1905.10615, 2019.
+Wenbo Guo, Xian Wu, Sui Huang, and Xinyu Xing. Adversarial policy learning in two-player
+competitive games. In International conference on machine learning, pp. 3910–3919. PMLR,
+2021.
+Sihong He, Songyang Han, Sanbao Su, Shuo Han, Shaofeng Zou, and Fei Miao. Robust multi-agent
+reinforcement learning with state uncertainty. Transactions on Machine Learning Research, 2023.
+ISSN 2835-8856. URL https://openreview.net/forum?id=CqTkapZ6H9.
+Wenke Huang, Zekun Shi, Mang Ye, He Li, and Bo Du.
+Self-driven entropy aggregation for
+byzantine-robust heterogeneous federated learning. In Forty-first International Conference on
+Machine Learning, 2024.
+Rodrigo Toro Icarte, Toryn Klassen, Richard Valenzano, and Sheila McIlraith. Using reward ma-
+chines for high-level task specification and decomposition in reinforcement learning. In Interna-
+tional Conference on Machine Learning, pp. 2107–2116. PMLR, 2018.
+Leslie Lamport and Michael Fischer. Byzantine generals and transaction commit protocols. 1982.
+Jiani Li, Waseem Abbas, Mudassir Shabbir, and Xenofon Koutsoukos.
+Byzantine resilient dis-
+tributed learning in multirobot systems. IEEE Transactions on Robotics, 38(6):3550–3563, 2022.
+Shihui Li, Yi Wu, Xinyue Cui, Honghua Dong, Fei Fang, and Stuart Russell. Robust multi-agent
+reinforcement learning via minimax deep deterministic policy gradient. In Proceedings of the
+AAAI conference on artificial intelligence, volume 33, pp. 4213–4220, 2019.
+Simin Li, Jun Guo, Jingqiao Xiu, Ruixiao Xu, Xin Yu, Jiakai Wang, Aishan Liu, Yaodong Yang, and
+Xianglong Liu. Byzantine robust cooperative multi-agent reinforcement learning as a bayesian
+game. arXiv preprint arXiv:2305.12872, 2023.
+10
+
+540
+541
+542
+543
+544
+545
+546
+547
+548
+549
+550
+551
+552
+553
+554
+555
+556
+557
+558
+559
+560
+561
+562
+563
+564
+565
+566
+567
+568
+569
+570
+571
+572
+573
+574
+575
+576
+577
+578
+579
+580
+581
+582
+583
+584
+585
+586
+587
+588
+589
+590
+591
+592
+593
+Under review as a conference paper at ICLR 2026
+Yen-Chen Lin, Zhang-Wei Hong, Yuan-Hong Liao, Meng-Li Shih, Ming-Yu Liu, and Min Sun. Tac-
+tics of adversarial attack on deep reinforcement learning agents. arXiv preprint arXiv:1703.06748,
+2017.
+Daniel Neider, Jean-Raphael Gaglione, Ivan Gavran, Ufuk Topcu, Bo Wu, and Zhe Xu. Advice-
+guided reinforcement learning in a non-markovian environment. In Proceedings of the AAAI
+Conference on Artificial Intelligence, volume 35, pp. 9073–9080, 2021.
+Georgios Papoudakis, Filippos Christianos, Lukas Sch¨afer, and Stefano V Albrecht. Benchmark-
+ing multi-agent deep reinforcement learning algorithms in cooperative tasks.
+arXiv preprint
+arXiv:2006.07869, 2020.
+Thomy Phan, Lenz Belzner, Thomas Gabor, Andreas Sedlmeier, Fabian Ritz, and Claudia Linnhoff-
+Popien. Resilient multi-agent reinforcement learning with adversarial value decomposition. In
+Proceedings of the AAAI Conference on Artificial Intelligence, volume 35, pp. 11308–11316,
+2021.
+Muhammad A Rahman, Niklas Hopner, Filippos Christianos, and Stefano V Albrecht. Towards
+open ad hoc teamwork using graph-based policy learning. In International conference on machine
+learning, pp. 8776–8786. PMLR, 2021.
+Tabish Rashid, Mikayel Samvelyan, Christian Schroeder De Witt, Gregory Farquhar, Jakob Foerster,
+and Shimon Whiteson. Monotonic value function factorisation for deep multi-agent reinforcement
+learning. Journal of Machine Learning Research, 21(178):1–51, 2020.
+Peter Stone, Gal Kaminka, Sarit Kraus, and Jeffrey Rosenschein. Ad hoc autonomous agent teams:
+Collaboration without pre-coordination. In Proceedings of the AAAI Conference on Artificial
+Intelligence, volume 24, pp. 1504–1509, 2010.
+Chuangchuang Sun, Dong-Ki Kim, and Jonathan P How. Romax: certifiably robust deep multiagent
+reinforcement learning via convex relaxation. In 2022 International Conference on Robotics and
+Automation (ICRA), pp. 5503–5510. IEEE, 2022.
+Chen Tessler, Daniel J Mankowitz, and Shie Mannor. Reward constrained policy optimization. arXiv
+preprint arXiv:1805.11074, 2018.
+Chen Tessler, Yonathan Efroni, and Shie Mannor. Action robust reinforcement learning and appli-
+cations in continuous control. In International Conference on Machine Learning, pp. 6215–6224.
+PMLR, 2019.
+Xian Wu, Wenbo Guo, Hua Wei, and Xinyu Xing. Adversarial policy training against deep rein-
+forcement learning. In 30th USENIX Security Symposium (USENIX Security 21), pp. 1883–1900,
+2021.
+Annie Xie, Shagun Sodhani, Chelsea Finn, Joelle Pineau, and Amy Zhang. Robust policy learning
+over multiple uncertainty sets. In International Conference on Machine Learning, pp. 24414–
+24429. PMLR, 2022.
+Wanqi Xue, Wei Qiu, Bo An, Zinovi Rabinovich, Svetlana Obraztsova, and Chai Kiat Yeo. Mis-
+spoke or mis-lead: Achieving robustness in multi-agent communicative reinforcement learning.
+arXiv preprint arXiv:2108.03803, 2021.
+Dong Yin, Yudong Chen, Ramchandran Kannan, and Peter Bartlett. Byzantine-robust distributed
+learning: Towards optimal statistical rates. In International conference on machine learning, pp.
+5650–5659. Pmlr, 2018.
+Huan Zhang, Hongge Chen, Chaowei Xiao, Bo Li, Mingyan Liu, Duane Boning, and Cho-Jui Hsieh.
+Robust deep reinforcement learning against adversarial perturbations on state observations. Ad-
+vances in Neural Information Processing Systems, 33:21024–21037, 2020.
+Kaiqing Zhang, Zhuoran Yang, and Tamer Bas¸ar. Multi-agent reinforcement learning: A selective
+overview of theories and algorithms. Handbook of reinforcement learning and control, pp. 321–
+384, 2021.
+11

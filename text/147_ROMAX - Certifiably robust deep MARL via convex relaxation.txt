@@ -1,0 +1,1127 @@
+ROMAX: Certiﬁably Robust Deep Multiagent Reinforcement Learning
+via Convex Relaxation
+Chuangchuang Sun1 Dong-Ki Kim1 and Jonathan P. How1
+Abstract— In a multirobot system, a number of cyber-
+physical attacks (e.g., communication hijack, observation per-
+turbations) can challenge the robustness of agents. This robust-
+ness issue worsens in multiagent reinforcement learning because
+there exists the non-stationarity of the environment caused by
+simultaneously learning agents whose changing policies affect
+the transition and reward functions. In this paper, we propose a
+minimax MARL approach to infer the worst-case policy update
+of other agents. As the minimax formulation is computationally
+intractable to solve, we apply the convex relaxation of neural
+networks to solve the inner minimization problem. Such convex
+relaxation enables robustness in interacting with peer agents
+that may have signiﬁcantly different behaviors and also achieves
+a certiﬁed bound of the original optimization problem. We eval-
+uate our approach on multiple mixed cooperative-competitive
+tasks and show that our method outperforms the previous state
+of the art approaches on this topic.
+I. INTRODUCTION
+Multirobot systems have recently attracted much attention
+in robotics. Compared to a single robot approach, a multi-
+robot system provides several unique beneﬁts, including 1)
+improved efﬁciency since a sophisticated problem can be
+decomposed into simpler sub-problems, distributed across
+robots, and then solved simultaneously and 2) improved
+mission success rate because a single robot failure can
+be addressed by another teammate [1]. These advantages
+have resulted in emerging multirobot applications, such as
+formation control [2], cooperative manipulation [3], and
+human-swarm interaction [4].
+Multiagent reinforcement learning (MARL) provides a
+principled framework for solving problems in which multiple
+robots interact with one another in a shared environment.
+However, there remain difﬁculties in learning intelligent
+multiagent policies. Amongst these, instability in policy
+learning is particularly problematic in that agents generally
+show poor performance when interacting with unseen agents
+[5, 6]. While there are approaches that stabilize policy
+learning in MARL (e.g., centralized training and decentralized
+execution frameworks [7, 8]), agents generally overﬁt other
+agents’ policies during training, resulting in a failure when
+playing against new strategies not interacted before. This
+robustness issue becomes more severe in a competitive
+setting, where an opponent can intentionally apply cyber-
+physical attacks (e.g., communication hijack, observation
+perturbations), fully exploit an agent’s brittle policy, and thus
+dominate a game [9].
+1Laboratory for Information & Decision Systems (LIDS), Massachusetts
+Institute of Technology, 77 Massachusetts Ave, Cambridge, MA 02139.
+{ccsun1,dkkim93,jhow}@mit.edu
+Our contributions. To address the robustness problem, we
+propose a new framework, called ROMAX: RObust MARL
+via convex relaXation. While the minimax optimization
+enables learning of robust multiagent policy [10], solving a
+general nonconvex-nonconcave minimax optimization prob-
+lem is computationally intractable [11]. Assuming that each
+agent’s policy is parameterized by deep neural networks,
+we develop a computationally efﬁcient approach that can
+approximately solve the minimax optimization and infer the
+worst-case actions of other agents via the convex relaxation of
+neural networks. We note that this convex relaxation has an im-
+portant beneﬁt in that it can explore the approximate globally
+worst situation while achieving certiﬁed robustness from the
+guaranteed bound of the relaxation. We empirically evaluate
+our algorithm on multiple mixed cooperative-competitive
+tasks and show that ROMAX outperforms baselines by a
+signiﬁcant margin, demonstrating the necessity to compute
+the worst-case scenarios to improve robustness in MARL.
+II. RELATED WORKS
+Centralized training with decentralized execution. The
+standard approach for addressing non-stationarity in MARL
+is to consider information about other agents and reason
+about the effects of joint actions [12]. The recent studies
+regarding the centralized training with decentralized execution
+framework, for instance, account for the behaviors of others
+through a centralized critic [7, 8, 13–15]. While this body of
+work partially alleviates non-stationarity, converged policies
+generally overﬁt the current behaviors of other agents and thus
+show poor performance when interacting with agents with new
+behaviors. In contrast, our agents learn robust policies based
+on minimax optimization by applying convex relaxation.
+Robust MARL. Our framework is closely related to prior
+works that apply minimax optimization in multiagent learning
+settings [16, 17]. Minimax provides a game-theoretical
+concept that encourages an agent to learn a robust policy
+by maximizing its performance in a worst-case scenario
+[10, 18]. One of the noticeable studies in this category is
+[19], which computes the worst-case perturbation by taking
+a single gradient descent step assuming that other agents act
+adversarial. However, the single-step gradient approximation
+can only explore the locally worst situation and thus can still
+result in unstable learning. Our approach aims to address
+this drawback by computing the approximate globally worst
+situation based on convex relaxation. The work by [20] applies
+the similar linear relaxation technique in a single-agent robust
+RL problem to certify the robustness under uncertainties from
+the environments. However, in our multiagent settings, the
+arXiv:2109.06795v1  [cs.LG]  14 Sep 2021
+
+robustness is more challenging to certify due to the concurrent
+policy learning amongst multiple agents.
+Ensemble training in MARL. Another relevant approach
+to learning a robust policy is ensemble training, where each
+agent interacts with a group of agents instead of a particular
+agent only [7, 21, 22]. For example, the population-based
+training technique, which was originally proposed to ﬁnd a
+set of hyperparameters for optimizing a neural network [23],
+was applied in MARL by evolving a population of agents
+[24]. This approach showed robust and superhuman level
+performance in a competitive game. The literature on self-play,
+which plays against random old versions of itself to improve
+training stability and robustness, can also be classiﬁed into
+this category [25]. However, maintaining and/or evolving a
+population is often computationally heavy. Additionally, these
+methods do not employ minimax optimization, so agents may
+not be able to cope well with the worst scenario.
+Learning aware MARL. Our framework is also related
+to prior works that consider the learning of other agents
+in the environment to address non-stationarity. These works
+include [26] which attempted to discover the best response
+adaptation to the anticipated future policy of other agents.
+Our work is also related to [27, 28] that shape the learning
+process of others. Another relevant idea explored by [29]
+is to interpolate between the frameworks of [26] and [27]
+in a way that guarantees convergence while inﬂuencing
+the opponent’s future policy. Recently, [6] addresses non-
+stationarity by considering both an agent’s own non-stationary
+policy dynamics and the non-stationary policy dynamics
+of other agents within a meta-learning objective. While
+these approaches alleviate non-stationarity by considering
+the others’ learning, they do not solve the minimax objective
+and cannot guarantee robustness when playing against a new
+opponent. This weakness can be exploited by a carefully
+trained adversary agent [9].
+Robustness veriﬁcation and neural network relaxation.
+To verify the robustness of neural networks, it is important
+to compute the lower and upper bound of the output neurons
+under input perturbations. In supervised learning settings, for
+example, the margin between predicting the ground-truth class
+and other classes indicates the robustness of neural networks
+(i.e., measuring the chance of misclassiﬁcation). However,
+due to the nonconvexity in neural networks, the work by [30]
+proved that ﬁnding the true range of neural network’s output
+is nonconvex and NP-complete. To address this issue, convex
+relaxation methods are proposed to efﬁciently compute the
+outer approximation (a more conservative estimate) of neural
+network’s output range. Many prior works are based on the
+linear relaxation of the nonlinear units in neural networks:
+FastLin [31], DeepZ [32], Neurify [33], DeepPoly [34], and
+CROWN [35]. There are also other approaches based on
+semideﬁnite relaxation [36, 37], which admit tighter bounds
+but are more computationally expensive. See [38] for in-depth
+surveys on this topic.
+III. BACKGROUND
+A. Markov game
+Interactions between n agents can be represented by a
+partially observable Markov game [10], deﬁned as a tuple
+⟨I, S, {Oi}i∈I, {Ai}i∈I, T , {Ri}i∈I, γ⟩; I = [1, ..., n] is a
+set of n agents, S is the state space, {Oi}i∈I is the set of
+observation spaces, {Ai}i∈I is the set of action spaces, T
+is the state transition function, {Ri}i∈I is the set of reward
+functions, and γ is the discount factor. Each agent i chooses
+an action ai according to its stochastic policy πθi : Oi×Ai →
+[0, 1], where θi denotes agent i’s policy parameters. Then, the
+joint action a={ai, a−i} yields a transition to the next state
+according to the state transition function T : S × {Ai}i∈I →
+S. Note that the notation −i indicates all other agents except
+agent i. Then, agent i obtains a reward as a function of the
+state and the joint action ri : S ×{Ai}i∈I →R, and receives
+its private observation according to oi : S →Oi. Each agent
+aims to maximize its own total expected discounted return
+Ri = Eπ[PT
+t=1 γtrt
+i], where rt
+i denotes i’s reward received
+at timestep t, π denotes the joint policy, and T denotes the
+episodic horizon.
+B. Multiagent deep deterministic policy gradient
+To stabilize learning in MARL, MADDPG [7] introduced
+the centralized training and decentralized execution paradigm,
+in which the centralized critic conditions on the global
+information and the decentralized actor only depends on the
+agent’s local observation. Speciﬁcally, a centralized critic for
+agent i is deﬁned as Qµ
+i (o, ai, a−i) = Eµ[Ri|o1 = o, a1 =
+{ai, a−i}], where o and µ denote the joint observation
+and policy, respectively. The policy gradient for agent i’s
+deterministic policy µθi (abbreviated as µi) with respect to
+the expected return J(θi)=Eµ[Ri] is:
+∇θiJ(θi)
+= Eo,a∼D[∇θiµi(ai|oi)∇aiQµ
+i (o, ai, a−i)|ai=µi(oi)],
+(1)
+where D denotes the replay buffer. The buffer D stores the
+tuples (o, o′, a, r) where o′ is the next joint observation and
+r is the joint reward. The centralized critic Qµ
+i is updated by
+minimizing the following loss function:
+L(θi) = Eo,o′,a,r∼D[Qµ
+i (o, ai, a−i) −y]2,
+s.t.
+y = ri + γQµ′
+i (o′, a′
+i, a′
+−i)|a′
+j=µ′
+j(o′
+j),∀j∈I,
+(2)
+where µ′ ={µθ′
+i}i∈I denotes the set of target policies.
+C. Minimax MultiAgent deep deterministic policy gradient
+To learn a robust policy in MARL, an agent should account
+for the changes in the policy of other simultaneously learning
+agents. [19] proposed M3DDPG, a robust multiagent learning
+approach based on the minimax optimization by assuming
+other agents are adversarial agents. Speciﬁcally, each agent i
+in [19] optimizes the following learning objective:
+max
+θi
+min
+a−i∈B−i Qµ
+i (o, ai, a−i)|ai=µi(oi),
+(3)
+where B−i is a compact constraint set of a−i (e.g., a lp
+norm ball). Because solving a general nonconvex-nonconcave
+
+minimax optimization problem is generally intractable [11],
+M3DDPG replaces the inner minimization with a one-step
+gradient descent:
+a∗
+−i = arg min
+a−i Qµ
+i (o, ai, a−i)
+≈a−i −α−i∇a−iQµ
+i (o, ai, a−i),
+(4)
+where α−i ≥0 denotes the learning rate.
+IV. APPROACH
+While
+the
+single-step
+gradient
+approximation
+in
+M3DDPG [19] (see Section III-C) improves robustness, we
+note that the framework has several limitations:
+• The single-step gradient approximation can explore the
+locally worst situation and thus still lead to unsatisfying
+behavior when testing with new opponents that have
+drastically different strategies. Applying Equation (4)
+multiple times for the inner minimization can potentially
+alleviate this issue, but this results in a double-loop ap-
+proach in solving Equation (3), which is computationally
+prohibitive [39].
+• Moreover, the one-step gradient descent approxima-
+tion can only compute the upper bound of the inner
+minimization problem because the original problem
+cannot be solved to a global optimum. Hence, for the
+outer level, maximizing an upper bound of the inner
+objective cannot guarantee the maximum of the original
+objective in Equation (3). In other words, even though
+one-step gradient descent approximation cannot ﬁnd
+a perturbation that results in the smallest Qµ
+i , such
+perturbation can exist.
+As we detail in this section, we address these issues by
+employing convex relaxation of neural networks and solving
+the inner minimization to explore the approximate globally
+worst situation while achieving certiﬁed robustness from the
+guaranteed bound of the convex relaxation.
+A. Convex relaxation of neural networks
+We propose to convexify the centralized action-value
+function in MARL and efﬁciently solve the inner minimization
+problem in Equation (3). Speciﬁcally, we assume that Qµ
+i
+is parameterized by fully connected networks with L layers
+with an input x0 =(o, ai, a−i). Then, Qµ
+i can be expressed
+by the following form:
+zl = W l
+cxl−1, xl = σ(zl), ∀l = 1, ..., L −1
+Qµ
+i = W L
+c zL,
+(5)
+where σ(·) denotes the nonlinear activation function, and
+W l
+c is the weight at layer l. For clarity, we drop the bias
+terms without loss of generality. Due to the nonconvexity
+of the activation function, verifying the robustness property
+of Qµ
+i over a compact set of x0 is difﬁcult [31, 40]. To
+address this, we employ a convex relaxation technique [40] to
+verify robustness veriﬁcation of neural networks and apply the
+𝑄!
+"
+"𝑄!
+"
+𝑎#!
+min
+$!" 𝑄!
+"(𝑜, 𝑎!, 𝑎#!)
+Fig. 1: Illustration of the convex relaxation approach for
+solving the inner minimization in Equation (7).
+following linear convexiﬁcation to the centralized Q-function
+by assuming the ReLU activation function:
+zl = W l
+cxl−1, xl ≤ul ⊙(zl −ll) ⊘(ul −ll)
+xl ≥0, xl ≥zl, ∀l = 1, . . . , L −1
+¯Qµ
+i = W L
+c zL,
+(6)
+where ll and ul are lower and upper bounds for zl, respec-
+tively, and ⊙and ⊘are the element-wise multiplication and
+division, respectively. Note that ¯Qµ
+i indicates the relaxed
+version of Qµ
+i (i.e., ll ≤zl ≤ul). Thanks to this relaxation,
+all equations in (6) are convex, so mina−i ¯Qµ
+i (o, ai, a−i) is
+a linear programming and can be solved efﬁciently. In the
+evaluation, we empirically show that this new certiﬁcation
+module is computationally efﬁcient and does not add much
+burden on top of a base MARL algorithm.
+B. Solving minimiax optimization via convex relaxation
+Here, we employ the convex relaxation technique discussed
+in Section IV-A to solve the inner minimization problem
+approximately. Speciﬁcally, we propose to replace the inner
+minimization problem in Equation (3) with the following
+relaxed objective:
+¯Qµ
+i (o, ai, a∗
+−i) =
+min
+a−i∈B−i
+¯Qµ
+i (o, ai, a−i)
+≤
+min
+a−i∈B−i Qµ
+i (o, ai, a−i),
+(7)
+where ¯Qµ
+i (o, ai, a−i) is the lower bound of Qµ
+i (o, ai, a−i)
+from the relaxation in Equation (6) (see Figure 1).
+¯Qµ
+i (o, ai, a−i) is also a function of µ as well and is a
+surrogate of the original non-convex nonlinear objective. The
+main advantage of the convex relaxation in Equation (7)
+over (4) is that the former does not need the step size
+hyperparameter α−i, which can be difﬁcult to tune. The
+performance of [19] is highly sensitive to the step size, and it
+is difﬁcult to tune. By contrast, our convex relaxation problem
+can be efﬁciently solved without needing the step size. With
+this lower bound, we can reformulate the outer maximization
+problem as:
+max
+θi
+
+(1 −κi)Qµ
+i (o, ai, a−i) + κi ¯Qµ
+i (o, ai, a∗
+−i)
+
+with ai = µi(oi),
+(8)
+
+Algorithm 1 Robust MARL via convex relaxation (ROMAX)
+1: Require: batch size S, actor learning rate αa, critic learning
+rate αc, target update τ, random process N, episode length T
+2: Initialize replay buffer D
+3: for Episode=1 . . . do
+4:
+Initialize environment and get initial observations o
+5:
+for t = 1...T do
+6:
+For each agent, select action ai = µθi(oi) + Nt
+7:
+Execute joint action a and receive r and o′
+8:
+Store (o, a, r, o′) into D, set o ←o′
+9:
+for Each agent i ∈I do
+10:
+Get S samples (o, a, r, o′) from D
+11:
+Solve inner optimization via relaxation in (10)
+12:
+Update critic via loss function in (10) with αc
+13:
+Solve inner optimziation via relaxation in (9)
+14:
+Update actor via policy gradient in (9) with αa
+15:
+end for
+16:
+Update target network θi = τθi + (1 −τ)θ′
+i
+17:
+end for
+18: end for
+where 0 ≤κi ≤1 is a weight coefﬁcient for the term that
+accounts for the policy change of the other agents. Because
+we maximize the lower bound of the inner minimization
+problem, the original inner objective is guaranteed to be
+maximized. Such a guarantee provides robustness certiﬁcates
+for agent i as it considers the worst-case scenarios caused
+by other learning agents. By setting κi ̸= 1, we do not
+entirely use the relaxed inner objective (i.e., ¯Qµ
+i (o, ai, a∗
+−i))
+as the objective of the outer maximization problem for the
+sake of training stability, as a relaxation gap might be big
+especially in the early training process. Instead, a combination
+of the original objective and its relaxed one is used as the
+objective for the outer maximization problem, as shown in
+Equation (8). Because this inner minimization needs to be
+solved whenever the policy is updated, the convex relaxation
+problem in Equation (7) should be efﬁcient enough with a
+tight bound. Therefore, there is a trade-off to choose a certain
+convex relaxation method among many candidates, in which
+we refer to the appendix for details.
+C. Integrating with MARL algorithm
+Our framework based on convex relaxation in Section IV-B
+can be readily integrated into general MARL frameworks.
+We implement our method based on MADDPG (see Section
+III-B). Integrating the minimax formulation and the convex
+relaxation in Equation (8) together with the actor update in
+Equation (1) yields:
+∇θiJ(θi) = Eo,a∼D
+h
+∇θiµi(oi)∇ai
+
+κi ¯Qµ
+i (o, ai, a∗
+−i)
++ (1 −κi)Qµ
+i (o, ai, a−i)
+i
+,
+ai = µi(oi),
+a∗
+−i = arg
+min
+a−i∈B−i
+¯Qµ
+i (o, ai, a−i),
+(9)
+where B−i = B−i((aj = µj(oj), ∀j ̸= i), ϵ) is a lp ball
+centered at (aj = µj(oj), ∀j ̸= i) with a radius ϵ. Then, the
+Prey
+Predator
+Landmark
+Adversary
+Agent
+Landmark
+?
+Fig. 2: Illustration of the considered tasks: Predator-prey
+(Left) and physical deception (Right); Reproduced from [19].
+critic is updated by:
+L(θi) = Eo,o′,a,r∼D[Qµ
+i (o, ai, a−i) −y]2,
+y = ri + γ
+
+(1 −κi)Qµ′
+i (o′, a′
+i, a′
+−i)
++ κi ¯Qµ′
+i (o′, a′
+i, a′∗
+−i)
+
+a′
+i = µ′
+i(o′
+i),
+a′∗
+−i = arg
+min
+a′
+−i∈B′
+−i
+¯Qµ′
+i (o′, a′
+i, a′
+−i),
+(10)
+where B′
+−i = B′
+−i((a′
+j = µ′
+j(o′
+j), ∀j ̸= i), ϵ′) is a lp ball
+centered at (a′
+j = µ′
+j(o′
+j), ∀j ̸= i) with a radius ϵ′. We
+summarize our algorithm in Algorithm 1.
+V. EXPERIMENTS
+A. Evaluation domains and baselines
+We evaluate our approach in mixed cooperative-competitive
+tasks from the multiagent particle benchmark [7]. In these
+tasks, there are nc cooperative agents, na adversary agents,
+and nL landmarks in a 2D continuous space. We focus on
+tasks that include adversarial agents such that agents need
+to have diverse strategies to outperform opponents and thus
+robustness is an important factor. Below are some descriptions
+of considered tasks with illustration in Figure 2.
+• Predator-prey. na =3 slower cooperative predators aim
+to catch the nc = 1 faster prey. nL = 2 landmarks are
+unmovable and can impede the way of all of the agents.
+Once there is a collision between predators and the prey,
+the former get rewarded while the latter gets penalized.
+• Physical deception. There are na = 1 adversary and
+nc = 2 agents together with nL = 2 landmarks in
+the environments. The adversary aims to occupy a
+target landmark without knowing which one of the two
+landmarks is the target. As a result, agents must split
+and cover all landmarks to deceive the adversary.
+Transfer to real robot learning. We note that these tasks
+closely coincide with real-world robotic missions. For the
+predator-prey, multiple robots can be deployed to chase an
+intelligent moving target (e.g., an intruder in a market). For
+physical deception, we can deploy robots to protect assets of
+interest with intelligent behaviors to deceive opponents. The
+ﬁdelity of the models and perception required in simulation
+can be achieved in the real world via sensors such as cameras,
+velocity meters, and LiDAR. Sim-to-real is known to be
+difﬁcult, because the behaviors of other agents deployed in
+
+Adv
+Agent
+MADDPG
+M3DDPG
+ROMAX
+RAdv
+MADDPG
+−0.017±0.012,
+−0.550±0.017
+
+ 0.160±0.045,
+−0.502±0.053
+
+ 0.031±0.020,
+−0.406±0.025
+
+0.174±0.080
+M3DDPG
+ 0.307±0.043,
+−0.718±0.051
+
+ 0.250±0.048,
+−0.609±0.060
+
+−0.043±0.031,
+−0.290±0.042
+
+0.514±0.158
+ROMAX
+ 0.560±0.032,
+−1.093±0.037
+
+ 0.428±0.055,
+−0.936±0.057
+
+ 0.132±0.020,
+−0.477±0.026
+
+1.12±0.183
+RAgent
+−2.361±0.230
+−2.047±0.193
+−1.173±0.083
+MADDPG
+M3DDPG
+ROMAX
+Roverall
+= RAdv + RAgent
+−2.187
+−1.533
+−0.053
+TABLE I: Evaluation in the predator-prey task. Predator and prey correspond to adversary (Adv for short) and agent in
+the table, respectively. Each pair is evaluated for 250 episodes, i.e., 10 episodes for each of the 5×5=25 pairs of random
+seeds. (•, •) in each cell denotes the mean/standard error of the reward per step in the episode of the adversaries and agents,
+respectively. The higher the return is, the better the policy is. For each column, different adversaries compete against the
+same agent, and a higher adversary reward indicates better performance against the same agent; row-wise for the agents. In
+the last row, we summarize the overall robustness results for playing both teams via the metric Roverall.
+Adv
+Agent
+MADDPG
+M3DDPG
+ROMAX
+RAdv
+MADDPG
+ −0.795±0.017,
+0.482±0.005
+
+−0.689±0.031,
+0.248±0.020
+
+−0.814±0.032,
+0.338±0.0199
+
+−2.298±0.061
+M3DDPG
+ −0.742±0.029,
+0.225±0.021
+
+−0.819±0.018,
+0.467±0.004
+
+−0.839±0.037,
+0.271±0.020
+
+−2.4±0.050
+ROMAX
+−0.572±0.0282,
+0.128±0.019
+
+−0.613±0.033,
+0.133±0.0193
+
+−0.512±0.010,
+0.283±0.003
+
+−1.697±0.048
+RAgent
+0.835±0.150
+0.848±0.139
+0.892±0.033
+MADDPG
+M3DDPG
+ROMAX
+Roverall
+= RAdv + RAgent
+−1.463
+−1.552
+−0.805
+TABLE II: Evaluation in the physical deception task. The evaluation settings and metrics shown in this table are the same as
+those in Table 1.
+the environment in the real-world may differ signiﬁcantly
+from the simulation (e.g., due to varying transition dynamics).
+This is exactly what this work aims to address: the certiﬁed
+and improved robustness will enhance the resilience and
+applicability of multiagent algorithms from sim-to-real. Lastly,
+the learned policy can be easily transferred on-board, and
+generated actions can be further executed by a lower-level
+controller if necessary.
+Baselines. We compare ROMAX to M3DDPG [19], a
+robust MARL algorithm that also applies the minimax
+formulation but solves the inner optimization approximately
+via the one-step gradient descent. We also compare our
+algorithm to MADDPG [7], which uses the centralized critic
+but does not solve minimax. Implementation details and
+hyperparameters are speciﬁed in the appendix.
+B. Results
+Question 1: How much does ROMAX improve the robust-
+ness of trained policies?
+To answer this question and test robustness, each policy
+from one team is evaluated against a diverse set of policies
+from the other team. Then the adversaries’ policies trained
+by one algorithm under each random seed will be evaluated
+against the agents’ policy trained by all of the other algorithms
+under all random seeds; vice-versa for the agent’s policy.
+As Table 1 and 2 demonstrate, for both tasks, ROMAX
+can train more robust policies for both teams in a competitive
+game. For each adversary, when competing against the same
+set of diverse agents, our adversary get the highest return;
+see the RAdv columns in the tables. Similar conclusion can
+be made for the agents given the RAgent rows in the tables.
+These results demonstrate that, via computing the approximate
+global worst-case situation, policies can generalize and
+perform well when tested against unseen peer agents’ policies.
+We also note that M3DDPG is outperformed by MADDPG
+in Table 2 (see the overall robustness results). This might
+be due to the sensitive step-size parameter of M3DDPG
+in Equation (4). This observation implies that a tuned step
+size for one task cannot generalize to another one and also
+shows the advantage of ROMAX. Regarding the computation
+efﬁciency, we empirically observe that the factor between
+wall-clock time per iteration of ROMAX (with certiﬁcation)
+and that of MADDPG (without certiﬁcation), is close to 1
+(i.e., 1.08, averaged among multiple seeds). This validates
+that our certiﬁcation module is computationally efﬁcient.
+Question 2: How much can disruptive policies exploit a
+ﬁxed robust policy?
+To answer this question, we construct a disruptive policy
+in the predator-prey task by 1) training both teams with
+
+Fig. 3: The performance of the ﬁxed agent (prey) during the
+training of disruptive adversaries (predators) with 3 seeds.
+Higher return implies a more robust policy.
+each algorithm until convergence, 2) ﬁxing the prey policy,
+and 3) training new adversary predators policies based on
+MADDPG that attempt to exploit this ﬁxed prey trained
+by each method. In Figure 3, the robustness results of the
+ﬁxed prey trained with different algorithms are shown. As
+the disruptive adversaries’ training proceeds, the ﬁxed prey’s
+return decreases as expected. However, ROMAX achieves
+the highest return compared to other methods, validating
+the robustness advantage of our approach. We observe that
+M3DDPG and MADDPG perform similarly in this analysis,
+possibly due to the sensitive tuning of the step size.
+VI. CONCLUSION
+In this paper, we propose a robust reinforcement learning
+algorithm for a multirobot system. To robustify learning, we
+consider the learning of other agents based on the worst-
+case scenario criterion, which inherently leads to a minimax
+formulation. As minimax formulation is computationally
+expensive to solve, convex relaxation of neural networks is
+applied to solve the inner minimization problem. By convex
+relaxation, agents can account for peer agents that possibly
+have drastically different behaviors, and a certiﬁed bound of
+the original optimization problem can be gained. We believe
+this is the ﬁrst work that integrates robustness veriﬁcation in
+MARL. Our algorithm outperforms existing robust MARL
+algorithms in mixed cooperative-competitive tasks.
+There are a few important directions for future works.
+First, we would like to develop tight but efﬁcient convex
+relaxation-based methods for neural network robustness
+veriﬁcation. Moreover, there are several real-world robustness
+applications, including observation perturbation, actuation
+fault, malicious/stealthy attack, communication delay, that
+we would like to test our approach on. Lastly, developing
+principled and general learning methods with theoretical
+guarantees (e.g., convergence analysis) will be a meaningful
+direction.
+APPENDIX
+A. Repositories
+The
+multiagent
+particle
+environments
+we
+used
+in
+simulation
+is
+from
+https://github.com/
+openai/multiagent-particle-envs.
+We
+use
+the implementation of the base algorithm MADDPG
+from
+https://github.com/shariqiqbal2810/
+maddpg-pytorch.
+Note
+that
+with
+relaxations
+in
+Equation
+(6),
+¯Qµ
+i (o, ai, a∗
+−i)
+is
+no
+longer
+an
+explicit
+function
+with
+respect
+to
+its
+input
+without
+constraints. Then the framework auto LiRPA (https:
+//github.com/KaidiXu/auto_LiRPA, [41]) is used
+to get ¯Qµ
+i (o, ai, a∗
+−i) efﬁciently and automatically.
+B. Choice of convex relaxation methods
+For robustness veriﬁcation of neural networks there are
+many convex relaxation based methods, from which we need
+to choose one for Equation (7). When there is a trade-off to
+choose a certain convex relaxation method among many can-
+didates, we can get ¯Qµ
+i (o, ai, a∗
+−i) as a convex combination of
+the bounds from different methods [42]. For example, Interval
+Bound Propagation (IBP, [43]) and CROWN-IBP [42] have
+their respective strengths and shortcomings in terms of bound
+tightness, sensitivity to hyper-parameters, computational cost
+with the training going on. As a result, we can have:
+¯Qµ
+i (o, ai, a∗
+−i) = β ¯Qµ
+i,IBP(o, ai, a∗
+−i)
++ (1 −β) ¯Qµ
+i,CROWN-IBP(o, ai, a∗
+−i),
+(11)
+with β ∈[0, 1] a tunable parameter which can change
+with the training iteration index increasing. As both
+¯Qµ
+i,IBP(o, ai, a∗
+−i) and ¯Qµ
+i,CROWN-IBP(o, ai, a∗
+−i) are the lower
+bounds of Qµ
+i (o, ai, a−i), so are their convex combination
+¯Qµ
+i (o, ai, a∗
+−i). Hence, the property of certiﬁed robustness is
+kept.
+C. Hyperparameter
+Some key hyperparameters are shown in Table III.
+Episode length
+25
+batch size
+1024
+NN hidden dim
+64
+τ
+0.01
+learning rate
+0.01
+ϵmax
+0.1
+βmin
+0.9
+γ
+0.99
+TABLE III: Hyperparameters choices in the implementation.
+ACKNOWLEDGEMENTS
+Research supported by Scientiﬁc Systems Company, Inc.
+under research agreement # SC-1661-04 and ARL DCIST
+under Cooperative Agreement Number W911NF-17-2-0181.
+Dong-Ki Kim was supported by IBM, Samsung (as part of
+the MIT-IBM Watson AI Lab initiative), and Kwanjeong
+Educational Foundation Fellowship. We thank Amazon Web
+services for computational support.
+
+REFERENCES
+[1] S. Mellouli, “A reorganization strategy to build fault-
+tolerant multi-agent systems,” in Conference of the Cana-
+dian Society for Computational Studies of Intelligence.
+Springer, 2007, pp. 61–72.
+[2] J. Alonso-Mora, S. Baker, and D. Rus, “Multi-robot
+formation control and object transport in dynamic
+environments via constrained optimization,” The Inter-
+national Journal of Robotics Research, vol. 36, no. 9,
+pp. 1000–1021, 2017.
+[3] P. Culbertson, J.-J. Slotine, and M. Schwager, “Decen-
+tralized adaptive control for collaborative manipulation
+of rigid bodies,” IEEE Transactions on Robotics, 2021.
+[4] C. Vasile, A. Pavel, and C. Buiu, “Integrating human
+swarm interaction in a distributed robotic control system,”
+in 2011 IEEE International Conference on Automation
+Science and Engineering.
+IEEE, 2011, pp. 743–748.
+[5] M. Al-Shedivat, T. Bansal, Y. Burda, I. Sutskever,
+I. Mordatch, and P. Abbeel, “Continuous adaptation
+via meta-learning in nonstationary and competitive
+environments,” in International Conference on Learning
+Representations,
+2018.
+[Online].
+Available:
+https:
+//openreview.net/forum?id=Sk2u1g-0-
+[6] D. K. Kim, M. Liu, M. D. Riemer, C. Sun, M. Abdulhai,
+G. Habibi, S. Lopez-Cot, G. Tesauro, and J. How,
+“A policy gradient algorithm for learning to learn in
+multiagent reinforcement learning,” in Proceedings of
+the 38th International Conference on Machine Learning,
+ser.
+Proceedings
+of
+Machine
+Learning
+Research,
+M. Meila and T. Zhang, Eds., vol. 139.
+PMLR,
+18–24 Jul 2021, pp. 5541–5550. [Online]. Available:
+https://proceedings.mlr.press/v139/kim21g.html
+[7] R. Lowe, Y. Wu, A. Tamar, J. Harb, P. Abbeel,
+and I. Mordatch, “Multi-agent actor-critic for mixed
+cooperative-competitive environments,” arXiv preprint
+arXiv:1706.02275, 2017.
+[8] J. Foerster, G. Farquhar, T. Afouras, N. Nardelli, and
+S. Whiteson, “Counterfactual multi-agent policy gradi-
+ents,” in Association for the Advancement of Artiﬁcial
+Intelligence (AAAI), vol. 32, no. 1, 2018.
+[9] A. Gleave, M. Dennis, C. Wild, N. Kant, S. Levine, and
+S. Russell, “Adversarial policies: Attacking deep rein-
+forcement learning,” arXiv preprint arXiv:1905.10615,
+2019.
+[10] M. L. Littman, “Markov games as a framework for multi-
+agent reinforcement learning,” in Machine learning
+proceedings 1994.
+Elsevier, 1994, pp. 157–163.
+[11] C. Daskalakis, S. Skoulakis, and M. Zampetakis, “The
+complexity of constrained min-max optimization,” arXiv
+preprint arXiv:2009.09623, 2020.
+[12] P. Hernandez-Leal, M. Kaisers, T. Baarslag, and
+E. M. de Cote, “A survey of learning in multiagent
+environments: Dealing with non-stationarity,” CoRR,
+vol. abs/1707.09183, 2017. [Online]. Available: http:
+//arxiv.org/abs/1707.09183
+[13] Y. Yang, R. Luo, M. Li, M. Zhou, W. Zhang,
+and J. Wang, “Mean ﬁeld multi-agent reinforcement
+learning,” in International Conference on Machine
+Learning (ICML), vol. 80, 10–15 Jul 2018, pp.
+5571–5580. [Online]. Available: http://proceedings.mlr.
+press/v80/yang18d.html
+[14] Y. Wen, Y. Yang, R. Luo, J. Wang, and W. Pan,
+“Probabilistic
+recursive
+reasoning
+for
+multi-agent
+reinforcement learning,” in International Conference
+on Learning Representations (ICLR), 2019. [Online].
+Available: https://openreview.net/forum?id=rkl6As0cF7
+[15] D.-K. Kim, M. Liu, S. Omidshaﬁei, S. Lopez-Cot,
+M. Riemer, G. Habibi, G. Tesauro, S. Mourad, M. Camp-
+bell, and J. P. How, “Learning hierarchical teaching
+policies for cooperative agents,” in Proceedings of the
+19th International Conference on Autonomous Agents
+and MultiAgent Systems, ser. AAMAS ’20.
+Richland,
+SC: International Foundation for Autonomous Agents
+and Multiagent Systems, 2020, p. 620–628.
+[16] J. Perolat, F. Strub, B. Piot, and O. Pietquin, “Learning
+Nash Equilibrium for General-Sum Markov Games from
+Batch Data,” in Proceedings of the 20th International
+Conference on Artiﬁcial Intelligence and Statistics, ser.
+Proceedings of Machine Learning Research, A. Singh
+and J. Zhu, Eds., vol. 54.
+Fort Lauderdale, FL,
+USA: PMLR, 20–22 Apr 2017, pp. 232–241. [Online].
+Available: http://proceedings.mlr.press/v54/perolat17a.
+html
+[17] J. Grau-Moya, F. Leibfried, and H. Bou-Ammar,
+“Balancing two-player stochastic games with soft
+q-learning,” in Proceedings of the Twenty-Seventh
+International Joint Conference on Artiﬁcial Intelligence,
+IJCAI-18.
+International Joint Conferences on Artiﬁcial
+Intelligence Organization, 7 2018, pp. 268–274. [Online].
+Available: https://doi.org/10.24963/ijcai.2018/37
+[18] M.
+Osborne,
+An
+introduction
+to
+game
+theory.
+New York, NY [u.a.]: Oxford Univ. Press, 2004.
+[Online]. Available: http://gso.gbv.de/DB=2.1/CMD?
+ACT=SRCHA&SRT=YOP&IKT=1016&TRM=ppn+
+369342747&sourceid=fbw bibsonomy
+[19] S. Li, Y. Wu, X. Cui, H. Dong, F. Fang, and S. Russell,
+“Robust multi-agent reinforcement learning via minimax
+deep deterministic policy gradient,” in Proceedings of
+the AAAI Conference on Artiﬁcial Intelligence, vol. 33,
+no. 01, 2019, pp. 4213–4220.
+[20] B. L¨utjens, M. Everett, and J. P. How, “Certiﬁed
+adversarial robustness for deep reinforcement learning,”
+in Conference on Robot Learning.
+PMLR, 2020, pp.
+1328–1337.
+[21] M. Shen and J. P. How, “Robust opponent modeling
+via
+adversarial
+ensemble
+reinforcement
+learning,”
+Proceedings
+of
+the
+International
+Conference
+on
+Automated Planning and Scheduling, vol. 31, no. 1,
+pp. 578–587, May 2021. [Online]. Available: https:
+//ojs.aaai.org/index.php/ICAPS/article/view/16006
+[22] J. Schrittwieser, I. Antonoglou, T. Hubert, K. Simonyan,
+L. Sifre, S. Schmitt, A. Guez, E. Lockhart, D. Hassabis,
+T. Graepel, T. Lillicrap, and D. Silver, “Mastering atari,
+
+go, chess and shogi by planning with a learned model,”
+Nature, vol. 588 7839, pp. 604–609, 2020.
+[23] M. Jaderberg, V. Dalibard, S. Osindero, W. M.
+Czarnecki,
+J.
+Donahue,
+A.
+Razavi,
+O.
+Vinyals,
+T. Green, I. Dunning, K. Simonyan, C. Fernando, and
+K. Kavukcuoglu, “Population based training of neural
+networks,” CoRR, vol. abs/1711.09846, 2017. [Online].
+Available: http://arxiv.org/abs/1711.09846
+[24] M. Jaderberg, W. M. Czarnecki, I. Dunning, L. Marris,
+G.
+Lever,
+A.
+G.
+Casta˜neda,
+C.
+Beattie,
+N.
+C.
+Rabinowitz, A. S. Morcos, A. Ruderman, and et al.,
+“Human-level performance in 3d multiplayer games
+with population-based reinforcement learning,” Science,
+vol. 364, no. 6443, p. 859–865, May 2019. [Online].
+Available: http://dx.doi.org/10.1126/science.aau6249
+[25] T.
+Bansal,
+J.
+Pachocki,
+S.
+Sidor,
+I.
+Sutskever,
+and I. Mordatch, “Emergent complexity via multi-
+agent competition,” in International Conference on
+Learning Representations, 2018. [Online]. Available:
+https://openreview.net/forum?id=Sy0GnUxCb
+[26] C. Zhang and V. R. Lesser, “Multi-agent learning with
+policy prediction,” in Association for the Advancement
+of Artiﬁcial Intelligence (AAAI), 2010.
+[27] J. Foerster, R. Y. Chen, M. Al-Shedivat, S. Whiteson,
+P. Abbeel, and I. Mordatch, “Learning with opponent-
+learning awareness,” in International Conference on
+Autonomous Agents and MultiAgent Systems (AAMAS),
+2018, p. 122–130.
+[28] J. Foerster, G. Farquhar, M. Al-Shedivat, T. Rockt¨aschel,
+E. Xing, and S. Whiteson, “DiCE: The inﬁnitely
+differentiable Monte Carlo estimator,” in International
+Conference on Machine Learning (ICML), vol. 80,
+10–15 Jul 2018, pp. 1524–1533. [Online]. Available:
+http://proceedings.mlr.press/v80/foerster18a.html
+[29] A. Letcher, J. Foerster, D. Balduzzi, T. Rockt¨aschel, and
+S. Whiteson, “Stable opponent shaping in differentiable
+games,” in International Conference on Learning
+Representations (ICLR), 2019. [Online]. Available:
+https://openreview.net/forum?id=SyGjjsC5tQ
+[30] G. Katz, C. Barrett, D. L. Dill, K. Julian, and M. J.
+Kochenderfer, “Reluplex: An efﬁcient smt solver for
+verifying deep neural networks,” in International Confer-
+ence on Computer Aided Veriﬁcation.
+Springer, 2017,
+pp. 97–117.
+[31] L. Weng, H. Zhang, H. Chen, Z. Song, C.-J. Hsieh,
+L. Daniel, D. Boning, and I. Dhillon, “Towards fast
+computation of certiﬁed robustness for relu networks,” in
+International Conference on Machine Learning. PMLR,
+2018, pp. 5276–5285.
+[32] G. Singh, T. Gehr, M. Mirman, M. P¨uschel, and M. T.
+Vechev, “Fast and effective robustness certiﬁcation.”
+NeurIPS, vol. 1, no. 4, p. 6, 2018.
+[33] S. Wang, K. Pei, J. Whitehouse, J. Yang, and S. Jana,
+“Efﬁcient formal safety analysis of neural networks,”
+arXiv preprint arXiv:1809.08098, 2018.
+[34] G. Singh, T. Gehr, M. P¨uschel, and M. T. Vechev,
+“Boosting robustness certiﬁcation of neural networks.”
+in ICLR (Poster), 2019.
+[35] H. Zhang, T.-W. Weng, P.-Y. Chen, C.-J. Hsieh, and
+L. Daniel, “Efﬁcient neural network robustness certiﬁ-
+cation with general activation functions,” arXiv preprint
+arXiv:1811.00866, 2018.
+[36] A. Raghunathan, J. Steinhardt, and P. Liang, “Semideﬁ-
+nite relaxations for certifying robustness to adversarial
+examples,” arXiv preprint arXiv:1811.01057, 2018.
+[37] K. D. Dvijotham, R. Stanforth, S. Gowal, C. Qin, S. De,
+and P. Kohli, “Efﬁcient neural network veriﬁcation with
+exactness characterization,” in Uncertainty in Artiﬁcial
+Intelligence.
+PMLR, 2020, pp. 497–507.
+[38] H. Salman, G. Yang, H. Zhang, C.-J. Hsieh, and
+P. Zhang, “A convex relaxation barrier to tight ro-
+bust veriﬁcation of neural networks,” arXiv preprint
+arXiv:1902.08722, 2019.
+[39] A.
+Nichol,
+J.
+Achiam,
+and
+J.
+Schulman,
+“On
+ﬁrst-order
+meta-learning
+algorithms,”
+CoRR,
+vol.
+abs/1803.02999,
+2018.
+[Online].
+Available:
+http:
+//arxiv.org/abs/1803.02999
+[40] E. Wong and Z. Kolter, “Provable defenses against
+adversarial examples via the convex outer adversarial
+polytope,” in International Conference on Machine
+Learning.
+PMLR, 2018, pp. 5286–5295.
+[41] K. Xu, Z. Shi, H. Zhang, Y. Wang, K.-W. Chang,
+M. Huang, B. Kailkhura, X. Lin, and C.-J. Hsieh,
+“Automatic perturbation analysis for scalable certiﬁed
+robustness and beyond,” Advances in Neural Information
+Processing Systems, vol. 33, 2020.
+[42] H. Zhang, H. Chen, C. Xiao, S. Gowal, R. Stanforth,
+B. Li, D. Boning, and C.-J. Hsieh, “Towards stable and
+efﬁcient training of veriﬁably robust neural networks,”
+arXiv preprint arXiv:1906.06316, 2019.
+[43] S. Gowal, K. Dvijotham, R. Stanforth, R. Bunel, C. Qin,
+J. Uesato, R. Arandjelovic, T. Mann, and P. Kohli,
+“On the effectiveness of interval bound propagation
+for training veriﬁably robust models,” arXiv preprint
+arXiv:1810.12715, 2018.

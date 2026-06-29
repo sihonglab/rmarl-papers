@@ -1,0 +1,1764 @@
+Multi-agent Policy Evaluation via Primal-dual Online
+Time-averaging
+Gang Chena, Changli Pua, Yaoyao Zhoua
+aSchool of Automation, Chongqing University, Chongqing, 400044, China
+Abstract
+We investigate the distributed policy evaluation problem in multi-agent rein-
+forcement learning process. Two cases are considered, where in the ﬁrst case,
+a group of agents carry out the parallel computing to learn the value function
+of a given joint policy and, for the second case, the sate space is partitioned
+into many subspaces and each agent implements the distributed exploration
+in each subspace by a given policy. These two cases are put into the cooper-
+ative framework, where the mean squared projected Bellman error(MSPBE)
+minimization problem for policy evaluation is constructed and then is refor-
+mulated as a primal-dual saddle point problem. Compared with the existing
+policy evaluation schemes, the proposed policy evaluation scheme can im-
+prove the robustness performance of estimation from two aspects. First, the
+primal-dual online time-averaging is considered and designed, potentially re-
+ducing the eﬀects of external noises on the estimations. Second, the general
+time-varying and jointly connected agent network is considered, which has
+the potential to reduce the eﬀects of uncertain environment on the commu-
+nications between agents. It is proved that the algorithm achieves sublinear
+convergence by selecting appropriate gradient learning rates. Finally, numer-
+ical experiments validate our algorithm.
+Keywords:
+Reinforcement learning, distributed policy evaluation,
+distributed optimization, multi-agent systems
+Email addresses: chengang@cqu.edu.cn (Gang Chen), changli@stu.cqu.edu.cn
+(Changli Pu), zhouyaoyao@cqu.edu.cn (Yaoyao Zhou)
+Preprint submitted to Journal of Parallel and Distributed Computing
+August 11, 2023
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+1. Introduction
+Reinforcement learning aims to ﬁnd the best sequence of actions that will
+generate the optimal return, which has achieved obvious breakthroughs in
+many areas such as the Internet of Things (IoT) [1], smart grid [2], games [3],
+and so on. Since some complex tasks require the collaborative cooperation of
+multiple agents[4], multi-agent reinforcement learning (MARL) has attracted
+much more attention in recent years. In contrast to a single agent, each agent
+in a multi-agent system needs to interact not only with the environment but
+also with other agents to update the state of itself [5], which makes the task
+of MARL more challenging.
+In this paper, we consider two cases, where the ﬁrst case considers a group
+of agents which carry out the parallel computing to learn the value function
+of a given joint policy, and the second case partitions the state space into
+many subspaces and each agent implements the distributed exploration in
+each subspace by a given policy.
+An example for the ﬁrst case is that a
+group of robots cooperate to move an object as smoothly as possible. Each
+robot may have diﬀerent actions and get diﬀerent reward values, but the
+global state is common. The example for the second case is the distributed
+exploring problem where multiple agents with distinct states and rewards
+collect datasets collaboratively to evaluate the given policy.
+The goal of
+these cases is to maximize the sum of each agent’s local rewards. To achieve
+this global goal, agents need to exchange local information collaboratively.
+The problem of multi-agent reinforcement learning in this mode is inspired
+by many real-life applications, such as sensor networks [6], smart grid [7],
+energy management [8], and so on.
+One direct way to solve the policy evaluation problem of collaborative
+MARL is to utilize a central controller, which could collect the local re-
+ward information of all agents and calculate the estimated policy value. In
+this way, we can utilize the traditional single-agent reinforcement learning
+scheme. However, the use of the central controller may face a lot of prob-
+lems. For example, it is too expensive to maintain after the attack or failure
+and cannot protect privacy. In some scenarios, some agents do not share local
+information for security and privacy reasons. Therefore, another solution is
+to utilize a fully distributed control framework in which the agent shares lo-
+cal information with its neighbors through the communication network, and
+the decision-making process is determined by the state of the agent itself and
+the information received. It is like applying parallel ideas to deal with big
+2
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+data problems [9, 10]. Motivated by the pioneering work of [11, 12, 13], we
+mainly focus on the distributed policy evaluation problem of MARL.
+The development of MARL can be traced back to Littman’s pioneering
+work on the Markov game [14]. Most of the early works are based on the
+tabular setting, which may face the curse of dimensionality. To solve this
+problem, a group of agents is used to learn the approximate value function
+of the centralized reward under a given policy, and a distributed gradient
+temporal-diﬀerence (GTD) method is proposed in [15]. The work [16] stud-
+ied two fully decentralized actor-critic algorithms to solve the problem of
+linear function approximation in policy evaluation, which could tackle large-
+scale MARL problems.
+In [17], a variance-reduced method based on the
+eligibility traces is presented. Diﬀerent from the gradient-based methods in
+policy evaluation problems, a distributed alternating directions method of
+multipliers (ADMM) algorithm is proposed in [18]. Some works use deep
+neural networks to approximate the value functions [19]. By the primal-dual
+reformulation of policy evaluation in reinforcement learning, some central-
+ized algorithms are investigated, such as GTD2 [20], PDBG and SVAG [13].
+The work [11] uses Fenchel duality to transform the minimized mean square
+Bellman error (MSPBE) into a kind of distributed saddle-point problem. By
+using the proposed double averaging algorithm, a fully distributed MARL
+setting is realized.
+Most of the existing works are feasible under the framework of undirected
+and ﬁxed topologies [11, 17, 18]. Due to the actual privacy consideration, an
+agent may broadcast its local information to another agent, but the receiver
+may be unwilling to transmit the local information back to the previous
+agent. Moreover, in the uncertain environment, the communication network
+may be time-varying. Therefore, to tackle this problem, we mainly focus
+on a sequence of time-varying and jointly connected digraphs in this paper.
+Motivated by the Laplacian averaging [21], we combine the MARL with
+primal-dual running-time averaging in the process of policy evaluation.
+The main contributions are twofold. First, we establish a distributed pol-
+icy evaluation algorithm with primal-dual online time-averaging. The online
+time-averaging scheme has the potential to reduce the eﬀects of ubiquitous
+noises on policy estimation. Therefore, the proposed scheme is more suitable
+for the online learning process. Second, considering the uncertainty and ef-
+fects of the external environment, the agent network may be time-varying or
+even not be connected in some instants. The general communication network
+with time-varying and jointly connected topology is considered in this work.
+3
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+Our algorithm is feasible under this general situation and thus the result is
+more general as compared with the existing algorithms based on undirected
+graphs [11, 17, 18].
+Moreover, our analysis method is diﬀerent from the
+existing works [11, 17, 18, 22, 23]. In fact, considering the primal-dual opti-
+mization and online time-averaging, the analyses become more challenging.
+Motivated by the running time-average analyses [21], we shed some light on
+its application in the online learning.
+The rest part of our paper is organized as follows. Section 2 describes the
+multi-agent policy evaluation problem. In Section 3, the distributed policy
+evaluation algorithm with primal-dual online time-averaging is proposed un-
+der jointly connected and time-varying graphs. To test the eﬀectiveness of
+our proposed algorithms, some numerical simulations are provided in Section
+4. Finally, some conclusions are presented in Section 5.
+Some notations are as follows: Let 1N denote a column vector with all
+1s, Id be the identity matrix of size d, and N be the number of agents.
+M =
+1
+N 1N1⊤
+N, M = M N Id. L = IN −M , L = L N Id, Lt = Lt
+N Id.
+Denote ∥·∥as the Euclidean norm and let R+ represent the set of positive
+real numbers.
+2. Problem Formulation
+In this section, some preliminaries are ﬁrst introduced and then the dis-
+tributed policy evaluation problem is formulated.
+2.1. Multi-agent MDP
+Let G = (V, E) describe the communication graph of a weight directed
+network, where V = {1, 2, · · · , N} denotes the set of agents and the E ⊆
+V × V represents the communication edges. The set of neighbors of node
+i is denoted by Ni = {j ∈V |(j, i) ∈E }. The laplacian matrix L of this
+graph is deﬁned as L = D −A, where A = [aij] is the adjacency matrix with
+the elements aij denoting the weight of the edge (i, j) and D = [di] is the
+diagonal in-degree matrix with the elements di = PN
+j=1 aij. In this paper, a
+sequence of digraphs is considered, which is formally stated as follows.
+Assumption 1. The sequence of graphs {G(t)}t≥1 are uniformly jointly
+strongly connected and weight-balanced, i.e., there is a ﬁnite integer B > 0
+such that the graph G(t) ∪G(t + 1) ∪. . . ∪G(t + B −1) is strongly connected
+and weight-balanced. Moreover, the edge weight satisﬁes aij ≥o for some
+positive constant o as (i, j) ∈E.
+4
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+A multi-agent Markov Decision Process (MDP) can be deﬁned as a quin-
+tuple (S, {Ai}N
+i=1, Psa, {Ri}N
+i=1, γ), where S is the state space; Ai is the action
+space of agent i; Psa denotes the transition probability from state s ∈S to
+any other state s′ ∈S under a joint action a = (a1, · · · , aN) ∈A1×· · ·×AN;
+Ri = Ri(s, a, s′) represents the reward of agent i; γ ∈[0, 1) is the discount
+factor.
+Under a joint policy π, we can deﬁne the global reward as an average of
+the local rewards,
+Rπ
+c (s) = 1
+N
+N
+X
+i=1
+Rπ
+i (s)
+(1)
+where Rπ
+i (s) := Ea∼π(·|s)[Ri(s, a, s′)] is the local reward of agent i at state s
+if it follows the ﬁxed policy π.
+Under this ﬁxed policy, we deﬁne the transition matrix as P π, whose
+elements denote the probability of multi-agent MDP to take an action a at
+state s and reach the next state s′, i.e., [P π]s,s′ = P(s′|s, π) = P
+a∈A π(a|s)·
+P(s′|s, a). We assume that this Markov chain is aperiodic and irreducible
+and there is a stationary distribution of states µπ(s) with the policy π.
+2.2. Policy Evaluation
+The policy evaluation of reinforcement learning means to learn the value
+function under a given joint policy π. The value function can be described
+as
+V π(s) := E[
+∞
+X
+p=0
+γpRπ
+c (sp)|s0 = s, π].
+(2)
+Let V π represent a vector of V π(s) for all states. Then we can rewrite (2)
+in the Bellman equation form, i.e.,
+V π = Rπ
+c + γP πV π
+(3)
+where Rπ
+c is constructed by stacking up Rπ
+c (s), P π is the transition matrix.
+To avoid the curse of dimensionality while the states are very large, for
+a initial state s ∈S, a linear approximation Vθ(s) = φ⊤(s)θ is used to
+approximate the value function, where φ⊤(s) ∈Rd is a feature vector such as
+the feature mapping of neural network and θ ∈Rd denote the parameters to
+be estimated. Let Φ = [φ(1), φ(2), · · · , φ(s)]⊤∈R|S|×d and V θ represent a
+vector of Vθ(s) for all states. Thus, the policy evaluation problem is simpliﬁed
+5
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+to ﬁnd a parameter θ that minimizes the mean squared projected Bellman
+error (MSPBE), i.e.,
+J(θ) = 1
+2∥ΠΦ(V θ −γP πV θ −Rπ
+c )∥2
+D + 1
+2ρ∥θ∥2
+(4)
+where D = diag(µπ(s)) with the entries µπ(s) being the stationary distri-
+bution under the policy π, ΠΦ donates the projection matrix onto the liner
+space {Φθ, θ ∈Rd}, 1
+2ρ∥θ∥2 is the regularization part with ρ > 0. Further,
+we rewrite (4) in a standard weighted least-square form
+J(θ) = 1
+2∥Aθ −b∥2
+C−1 + 1
+2ρ∥θ∥2
+(5)
+where A = Eµπ[φ(s)(φ(s) −γφ(s′))⊤], b = Eµπ[Rπ
+c (s)φ(s)], C = Eµπ[φ(s)
+φ(s)⊤].
+2.2.1. Parallel Computing Based Policy Evaluation
+We ﬁrst consider the case where a group of agents carry out the parallel
+computing to learn the value function of a given joint policy. This situation
+corresponds to the previous description (1)-(5). Using Fenchel duality and
+introducing the dual variable ω, we can rewrite (5) as
+J(θ) = max
+ω
+ω⊤(Aθ −b) −1
+2ω⊤Cω + 1
+2ρ∥θ∥2
+(6)
+As the parameters A, b, C are often unknown in the practical application,
+we can replace the unknown parameters with the ﬁnite sampled averages.
+Based on the M samples, these parameters are estimated as follows
+ˆ
+A = 1
+M
+M
+X
+p=1
+Ap,ˆb = 1
+M
+M
+X
+p=1
+bp, ˆ
+C = 1
+M
+M
+X
+p=1
+Cp
+(7)
+where
+Ap = φ(sp)(φ(sp) −γφ(sp+1))⊤,
+bp = Rπ
+c (sp, ap)φ(sp), Cp = φ(sp)φ(sp)⊤
+(8)
+with Rπ
+c (sp, ap) = 1/N PN
+i=1 Ri(sp, ap).
+6
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+Since the reward is private for each agent, the global reward Rπ
+c cannot
+be computed directly. Let ˆbi =
+1
+M
+PM
+p=1 bi,p with bi,p = Rπ
+i (sp, ap)φ(sp), for
+each agent i, we obtain the following empirical MSPBE(EM-MSPBE).
+Ji(θ) = max
+ω
+ω⊤( ˆ
+Aθ −ˆbi) −1
+2ω⊤ˆ
+Cω + 1
+2ρ∥θ∥2
+(9)
+Assuming that ˆ
+A is full rank, ˆ
+C is positive-deﬁnite and M is large enough.
+2.2.2. Distributed Exploring Based Policy Evaluation
+In the distributed exploring case, we partition the state space into many
+subspaces and each agent carries out the exploration task in each subspace.
+Each agent can only observe its own states and rewards. One example is
+a large area to be patrolled is devided into many smaller areas for diﬀerent
+robots. The goal for this case is to evaluate the policy π in a common MDP.
+The MDP is deﬁned as (S, A, Psa, R, γ), where S is the state space; A is
+the action space of, Psa and R denote the transition pobability and reward
+respectively. Each agent does not need to explore the whole state space and
+the local state and reward are achieved.
+For each exploring agent, the minimized EM-MSPBE can be given by
+Ji(θ) = max
+ω
+ω⊤( ˆ
+Aiθ −ˆbi) −1
+2ω⊤ˆ
+Ciω + 1
+2ρ∥θ∥2
+(10)
+Each agent collects a dataset with M samples, the parameters can be esti-
+mated as
+ˆ
+Ai = 1
+M
+M
+X
+p=1
+Ai,p,ˆbi = 1
+M
+M
+X
+p=1
+bi,p, ˆ
+Ci = 1
+M
+M
+X
+p=1
+Ci,p
+(11)
+where
+Ai,p = φ(si,p)(φ(si,p) −γφ(si,p+1))⊤,
+bi,p = Rπ(si,p, ai,p)φ(sp), Ci,p = φ(si,p)φ(si,p)⊤
+(12)
+2.3. EM-MSPBE saddle-point formulation
+The policy evaluation problems in the above two cases can be reformu-
+lated as a consensus form
+min
+θi
+1
+N
+N
+X
+i=1
+Ji(θi)
+(13)
+subject to θ1 = · · · = θN
+7
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+The primal-dual form for (13) is described as
+min
+θ=col(θi)
+max
+ω=col(ωi) J(θ, ω) = 1
+N
+N
+X
+i=1
+Ji(θi, ωi)
+subject to θ1 = · · · = θN, ω1 = · · · = ωN
+(14)
+with Ji(θi, ωi) = ω⊤
+i ( ˆ
+Aiθi −ˆbi) −1
+2ω⊤
+i ˆ
+Ciωi + 1
+2ρ∥θi∥2 and for the parallel
+computing based reinforcement learning, ˆ
+Ai = ˆ
+A, ˆ
+Ci = ˆ
+C.
+3. Distributed Policy Evaluation Algorithm and Convergence
+In this section, a distributed primal-dual online time-averaging algorithm
+is proposed to solve the policy evaluation problem in (14).
+3.1. Distributed Policy Evaluation Algorithm
+The primal-dual policy evaluation protocol with online time-averaging is
+presented as follows
+θt+1 = θt −σ(Lt ⊗Id)θt −ηtgθt
+θa
+t+1 = t−1
+t θa
+t + 1
+tθt
+ωt+1 = ωt −σ(Lt ⊗Id)ωt + ηtgωt
+ωa
+t+1 = t−1
+t ωa
+t + 1
+tωt
+(15)
+where θt = col(θ1, · · · , θN), ωt = col(ω1, · · · , ωN) are the primal and dual
+variables, respectively; σ is the consensus stepsize with 0 < σ < dmax
+and dmax denoting the maximum of in-degree; gθt = ∇θtJ(θt, ωt), gωt =
+∇ωtJ(θt, ωt); ηt is the learning rate. Algorithm 1 shows the proposed dis-
+tributed policy evaluation scheme.
+3.2. Consensus Analysis
+From the ﬁrst equation in (15), we have
+θj,t+1 =
+N
+X
+i=1
+φji(t, 1)θi,1 −
+N
+X
+i=1
+t−1
+X
+s=1
+φji(t, s + 1)ηsgθi,s −ηtgθj,t
+(16)
+where the state transition matrix φ(t, l) = [φji(t, l)] with elements φji(t, l) is
+denoted by
+φ(t, l) = ˆP(t)ˆP(t −1) . . . ˆP(l), t ≥l
+(17)
+8
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+Algorithm 1: Distributed Policy Evaluation Algorithm
+Data: The Laplacian matrix Lt, consensus stepsize σ, learning rate
+ηt, number of iterations T, initialization of primal and dual
+variables θa
+i,1 = θi,1, ωa
+i,1 = ωi,1
+Result: Online time-averages θa
+i,T, ωa
+i,T
+1 for t ∈{1, 2, · · · , T −1} do
+2
+for i ∈{1, · · · , N} do
+3
+Updating the primal variable for agent i
+4
+θi,t+1 = θi,t −σ PN
+j=1 {lij}tθj,t −ηtgθi,t;
+5
+θa
+i,t+1 = 1
+t
+Pt
+s=1 θi,s;
+6
+Updating the dual variable for agent i
+7
+ωi,t+1 = ωi,t −σ PN
+j=1 {lij}tωj,t + ηtgωi,t;
+8
+ωa
+i,t+1 = 1
+t
+Pt
+s=1 ωi,s;
+9
+end
+10 end
+with ˆP(t) = IN −σLt.
+Under Assumption 1, the state transition matrix φ(t, l) has the following
+property.
+Lemma 1. [24] Suppose Assumption 1 holds. One has
+|φji(t, s) −1
+N | ≤νrt−s for all t ≥s,
+with ν = 21+o−B
+1−oB , r = (1 −oB)
+1
+B .
+We ﬁrst show that the consensus constraints in (14) are satisﬁed for Al-
+gorithm 1, which are detailed as follows.
+Theorem 1. For Algorithm 1, choosing the learning rate ηt =
+ε
+T △with ε > 0
+and 0.5 < △< 1 or ηt =
+ε
+√
+t, the consensus constraints on the primal and
+dual variables are satisﬁed as T →∞.
+Proof. Taking the summation on both sides of (16), we have
+1
+N
+N
+X
+i=1
+θi,t+1 = 1
+N
+N
+X
+i=1
+θi,1 −1
+N
+N
+X
+i=1
+t−1
+X
+s=1
+ηsgθi,s −1
+N
+N
+X
+i=1
+ηtgθi,t
+(18)
+9
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+According to (16) and (18), one has
+θj,t+1 −1
+N
+N
+X
+i=1
+θi,t+1 =
+N
+X
+i=1
+(φji(t, 1) −1
+N )θi,1
+(19)
+−
+N
+X
+i=1
+t−1
+X
+s=1
+(φji(t, s + 1) −1
+N )ηsgθi,s −ηtgθj,t + 1
+N
+N
+X
+i=1
+ηtgθi,t
+Moreover, it yields from (19) that
+∥θa
+j,T+1 −
+1
+TN
+T
+X
+t=1
+N
+X
+i=1
+θi,t+1∥≤1
+T
+T
+X
+t=1
+∥θj,t+1 −1
+N
+N
+X
+i=1
+θi,t+1∥
+(20)
+≤1
+T
+T
+X
+t=1
+N
+X
+i=1
+|φji(t, 1) −1
+N | · ∥θi,1∥
++ 1
+T
+T
+X
+t=2
+t−1
+X
+s=1
+N
+X
+i=1
+ηs|φji(t, s + 1) −1
+N | · ∥gθi,s∥
++ 1
+T
+T
+X
+t=1
+(ηt(∥gθj,t∥+ 1
+N
+N
+X
+i=1
+ηt∥gθi,t∥)
+Let ∥θi,1∥≤θ0 and ∥gθj,t∥≤gθ0 with θ0 > 0, gθ0 > 0. By Lemma 1, we
+further get that
+∥θa
+j,T+1 −
+1
+TN
+T
+X
+t=1
+N
+X
+i=1
+θi,t+1∥≤1
+T
+T
+X
+t=1
+N
+X
+i=1
+θ0νrt−1
+(21)
++ 1
+T
+T
+X
+t=2
+t−1
+X
+s=1
+N
+X
+i=1
+gθ0νηsrt−s−1 + 1
+T
+T
+X
+i=1
+2gθ0ηt
+≤Nνθ0
+(1 −r)T +
+νNgθ0
+(1 −r)T
+T−1
+X
+t=1
+ηt + 2gθ0
+T
+T
+X
+t=1
+ηt
+While ηt =
+ε
+T △, we have
+∥θa
+j,T+1 −
+1
+TN
+T
+X
+t=1
+N
+X
+i=1
+θi,t+1∥≤
+Nνθ0
+(1 −r)T + 2gθ0ε
+T △+
+νNgθ0ε
+(1 −r)T △
+(22)
+10
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+While ηt =
+ε
+√
+t, by noting PT
+t=1
+ε
+√
+t ≤ε(1 +
+R T
+t=1
+1
+√
+tdt) ≤2ε
+√
+T, we get that
+∥θa
+j,T+1 −
+1
+TN
+T
+X
+t=1
+N
+X
+i=1
+θi,t+1∥≤
+Nνθ0
+(1 −r)T + 4gθ0ε
+√
+T
++ 2νNgθ0ε
+(1 −r)
+√
+T
+(23)
+From (22) and (23), we see that the consensus constraints for θi, i =
+1, · · · , N are satisﬁed as T →∞. The similar proof and results are also
+applicable for the dual variable ωi, i = 1, · · · , N.
+The following lemma is useful in the following analyses.
+Lemma 2. Under Assumption 1, the following bound holds.
+T
+X
+t=1
+∥Lθt∥≤2Nθ0 + N 2θ0ν
+1 −r + 2Ngθ0
+T−1
+X
+t=1
+ηt + N 2gθ0ν
+T−1
+X
+t=2
+t−1
+X
+s=1
+ηsrt−s−1 (24)
+Proof. Note that
+∥Lθt+1∥= ∥θt+1 −1d ⊗( 1
+N
+N
+X
+i=1
+θi,t+1)∥
+≤
+N
+X
+i=1
+∥θi,t+1 −1
+N
+N
+X
+i=1
+θi,t+1∥
+(25)
+From (19) and Lemma 1, we further get that
+∥Lθt+1∥≤
+N
+X
+i=1
+(Nνθ0rt−1 +
+t−1
+X
+s=1
+Nνgθ0ηsrt−s−1 + 2gθ0ηt)
+(26)
+Noting that
+T
+X
+t=1
+∥Lθt∥=
+T−1
+X
+t=0
+∥Lθt+1∥
+= ∥Lθ1∥+
+T−1
+X
+t=1
+∥Lθt+1∥
+(27)
+and applying the inequalities
+∥Lθ1∥≤2Nθ0
+(28)
+11
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+and
+T−1
+X
+t=1
+∥Lθt+1∥≤N 2νθ0
+1 −r + 2Ngθ0
+T−1
+X
+t=1
+ηt + N 2νgθ0
+T−1
+X
+t=2
+t−1
+X
+s=1
+ηsrt−s−1
+(29)
+we get the result (24).
+3.3. Primal-Dual Optimization Evaluation Error
+In this subsection, we construct the evaluation error, and ﬁnd the cumu-
+lative error bounds corresponding to the primal and dual variables, respec-
+tively. All the proofs are put in the appendix.
+Lemma 3. Let {(θt, ωt)}t≥1 be a sequence of the iterative process, and
+(θp, ωp) be the variable at any time p, 1 ≤p ≤t. The bound of primal
+variable evaluation error is as follows:
+2(J(θt, ωt) −J(θp, ωt)) ≤1
+ηt
+(∥Mθt −θp∥2 −∥Mθt+1 −θp∥2)
++ 2∥gθt∥(∥Lθt∥+ ∥Lθp∥) + ηt∥gθt∥2.
+(30)
+Similarly, for the dual variable, we have
+2(J(θt, ωt) −J(θt, ωp)) ≥−1
+ηt
+(∥Mωt −ωp∥2 −∥Mωt+1 −ωp∥2)
+−2∥gωt∥(∥Lωt∥+ ∥Lωp∥) −ηt∥gωt∥2.
+(31)
+Proof. See Appendix A.
+Based on Lemma 3, we will provide the cumulative estimation error cor-
+responding to the online time-averages.
+Lemma 4. For any (θp, ωp), 1 ≤p ≤t, we have the following cumulative
+error corresponding to the dual averaging.
+t
+X
+s=1
+J(θs, ωs) −tJ(θp, ωa
+t+1) ≤u(t, θp)
+2
+,
+(32)
+where
+u(t, θp) =
+t
+X
+s=2
+(∥Mθs −θp∥2)( 1
+ηs
+−
+1
+ηs−1
+) + 2
+η1
+(∥θ1∥2 + ∥θp∥2)
++
+t
+X
+s=1
+ηs∥gθs∥2 + 2
+t
+X
+s=1
+∥gθs∥∥Lθs∥+ 2∥Lθp∥
+t
+X
+s=1
+∥gθs∥,
+(33)
+12
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+Correspondingly, the cumulative error with respect to the primal averaging is
+−u(t, ωp)
+2
+≤
+t
+X
+s=1
+J(θs, ωs) −tJ(θa
+t+1, ωp),
+(34)
+Proof. See Appendix B.
+In Lemma 4, we have established the upper and lower bounds of the
+cumulative errors. Let (θ∗, ω∗) denote the saddle point, which satisﬁes
+J(θ∗, ωa
+t+1) ≤J(θ∗, ω∗) ≤J(θa
+t+1, ω∗)
+(35)
+We further get the following fundamental results on the online time-
+average evaluations.
+Lemma 5. Let (θ∗, ω∗) be the saddle point of J(θ∗, ω∗).
+The following
+inequalities hold:
+−u(t, ω∗) −u(t, θa
+t+1) ≤2t(J(θa
+t+1, ωa
+t+1) −J(θ∗, ω∗))
+≤u(t, θ∗) + u(t, ωa
+t+1)
+(36)
+Proof. See Appendix C.
+3.4. Convergence analysis
+In this subsection, we provide the convergence analyses of Algorithm 1 un-
+der the constant learning rate and the time-varying rate, respectively. Some
+notations are required in the following analyses. Let θ0 := sups=1,··· ,t∥θs∥,
+ω0 := sups=1,··· ,t∥ωs∥, gθ0 := sups=1,··· ,t∥gθs∥, gω0 := sups=1,··· ,t∥gωs∥.
+Theorem 2. For Algorithm 1, let T denote a ﬁxed time number of iterations.
+If the learning rate is set as ηt =
+ε
+T △with 0.5 < △< 1 and ε < T △, the time
+averages of the primal and dual variables converge to the saddle point with
+the convergence rate
+−
+1
+2εT 1−△(αω + βθ) ≤J(θa
+T+1, ωa
+T+1) −J(θ∗, ω∗) ≤
+1
+2εT 1−△(αθ + βω)
+(37)
+where αθ = 4θ2
+0 + 4Nθ0gθ0 +
+2N2θ0νgθ0
+1−r
++ (g2
+θ0ε2 + 4Ng2
+θ0ε2 +
+2N2g2
+θ0νε2
+1−r
+)T 1−2△,
+βω = 4ω2
+0 + 8Nω0gω0 +
+4N2gω0νω0
+1−r
++ (g2
+ω0ε2 + 8Ng2
+ω0ε2 +
+4N2g2
+ω0νε2
+1−r
+)T 1−2△.
+13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+Proof. From (36), we have
+J(θa
+T+1, ωa
+T+1) −J(θ∗, ω∗) ≤u(T, θ∗) + u(T, ωa
+T+1)
+2T
+(38)
+Next, we analyze the terms u(T, θ∗) and u(T, ωa
+T+1) one by one. Noting that
+ηt =
+ε
+T △and Lθ∗= 0, we get from (33) that
+u(T, θ∗) = 2T △
+ε
+(∥θ1∥2 + ∥θ∗∥2) + ε
+T △
+T
+X
+s=1
+∥gθs∥2 + 2
+T
+X
+s=1
+∥gθs∥∥Lθs∥
+≤4T △θ2
+0
+ε
++ εg2
+θ0T 1−△+ 2gθ0
+T
+X
+s=1
+∥Lθs∥
+(39)
+In light of (24), we have
+T
+X
+s=1
+∥Lθs∥≤2Nθ0 + N 2θ0ν
+1 −r + 2Ngθ0εT 1−△+ N 2gθ0νεT −△
+T−1
+X
+t=2
+t−1
+X
+s=1
+rt−s−1
+≤2Nθ0 + N 2θ0ν
+1 −r + (2Ngθ0ε + N 2gθ0νε
+1 −r
+)T 1−△
+(40)
+Substituting (40) into (39) and making some reorganization yield
+u(T, θ∗) ≤T △
+ε (4θ2
+0 + 4Nθ0gθ0 + 2N 2θ0νgθ0
+1 −r
+(41)
++ (g2
+θ0ε2 + 4Ng2
+θ0ε2 + 2N 2g2
+θ0νε2
+1 −r
+)T 1−2△)
+For the term u(T, ωa
+T+1), we get from (33) that
+u(T, ωa
+T+1) ≤4T △ω2
+0
+ε
++ εg2
+ω0T 1−△+ 2gω0
+T
+X
+s=1
+∥Lωs∥+ 2gω0∥Lωa
+T+1∥T (42)
+In light of ∥Lωa
+T+1∥≤1
+T
+PT
+s=1 ∥Lωs∥, we further get that
+u(T, ωa
+T+1) ≤4T △ω2
+0
+ε
++ εg2
+ω0T 1−△+ 4gω0
+T
+X
+s=1
+∥Lωs∥
+≤T △
+ε (4ω2
+0 + 8Nω0gω0 + 4N 2ω0νgω0
+1 −r
++ (g2
+ω0ε2 + 8Ng2
+ω0ε2 + 4N 2g2
+ω0νε2
+1 −r
+)T 1−2△)
+(43)
+14
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+Substituting (41) and (43) into (38), we get the inequality on the right side
+of (37). From (36), we have
+J(θ∗, ω∗) −J(θa
+T+1, ωa
+T+1) ≤u(T, ω∗) + u(T, θa
+T+1)
+2T
+(44)
+Applying the similar dirivation process as (39)-(43), we can get the inequality
+on the left side of (37).
+Theorem 3. For Algorithm 1, if the learning rate is set as ηt =
+ε
+√
+t with
+ε > 0, the time averages of the primal and dual variables converge to the
+saddle point with the convergence rate
+−1
+t (α′
+ω1 + β′
+θ1) −1
+√
+t(α′
+ω2 + β′
+θ2) ≤J(θa
+t+1, ωa
+t+1)
+−J(θ∗, ω∗) ≤1
+t (α′
+θ1 + β′
+ω1) + 1
+√
+t(α′
+θ2 + β′
+ω2)
+(45)
+with α′
+θ1 = 2θ2
+0
+ε + 2Nθ0gθ0 +
+N2νθ0gθ0
+1−r
+, α′
+θ2 = 4θ2
+0ε + g2
+θ0ε + 4Nεg2
+θ0 +
+2N2g2
+θ0νε
+1−r
+,
+β′
+ω1 = 2ω2
+0
+ε + 4Nω0gω0 +
+2N2νω0gω0
+1−r
+, β′
+ω2 = 4ω2
+0ε + g2
+ω0ε + 8Nεg2
+ω0 +
+4N2g2
+ω0νε
+1−r
+.
+Proof. From (36), we have
+J(θa
+t+1, ωa
+t+1) −J(θ∗, ω∗) ≤u(t, θ∗) + u(t, ωa
+t+1)
+2t
+(46)
+For the term u(t, θ∗), we get from (33) that
+u(t, θ∗) ≤4θ2
+0ε
+t
+X
+s=2
+1
+√s + 4θ2
+0
+ε + g2
+θ0ε
+t
+X
+s=1
+1
+√s + 2gθ0
+t
+X
+s=1
+∥Lθs∥
+≤4θ2
+0
+ε + (8θ2
+0ε + 2g2
+θ0ε)
+√
+t + 2gθ0
+t
+X
+s=1
+∥Lθs∥
+(47)
+In light of (24), we have
+t
+X
+s=1
+∥Lθs∥≤2Nθ0 + N 2θ0ν
+1 −r + 2Ngθ0ε
+t−1
+X
+s=1
+1
+√s
++ N 2gθ0νε
+t−1
+X
+l=2
+l−1
+X
+s=1
+rt−s−1
+√s
+(48)
+≤2Nθ0 + N 2θ0ν
+1 −r + (4Ngθ0ε + 2N 2gθ0νε
+1 −r
+)
+√
+t
+15
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+Substituting (48) into (47), we have
+u(t, θ∗) ≤2α′
+θ1 + 2α′
+θ2
+√
+t
+(49)
+For the term u(t, ωa
+t+1), we get from (33) that
+u(t, ωa
+t+1) ≤4ω2
+0
+t
+X
+s=1
+ε
+√s + 4ω2
+0
+ε
++ g2
+ω0
+t
+X
+s=1
+ε
+√s
++ 2gω0
+t
+X
+s=1
+∥Lωs∥+ 2gω0∥Lωa
+t+1∥t
+≤4ω2
+0
+ε
++ (8ω2
+0ε + 2g2
+ω0ε)
+√
+t + 4gω0
+t
+X
+s=1
+∥Lωs∥
+(50)
+Since the term Pt
+s=1 ∥Lωs∥satisﬁes the similar relationship as that of (48),
+we further get that
+u(t, ωa
+t+1) ≤2β′
+ω1 + 2β′
+ω2
+√
+t
+(51)
+By (46), (49) and (51), we get the inequality on the right side of (45). From
+(36), we have
+J(θ∗, ω∗) −J(θa
+t+1, ωa
+t+1) ≤u(t, ω∗) + u(t, θa
+t+1)
+2t
+(52)
+Using the similar derivation process as that of (47)-(52), we can get the
+inequality on the left side of (45).
+Remark 1. A novel policy evaluation algorithm based on online time-averaging
+is presented in Algorithm 1. Theorem 2 shows that under the constant learn-
+ing rate η =
+ε
+T △, Algorithm 1 achieves the convergence rate of O(
+1
+T 1−△).
+Theorem 3 shows that under the time-varying learning rate ηt =
+ε
+√
+t, Algo-
+rithm 1 achieves the convergence rate of O( 1
+√
+t). The comparisons under these
+two cases are carried out in the simulation part.
+4. Simulation Veriﬁcation
+4.1. Experiment for parallel computing based policy evaluation
+To test our algorithm, the example on Mountain car [25] is considered
+here. The mountain car is to be driven to the top of a mountain, where
+16
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+the diﬃculty is that the mountain car cannot reach the goal even at full
+throttle because of insuﬃcient power. One way is to ﬁrstly drive to the slope
+in the opposite direction and then drive at full throttle towards the top of
+the hill by making full use of the inertia. There are three possible actions,
+i.e., full throttle forward, full throttle reverse, and zero throttle. The task
+is shown in Fig.2. We adopt SARSA algorithm in this task to learn a good
+policy. The reward under each time step is set as -1 until the top is reached.
+By utilizing the trajectory samples, a multi-agent policy evaluation system
+consisting of six agents is constructed. Corresponding to the problem, the
+state is global, the local reward of each agent is set at a random proportion of
+the reward, and the average is equal to Rπ
+c (sp, ap). To verify the theoretical
+convergence results, the other parameters are set as γ = 0.9, d = 16, ρ = 0.2.
+The feature vector is the form φ(s) = 2exp((∥s −c∥2)/b2). The sequence of
+communication network is given in Fig.1 with Gt = {G1, G2} and B = 2.
+For comparison, we consider two cases of learning rates, i.e., the constant
+learning rate η = ε/T △(△= 0.55 with the ﬁxed time horizon T = 5000)
+and the time-varying rate ηt = k/
+√
+t. The simulation results are shown in
+Figs.3-6, respectively.
+In Fig.3, we show the curves of θa
+i , i ∈{1, · · · , 6}, and the simulation
+results veriﬁed the consensus convergence performance of Theorem 1. Fig.4
+shows the convergence of MSPBE, we see that under the time-varying and
+jointly connected topologies, the curves of primal-dual estimation errors still
+achieve convergence and the convergence performances correspond to our
+theoretical results. By comparison, the convergence speed under the constant
+learning rate is slower than the time-varying learning rate case. We also see
+that the bigger the gain ε or k is, the faster the convergence is.
+These
+properties are demonstrated in Fig.4.
+We compare Algorithm 1 with the inexact ADMM[18] based on mountain
+car task. Since the inexact ADMM only works on undirected graph, we set
+the communication topology as an undirected cycle graph. For the inexact
+ADMM, the related parameters are set as c = 1.5, µ = 7.5. For Algorithm 1,
+we set the constant leaning rate as η = 6/10000.55 and the time-varying rate
+as ηt = 2/
+√
+t. The results show that our algorithm can be reduced to the
+same accuracy level (till up to 1% error). With the similar convergence per-
+formance, the inexact ADMM contains the inverse operation for the estimate
+C in (5) and thus the computational complexity is higher.
+Fig.6 shows the immunity performance of θa while the Gaussian noise
+(1/
+√
+2πσ)exp[−(x −µ)2/2σ2] is applied.
+In this experiment, let µ = 0,
+17
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+σ2 = 0.01∥θ∗∥, and the learning rate be a constant η = 16/50000.55. The
+simulation results show that θ keeps ﬂuctuating under the eﬀect of noise,
+while the time-average θa is smooth and converges to the optimal solution in
+a better way, which could reduce the eﬀects of noise.
+Fig. 1: The time-varying graphs
+Fig. 2: Mountain car task
+4.2. Experiment for distributed exploring based policy evaluation
+We consider the scenario that a group of robots implement an exploration
+task in a large region. Assume that we have a 9 × 6 grid environment and
+there exist six robots. We partition the 9 × 6 grid environment into six 3 × 3
+grids as shown in Fig.7. Each robot implements the exploring task in a 3× 3
+grid. The actions performed for each robot can be up, down, left, or right
+and a local reward is received for each action. Given a particular exploring
+policy, we need to evaluate it in a distributed way. Algorithm 1 is applied
+and the feature vector is six-dimensional. The time-varying network is set
+as Fig.1. Noting that, in the practical application, the grid can be divided
+18
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+100
+101
+102
+103
+104
+10-3
+10-2
+10-1
+100
+Fig. 3: Experiment 1: θa
+i iteration
+500
+1000 1500 2000 2500 3000 3500 4000 4500 5000
+10-4
+10-3
+10-2
+10-1
+100
+Fig. 4: Experiment 1: J with η =
+ε
+T △and ηt =
+k
+√
+t
+19
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+0
+200
+400
+600
+800
+1000
+10-3
+10-2
+10-1
+100
+Fig. 5: Experiment 1: Comparison under cycle graph
+0
+1000
+2000
+3000
+4000
+5000
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1
+Fig. 6: θ iteration under Gaussian noise
+20
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+more delicately, and a simpliﬁcation is made here by utilizing only 3 × 3 grid
+scenes in the experiment. The simulation results are shown in Figs.8-9.
+In Fig.8, we show the curves of θa
+i , i ∈{1, · · · , 6} and the simulation re-
+sults verify the consensus convergence in this evaluation experiment. The
+eﬀects of the communication graphs on θa are shown in Fig.9. The fully
+connected graph converges slowly in the ﬁrst few dozen iterations because
+of the high number of information exchanges. Under diﬀerent graphs, the
+errors can converge to the same accuracy level (up to 1% error). In practical
+applications, the low number of information exchanges is a key advantage,
+which can reduce the demand for communication resources and also poten-
+tially reduce the loss of information in the communication process.
+Fig. 7: Distributed exploring
+5. Conclusions
+In this paper, we studied the distributed policy evaluation problem for
+multi-agent network under the time-varying and jointly connected topologies.
+Using Fencel dual theory, the policy evaluation problem was converted into a
+distributed primal-dual optimization problem. The distributed primal-dual
+online averaging scheme was proposed and the convergence rates under the
+constant learning rate and the time-varying learning rate were derived and
+analyzed. The numerical experiments veriﬁed the convergence performance.
+21
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+100
+101
+102
+103
+104
+10-1
+100
+Fig. 8: Experiment 2: θa
+i iteration
+500
+1000 1500 2000 2500 3000 3500 4000 4500 5000
+10-3
+10-2
+10-1
+100
+40
+60
+0.22
+0.24
+0.26
+0.28
+Fig. 9: Experiment 2: θ with ηt =
+k
+√
+t for diﬀerent graphs
+22
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+6. Acknowledgment
+This work was supported by the National Natural Science Foundation of
+China (61673077).
+Appendix A.
+Proof of Lemma 3. Multiplying M on both sides of the ﬁrst equation in
+(15) and noting that MLt = 0, we can derive the following equation
+Mθt+1 = Mθt −ηtMgθt
+(A.1)
+By subtracting θp on both sides of (A.1) and applying the relationships
+M T = M, M 2 = M, we have
+∥Mθt+1 −θp∥2 = ∥Mθt −θp∥2 + ∥ηtMgθt∥2 −2ηtg⊤
+θt(Mθt −Mθp).
+(A.2)
+Using the convexity of J(θ, ω) with respect to θ, the last term of (A.2) can
+be bounded as follows
+−g⊤
+θt(Mθt −Mθp) = −g⊤
+θt(Mθt −θt) −g⊤
+θt(θp −Mθp) −g⊤
+θt(θt −θp)
+≤g⊤
+θtLθt −g⊤
+θtLθp + J(θp, ωt) −J(θt, ωt).
+(A.3)
+Combining (A.2) with (A.3), we have
+J(θt, ωt) −J(θp, ωt) ≤1
+2ηt
+(∥Mθt −θp∥2 −∥Mθt+1 −θp∥2)
++ g⊤
+θtLθt −g⊤
+θtLθp + 1
+2ηt
+∥ηtMgθt∥2.
+(A.4)
+According to the Cauchy-Schwarz inequality,
+g⊤
+θtLθt −g⊤
+θtLθp ≤∥gθt∥(∥Lθt∥+ ∥Lθp∥),
+(A.5)
+and the facts that ∥M∥≤1 and
+∥ηtMgθt∥≤ηt∥M∥∥gθt∥≤ηt∥gθt∥,
+(A.6)
+23
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+we further get that
+J(θt, ωt) −J(θp, ωt) ≤1
+2ηt
+(∥Mθt −θp∥2 −∥Mθt+1 −θp∥2)
++ ∥gθt∥(∥Lθt∥+ ∥Lθp∥) + ηt
+2 ∥gθt∥2.
+(A.7)
+Similarly, for any dual variable ωp, we can derive that
+J(θt, ωt) −J(θt, ωp) ≥−1
+2ηt
+(∥Mωt −ωp∥2 −∥Mωt+1 −ωp∥2)
+−∥gωt∥(∥Lωt∥+ ∥Lωp∥) −ηt
+2 ∥gωt∥2.
+(A.8)
+Appendix B.
+Proof of Lemma 4. Based on Lemma 3, making the summation over s =
+1, · · · , t on both sides of (30), we derive that
+2
+t
+X
+s=1
+(J(θs, ωs) −J(θp, ωs)) ≤
+t
+X
+s=2
+(∥Mθs −θp∥2)( 1
+ηs
+−
+1
+ηs−1
+)
++ 1
+η1
+∥Mθ1 −θp∥2 +
+t
+X
+s=1
+ηs∥gθs∥2
++ 2
+t
+X
+s=1
+∥gθs∥∥Lθs∥+ 2∥Lθp∥
+t
+X
+s=1
+∥gθs∥.
+(B.1)
+Noting that ∥Mθ1 −θp∥2 ≤2∥θ1∥2 + 2∥θp∥2, we have
+2
+t
+X
+s=1
+(J(θs, ωs) −J(θp, ωs)) ≤u(t, θp)
+(B.2)
+Since the function J(θ, ω) is concave with respective to ω, one has
+J(θp, ωa
+t+1) ≥1
+t
+t
+X
+s=1
+J(θp, ωs)
+(B.3)
+Based on (B.2) and (B.3), we get the result (32). Similarly, the lower bound
+(34) can be derived by making the summation over s = 1, · · · , t on (31)
+and utilizing the convexity of J(θ, ω with respective to θ, i.e.,J(θa
+t+1, ωp) ≤
+1
+t
+Pt
+s=1 J(θs, ωp).
+24
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+Appendix C.
+Proof of Lemma 5. Replacing θp with θ∗in (32) and applying (35), we
+have
+t
+X
+s=1
+J(θs, ωs) −tJ(θ∗, ω∗) ≤
+t
+X
+s=1
+J(θs, ωs) −tJ(θ∗, ωa
+t+1) ≤u(t, θ∗)
+2
+. (C.1)
+Replacing ωp with ω∗in (34) and using (35), we get that
+t
+X
+s=1
+J(θs, ωs) −tJ(θ∗, ω∗) ≥
+t
+X
+s=1
+J(θs, ωs) −tJ(θa
+t+1, ω∗) ≥−u(t, ω∗)
+2
+.
+(C.2)
+By (C.1) and (C.2), we have
+−u(t, ω∗)
+2
+≤
+t
+X
+s=1
+J(θs, ωs) −tJ(θ∗, ω∗) ≤u(t, θ∗)
+2
+.
+(C.3)
+Letting θp = θa
+t+1 in (32) yields
+t
+X
+s=1
+J(θs, ωs) −tJ(θa
+t+1, ωa
+t+1) ≤u(t, θa
+t+1)
+2
+(C.4)
+Similarly, letting ωp = ωa
+t+1 in (34) yields
+−u(t, ωa
+t+1)
+2
+≤
+t
+X
+s=1
+J(θs, ωs) −tJ(θa
+t+1, ωa
+t+1)
+(C.5)
+Combining (C.4) and (C.5), we get that
+−u(t, θa
+t+1)
+2
+≤tJ(θa
+t+1, ωa
+t+1) −
+t
+X
+s=1
+J(θs, ωs) ≤u(t, ωa
+t+1)
+2
+.
+(C.6)
+According to (C.3) and (C.6), we get (36).
+25
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+References
+[1] B. Huang, X. Liu, Y. Xiang, D. Yu, S. Deng, S. Wang, Reinforcement
+learning for cost-eﬀective iot service caching at the edge, Journal of
+Parallel and Distributed Computing 168 (2022) 120–136.
+[2] Z. Ni, S. Paul, A multistage game in smart grid security: A reinforce-
+ment learning solution, IEEE Transactions on Neural Networks and
+Learning Systems 30 (9) (2019) 2684–2695.
+[3] D. Silver, A. Huang, e. a. Maddison, C J, Mastering the game of go
+with deep neural networks and tree search, Nature 529 (7587) (2016)
+484–489.
+[4] A. I. Orhean, F. Pop, I. Raicu, New scheduling approach using reinforce-
+ment learning for heterogeneous distributed systems, Journal of Parallel
+and Distributed Computing 117 (2018) 292–302.
+[5] W. Ren, R. Beard, E. Atkins, A survey of consensus problems in multi-
+agent coordination, in: Proceedings of the 2005, American Control Con-
+ference, 2005., 2005, pp. 1859–1864 vol. 3.
+[6] G. K¨unzel, L. S. Indrusiak, C. E. Pereira, Latency and lifetime enhance-
+ments in industrial wireless sensor networks: A q-learning approach
+for graph routing, IEEE Transactions on Industrial Informatics 16 (8)
+(2020) 5617–5625.
+[7] G. Chen, J. Ren, E. N. Feng, Distributed ﬁnite-time economic dispatch
+of a network of energy resources, IEEE Transactions on Smart Grid 8 (2)
+(2017) 822–832.
+[8] M. Ahrarinouri, M. Rastegar, A. R. Seiﬁ, Multiagent reinforcement
+learning for energy management in residential buildings, IEEE Transac-
+tions on Industrial Informatics 17 (1) (2021) 659–666.
+[9] A. Nakib, L. Souquet, E.-G. Talbi, Parallel fractal decomposition based
+algorithm for big continuous optimization problems, Journal of Parallel
+and Distributed Computing 133 (2019) 297–306.
+[10] R. Gu, Y. Qi, T. Wu, Z. Wang, X. Xu, C. Yuan, Y. Huang, Sparkdq: Ef-
+ﬁcient generic big data quality management on distributed data-parallel
+26
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+computation, Journal of Parallel and Distributed Computing 156 (2021)
+132–147.
+[11] H.-T. Wai, Z. Yang, Z. Wang, M. Hong, Multi-agent reinforcement learn-
+ing via double averaging primal-dual optimization, Advances in Neural
+Information Processing Systems 31 (2018).
+[12] S. Valcarcel Macua, J. Chen, S. Zazo, A. H. Sayed, Distributed policy
+evaluation under multiple behavior strategies, IEEE Transactions on
+Automatic Control 60 (5) (2015) 1260–1274.
+[13] S. S. Du, J. Chen, L. Li, L. Xiao, D. Zhou, Stochastic variance reduction
+methods for policy evaluation, in: International Conference on Machine
+Learning, 2017.
+[14] M. L. Littman, Markov games as a framework for multi-agent reinforce-
+ment learning, in: Machine learning proceedings 1994, Elsevier, 1994,
+pp. 157–163.
+[15] D. Lee, H. Yoon, N. Hovakimyan, Primal-dual algorithm for distributed
+reinforcement learning: Distributed gtd, in: 2018 IEEE Conference on
+Decision and Control (CDC), 2018, pp. 1967–1972.
+[16] K. Zhang, Z. Yang, H. Liu, T. Zhang, T. Ba¸sar, Fully decentralized
+multi-agent reinforcement learning with networked agents, in: Interna-
+tional Conference on Machine Learning, 2018.
+[17] L. Cassano, K. Yuan, A. H. Sayed, Multiagent fully decentralized value
+function learning with linear convergence rates, IEEE Transactions on
+Automatic Control 66 (4) (2021) 1497–1512.
+[18] X. Zhao, P. Yi, L. Li, Distributed policy evaluation via inexact admm
+in multi-agent reinforcement learning, Control Theory and Technology
+18 (4) (2020) 362 – 378.
+[19] S. Omidshaﬁei, J. Pazis, C. Amato, J. P. How, J. L. Vian, Deep de-
+centralized multi-task multi-agent reinforcement learning under partial
+observability, in: International Conference on Machine Learning, 2017.
+[20] R. S. Sutton,
+H. R. Maei,
+D. Precup,
+S. Bhatnagar,
+D. Sil-
+ver, C. Szepesv´ari, E. Wiewiora, Fast gradient-descent methods for
+27
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed
+
+temporal-diﬀerence learning with linear function approximation, in:
+Proceedings of the 26th annual international conference on machine
+learning, 2009, pp. 993–1000.
+[21] D. Mateos-N´u˜nez, J. Cort´es, Distributed saddle-point subgradient al-
+gorithms with laplacian averaging, IEEE Transactions on Automatic
+Control 62 (6) (2017) 2720–2735.
+[22] X. Sha, J. Zhang, K. You, K. Zhang, T. Ba¸sar, Fully asynchronous
+policy evaluation in distributed reinforcement learning over networks,
+Automatica 136 (2022) 110092.
+[23] J. Ren, J. D. Haupt, Z. Guo, Communication-eﬃcient hierarchical dis-
+tributed optimization for multi-agent policy evaluation, J. Comput. Sci.
+49 (2021) 101280.
+[24] A. Nedic, A. Ozdaglar, P. A. Parrilo, Constrained consensus and op-
+timization in multi-agent networks, IEEE Transactions on Automatic
+Control 55 (4) (2010) 922–938.
+[25] R. S. Sutton, A. Barto, Reinforcement Learning:An Introduction, Rein-
+forcement Learning:An Introduction, 1998.
+28
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=4564190
+Preprint not peer reviewed

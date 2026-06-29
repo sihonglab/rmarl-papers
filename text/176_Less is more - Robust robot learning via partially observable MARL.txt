@@ -1,0 +1,976 @@
+Less Is More: Robust Robot Learning via Partially
+Observable Multi-Agent Reinforcement Learning
+Wenshuai Zhao∗†, Eetu-Aleksi Rantala∗‡, Sahar Salimpour‡, Joni Pajarinen†, Jorge Pe˜na-Queralta‡§
+†Department of Electrical Engineering and Automation, Aalto University, Finland.
+‡Turku Intelligent Embedded and Robotic Systems (TIERS) Lab, University of Turku, Finland.
+§Institute of Robotics and Intelligent Systems, ETH Zurich, Switzerland.
+Emails: †{wenshuai.zhao, joni.pajarinen}@aalto.fi, ‡{earant, sahars}@utu.fi, §{jorge.penaqueralta}@hest.ethz.ch
+∗These authors contributed equally to this work.
+Abstract— In many multi-agent and high-dimensional robotic
+tasks, controllers can be optimized centrally or decentrally,
+using either single-agent reinforcement learning (SARL) or multi-
+agent reinforcement learning (MARL). However, the relationship
+between these two paradigms is not well-studied. This work
+aims to systematically investigate the robustness and performance
+of SARL and MARL in the same task. We first analytically
+show that independent Gaussian policies optimized by policy-
+gradient based SARL and MARL are equivalent under full-
+state observations. Following, we empirically show that in certain
+inherently single-agent tasks, perhaps surprisingly, we can use
+multiple agents to control a robot such that each agent only
+has access to partial observations. Since in these cases an agent
+does not depend on full state information multi-agent policies
+can provide additional robustness to perturbations and failures.
+Experiments on an illustrative decentralized control task and a
+mobile manipulation task with a real robot show that multiple
+agents with access to partial observations outperform a single
+agent when parts of the system fail.
+Index Terms—Robot learning; Robust learning; Multi-agent
+reinforcement learning; Dec-POMDP; Mobile manipulation.
+I. INTRODUCTION
+Multi-agent reinforcement learning (MARL) provides a
+paradigm where multiple agents learn simultaneously and has
+been shown promising in simulated tasks and video games [1],
+[2]. Nevertheless, many existing MARL benchmark tasks
+can also be addressed by single-agent reinforcement learning
+(SARL) with a centralized controller for all the agents given
+full state observation [3]. Conversely, certain single-agent-like
+tasks may be reframed as multi-agent learning problems [4],
+[5]. For instance, in a classic legged-robot locomotion task,
+typically controlled by a centralized controller managing all
+joints, joints can be divided among different agents, allowing
+MARL algorithms to learn decentralized controllers. Despite
+this flexibility, the differences between these two approaches
+and the criteria for choosing the optimal method for new
+robotic tasks remain unclear.
+Decentralized control has been extensively studied to
+achieve performance comparable to centralized control in
+large-scale systems [6], [7]. However, these studies often focus
+on mitigating the limitations of local information in decentral-
+ized controllers rather than leveraging this structure. Recent
+research has demonstrated that decentralized controllers for
+t0
+t1
+tfinal
+t0
+tfinal
+(a) Nominal behavior
+(b) Disabled manipulator
+Manipulator 
+agent
+Base agent
+Nominal
+Perturbed
+SARL
+✔
+✗
+Global 
+MARL
+✔
+✗
+Partial 
+MARL (ours)
+✔
+✔
+Fig. 1: Our real mobile manipulator experiments examine the ro-
+bustness of learned controllers via three different methods: (i) SARL,
+(ii) MARL (global) and (iii) MARL (partial). In the setting shown
+in Figure (a), both the mobile base and the manipulator arm work
+normally while in (b) the manipulator is disabled to test the robustness
+of learned controllers. The results in different settings in the bottom
+right table show that although all three methods can work well
+with nominal behaviors, only MARL (partial) succeeds when the
+manipulator is disabled, demonstrating improved robustness of the
+controller empowered by partially observable MARL.
+complex robotic systems can achieve similar or even superior
+performance and robustness compared to centralized con-
+trollers [8], [9], [10]. Nonetheless, these studies are typically
+confined to specific simulated tasks and do not provide a
+general investigation of design choices. In this paper, we
+adopt perspectives from both control theory and reinforcement
+learning to comprehensively explore design choices for decen-
+tralized and centralized control. We propose that multi-agent
+reinforcement learning (MARL) offers a flexible approach for
+designing decentralized controllers with local observations,
+potentially enhancing the robustness of robotic systems against
+component failures.
+We start by analytically showing the equivalence between
+SARL and MARL under global full observation conditions.
+Our empirical experiments on two toy MARL tasks further in-
+dicate that MARL with limited local observations can achieve
+performance comparable to that with full observations. Addi-
+tionally, we provide an illustrative example with proportional-
+integral (PI) control, highlighting the instability caused by
+centralized controllers with global information. Finally, in
+arXiv:2309.14792v2  [cs.RO]  28 Feb 2025
+
+experiments with a real-world mobile manipulation robot,
+our decentralized MARL controllers with local observations
+exhibit improved robustness to agent failure, as shown in
+Fig. 1. We hope this systematic investigation provides valuable
+insights for the design of general robotic system control.
+The remainder of this document is organized as follows.
+Section II introduces the state of the art in MARL and robotics
+use cases. Section III then describes the background concepts
+for Dec-MDP and Dec-POMDP. We introduce the equivalence
+between SARL and MARL in Section IV and empirically
+show the near-optimal performance of MARL agents with
+limited observations in Section V. Section VI provides an
+illustrative example to analytically show the robustness via de-
+centralized PI controllers. Section VII describes our real robot
+experiments. We conclude the work and outline limitations in
+Section VIII.
+II. RELATED WORK
+We first introduce the common MARL methods and then
+specify works dealing with partial observation. Finally, we
+discuss current works using MARL for robotic tasks.
+A. Multi-Agent Reinforcement Learning
+Deep multi-agent reinforcement learning (MARL) has ex-
+hibited success in various game tasks [11], such as StarCraft
+II [2] and Stratego [12]. Value decomposition methods [13],
+[14] and recent multi-agent policy gradient (MAPG) meth-
+ods [15], [16], [1] have demonstrated significant performance
+across various benchmarks [3], [5], [2]. One notable example
+is the Multi-agent Mujoco (Ma-MuJoCo) [5] domain which
+splits the joints of Mujoco robot tasks [17] into different agents
+and formulates it as a multi-agent cooperative task. Although
+such Mujoco tasks were traditionally used to benchmark
+single-agent RL methods, MARL approaches also show com-
+petitive performance. Therefore, it motivates us to investigate
+the connection between MARL and SARL paradigms and their
+applicability to complex robotic systems.
+B. Partially Observable MARL
+Similar to studies in classical decentralized control the-
+ory [7], the existing literature on the partial observation
+problem in MARL primarily focuses on mitigating the impact
+of partial observation. This is typically achieved by sharing
+more information [18] or approximating the underlying full-
+state belief through various methods, such as the mean-field
+method [19] and agent modeling [20]. In contrast, inspired
+by the finding that many multi-agent learning problems can
+be locally independent and require only local information for
+near-optimal performance [6], [21], we propose leveraging
+the inherent structure of complex robot tasks to harness the
+potential of partial observation.
+C. MARL for Robotics
+MARL methods have been naturally used in multi-robot
+control tasks [22], [23], [24] due to their intrinsic decentralized
+control mechanism. However, some robot tasks can adopt
+Fig. 2: Centralized controller πc (left) with full observation vs.
+decentralized controllers πi (right) with local observations.
+either SARL or MARL methods to learn controllers. For
+example, in bi-arm manipulation, studies such as [25] and [26]
+employ MARL methods to learn decentralized controllers,
+whereas works like [27] and recent imitation learning stud-
+ies [28], [29] develop a centralized controller for all arms.
+Most existing works predominantly use centralized controllers
+for mobile manipulation [30], [31], and few studies have
+explored the comparative advantages of MARL over SARL
+when both approaches are applicable. The closest work to
+ours [9] compares SARL and MARL methods for in-hand
+manipulation. However, unlike our approach, they allow the
+decentralized controllers to observe the neighbor agents’
+actions, which provides critical information for the agents
+to adapt to malfunctions compared to SARL baselines. In
+this paper, we instead seek the benefits of using less state
+information with MARL and comprehensively investigate the
+connection between SARL and MARL.
+III. PROBLEM FORMULATION
+We study the fully cooperative multi-agent sequential
+decision-making tasks which can be formulated as a decen-
+tralized Markov decision process (Dec-MDP) [32] represented
+as a tuple (S, {Ai}i∈N , r, P, γ). N = {1, · · · , n} denotes a
+set of agents. At time step t of, each agent i observes the
+full state st in the state space S of the environment and
+performs an action ai
+t in the action space Ai from its policy
+πi(·|st). The joint policy consists of all the individual policies
+π(·|st) = π1 × · · · × πn. The environment takes the joint
+action of all agents at = {a1
+t, · · · , an
+t }, changes its state
+following the dynamics function P : S × A × S 7→[0, 1]
+and generates a common reward r : S × A 7→R for all the
+agents. γ ∈[0, 1) is a reward discount factor. The agents
+learn their individual policies and maximize the expected
+return: π∗= arg maxπ Es,a∼π,P[P∞
+t=0 γtr(st, at)]. When
+agents only partially observe the state, the problem can be
+reformulated as decentralized partially observable Markov
+decision process (Dec-POMDP) [33] where agents can only
+access partial observation Oi from the full state S.
+In this work, we explore the properties of controllers learned
+via SARL and MARL for the same robot task. As illustrated
+in Fig. 2, the centralized controller πc takes all the information
+and outputs all actions with one controller. By contrast, we can
+also design a set of decentralized controllers with different
+
+local observations for separate action dimensions. We seek
+to systematically analyze and compare these two approaches
+for control design, from perspectives of both classical control
+theory and reinforcement learning.
+IV. EQUIVALENCE BETWEEN SARL AND MARL
+SARL and MARL are typically investigated independently.
+Here, we analytically establish their equivalence with policy
+gradient methods [34] under two mild assumptions. This
+explicit connection serves as the foundation to investigate the
+conditions under which they diverge and how we can leverage
+the unique advantages offered by MARL.
+Assumption 1. We make the following assumptions to ana-
+lytically build the connection between SARL and MARL:
+1. Both SARL and MARL take the full state observation;
+2. SARL adopts a Gaussian distribution policy with diag-
+onal covariance for continuous action space or inde-
+pendent multivariate categorical distribution for discrete
+action space.
+The policy gradient with SARL is estimated as follows:
+∂J
+∂θ = E(s,a)∼π[∇θ log πθ(a|s)A(s, a))],
+(1)
+in which J is the objective we target to maximize, J =
+E(s,a)∼π[P∞
+t=0 rt(s, a)], and A(s, a) denotes the advantage
+estimation [35]. Similarly, MARL estimates the policy gradient
+for each agent following:
+∂J
+∂θi = E(s,ai)∼πi[∇θi log πθi(ai|s)A(s, ai))].
+(2)
+In the Dec-MDP framework, agents share the same reward
+for all the interactions, and based on the first Assumption 1
+of full state observation si = s, we know the value function
+and sample-based advantage estimation satisfy
+V (si) = V (s), and A(si, ai) = A(s, a)
+(3)
+at each time step. Based on the second Assumption 1, the
+joint action probability equals the product of probabilities of
+individual action on each dimension π(a|s) = QN
+i=1 π(ai|s).
+It is easy to get:
+∇θ log πθ(a|s)A(s, a) =
+N
+X
+i=0
+∇θ log πθ(ai|s)A(s, ai),
+(4)
+which is simply the sum of the policy gradient on each agent
+in MARL. As such, we can conclude that the policy gradients
+between SARL and MARL are mathematically equivalent
+under Assumption 1.
+V. DOES PARTIAL OBSERVABILITY AFFECT
+MULTI-AGENT LEARNING?
+By highlighting the aforementioned equivalence, we argue
+that the key advantage induced by MARL arises from flexible
+local observation settings for different agents. Although severe
+partial observation may degrade policy learning [36], in many
+Fig. 3: Illustration of two common multi-agent tasks. Left: MPE
+Simple-Spread task, where 8 agents (purple circles) need to cover
+8 landmarks (black dots). Right: Pursuit task where the red agents
+need to cooperate to surround the blue evaders. The gray block is an
+obstacle agents cannot traverse. The orange dashed squares in both
+tasks denote the partial observation range of one agent.
+Dec-POMDP tasks, local observation is sufficient for near-
+optimal performance [37], [6], [21]. In this section, we em-
+pirically show, on two popular MARL toy tasks MPE Simple-
+Spread [38] and Pursuit [3], that agents are capable of making
+near-optimal decisions with limited local observation1.
+As shown in the left of Fig. 3, MPE
+Simple-Spread has
+a set of agents to cover all the landmarks as closely as
+possible. The shared reward is the negation of the sum of the
+minimum distances between each landmark and the closest
+agents. An additional penalty is given for collisions. In this
+task, each agent can only observe the velocity of its own
+and the relative positions of k neighborhood agents. In our
+experiments, we test four different amounts of closet agents
+that can be observed, i.e. k ∈{2, 4, 6, 8}.
+The Pursuit task shown on the right of Fig. 3 requires the
+pursuers (red dots) to coordinate to surround the evaders (blue
+dots). There are at least two agents needed to capture one
+evader. The agents are rewarded when any evader is success-
+fully captured and the evader will disappear. A slight guiding
+reward is designed when agents tag any evader and an urgency
+penalty is also used to encourage agents to complete the task as
+soon as possible. In both tasks, the final reward is accumulated
+and shared by all the agents. An agent observes the information
+around itself in a square with a fixed size. Each square has
+three channels. For example, [3, 7, 7] represents the occupancy
+of grid cells by pursuers, evaders, and obstacles, respectively.
+We use three different observation ranges k ∈{7, 10, 14}.
+We employ multi-agent PPO (MAPPO) [1] as our policy
+learning method. MAPPO works in a similar way as inde-
+pendent PPO [16] except that MAPPO learns the critic using
+a concatenated global state in order to stabilize the learning
+process. However, during execution, the agent only uses its
+local observations. The learning curves are shown in Fig. 4.
+The consistently close performance across different observa-
+tion ranges indicates that in these tasks, quite limited partial
+observation is sufficient to perform near-optimal decision-
+making. Therefore, based on this empirical evidence, we are
+1Code: https://github.com/TIERS/partially-observable-marl
+
+0.00
+0.25
+0.50
+0.75
+1.00
+Environment Steps
+1e7
+1500
+1000
+500
+Episode Return
+SimpleSpread
+obs_range
+2
+4
+6
+8
+0.00
+0.25
+0.50
+0.75
+1.00
+Environment Steps
+1e7
+200
+100
+0
+100
+Pursuit
+obs_range
+7
+10
+14
+Fig. 4: Evaluation performance on MPE Simple-Spread (left) and Pursuit (right). We test different observation settings varying in {2, 4, 6, 8}
+and {7, 10, 14} in Simple-Spread and Pursuit, respectively. The performance is comparable in a relatively large range of different observation
+settings. We plot the average return over 5 random seeds and the shaded areas denote 95% confidence intervals.
+motivated to explore the advantages equipped by partially
+observable MARL or decentralized control.
+VI. ROBUSTNESS ARISING FROM DECENTRALIZED
+CONTROL
+This section presents an illustrative example comparing the
+robustness of decentralized proportional-integral (PI) control
+with local observations and centralized controllers with global
+observations. The robustness is specifically analyzed w.r.t.
+system disturbances. Consider an interconnected power sys-
+tem [39], [7] with two generators supplying power to areas A
+and B, respectively. The target is to design a controller for each
+generator i to output power ui to lower the power frequency
+deviation due to disturbance ni(t). Note that the power can
+be transferred between the two areas through a tie-line. Each
+area i follows the dynamics:
+d(∆fi)
+dt
+= −Di
+Mi
+∆fi + 1
+Mi
+(Pi −ni(t) ± T12(∆f1 −∆f2))
+dPi
+dt = −1
+Tgi
+Pi + Kgi
+Tgi
+ui,
+where Pi and fi denote the power generation and frequency of
+generator i. Di, Mi denote the damping and inertia coefficients
+of Area i, while Tgi and Kgi denote the time constant and
+gain factor of a generator. We denote the tie-line power flow
+coefficient between Area 1 and Area 2 as T12 with ± meaning
+minus for Area 1 while plus for Area 2. ∆fi represents
+the frequency deviation, whose absolute value |∆fi| is the
+objective we aim to minimize.
+We compare the robustness of decentralized and centralized
+PI controllers. The decentralized controllers are:
+u1 = −KP
+d1∆f1 −KI
+d1
+Z t
+0
+(∆f1)dτ
+u2 = −KP
+d2∆f2 −KI
+d2
+Z t
+0
+(∆f2)dτ,
+where KP and KI denote the proportional gain and integral
+gain with the subscript di as the generator index of decentral-
+ized controller i. In contrast, centralized controllers observe
+frequency deviations of both generators, i.e., ∆f1 and ∆f2.
+Note that the coefficients KP
+c2, KI
+c2 in u1 are non-zeros, which
+also applies to KP
+c1, KI
+c1 in u2:
+u1=−KP
+c1∆f1−KI
+c1
+Z t
+0
+∆f1dτ−KP
+c2∆f2−KI
+c2
+Z t
+0
+∆f2dτ
+u2=−KP
+c1∆f1−KI
+c1
+Z t
+0
+∆f1dτ−KP
+c2∆f2−KI
+c2
+Z t
+0
+∆f2dτ,
+where KP
+c1 represents the proportional gain of the centralized
+controller of generator 1 and other symbols follow the same
+rule. In our experiments, we only disturb Area 1 by a step
+function since t = 1, i.e., n1(t) = 1 if t ≥1, else 0. We do
+not disturb Area 2, i.e., n2(t) = 0 while t ≥0. The detailed
+hyper-parameters of each controller are left in Appendix A.
+Figure 5 presents the frequency deviations of each area
+induced by different controllers. The results indicate that
+decentralized controllers significantly reduce frequency devia-
+tions. In contrast, centralized controllers introduce substantial
+disturbances in ∆f2, despite Area 2 not being directly affected.
+This outcome is expected as the decentralized controller with
+local observations can naturally disregard disturbances to non-
+local observations, improving the decentralized controller’s
+robustness with non-disturbed observations. It is noteworthy
+that this control design can be generalized to other control
+systems, such as modular and swarm robots, which motivates
+us to explore partially observable multi-agent reinforcement
+learning (MARL) for complex robotic systems.
+VII. REAL ROBOT TASK: MOBILE MANIPULATOR REACH
+This section examines the robustness of partially observable
+MARL on a modular real robot, where a mobile manipulator
+learns to reach a certain point. The mobile manipulator con-
+sists of a Clearpath Husky base (the base agent) and a Franka
+
+0.0
+2.5
+5.0
+7.5
+10.0
+12.5
+15.0
+17.5
+20.0
+Time [s]
+0.04
+0.02
+0.00
+0.02
+0.04
+Frequency Deviation [Hz]
+Comparison of Robustness to Disturbance
+f1 Decentralized
+f2 Decentralized
+f1 Centralized
+f2 Centralized
+Fig. 5: Comparison of the robustness of decentralized PI controllers
+and a centralized PI controller on the two-area interconnected power
+system.
+Panda 6-DoF manipulator (the manipulator agent), as shown
+in Fig. 1.
+A. Experimental Setup
+We consider three experimental settings to compare the
+different approaches in terms of SARL vs. MARL policies,
+and global vs. partial observability in the MARL cases. These
+are (1) nominal conditions; (2) disablement of the manipu-
+lation agent; and (3) disablement of the manipulation agent
+with additional perturbation of its initial state. In each of the
+three setups, we compare a SARL baseline with our global
+and partial MARL policies, all running in real time on the
+robots. We also set three target points at absolute positions
+of p1 = (0.4, −0.6, 0.5), p2 = (0.3, 2.0, 0.7), and p3 =
+(−2.0, −1.0, 0.4). These are defined to force both forward and
+backward motions of the base, as well as rotations.
+B. Task and Model Definitions
+The observation space depends on the method. The full
+state information (sbase, sarm, see, starget) is available for the
+SARL and global MARL policies. For the partial MARL,
+the base agent observes (sbase, see, starget) and the mobile
+agent observes (sarm, see, starget). The mobile base’s state
+sbase ∈R3 is its translation in x and y coordinates relative
+to the starting position of the base and its yaw in the global
+frame. The manipulator’s state sarm ∈R18 is composed of its
+current joint angles and angular velocities of each of its joints.
+The manipulator’s end effector’s position see ∈R3, and the
+target position starget ∈R3. The positions see and starget are
+relative to the starting position of the base.
+The action space for the agents are the linear and angular
+velocity commands for the base (abase x, abase yaw) and the
+joint commands for the manipulator aarm ∈R9 which control
+the desired change for the joint angles. All the actions are
+continuous and are clipped to a range of [−1, 1].
+The reward function is defined to minimize the distance
+from the end effector to the target point. For this, we use the
+following exponential function rd = exp(−α∥starget −see∥),
+where α ≥0 is a scalar. We also design a function rl that
+penalizes joint configurations that differ excessively from the
+neutral configuration to avoid reaching joint limits or destabi-
+lizing the robot. Finally, we define an additional component rd
+to penalize large actions. The complete reward is then given
+by r = wdrd −wprp −wlrl, with weights wp, wd, wl ≥0.
+The implementation details are available in GitHub2.
+C. Policy Training
+We use a PPO implementation from the RLGames library
+which supports multiple agents [40] to train our robot policies.
+For SARL and global MARL we use a single multi-layer
+perceptron (MLP) with separate output heads for policies and
+value functions. For partial MARL, we use two separate MLPs
+instead. It is worth noting that input size varies across the three
+methods.
+The robot policy is trained in NVIDIA Isaac Sim [41],
+shown in Fig. 7. The simulation runs at 120 Hz while the
+RL interaction runs at 60 Hz. We set the maximum length
+of the episode to 500 steps. Note that all three policies are
+trained with the same simulation setup. The training results
+are shown in Fig. 8, where we can see that all three policies
+achieve satisfactory results and comparable returns, consistent
+with the multi-agent results in Section V.
+D. Results
+After the policy trained in Isaac Sim, we perform both Sim-
+to-Real and Sim-to-Sim experiments to examine the robustness
+of policies learned by three different methods. In Sim-to-Real,
+we deploy the learned policies to a real mobile manipulator
+robot and compare the robustness to perturbations and agent
+failure. We further extensively test the robustness on a simu-
+lated robot in Gazebo [42], as our Sim-to-Sim experiment. Note
+that the experiments are all performed without fine-tuning. In
+both experiments, we observe consistently improved robust-
+ness of the learned policy via partially observable MARL.
+1) Real-world: In the real-robot experiments, the trained
+model weights are exported and integrated into a ROS Noetic
+node. The base agent controller runs in a Jetson AGX Xavier
+onboard computer, while the manipulator agent controller runs
+in an Up Xtreme board with an Intel i7 processor. Ground truth
+and joint poses are obtained with an Optitrack Motion Capture
+system. Poses are only given to the base and the arm’s end
+effector, in addition to the target. The rest of joints representing
+observable states are defined only by their orientation. The
+experimental platform is illustrated in Fig. 9.
+The experiment results are summarized in Fig. 6. In the first
+set of experiments with the nominal behavior of both agents
+as shown in Fig. 6a, the SARL baseline performs the best and
+is able to get the closest to the target point. However, the
+reduced performance margin with MARL (global) is minimal.
+Importantly, even with limited observation, MARL (partial)
+reaches near-optimal performance for these experiments.
+In the second set of experiments shown in Fig. 6b, we
+disable the manipulator agent entirely. The results show that
+MARL (partial) outperforms the baselines by reaching the
+2Code: https://github.com/TIERS/isaac-marl-mobile-manipulation
+
+0
+1
+2
+3
+Dist. to target (m)
+TARGET 1
+TARGET 2
+TARGET 3
+SARL
+MARL (global)
+MARL (partial)
+(a)
+0
+1
+2
+3
+Dist. to target (m)
+(b)
+0
+10
+20
+30
+40
+0
+1
+2
+3
+Time (s)
+Dist. to target (m)
+0
+10
+20
+30
+40
+Time (s)
+0
+10
+20
+30
+40
+Time (s)
+(c)
+Fig. 6: Experimental results with a real-world mobile manipulator (a) under nominal conditions, (b) with the manipulator agent disabled, and
+(c) with the manipulator agent disabled, and also its initial position perturbed. Our experiments show all policies are able to complete the task
+under nominal conditions in (a). However, if one of the agents fails to move, as the manipulator in (b), the decentralized MARL approach
+that uses global observations for all agents fails. Finally, (c) shows that convergence is only accomplished with the partially observable
+MARL policy when a higher level of disturbance occurs. Therefore, our solution enables higher system robustness.
+closest distances to the targets. Additionally, we observe that
+the MARL (global) baseline diverges in all three experimen-
+tal trials, whereas SARL exhibits superior performance. We
+hypothesize that this disparity is due to MARL (global) com-
+prising two policy networks with full state dimensions, which
+likely requires more data for training to reach a performance
+level comparable to SARL.
+The third experiment introduces an additional perturbation
+to the initial state of the manipulator, resulting in a different
+setup from the training process. In these experiments shown
+in Fig. 6c, MARL (partial) consistently outperforms the other
+two baselines, with the SARL policy not always being able to
+converge. This result suggests that introducing partial observ-
+ability to the agents increases the robustness to perturbations
+to the system such as dysfunction of some agents.
+2) Gazebo Simulator: Despite the real-world experiments,
+we thoroughly evaluate the observed results by deploying the
+policies on a simulated robot in Gazebo [42], as depicted
+in Fig. 10. Following the real-world experiments setup, we
+repeat each experiment 10 times using the Husky manipulation
+simulation package. In each repetition, we slightly randomize
+the target points, such that the target point is uniformly
+distributed within a 0.5 × 0.5 × 0.5 m3 box. The results are
+summarized in Fig. 11.
+In the first set of experiments with nominal agents shown in
+Fig. ??, all three methods achieve target points. In the second
+set, where the manipulator agent is disabled, the results mirror
+the real-world results: MARL (global) consistently diverge,
+
+Fig. 7: Illustration of the training process in NVIDIA Isaac Sim with
+Isaac Gym using 512 parallel environments.
+0
+200
+400
+600
+1000
+1200
+1400
+800
+100
+Episode return
+SARL 
+MARL (global)
+MARL (partial)
+0
+-100
+-200
+ Training epoch
+-300
+-400
+Fig. 8: Episodic returns during training using Isaac Sim.
+while the SARL policy demonstrates relative success across
+all three targets. The proposed MARL (partial) shows the
+best performance, as shown in Fig. ??. In the third set of
+experiments shown in Fig. ??, with an additional perturbation
+of the initial state of the manipulator agent, MARL (partial)
+is the only method that consistently succeeds.
+Extensive repeated experiments conducted in the Gazebo
+simulation environment underscore the enhanced robustness
+of the tested mobile manipulator robot when employing
+partially observable MARL. The findings demonstrate that
+well-designed decentralized controllers, utilizing local obser-
+vations—whether through direct control methods or learned
+via MARL—can offer a cheap approach to achieving supe-
+rior robustness compared to centralized controllers with full
+observation capabilities.
+VIII. CONCLUSION AND LIMITATIONS
+Multi-agent reinforcement learning has arisen as a potential
+paradigm for controlling not only multiple, but also individual
+complex robots that have been previously modeled as a single
+agent. In this study, we comprehensively explore the potential
+benefits and drawbacks of MARL and SARL control policies.
+We analytically examine the relationship between these two
+paradigms and empirically show that agents with partial obser-
+vation can make near-optimal decisions. Particularly, we study
+Fig. 9: Mobile manipulator used in real-world experiments with a
+Clearpath Husky as a base and a Panda Emika Panda manipulator.
+Fig. 10: The left shows the mobile manipulator in the nominal
+position, while the right shows the robot with a perturbed initial
+position. The red dashed line highlights the changed position of the
+end-effector.
+the advantage of partially observable MARL and decentralized
+control. Our results on decentralized PI controllers and real-
+world mobile manipulator tasks indicate enhanced robustness
+with partial observation, which may inspire more general
+robust control designs.
+However, our work has several limitations and offers op-
+portunities for future improvement. First, our real-world ex-
+periments are limited in scope and could be extended to
+more complex tasks with critical robustness requirements.
+Second, it would be beneficial to formally identify the specific
+robot systems to which our empirical findings are applicable.
+Third, while we empirically demonstrate improved robustness
+through partial observation, there is still a need for a principled
+approach to designing observation spaces for decentralized
+controllers.
+
+0
+1
+2
+3
+4
+5
+Dist. to target (m)
+TARGET 1
+TARGET 2
+TARGET 3
+SARL
+MARL (global)
+MARL (partial)
+(a)
+0
+1
+2
+3
+4
+5
+Dist. to target (m)
+(b)
+0
+10
+20
+30
+40
+0
+1
+2
+3
+4
+5
+Time (s)
+Dist. to target (m)
+0
+10
+20
+30
+40
+Time (s)
+0
+10
+20
+30
+40
+Time (s)
+Fig. 11: Sim-to-Sim results in Gazebo. Experiments on each target are repeated 10 times with slightly perturbed target points. The simulated
+robot is experimented with (a) nominal conditions, (b) the manipulator agent disabled, and (c) the manipulator agent disabled and its initial
+position perturbed. Under nominal conditions (a), all policies complete the task. In (b), the MARL approach with global observations fails.
+And, only the partially observable MARL policy achieves convergence in (c).
+APPENDIX
+A. Implementation Details
+The hyper-parameters used in the two-area interconnected
+power system are listed in Table I.
+REFERENCES
+[1] C. Yu, A. Velu, E. Vinitsky, J. Gao, Y. Wang, A. Bayen, and Y. Wu,
+“The surprising effectiveness of ppo in cooperative multi-agent games,”
+Advances in Neural Information Processing Systems, vol. 35, pp. 24611–
+24624, 2022.
+[2] O. Vinyals, I. Babuschkin, W. M. Czarnecki, M. Mathieu, A. Dudzik,
+J. Chung, D. H. Choi, R. Powell, T. Ewalds, P. Georgiev, et al., “Grand-
+master level in starcraft ii using multi-agent reinforcement learning,”
+Nature, vol. 575, no. 7782, pp. 350–354, 2019.
+[3] J. Terry, B. Black, N. Grammel, M. Jayakumar, A. Hari, R. Sullivan,
+L. S. Santos, C. Dieffendahl, C. Horsch, R. Perez-Vicente, et al.,
+“Pettingzoo: Gym for multi-agent reinforcement learning,” Advances in
+Neural Information Processing Systems, vol. 34, pp. 15032–15043, 2021.
+[4] C. S. de Witt, B. Peng, P.-A. Kamienny, P. Torr, W. B¨ohmer, and
+S. Whiteson, “Deep multi-agent reinforcement learning for decentral-
+ized continuous cooperative control,” arXiv preprint arXiv:2003.06709,
+vol. 19, 2020.
+[5] B. Peng, T. Rashid, C. Schroeder de Witt, P.-A. Kamienny, P. Torr,
+W. B¨ohmer, and S. Whiteson, “Facmac: Factored multi-agent centralised
+policy gradients,” Advances in Neural Information Processing Systems,
+vol. 34, pp. 12208–12221, 2021.
+[6] J. Lavaei, “Decentralized implementation of centralized controllers for
+interconnected systems,” IEEE Transactions on Automatic Control,
+vol. 57, no. 7, pp. 1860–1865, 2011.
+[7] E. J. Davison, A. G. Aghdam, and D. E. Miller, Decentralized control
+of large-scale systems. Springer, 2020.
+[8] M. Schilling, K. Konen, F. W. Ohl, and T. Korthals, “Decentralized deep
+reinforcement learning for a distributed and adaptive locomotion con-
+troller of a hexapod robot,” in 2020 IEEE/RSJ International Conference
+on Intelligent Robots and Systems (IROS), pp. 5335–5342, IEEE, 2020.
+[9] L. Tao, J. Zhang, M. Bowman, and X. Zhang, “A multi-agent approach
+for adaptive finger cooperation in learning-based in-hand manipulation,”
+in 2023 IEEE International Conference on Robotics and Automation
+(ICRA), pp. 3897–3903, IEEE, 2023.
+
+TABLE I: Hyper-Parameters of Interconnected Power System
+Parameter
+Symbol
+Value
+Inertia coefficient of Area 1
+M1
+10
+Inertia coefficient of Area 2
+M2
+10
+Damping coefficient of Area 1
+D1
+1
+Damping coefficient of Area 2
+D2
+1
+Time constant of generator in Area 1
+Tg1
+0.5
+Time constant of generator in Area 2
+Tg2
+0.5
+Gain of generator in Area 1
+Kg1
+1
+Gain of generator in Area 2
+Kg2
+1
+Tie-line power flow coefficient
+T12
+0.1
+Proportional gain for Area 1 (decentralized)
+KP
+d1
+1
+Integral gain for Area 1 (decentralized)
+KI
+d1
+0.5
+Proportional gain for Area 2 (decentralized)
+KP
+d2
+1
+Integral gain for Area 2 (decentralized)
+KI
+d2
+0.5
+Proportional gain for Area 1 (centralized)
+KP
+c1
+1
+Integral gain for Area 1 (centralized)
+KI
+c1
+0.5
+Proportional gain for Area 2 (centralized)
+KP
+c2
+1
+Integral gain for Area 2 (centralized)
+KI
+c2
+0.5
+[10] Y. Guo, Z. Jiang, Y.-J. Wang, J. Gao, and J. Chen, “Decentralized
+motor skill learning for complex robotic systems,” IEEE Robotics and
+Automation Letters, 2023.
+[11] S. Gronauer and K. Diepold, “Multi-agent deep reinforcement learning:
+a survey,” Artificial Intelligence Review, pp. 1–49, 2022.
+[12] J. Perolat, B. De Vylder, D. Hennes, E. Tarassov, F. Strub, V. de Boer,
+P. Muller, J. T. Connor, N. Burch, T. Anthony, et al., “Mastering the
+game of stratego with model-free multiagent reinforcement learning,”
+Science, vol. 378, no. 6623, pp. 990–996, 2022.
+[13] P. Sunehag, G. Lever, A. Gruslys, W. M. Czarnecki, V. Zambaldi,
+M. Jaderberg, M. Lanctot, N. Sonnerat, J. Z. Leibo, K. Tuyls, et al.,
+“Value-decomposition networks for cooperative multi-agent learning,”
+arXiv preprint arXiv:1706.05296, 2017.
+[14] T. Rashid, M. Samvelyan, C. S. De Witt, G. Farquhar, J. Foerster,
+and S. Whiteson, “Monotonic value function factorisation for deep
+multi-agent reinforcement learning,” The Journal of Machine Learning
+Research, vol. 21, no. 1, pp. 7234–7284, 2020.
+[15] J. Foerster, G. Farquhar, T. Afouras, N. Nardelli, and S. Whiteson,
+“Counterfactual multi-agent policy gradients,” in Proceedings of the
+AAAI conference on artificial intelligence, vol. 32, 2018.
+[16] C. S. de Witt, T. Gupta, D. Makoviichuk, V. Makoviychuk, P. H. Torr,
+M. Sun, and S. Whiteson, “Is independent learning all you need in
+the starcraft multi-agent challenge?,” arXiv preprint arXiv:2011.09533,
+2020.
+[17] G. Brockman, V. Cheung, L. Pettersson, J. Schneider, J. Schul-
+man, J. Tang, and W. Zaremba, “Openai gym,” arXiv preprint
+arXiv:1606.01540, 2016.
+[18] X. Liu and K. Zhang, “Partially observable multi-agent rl with (quasi-
+) efficiency: the blessing of information sharing,” in International
+Conference on Machine Learning, pp. 22370–22419, PMLR, 2023.
+[19] K. He, P. Doshi, and B. Banerjee, “Many agent reinforcement learning
+under partial observability,” arXiv preprint arXiv:2106.09825, 2021.
+[20] G. Papoudakis, F. Christianos, and S. Albrecht, “Agent modelling under
+partial observability for deep reinforcement learning,” Advances in
+Neural Information Processing Systems, vol. 34, pp. 19210–19222, 2021.
+[21] A. DeWeese and G. Qu, “Locally interdependent multi-agent mdp: Theo-
+retical framework for decentralized agents with dynamic dependencies,”
+arXiv preprint arXiv:2406.06823, 2024.
+[22] M. Jana, L. Vachhani, and A. Sinha, “A deep reinforcement learning
+approach for multi-agent mobile robot patrolling,” International Journal
+of Intelligent Robotics and Applications, vol. 6, no. 4, pp. 724–745,
+2022.
+[23] D. L. Leottau, J. Ruiz-del Solar, and R. Babuˇska, “Decentralized rein-
+forcement learning of robot behaviors,” Artificial Intelligence, vol. 256,
+pp. 130–159, 2018.
+[24] W. Zhao, J. P. Queralta, and T. Westerlund, “Sim-to-real transfer in deep
+reinforcement learning for robotics: a survey,” in 2020 IEEE symposium
+series on computational intelligence (SSCI), pp. 737–744, IEEE, 2020.
+[25] L. Liu, Q. Liu, Y. Song, B. Pang, X. Yuan, and Q. Xu, “A collabo-
+rative control method of dual-arm robots based on deep reinforcement
+learning,” Applied Sciences, vol. 11, no. 4, p. 1816, 2021.
+[26] G. Ding, J. J. Koh, K. Merckaert, B. Vanderborght, M. M. Nicotra,
+C. Heckman, A. Roncone, and L. Chen, “Distributed reinforcement
+learning for cooperative multi-robot object manipulation,” arXiv preprint
+arXiv:2003.09540, 2020.
+[27] R. Chitnis, S. Tulsiani, S. Gupta, and A. Gupta, “Efficient bimanual
+manipulation using learned task schemas,” in 2020 IEEE International
+Conference on Robotics and Automation (ICRA), pp. 1149–1155, IEEE,
+2020.
+[28] T. Z. Zhao, V. Kumar, S. Levine, and C. Finn, “Learning fine-
+grained bimanual manipulation with low-cost hardware,” arXiv preprint
+arXiv:2304.13705, 2023.
+[29] L. X. Shi, A. Sharma, T. Z. Zhao, and C. Finn, “Waypoint-
+based imitation learning for robotic manipulation,” arXiv preprint
+arXiv:2307.14326, 2023.
+[30] N. Yokoyama, A. W. Clegg, E. Undersander, S. Ha, D. Batra, and A. Rai,
+“Adaptive skill coordination for robotic mobile manipulation,” arXiv
+preprint arXiv:2304.00410, 2023.
+[31] C. Wang, Q. Zhang, Q. Tian, S. Li, X. Wang, D. Lane, Y. Petillot, and
+S. Wang, “Learning mobile manipulation through deep reinforcement
+learning,” Sensors, vol. 20, no. 3, p. 939, 2020.
+[32] D. S. Bernstein, R. Givan, N. Immerman, and S. Zilberstein, “The
+complexity of decentralized control of markov decision processes,”
+Mathematics of operations research, vol. 27, no. 4, pp. 819–840, 2002.
+[33] C. Amato, G. Chowdhary, A. Geramifard, N. K.
+¨Ure, and M. J.
+Kochenderfer, “Decentralized control of partially observable markov
+decision processes,” in 52nd IEEE Conference on Decision and Control,
+pp. 2398–2405, IEEE, 2013.
+[34] V. Mnih, A. P. Badia, M. Mirza, A. Graves, T. Lillicrap, T. Harley,
+D. Silver, and K. Kavukcuoglu, “Asynchronous methods for deep rein-
+forcement learning,” in International conference on machine learning,
+pp. 1928–1937, PMLR, 2016.
+[35] J. Schulman, P. Moritz, S. Levine, M. Jordan, and P. Abbeel, “High-
+dimensional continuous control using generalized advantage estimation,”
+arXiv preprint arXiv:1506.02438, 2015.
+[36] Q. Liu, A. Chung, C. Szepesv´ari, and C. Jin, “When is partially ob-
+servable reinforcement learning not scary?,” in Conference on Learning
+Theory, pp. 5175–5220, PMLR, 2022.
+[37] S. Witwicki and E. Durfee, “Influence-based policy abstraction for
+weakly-coupled dec-pomdps,” in Proceedings of the international con-
+ference on automated planning and scheduling, vol. 20, pp. 185–192,
+2010.
+[38] R. Lowe, Y. I. Wu, A. Tamar, J. Harb, O. Pieter Abbeel, and I. Mordatch,
+“Multi-agent actor-critic for mixed cooperative-competitive environ-
+ments,” Advances in neural information processing systems, vol. 30,
+2017.
+[39] E. Davison and N. Tripathi, “The optimal decentralized control of a
+large power system: Load and frequency control,” IEEE Transactions
+on Automatic Control, vol. 23, no. 2, pp. 312–325, 1978.
+[40] D. Makoviichuk and V. Makoviychuk, “rl-games: A high-performance
+framework for reinforcement learning.” https://github.com/Denys88/rl
+games, May 2021.
+[41] NVIDIA, “Nvidia isaac sim.” https://developer.nvidia.com/isaac-sim.
+Accessed: 2023-09.
+[42] N. Koenig and A. Howard, “Design and use paradigms for gazebo,
+an open-source multi-robot simulator,” in 2004 IEEE/RSJ international
+conference on intelligent robots and systems (IROS)(IEEE Cat. No.
+04CH37566), vol. 3, pp. 2149–2154, Ieee, 2004.

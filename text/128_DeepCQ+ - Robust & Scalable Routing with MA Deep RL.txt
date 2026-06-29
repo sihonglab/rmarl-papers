@@ -1,0 +1,652 @@
+DeepCQ+: Robust and Scalable Routing with
+Multi-Agent Deep Reinforcement Learning for
+Highly Dynamic Networks
+Saeed Kaviani∗, Bo Ryu∗, Ejaz Ahmed∗, Kevin Larson†, Anh Le∗, Alex Yahja∗, and Jae H. Kim†
+∗EpiSys Science, Inc. : {saeed, bo.ryu, ejaz, anhle, alex}@episci.com
+†Boeing Research and Technology : {kevin.a.larson, jae.h.kim}@boeing.com
+Abstract—Highly dynamic mobile ad-hoc networks (MANETs)
+remain as one of the most challenging environments to develop
+and deploy robust, efﬁcient, and scalable routing protocols. In this
+paper, we present DeepCQ+ routing protocol which, in a novel
+manner, integrates emerging multi-agent deep reinforcement
+learning (MADRL) techniques into existing Q-learning-based
+routing protocols and their variants, and achieves persistently
+higher performance across a wide range of topology and mobility
+conﬁgurations. While keeping the overall protocol structure of the
+Q-learning-based routing protocols, DeepCQ+ replaces statically
+conﬁgured parameterized thresholds and hand-written rules with
+carefully designed MADRL agents such that no conﬁguration
+of such parameters is required a priori. Extensive simulation
+shows that DeepCQ+ yields signiﬁcantly increased end-to-end
+throughput with lower overhead and no apparent degradation
+of end-to-end delays (hop counts) compared to its Q-learning-
+based counterparts. Qualitatively, and perhaps more signiﬁcantly,
+DeepCQ+ maintains remarkably similar performance gains un-
+der many scenarios that it was not trained for in terms of
+network sizes, mobility conditions, and trafﬁc dynamics. To the
+best of our knowledge, this is the ﬁrst successful application of
+the MADRL framework for the MANET routing problem that
+demonstrates a high degree of scalability and robustness even
+under the environments that are outside the trained range of
+scenarios. This implies that our MARL-based DeepCQ+ design
+solution signiﬁcantly improves the performance of Q-learning-
+based CQ+ baseline approach for comparison and increases its
+practicality and explainability because the real-world MANET
+environment will likely vary outside the trained range of MANET
+scenarios. Additional techniques to further increase the gains in
+performance and scalability are discussed.
+I. INTRODUCTION
+Design of a robust and efﬁcient routing algorithm has
+been one of the most challenging problems in communication
+and computer networks. This challenge is compounded in
+tactical MANETs where the network is highly dynamic and
+unpredictable with respect to mobility and topology, interfer-
+ence, and possible jamming [1]. These factors signiﬁcantly
+reduce the reliability, and therefore, many traditional MANET
+routing protocols require frequent re-computations of end-to-
+end routes upon detecting network topology changes, resulting
+in a periodic loss in throughput due to trafﬁc not being sent
+during the re-computations. This is exacerbated as the rate
+of topology change increases. To improve packet delivery
+performance via rapid and efﬁcient exploration in these highly
+dynamic networks, broadcasting (i.e. transmission of a packet
+to all neighbors, also known as ﬂooding) has become a popular
+technique [2]–[4]. Traditional MANET routing protocols (e.g.
+OSPF and OLSR [3], [4]) perform reliably when the network
+is in a stable state but less effectively in highly dynamic
+networks. Other traditional adaptive strategies also are not
+responsive fast enough for dynamic networks [2].
+In this paper, we consider a class of distributed routing
+algorithms that only share limited information (i.e. two sin-
+gle ﬂoating value) through per-hop acknowledgment (ACK)
+packets. This method of cooperation is efﬁcient as ACKs
+are inherently present in the networking protocols (such as
+MAC-layer acknowledgement) and do not require any extra
+implementation in the system. The seminal work [5] proposed
+Q-routing, which used a reinforcement learning (RL) module
+(i.e. Q-Learning [6]) to route packets and minimize delivery
+time. Each node uses Q-values representing quality of paths
+which are acquired locally to determine the next hop and
+shared via ACK messages. Kumar et al. [7] improved Q-
+routing for dynamic networks with the addition of conﬁdence
+values (i.e. C-values) in their CQ routing protocol. To improve
+reliability and exploration speed of the CQ-routing, smart
+robust routing (SRR) algorithm [8] was proposed to add
+selective broadcasting actions. SRR utilizes heuristic rules on
+when to broadcast in order to improve robustness but keep
+the overall overhead under control. We refer to this technique
+as CQ+ routing (also known as Robust Routing for Dynamic
+Networks, or R2DN) as it is an extension of CQ routing for
+balancing between reliability and overhead. Although CQ+
+routing uses a simple but efﬁcient switching policy to choose
+between unicast and broadcast, its decisions depend on a single
+network parameter: best-path conﬁdence level. Consequently,
+it has a limited perspective of the entire network that often
+leads to a locally optimal solution, since it does not fully
+account for the high rate changes in topology and degree
+of congestion in likely forwarding paths. Nevertheless, its
+performance has been consistent across many scenarios used
+in our study, and as a result, it serves as a baseline design for
+our MADRL framework.
+Routing decisions such as next-hop selection are oppor-
+tune targets for employing RL-based techniques, originally
+introduced and initiated by Boyan’s Q-routing protocol [5].
+Following the Q-routing approach, a ﬂurry of new techniques
+and algorithms from the RL community have been developed
+and applied to packet routing and scheduling [9]–[13]. These
+1
+MILCOM 2021 Track 2 - Networking Protocols and Performance
+978-1-6654-3956-5/21/$31.00 ©2021 IEEE
+31
+MILCOM 2021 - 2021 IEEE Military Communications Conference (MILCOM) | 978-1-6654-3956-5/21/$31.00 ©2021 IEEE | DOI: 10.1109/MILCOM52596.2021.9652948
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:28 UTC from IEEE Xplore.  Restrictions apply. 
+
+techniques are often scale poorly when network sizes increase
+and system parameters change. To address these shortcomings,
+new MADRL-based approaches such as [13] and [9] have
+been proposed, but they suffer from limited scalability due
+to node-speciﬁc policy generated from the training, requiring
+a re-training every time a new node needs to be introduced to
+the network.
+To the best of our knowledge, no study has been reported on
+successfully achieving both scalability and robust performance
+simultaneously using MADRL in dynamic networks such as
+MANET. Our DeepCQ+ is both scalable and robust by allow-
+ing MADRL to control the next-hop adaptive ﬂooding deci-
+sions while maintaining the CQ+ routing protocol ”structure”.
+In this paper, we describe how the MADRL-based agents are
+trained to produce a robust and scalable routing policy that can
+be applied to any network size, trafﬁc, and dynamic inside
+the CQ+ routing protocol structure. More signiﬁcantly, our
+DeepCQ+ design and learning methodology enables network
+designers to train on a limited range of environment parameters
+(e.g. smaller network sizes, single data ﬂow, small variations in
+dynamic level, average node velocities, and network coverage
+area size), and still to be effective when deployed on a much
+wider range of scenarios outside the trained range. This is an
+extremely important and unique beneﬁt of DeepCQ+ since
+it does not suffer from the curse of dimensionality due to
+potentially large network sizes, and catastrophic forgetting
+even when trained with wide range of scenarios.
+II. ROBUST ROUTING FRAMEWORK
+A. SRR (CQ+ routing) Protocol
+The SRR algorithm [8] uses the network parameters C and
+H1 for the routing decisions primarily introduced in seminal
+CQ-routing [7]. Each node i has a H-factor, h(i, j, d) (i.e.
+i ⇝j ⇝d), which represents an estimate of the least number
+of hops between node i and destination d which passes through
+potential next-hop j. To monitor the dynamics of the network,
+each node i also have a conﬁdence level or C-value, c(i, j, d),
+that represents the conﬁdence in likelihood the packet will
+reach its destination h(i, j, d). This C-value is increased with
+each packet transmission success (receiving the ACK). Every
+packet transmission, the C-value is degraded by a decay factor.
+C- and H-factors are updated through the cack and hack which
+are propagated by the ACK packets from the receiving node
+(e.g. next-hop) to the transmitting node. These ACK values
+are computed at the next-hop node j as
+hack = 1 + h(j, ˆk, d)
+(1)
+cack = c(j, ˆk, d)
+(2)
+where ˆk is the best next-hop estimate of node j to destination
+d and it is found by ˆk = arg min
+k
+h(j, d, k) (1 −c(j, k, d)) In
+other words, C- and H-values are exponential moving average
+1We have renamed the original Q-factor in CQ-routing to H-factor to
+prevent confusion with the Q in the Q-networks and/or Q-learning in the
+RL context.
+of the cack and hack, respectively. If a transmission fails or there
+is no ACK to update C- and H-levels, then H-level cannot
+be updated. However, we degrade the C-level as in cack = 0
+to reﬂect the path failure. The updates of the C- and H-levels
+given by
+ht+1(i, j, d) = (1 −α)ht(i, j, d) + αhack,
+(3)
+ct+1(i, j, d) =
+(
+(1 −λ)ct(i, j, d)
+failure
+(1 −λ)ct(i, j, d) + λcack
+otherwise
+(4)
+where 0 ≤α ≤1 is a discount factor for the new observation
+with an adaptable value of α = max (cack, 1 −ct(i, j, d)). λ
+is the decay factor for the new observation of cack (or 1 −
+λ is the decay factor for the old observation). If packet is
+received at the destination d, then cack, and hack are set to
+1, indicating that we have full conﬁdence that we are 1 hop
+away from destination. Details of the SRR algorithm (or CQ+
+routing) is available in [8]. CQ+ routing algorithm includes (i)
+reception of ACK and consequently updating C- and H-levels,
+(ii) reception of non-ACK packets by checking for duplication,
+loops, and pushing into the queue, (iii) transmission of data
+packets from the queue by routing it according to the policy
+in use. The CQ+ routing policy chooses the next-hop based
+on the minimization of the information uncertainty and the
+expected number of hops. This is given by
+j⋆= arg min
+j
+h(i, j, d) (1 −c(i, j, d)) .
+(5)
+The next-hop j⋆is considered by the CQ+ routing policy
+if it unicast the packet to one single node. However, the
+CQ+ routing policy enables broadcasting to minimize the
+next-hop information uncertainty. The CQ+ routing policy is
+probabilistic and it assigns the probability of broadcast as
+PBC = ϵ + (1 −c(i, j⋆, d))(1 −ϵ)
+(6)
+where a small value ϵ is used for the minimum probability of
+broadcast (deﬁned for exploration purposes). In this paper, we
+use the CQ+ routing protocol but modiﬁed unicast or broadcast
+decisions using MADRL policy.
+III. DEEP REINFORCEMENT LEARNING FOR CQ ROUTING
+(DEEPCQ+)
+A. Deep Reinforcement Learning Background
+Our robust routing problem ﬁts as a decentralized partially-
+observable Markov decision process (Dec-POMDP), that is
+used for decision-making problems in a team of cooperative
+agents [14]. Dec-POMDP tries to model and optimize the
+behavior of the agents while considering the environment’s
+and other agents’ uncertainties.
+1) Policy Optimizations: Policy gradient (PG) method is
+another popular choice that is based on the optimization of
+the policy directly rather than estimating the expected return
+and it optimizes the policy parameters by descending toward
+the gradient direction of the expected discounted reward return
+[15]. Particularly, we deploy a state-of-the-art policy gradient
+algorithm called Proximal Policy Optimization (PPO) [16],
+2
+MILCOM 2021 Track 2 - Networking Protocols and Performance
+32
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:28 UTC from IEEE Xplore.  Restrictions apply. 
+
+Fig. 1. Multi-agent network routing environment with shared policy param-
+eters between agents. The centralized training and decentralized execution
+are also shown. Each agent i, uses the shared policy πθ individually to ﬁnd
+its own action ai(t) based on its own observations oi(t). The multi-agent
+environment operates based on the joint-actions decided and taken individually
+and transition to next state st+1 and the rewards are pulled out based on that.
+which uses multiple epochs of stochastic gradient ascent to
+perform each policy updates with ease of implementation.
+2) Centralized Training, Decentralized Execution: In com-
+munication networks, partial observability and communication
+constraints necessitate the learning of decentralized policies,
+which relies only on the local information at each agent.
+Decentralized policies also avoid the exponentially growing
+joint action-space with the number of agents, and therefore
+more practical and faster to converge in training. Fortunately,
+decentralized policies can be learned in a centralized fashion
+specially in a simulated or controlled environments. The
+paradigm of centralized training with decentralised execution
+has already attracted attention in the RL community [14].
+3) Parameter Sharing: A common strategy is to share the
+policy parameters between agents that are homogeneous [17]
+(parameter sharing). The multi-agent environment for the rout-
+ing problem and our proposed framework are summarized in
+Fig. 1 where the centralized training, decentralized execution,
+and parameter sharing are illustrated.
+B. Our proposed DRL Framework and Approach
+We consider wireless communication networks with vari-
+able sizes (e.g. 5 ≤N ≤50) with multiple data ﬂows. The
+nodes are consistently moving at various random velocities and
+directions. We used reliable MANET mobility models such as
+Gauss-Markov model and/or random way-point for the nodes’
+mobility. This is not the case in real operational environments,
+thus we adopted more realistic mobility model in our study,
+which is discussed in Section IV-A. At each time t, each node
+i, picks a packet from its data queue (according to a certain
+packet scheduling algorithm). We use a simpliﬁed ﬁrst-in-ﬁrst-
+out (FIFO) packet scheduling but the routing decisions and
+policy design are independent of this scheduling method. Each
+realization of the network (also called an episode in the context
+of RL) has at least T time-slots (each time step is single packet
+Routing Protocol
+C/Q-values
+Broadcast
+MADRL
+CQ-routing [7]
+✓
+×
+×
+SRR (CQ+) [8]
+✓
+✓
+×
+DeepCQ+ routing (this work)
+✓
+✓
+✓
+TABLE I
+COMPARISON OF ROBUST ROUTING PROTOCOLS IN DYNAMIC NETWORKS
+duration time). Note that the packet duration time is assumed
+ﬁxed but the data rate can still be different. An episode is
+ended when the length of the episode exceed a maximum
+trafﬁc length, Tmax, and all the nodes have empty data queues.
+The incoming trafﬁc stops at Tmax and episode will end after
+that when all nodes routing decisions are done (queues are
+empty). The goodput is computed as the ratio of the number of
+delivered packets to the total incoming packets in the episode.
+We exclude duplicate delivery of packets at destination if it
+happens. We train and use the same parameterized policy
+πθ for every node (one policy for all), which helps with
+the scalability of our framework. When the policy function
+is deﬁned as a Deep Neural Network (DNN), the parameter
+vector θ represents the weights of the neural network. We
+train our DNN policy for a single network size, single data
+ﬂow (single source and destination pair), and small range of
+dynamic levels but the performance is tested and veriﬁed for
+variable network sizes, multiple data ﬂows, and larger range
+of dynamic levels.
+1) Pre-processing of the policy input features: We select
+only the best K (e.g. K = 4) neighbors out of total N −1
+possible neighbors in the network for each node according to
+their available C and H values. For the sake of simplicity,
+we drop i and destination d from C- and H-levels and use
+the next-hop as index (i.e. ct(i, j) := ct(i, j, d)). Now, in our
+problem formulation the best K neighbor C and H values are
+represented by
+ct(i) = [ct(i, i1), ct(i, i2), . . . , ct(i, iK)]
+ht(i) = [ht(i, i1), ht(i, i2), . . . , ht(i, iK)]
+(7)
+where the neighboring nodes i1, ..., iK of i are ordered so that
+ht(i, i1)(1 −ct(i, i1)) ≤· · · ≤ht(i, iK)(1 −ct(i, iK)). (8)
+2) State/Observations: We use a fully connected neural
+network (FCNN) to capture temporal behavior of network pa-
+rameters, we add the change rate between current observations
+and previous observations as input to the DNN policy. The
+input features to the DNN policy at node i are given by
+ot(i) = [ct(i), ht(i), ∆ct(i), ∆ht(i), at−1(i), pt−1(i)] , (9)
+where ∆ct(i) = ct(i) −ct−1(i), ∆ht(i) = ht(i) −ht−1(i),
+and at−1(j) is the previous action of some node j that the
+current packet is received from. The last indicator shows if
+the current packet is received as a result of another node’s
+broadcast or unicast.
+3
+MILCOM 2021 Track 2 - Networking Protocols and Performance
+33
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:28 UTC from IEEE Xplore.  Restrictions apply. 
+
+C. Reward Deﬁnition for DeepCQ+ routing
+In order to ﬁnd a good reward function, we use inverse RL
+and learn from human-crafted rule-based routing protocol, i.e.
+CQ+ routing. We design a reward that mimics the decisions
+of the CQ+ routing and that will build foundation for our
+ultimate reward function design. Now, consider a stochastic
+routing policy π(a|st). If we set the rewards for unicast and
+broadcast as the probability of those actions in the CQ+ routing
+as follows:
+rt(st, at) =
+(
+1 −ct(i, i1)˜ϵ
+at = 1(broadcast)
+ct(i, i1)˜ϵ
+at = 0(unicast)
+(10)
+where ˜ϵ = 1 −ϵ. We expect that the performance of this
+RL problem be close to the CQ+ routing (at least for small
+values of γ). We refer to this as DNN-based version of CQ+
+routing. Note that different reward designs will give different
+performance objectives and gives ﬂexibility compared to CQ+
+routing.
+Although the CQ+ routing policy indirectly optimizes the
+network overhead, it is not accounted for directly in its
+optimization. We deﬁne the overhead in the routing of the
+dynamic networks as the ratio of the total number of trans-
+missions in the communication network, denoted by NTX, to
+the total number of packets delivered, denoted by ND for a
+speciﬁc packet data rate and a window of time. Hence, we
+deﬁne the normalized overhead by the network size, N, as
+OH = 1
+N · NTX
+ND . Other deﬁnitions of overhead are also deﬁned
+as excess transmitted bits per delivered bits (i.e. overhead-1)
+and total transmitted bits (both data and ACK) divided by the
+total delivered data bits (i.e. overhead-2). In order to improve
+the overhead beyond CQ+ routing, we deﬁne the following
+reward function as
+rt = w11D −w21Z −w3
+Nack
+N
+(11)
+where 1D is the reward for packet delivery. If a packet
+is delivered successfully to the destination and node i has
+contributed to that delivery then it will be rewarded. Also,
+1Z is a reward (penalty) indicator which is enabled when we
+have not received any ACKs from our transmissions. The next
+term in the reward, i.e. Nack/N, is the normalized number of
+ACKs received as a result of the action taken and therefore
+closely represents the number of copies of a packet at other
+nodes and the system overhead. The weights of the reward
+components, (i.e. w1, w2, w3), have been tuned according to
+the overhead minimization problem. The proposed DeepCQ+
+routing technique with tuned reward function is referred to as
+DeepCQ+ routing policy. The DeepCQ+ routing algorithms
+are summarized in Algorithm 1.
+IV. EXPERIMENTS AND NUMERICAL RESULTS
+A. Environment Modelling and Training Platforms
+We have developed an open-ai gym [18] environment in
+Python that simulates the CQ+ protocol and used it in our
+train and test process. The CQ+ environment has all protocol
+features that are required for the training of the policy,
+Algorithm 1: The proposed DeepCQ+ routing
+Receive incoming packet at node i:
+if Packet is ACK then
+Update c and h using (3) and (4)
+else
+if packet traversed a loop then
+Drop packet, do not return ACK
+end
+if packet is already in queue then
+Find best next-hop i1 from (5))
+Compute cack and hack from (2) and (1) using j⋆
+Drop packet but return ACK
+end
+if packet is not duplicate then
+Add packet to the queue
+else
+Do not add packet to the queue
+end
+end
+if ACK Packet is not received then
+Do not update c and h, (i.e. no packet is received)
+end
+if Queue is not empty then
+Form the input to the DNN policy using (9) and (8)
+DeepCQ+ routing: Choose
+(
+Broadcast
+with probability πθ(a = 1|ot; θ)
+Unicast
+with probability πθ(a = 0|ot; θ)
+end
+including random dynamic network scenarios, data ﬂows, and
+conﬁgurable network parameters discussed before. The CQ+
+routing protocol contains the tracking, distributing C- and
+H-values, duplicate packet checking, etc. The environment
+is interfaced with the Ray, which is a powerful distributed
+computing platform for the machine learning and RLlib library
+[19] which provides scalable software primitives for the RL
+algorithms.
+In the MANET, there have been various mobility models
+proposed along with various discussions on their impact on
+routing protocols [20], [21]. The MANET mobility models
+need to be realistic for the dynamic tactical wireless networks,
+while still need to have enough randomization to cover corner
+cases and extreme scenarios in our training. The random way-
+point mobility model is often used in the simulation study of
+MANET, despite some unrealistic movement behaviors, such
+as exhibiting sudden stops and sharp turns [21]. The Gauss-
+Markov mobility model which has more realistic movement
+behavior and avoids often sudden stops and sharp returns
+and has less sensitivity of the network performance metrics
+with respect to the various randomness [21]. Our environment
+region is divided the environment into 5 groups symmetrically
+between the source and destination nodes. The closer the
+region is to the center, the faster the nodes move. The central
+region has double the speed variance of that of the mid-left
+and mid-right regions. The source and destination regions have
+half the speed variance compared to the mid-right/left regions.
+The mobility of the MANET nodes is simulated and shown
+in Fig. 2.
+4
+MILCOM 2021 Track 2 - Networking Protocols and Performance
+34
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:28 UTC from IEEE Xplore.  Restrictions apply. 
+
+Fig. 2. Mobility regions and network topology. The movements of the nodes
+are shown for a network of size 30 according to the Gauss-Markov model
+TABLE II
+LIST OF CONFIGURATION PARAMETERS AND TRAINING
+HYPERPARAMETERS
+Parameters
+Value in Training
+Value in Test
+Network Sizes
+12
+5 to 50
+Learning Rate
+0.00005
+-
+Discount Factor γ
+0.99
+-
+Episode Length
+3000
+3000
+Region Size Scale
+1
+2
+Dynamic Level Scale
+1
+5
+Policy NN
+FCNN(16, 8, 8, 4)
+FCNN(16, 8, 8, 4)
+Number of Data Flows
+1
+1 to 4
+B. Numerical Results
+Training and testing range of network parameters are sum-
+marized in Table II with the hyperparameters used. Our train-
+ing is performed over 50 million steps (over 15000 episodes)
+and tests (where the results are shown in Fig. 3) are performed
+over network sizes of 10 to 30 with larger dynamic level and
+region scale randomization compared to the training. Training
+is performed on single network size (e.g. N = 12) scenarios.
+In our numerical experiences, N = 12 was the smallest size
+network in which the training results was scalable well beyond
+network sizes of 50. Fig. 3 also shows the the scalability
+and robustness of our training and MADRL framework as the
+performance of our designed routing policies are maintained
+even with larger network parameters and conﬁgurations and
+networks of as large as 30 (which are not trained for). As
+shown in the ﬁgure, the designed DeepCQ+ routing policy
+improves the goodput rate (delivery ratio) almost the same as
+the CQ+ routing, and interestingly the designed policy needs
+signiﬁcantly less overhead (types 1 and 2) resulting. Note
+that large portion of transmissions are needed for that certain
+goodput even if we have a centralized fully-observed optimal
+routing solution and only portion of the total transmissions
+should be considered as the overhead. Indeed, our MADRL
+framework can adapt to accommodate different deployment
+tuples of goodput rate, broadcast rate, and even delay, which
+was not available CQ+ routing. Our results show that we
+require 10-25% less overhead while achieves higher (1-5%)
+delivery ratio (goodput rate), which shows signiﬁcant im-
+provement over the baseline CQ+ routing algorithm. It also
+contains lower percentage of broadcast transmissions saving
+in resources. This overhead saving is only due to the policy’s
+decisions on broadcast and unicast actions, while the next-hop
+is still selected based on the CQ+ routing algorithm as 5. Note
+that the testing and training network settings are different as
+for every episode we use random locations, dynamic levels,
+network area size, and data ﬂows.
+V. CONCLUSIONS AND FUTURE DIRECTIONS
+In this paper, we have demonstrated a successful MADRL-
+based CQ+ routing protocol that is feasible to design a
+robust, reliable, efﬁcient, and scalable policy for dynamic
+wireless communication networks, including many scenarios
+that the algorithm was not trained for. It is shown that
+DeepCQ+ routing policy routing is much more efﬁcient than
+CQ+ routing techniques, signiﬁcantly decreasing normalized
+overhead (number of transmissions per number of successfully
+delivered packets). Moreover, the policy is scalable and uses
+parameter sharing for all nodes during the training, which
+allows it to reuse the same trained policy for scenarios with
+various network conﬁgurations. It is noted that the sharing of
+parameters for all the nodes is not required during execution.
+We are currently working to expand the action space of the
+DeepCQ+ routing to include next-hop selection for the unicast
+mode and use other MADRL techniques. Note that the focus
+of this work was on broadcast or unicast action selection while
+the next-hop was chosen based on the CQ+ routing. We plan to
+use recurrent neural network units as policy which is expected
+to capture higher gains compared to our current approach.
+VI. ACKNOWLEDGEMENT
+Research reported in this publication was supported in part
+by Ofﬁce of the Naval Research under the contract N00014-
+19-C-1037. The content is solely the responsibility of the
+authors and does not necessarily represent the ofﬁcial views of
+the Ofﬁce of Naval Research. The authors would like to thank
+Dr. Santanu Das (ONR Program Manager) for his support and
+encouragement. Also, we would like to thank the reviewers for
+their valuable comments to improve the quality of this paper.
+REFERENCES
+[1] G. F. Elmasry, “A comparative review of commercial vs. tactical wireless
+networks,” IEEE Communications Magazine, vol. 48, no. 10, pp. 54–59,
+2010.
+[2] C. Danilov, T. R. Henderson, T. Goff, O. Brewer, J. H. Kim, J. Macker,
+and B. Adamson, “Adaptive routing for tactical communications,” in
+MILCOM 2012 - 2012 IEEE Military Communications Conference,
+2012, pp. 1–7.
+[3] T. Clausen, P. Jacquet, C. Adjih, A. Laouiti, P. Minet, P. Muhlethaler,
+A. Qayyum, and L. Viennot, “Optimized link state routing protocol
+(OLSR),” 2003.
+[4] J. Moy et al., “OSPF version 2,” 1998.
+[5] J. A. Boyan and M. L. Littman, “Packet routing in dynamically changing
+networks: A reinforcement learning approach,” Advances in Neural
+Information Processing Systems, 1994.
+[6] R. S. Sutton and A. G. Barto, Reinforcement learning: An introduction.
+MIT press, 2018.
+[7] S. Kumar and R. Miikkulainen, “Conﬁdence-based Q-routing: An on-
+line adaptive network routing algorithm,” in Proceedings of Artiﬁcial
+Neural Networks in Engineering, 1998.
+5
+MILCOM 2021 Track 2 - Networking Protocols and Performance
+35
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:28 UTC from IEEE Xplore.  Restrictions apply. 
+
+Fig. 3.
+Comparison of the results of the DeepCQ+ routing trained for a 12-node network only versus CQ+ routing; The results are tested across various
+network sizes from 12 to 30. Although the DeepCQ+ routing PPO policy is trained on 12-node networks, it scales perfectly for various network sizes. The
+DeepCQ+ routing achieves signiﬁcantly lower normalized (divided by network size) overhead types 1 and 2 and higher delivery ratio and lower broadcast
+rates.
+[8] M. Johnston, C. Danilov, and K. Larson, “A reinforcement learning
+approach to adaptive redundancy for routing in tactical networks,” in
+MILCOM 2018 - 2018 IEEE Military Communications Conference
+(MILCOM), 2018, pp. 267–272.
+[9] R. E. Ali, B. Erman, E. Bas¸tu˘g, and B. Cilli, “Hierarchical deep
+double Q-routing,” in ICC 2020-2020 IEEE International Conference
+on Communications (ICC).
+IEEE, 2020, pp. 1–7.
+[10] C. Yu, J. Lan, Z. Guo, and Y. Hu, “DROM: Optimizing the routing
+in software-deﬁned networks with deep reinforcement learning,” IEEE
+Access, vol. 6, pp. 64 533–64 539, 2018.
+[11] G.
+Stampa,
+M.
+Arias,
+D.
+S´anchez-Charles,
+V.
+Munt´es-Mulero,
+and
+A.
+Cabellos,
+“A
+deep-reinforcement
+learning
+approach
+for
+software-deﬁned networking routing optimization,” arXiv preprint
+arXiv:1709.07080, 2017.
+[12] H. Ye, G. Y. Li, and B.-H. F. Juang, “Deep reinforcement learning based
+resource allocation for V2V communications,” IEEE Transactions on
+Vehicular Technology, vol. 68, no. 4, pp. 3163–3173, 2019.
+[13] X. You, X. Li, Y. Xu, H. Feng, J. Zhao, and H. Yan, “Toward packet
+routing with fully distributed multiagent deep reinforcement learning,”
+IEEE Transactions on Systems, Man, and Cybernetics: Systems, 2020.
+[14] F. A. Oliehoek, C. Amato et al., A concise introduction to decentralized
+POMDPs.
+Springer, 2016, vol. 1.
+[15] R. S. Sutton, D. A. McAllester, S. P. Singh, and Y. Mansour, “Policy
+gradient methods for reinforcement learning with function approxima-
+tion,” in Advances in neural information processing systems, 2000, pp.
+1057–1063.
+[16] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Prox-
+imal policy optimization algorithms,” arXiv preprint arXiv:1707.06347,
+2017.
+[17] J. K. Terry, N. Grammel, A. Hari, L. Santos, B. Black, and D. Manocha,
+“Parameter sharing is surprisingly useful for multi-agent deep reinforce-
+ment learning,” arXiv preprint arXiv:2005.13625, 2020.
+[18] G. Brockman, V. Cheung, L. Pettersson, J. Schneider, J. Schul-
+man, J. Tang, and W. Zaremba, “OpenAi Gym,” arXiv preprint
+arXiv:1606.01540, 2016.
+[19] E. Liang, R. Liaw, R. Nishihara, P. Moritz, R. Fox, K. Goldberg,
+J. Gonzalez, M. Jordan, and I. Stoica, “Rllib: Abstractions for distributed
+reinforcement learning,” in International Conference on Machine Learn-
+ing, 2018, pp. 3053–3062.
+[20] A. K. Gupta, H. Sadawarti, and A. K. Verma, “Performance analysis of
+MANET routing protocols in different mobility models,” International
+Journal of Information Technology and Computer Science (IJITCS),
+vol. 5, no. 6, pp. 73–82, 2013.
+[21] J. Ariyakhajorn, P. Wannawilai, and C. Sathitwiriyawong, “A compara-
+tive study of random waypoint and gauss-markov mobility models in the
+performance evaluation of MANET,” in 2006 International Symposium
+on Communications and Information Technologies, 2006, pp. 894–899.
+6
+MILCOM 2021 Track 2 - Networking Protocols and Performance
+36
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:14:28 UTC from IEEE Xplore.  Restrictions apply. 

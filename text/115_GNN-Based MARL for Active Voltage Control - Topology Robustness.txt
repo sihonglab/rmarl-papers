@@ -1,0 +1,2652 @@
+Graph Neural Network-Based Multi-Agent
+1
+Reinforcement Learning for Active Voltage Control:
+2
+Performance and Topology Robustness
+3
+Chijioke Eze
+a, Chetan Prakash
+b, and Antonello Monti
+a,c
+4
+aInstitute for Automation of Complex Power Systems, RWTH Aachen
+University, Mathieu Strasse 10, Aachen, 52064, North Rhine-Westphalia, Germany
+bFaculty of Computer Science, RWTH Aachen University, Ahornstr.
+55, Aachen, 52074, North Rhine-Westphalia, Germany
+cFraunhofer FIT, Schloss Birlinghoven, Konrad-Adenauer-Strasse, Sankt
+Augustin, 53757, North Rhine-Westphalia,
+Abstract
+5
+Graph neural networks (GNNs) have emerged as power tools for modeling
+6
+graph-structured data, motivating their application in constructing policy
+7
+networks for multi-agent reinforcement learning (MARL) agents in active
+8
+voltage control. However, existing work has focused primarily on graph con-
+9
+volutional networks (GCN), yet limitations of this architecture have led to
+10
+alternatives such as graph attention networks (GAT) and gated graph con-
+11
+volutional networks (GGCN). Thus, we develop a general framework for sys-
+12
+tematic study on these GNN architectures when used as policy networks for
+13
+MARL on the active voltage control task and implement three GNN-based
+14
+policies: spectral-based (GCN), attention-based (GAT), and memory-based
+15
+(GGCN), all of comparable size to conventional vector-based neural network
+16
+baselines. Through extensive experiments on small, medium, and large-scale
+17
+power distribution networks, we show that GNN-based policies perform sim-
+18
+ilarly to baselines on small networks but demonstrate remarkable perfor-
+19
+mance advantages on medium and large networks. Further, we conduct a
+20
+novel evaluation of GNN-based MARL on looped (meshed) power networks
+21
+and investigate whether incorporation of edge features can significantly im-
+22
+pact performance. Our results show that GNN-based approaches maintain
+23
+near-identical performance on both radial and looped network variants, while
+24
+achieving competitive power loss efficiency and incorporation of edge features
+25
+does not significantly impact performance. Additionally, we also compare the
+26
+Preprint submitted to Energy and AI
+December 24, 2025
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+performance of the GNN approach against OPF-based method.
+27
+Keywords:
+GNN, MARL, Distributed Voltage Control, Active Voltage
+28
+Control, Power Systems.
+29
+1. Introduction
+30
+1.1. Background and Related Work
+31
+Due to their climatic benefits, low-carbon energy technologies, such as
+32
+wind and photovoltaics (PVs), have become a viable path to address sustain-
+33
+ability concerns in power systems [? ]. Particularly, there is now a growing
+34
+penetration of roof top PVs in Power Distribution Networks (PDNs) [? ?
+35
+]. However, widespread adoption of PVs has resulted in increased variability
+36
+and intermittency in power generation, thus increasing voltage fluctuations
+37
+in power systems [? ]. In addition to the fact that PDNs exhibit a high
+38
+resistance/inductance ratio, voltage fluctuations can pose significant chal-
+39
+lenges to the reliability and stability of power systems. Therefore, ensuring
+40
+the secure operation of modern PDNs requires sophisticated Active Voltage
+41
+Control (AVC) strategies that can dynamically respond to fast variations
+42
+in PV generation and load levels by leveraging controllable network devices
+43
+such as PV inverters and static var compensators [? ? ? ].
+44
+Traditionally, AVC strategies for PDNs are formulated as constrained
+45
+optimization problems and can be broadly categorized into two groups: op-
+46
+timal power flow (OPF)-based approaches [? ? ? ] and droop control-based
+47
+approaches [? ? ]. OPF-based methods address AVC by solving an optimiza-
+48
+tion problem that yields an optimal set of operating points for a given power
+49
+network while satisfying power balance constraints. For instance, Vovos et al.
+50
+[? ] formulate an OPF that minimizes power losses while enforcing both re-
+51
+active power and bus voltage limits. When the system model and parameters
+52
+are fully known, OPF-based methods can deliver near-optimal AVC perfor-
+53
+mance; however, acquiring and continuously updating such detailed system
+54
+information is often expensive and challenging, which constitutes a key lim-
+55
+itation of this class of methods [? ]. Researchers are also exploring the use
+56
+of neural networks to approximate OPF solutions, offering rapid predictions
+57
+of optimal setpoints for static system snapshots but relies on high-quality
+58
+OPF labels and may degrade when operating conditions change. Reinforce-
+59
+ment learning (RL), on the other hand, learns a control policy directly from
+60
+interaction with the grid, allowing it to cope with dynamics, uncertainty,
+61
+2
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+measurement noise, and the effects of its own actions without requiring pre-
+62
+computed OPF datasets, while also incorporating practical goals like reduc-
+63
+ing tap changes into its reward (feedback signal). The trade-off is that RL
+64
+does not inherently ensure strict feasibility unless safety layers are added. In
+65
+contrast to OPF-based methods, droop control-based methods aim to define
+66
+a piecewise linear relationship between PV generation and voltage, which
+67
+is then used to regulate local bus voltages without requiring global voltage
+68
+measurements. However, these droop-based techniques [? ? ] typically rely
+69
+on manually tuned parameters for the linear relationship described above,
+70
+reducing their adaptability across diverse systems. Consequently, as PDNs
+71
+grow in scale and complexity as a result of the integration of renewable en-
+72
+ergy sources, these conventional approaches struggle to respond effectively to
+73
+rapid environmental fluctuations and the associated instability of emerging
+74
+energy resources.
+75
+Due to the limitations of traditional AVC techniques and the success
+76
+of single-agent RL in various control problems [? ? ], researchers in the
+77
+power systems community have started applying DRL to AVC problem [?
+78
+? ]. Unlike classical methods that depend on predefined models and ex-
+79
+tensive manual tuning, DRL-based approaches learn control policies directly
+80
+from their interactions with the system. This allows them to naturally cope
+81
+with nonlinear dynamics, uncertainty, and time-varying operating conditions
+82
+without the need for explicit modeling. Moreover, once trained, DRL con-
+83
+trollers are capable of making fast real-time decisions and can more readily
+84
+adapt to changes in grid conditions caused by renewable output variability
+85
+or load fluctuations than conventional techniques. However, as the network
+86
+grows in size and complexity, the effectiveness and scalability of single-agent
+87
+DRL approaches deteriorate because a single controller must process high-
+88
+dimensional system states and simultaneously manage multiple controllable
+89
+devices. In addition, by being centralized, these DRL-based AVC architec-
+90
+tures are vulnerable to a single point of failure.
+91
+To overcome the drawbacks of traditional AVC and single-agent DRL, and
+92
+to meet the demand for fast response and effective coordination, deep MARL,
+93
+a distributed and data-driven framework for multi-agent control problems [?
+94
+?
+], is gaining a growing interest as a promising solution for AVC [?
+?
+95
+? ]. Existing MARL-based AVC studies can be broadly grouped into two
+96
+categories: region-based methods [? ? ? ] and PV-based methods [? ?
+97
+]. In region-based schemes, the PDN is partitioned into several regions ac-
+98
+cording to its tree-graph structure, and each region is assigned a dedicated
+99
+3
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+agent. MARL algorithms are then applied to these agents to solve the AVC
+100
+problem.
+For instance, Cao et al.
+[?
+]
+apply MADDPG [?
+]
+to the
+101
+regional agents to regulate the reactive power of PV inverters within their
+102
+respective regions. Similarly, Sun and Qiu [? ] integrate an OPF-based
+103
+strategy with MADDPG to manage regional reactive power, achieving en-
+104
+hanced control performance. In [? ], spectral clustering is used to define
+105
+the control relationships among regional agents, and the resulting AVC task
+106
+is addressed using MATD3 [? ], substantially reducing communication re-
+107
+quirements. While these region-based strategies perform well on small-scale
+108
+PDNs, their effectiveness degrades in larger networks due to heterogeneous
+109
+PV counts and network topologies [? ]. This has led to the rise of PV-based
+110
+approaches, which avoid inconsistent regional structures by treating each PV
+111
+inverter as an individual agent. Interest in this formulation for AVC is rapidly
+112
+increasing. A representative example is the work of Wang et al. [? ], where
+113
+PV agents within the same region share local observations, demonstrating
+114
+the strong potential of PV-based MARL for AVC in large-scale benchmark
+115
+networks.
+116
+Further, it has been observed that most most of the existing DRL and
+117
+MARL approaches are designed for data that lie in Euclidean spaces, where
+118
+deep neural networks (DNNs) are naturally formulated [? ]. In contrast,
+119
+the information relevant to AVCsuch as bus (node) voltage magnitudes and
+120
+network topology is intrinsically graph-structured and non-Euclidean. This
+121
+type of data involves unordered nodes, variable graph sizes, and heteroge-
+122
+neous neighborhood relationships that standard DNNs are not well-suited
+123
+to model. Conventional DNN architectures process node features as fixed,
+124
+ordered input vectors and therefore fail to capture the relational and topo-
+125
+logical dependencies that are essential characteristics of power grid networks
+126
+[? ]. To leverage the rich structural information of power grids, recent work
+127
+has begun integrating GNNs into DRL [? ? ? ] and MARL [? ? ? ]
+128
+frameworks for AVC, using them as policy architectures and reporting gains
+129
+in control performance and robustness to input noise. In addition, [? ] intro-
+130
+duces an inverter-based AVC scheme employing a GCN as the critic network
+131
+while retaining a conventional DNN for the policy network, also achieving im-
+132
+proved control performance. However, a key limitation of that method is the
+133
+substantial power loss observed even on a moderately sized system (IEEE-
+134
+141), which is likely to become more severe for larger networks, making the
+135
+approach operationally costly from the operator’s standpoint.
+136
+Moreover, prior MARL-based AVC studies (both topology-aware and
+137
+4
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+topology-unaware) have predominantly concentrated on radial distribution
+138
+networks. Yet, looped (meshed) distribution systems are generally preferred
+139
+in settings where high reliability, operational flexibility, and the integration of
+140
+distributed generation are paramount. For example, [? ? ] show that intro-
+141
+ducing loops can markedly decrease outage duration and energy not supplied
+142
+by enabling faster fault isolation and service restoration. In [? ? ? ], the
+143
+authors demonstrate that meshed configurations improve voltage regulation
+144
+and power flow flexibility, which is particularly beneficial for accommodating
+145
+renewable and distributed generation. Likewise, [? ? ] report that par-
+146
+tially meshing networks during reinforcement can enhance asset utilization
+147
+and reduce losses, thereby postponing expensive infrastructure expansions.
+148
+Empirical analyses such as [? ] further indicate that looped networks are
+149
+particularly effective in dense urban or industrial environments where con-
+150
+tinuous supply and operational flexibility are critical. Although Gao et al. [?
+151
+] note that meshed operation complicates protection coordination, they also
+152
+emphasize that modern automation and relaying technologies make closed-
+153
+loop operation feasible in practice. As distributed generation, especially from
+154
+renewable sources continues to grow, emerging data-driven control strategies
+155
+must be designed with closed-loop operating conditions in mind. Accordingly,
+156
+unlike previous studies, the present work also examines the performance of
+157
+the proposed GNN-MARL framework not only on radial feeders but also
+158
+under closed-loop (meshed) operating scenarios.
+159
+1.2. Contributions
+160
+This paper presents an in-depth investigation of topology-aware MARL
+161
+policies for distributed AVC in the centralized training and decentralized exe-
+162
+cution (CTDE) paradigm [? ], which is widely considered the preferred train-
+163
+ing strategy for state-of-the-art MARL-based AVC solutions. We propose a
+164
+unified framework that enables a thorough analysis of GNN-based MARL
+165
+policy agents. While prior works on GNN-based MARL on AVC have primar-
+166
+ily employed GCN (a spatial-convolution GNN architecture), we note that
+167
+these studies typically evaluate performance only on small- to medium-scale
+168
+systems (e.g., IEEE-33 and IEEE-141). Furthermore, the proposed GNN
+169
+policies in these works are typically benchmarked against standard vector-
+170
+based MARL baselines that use considerably simpler architectures with far
+171
+fewer parameters. To fairly examine the performance advantages and ro-
+172
+bustness properties of GNN-based policies under conditions comparable to
+173
+the standard topology-unaware MARL baselines, we use our GNN-MARL
+174
+5
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+framework to evaluate several GNN policy architectures of comparable size
+175
+to the baseline vector-based MARL policy. This approach not only high-
+176
+lights the benefits of topology-aware GNN policies over topology-unaware
+177
+baselines, but also clarifies under which conditions a particular GNN family
+178
+(spatial, attention-based, or memory-based) is best suited, given the char-
+179
+acteristics of the underlying power network. In particular, we implement a
+180
+GCN-based policy as a representative spectral convolution-based GNN, GAT
+181
+as an attention-based GNN, and GGCN as a memory-based GNN policy ar-
+182
+chitecture. We then perform an extensive evaluation of these GNN-MARL
+183
+policies against baselines on radial IEEE-33/141/322 bus systems using var-
+184
+ious voltage barrier functions. In addition, we present a novel evaluation
+185
+of GNN-MARL on looped power networks, and examine whether augment-
+186
+ing GNN-MARL with edge features as additional inputs can significantly
+187
+impact the performance of topology-aware MARL methods for AVC. This
+188
+is particularly relevant from an operator’s perspective, since acquiring edge
+189
+(line) features such as impedance and related parameters imposes additional
+190
+measurement and data-handling overhead.
+191
+The main contributions of this paper include (i) a unified GNN-MARL
+192
+framework for AVC under the CTDE paradigm; (ii) a systematic perfor-
+193
+mance comparison of different GNN-MARL policy designs against baseline
+194
+methods across multiple network sizes; (iii) the first MARL study on looped
+195
+distribution networks, providing a quantitative assessment of the topology ro-
+196
+bustness of GNN-MARL; (iv) an analysis of how incorporating edge (branch)
+197
+features affects GNN-MARL performance; and (v) design insights connect-
+198
+ing message-passing depth to electrical distance and cross-topology transfer.
+199
+Overall, this paper makes the following specific contributions.
+200
+• We propose a general framework for topology-aware, MARL-based dis-
+201
+tributed active voltage control using various GNN policy designs (GNN-
+202
+MARL).
+203
+• We demonstrate that MARL with a GNN policy, regardless of the
+204
+specific GNN architecture, consistently outperforms topology-unaware
+205
+baselines with comparable parameter size on small-, medium-, and
+206
+large-scale distribution networks.
+207
+• We perform, for the first time, a systematic evaluation of the GNN-
+208
+MARL method on power networks with loops in their topology (meshed
+209
+6
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+networks). Our experimental results show that topology-aware MARL
+210
+for AVC continues to perform strongly under these conditions.
+211
+• We show that explicitly incorporating or modeling edge features (such
+212
+as impedance and other line parameters) is not essential for achieving
+213
+near-optimal GNN-MARL performance on the AVC task.
+214
+• By using extensive experiments on the IEEE-33, IEEE-141, and IEEE-
+215
+322 bus systems, we show that, as the network size grows, the con-
+216
+trol performance of GNN-MARL increasingly approaches that of a tra-
+217
+ditional optimization-based baseline (taken as the theoretical upper
+218
+bound). Beyond faster computation, the GNN-MARL approach also
+219
+yields a more power-efficient control strategy than both traditional and
+220
+topology-unaware methods across all network sizes.
+221
+• We provide insights into the topology robustness of GNN-MARL and
+222
+offer practical guidelines for designing effective GNN policy networks
+223
+for AVC on arbitrary active distribution networks.
+224
+The remainder of this paper is structured as follows. Section 2 where we
+225
+define the AVC problem and formulate PV inverter-based voltage control on
+226
+ADN as a decentralized partially observable Markov decision process. Section
+227
+3 explains the principles of our proposed GNN-MARL framework. Section
+228
+4 presents the experiments and results of this study.
+Section 5 presents
+229
+insights on the design rationale for the topology robustness of GNN-MARL
+230
+while Section 6 presents conclusions and future directions to this work.
+231
+2. Preliminaries
+232
+2.1. Problem Definition
+233
+In this paper, power distribution networks (PDNs) equipped with rooftop
+234
+photovoltaic (PV) systems are partitioned into multiple regions according to
+235
+its realistic radial (tree) topology G = (V, E), where V = {0, 1, . . . , Nv} and
+236
+E = {0, 1, . . . , Ne} denote the sets of buses (nodes) and branches (edges),
+237
+respectively [? ]. At each bus i ∈V, the complex power injection is given by
+238
+pi + jqi, where pi and qi represent the active and reactive power injections.
+239
+These quantities are constrained by complex, nonlinear relationships dictated
+240
+by the dynamic behavior of the power system [? ].
+241
+7
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+The complex voltage at each bus, v ∈E, is defined as vi = |Vi|ejθi,
+242
+where |Vi| is the voltage magnitude, θi is the phase angle, and E is the set
+243
+of voltages at all network buses. Let u denote the vector of control actions
+244
+applied to controllable devices in the system (such as generators, inverters,
+245
+and transformer tap changers). The purpose of automatic voltage control
+246
+(AVC) is to determine the control vector u so that the bus voltage magnitudes
+247
+track their reference values V ref
+i
+, while keeping the overall control effort at a
+248
+reasonable level.
+249
+This control objective can be formulated as the following optimization
+250
+problem:
+251
+min
+V,θ,u
+J(V, u) =
+X
+i∈N
+wi
+ |Vi| −V ref
+i
+2 + α∥u∥2
+subject to
+g(V, θ, u) = 0,
+V min
+i
+≤|Vi| ≤V max
+i
+,
+∀i ∈V,
+umin
+i
+≤u ≤umax
+i
+,
+∀ui ∈u,
+(1)
+where wi ≥0 weights the importance of voltage regulation at bus i, α ≥0
+252
+penalizes large control actions, and g(.) refers to AC power balance conditions
+253
+at each bus.
+254
+Figure 1 illustrates a sample network divided into several control zones
+255
+(indicated by different colors), determined according to the shortest paths
+256
+between terminal buses and the main feeder [? ]. Each node (bus) in the
+257
+network is associated with a load, and a subset of nodes (as shown in the
+258
+figure) additionally hosts PV installations. In our setting, each PV is modeled
+259
+as an agent that regulates the local bus voltage around the reference value
+260
+vref.
+To ensure safe operation of the distribution network, we assume an
+261
+allowable voltage deviation of 5%.
+With vref = 1.00 per unit (p.u.), the
+262
+voltage magnitude at each bus is thus required to satisfy 0.95 p.u. ≤vi ≤
+263
+1.05 p.u., ∀i ∈V \ {0}. This constraint can be violated in practice. For
+264
+example, during nighttime with heavy loading, end-user voltages may fall
+265
+below 0.95 p.u..
+In contrast, during periods of high solar production in
+266
+summer, voltages can exceed the upper limit of 1.05 p.u..
+267
+8
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+OM,0
+O2,0
+O1,0
+ 
+Agent M
+Agent 2
+Agent 1
+OM,0
+O2,1
+O1,1
+ 
+Agent M
+Agent 2
+Agent 1
+OM,h-1
+O2,h-1
+O1,h-1
+ 
+Agent M
+Agent 2
+Agent 1
+...
+Partial 
+Observation
+Distributed Decision Process
+O0
+ 
+S0
+ 
+O1
+ 
+S1
+ 
+Oh-1
+ 
+S1
+ 
+C0
+ 
+C1
+ 
+Ch-1
+ 
+0 
+1 
+h-1 
+Time 
+Joint 
+Observation
+Global State
+...
+4
+5
+6
+35
+34
+39
+40
+52
+1
+0
+2
+3
+32
+33
+36
+38
+37
+110
+87
+95
+88
+96
+98
+52
+99
+89
+90
+100
+101
+102
+103
+105
+104
+91
+106
+92
+93
+109
+108
+107
+7
+8
+9
+10
+111
+112
+11
+13
+14
+15
+16
+17
+18
+19
+12
+119
+118
+117
+130
+131
+120
+133
+121
+122
+123
+124
+125
+126
+128
+127
+129
+132
+135
+134
+136
+116
+113
+115
+114
+22
+21
+20
+137
+23
+24
+138
+27
+26
+25
+28
+29
+139
+30
+31
+140
+54
+53
+41
+59
+60
+42
+43
+75
+77
+78
+79
+55
+56
+57
+58
+81
+80
+74
+62
+63
+64
+65
+66
+67
+68
+61
+70
+69
+71
+73
+72
+44
+45
+46
+47
+76
+82
+51
+50
+49
+48
+83
+86
+85
+84
+Main Grid
+Transformer
+PV Unit               Bus in zone 1     Bus in zone 2     Bus in zone 3      Bus in zone 4 
+Bus in zone 5     Bus in zone 6     Bus in zone 7     Bus in zone 8      Bus in zone 9
+M Zoned ADN (Environment)
+...
+...
+...
+...
+...
+...
+Figure 1: MARL Setup for Distributed AVC on a zoned PDN.
+9
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+2.2. PV Inverter-based Voltage Regulation of ADN as a DecPOMDP
+268
+Following previous studies [?
+?
+], we model the cooperation among
+269
+PV inverter agents as a decentralized partially observable Markov decision
+270
+process (Dec-POMDP) problem [? ], defined by the tuple
+271
+⟨I, S, A, O, T , r, Ω, ρ, γ⟩. Here, I denotes the set of agents; S is the state
+272
+space; A = ×i∈IAi denotes the joint action space, where Ai is the local
+273
+action space of agent i; O = ×i∈IOi is the joint observation space, with Oi
+274
+being the observation space of agent i; T : S ×A×S →[0, 1] is the transition
+275
+probability function capturing the environment dynamics; r : S × A →R
+276
+is a global reward function that specifies the collective payoff to all agents
+277
+given their joint action; ⃗Ω: S × A × O →[0, 1] characterizes the observation
+278
+(sensor) noise affecting the agents’ joint observations of the post-decision
+279
+states; ρ : S →[0, 1] is the probability distribution over initial states; and
+280
+γ ∈(0, 1) is the discount factor.
+281
+We now describe each of these components in more detail with respect to
+282
+the AVC control task.
+283
+2.2.1. Defining Agents, Observations, and Actions
+284
+In the above setting, a collection of agents I (one per PV-equipped bus)
+285
+controls the reactive power of the corresponding PV inverter. The overall
+286
+system state is given by S = L × P × Q × U, which comprises the loads
+287
+L, active PV generation P, reactive power injections Q, and bus voltages U
+288
+(i.e., the set of voltage magnitudes and angles). At each time step, agent
+289
+i ∈I receives a local observation Oi from its region (including local voltages,
+290
+power injections, and summaries from neighboring buses) and produces a
+291
+continuous action ai ∈[−c, c] that determines the reactive power output
+292
+qPV
+i
+= ai
+p
+(smax
+i
+)2 −(pPV
+i
+)2 according to its policy πi. Here, qPV
+i
+denotes the
+293
+reactive power generated by inverter i, smax
+i
+is the apparent power capacity
+294
+of inverter i, and pPV
+i
+is the active power output of PV unit i. At time t, the
+295
+joint action of all agents is represented by at, and the corresponding joint
+296
+state by st. To account for possible sensor measurement errors, observations
+297
+follow a probabilistic function Ω; specifically, the observation at timestep
+298
+t + 1 is defined as Ω(ot+1 | st+1, at) = st+1 + N(0, Σ), where N(0, Σ) is an
+299
+isotropic multivariate Gaussian distribution and Σ depends on the physical
+300
+characteristics of the sensors (e.g., smart meters).
+301
+10
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+2.2.2. System Dynamics, Objective, Constraints
+302
+The dynamics of the system (environment transitions) follows the AC
+303
+power flow δ(st, at), inducing transition to the next state T (st+1 | st, at). The
+304
+objective is to maximize Eπ[P∞
+t=0 γtrt] with a global reward r that balances
+305
+voltage regulation and reactive power effort, expressed formally as
+306
+r = −1
+|V|
+X
+i∈V
+lv (vi) −α · lq
+ qPV 
+,
+lq
+ qPV 
+= 1
+|I|
+qPV 
+1 .
+(2)
+Here, |V| denotes the total number of buses in the network, and lv(·) is the
+307
+voltage barrier function that ensures bus voltages remain within the safe
+308
+range. The term vi represents the voltage magnitude at bus i, and α is a
+309
+weighting factor that adjusts the relative importance of lv(·) and lq(qPV ) for
+310
+networks of different scales. The quantity lq(qPV ) characterizes the reactive
+311
+power generation cost, encouraging minimal reactive power output to reduce
+312
+power losses. Moreover, |I| is the total number of PV inverters (agents),
+313
+qPV is the vector collecting reactive power outputs of all PV inverters, and
+314
+∥·∥1 refers to the L1 norm. To guarantee secure operation of the distribution
+315
+system, we aim to ensure that voltage magnitudes at all buses remain within
+316
+0.95–1.05 p.u. around the reference value vref = 1.0 p.u.
+317
+2.2.3. Voltage Barrier Functions
+318
+We consider three voltage barrier functions (L1, L2, and Bowl) that are
+319
+commonly used in MARL studies on AVC. These functions are detailed be-
+320
+low.
+321
+L1: lv (vk) = |vk −vref| ,
+∀k ∈V where lv(vk) denotes the voltage penalty
+322
+for bus k, vk is the voltage magnitude at bus k (in p.u.), and vref = 1.0 p.u.
+323
+is the reference voltage.
+324
+L2: lv (vk) = (vk −vref)2 ,
+∀k ∈V where the squared deviation imposes
+325
+a stronger penalty on large voltage deviations compared to the L1 barrier
+326
+function.
+327
+Bowl: lv (vk) =
+(
+a · |vk −vref| −b
+if |vk −vref| > 0.05
+−c · N (vk | vref, 0.1) + d
+otherwise
+328
+where a, b, c, and d are design parameters that control the shape of the barrier
+329
+function, N(vk | vref, 0.1) denotes a normal distribution with mean vref and
+330
+standard deviation 0.1, and the 0.05 threshold determines the switching point
+331
+between the linear and smooth penalty regions. The Bowl (BL) function
+332
+thus yields steep gradients when voltages exceed the limits, while providing
+333
+smooth shaping in the vicinity of the reference voltage.
+334
+11
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+3. GNN-MARL Framework
+335
+3.1. Framework Overview
+336
+Centralized Training 
+Decentralized Execution
+Global Value 
+Global Value 
+Local Policy
+Local Policy
+1
+1
+N
+N
+...
+...
+ADN (Environment)
+GNN Processing 
+Figure 2: The GNN MARL Framework
+Figure 2 presents an overview of the proposed GNN-MARL framework
+337
+for distributed active voltage control. The framework implements central-
+338
+ized training with decentralized execution, where GNN policy networks pro-
+339
+cess local (zone-based) observations to generate control actions. It consists
+340
+of ADN, GNN processing, centralized training, and decentralized execution
+341
+components. The ADN component serves as the environment in which agents
+342
+take control actions by setting the PV inverter’s reactive power (Q) setpoint
+343
+to a specific value given the local observations. These actions are generated
+344
+by first transforming the observations into graph structured representations
+345
+for processing by GNN policy networks that output agent actions. To ensure
+346
+cooperative behavior by agents, the centralized critic component processes
+347
+joint observations and actions by agents to generate the overall value of ac-
+348
+tions taken collectively by agents during each training step. After training,
+349
+the centralized training component is deactivated and only the decentral-
+350
+ized execution component remains active, ensuring fast decision making in
+351
+real-time.
+352
+Further, by providing a unified interface for interacting with the ADN
+353
+environment, the framework makes it easy to investigate capabilities of GNN
+354
+policies in terms of performance, scalability to power network scales, ro-
+355
+bustness to different topologies, inclusion or exclusion of edge features. The
+356
+12
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+framework includes a comprehensive seeding functionality that enables re-
+357
+peatable experimentation under the same environment conditions and model
+358
+initializations to ensure fair evaluations.
+359
+3.2. GNN Methods for Policy Construction
+360
+In this part, we discuss the three representative GNN layer types used
+361
+in constructing GNN policy networks in this study. Particularly, we provide
+362
+their node-level formulations as voltage control is a node-level task.
+363
+3.2.1. Graph Convolutional Networks
+364
+Graph Convolutional Networks (GCN) employ spectral-based normalized
+365
+propagation [? ] defined formally as
+366
+H(l+1) = σ
+
+˜D−1
+2 ˜A ˜D−1
+2H(l)W (l)
+,
+(3)
+where H(l) ∈R|V |×d is the node feature matrix at layer l, ˜A = A + I is the
+367
+adjacency matrix with self-loops, ˜D is its degree matrix, W (l) is the learnable
+368
+weight matrix, and σ denotes the activation function. The above equation is
+369
+the graph-level formulation. The node-level formulation is defined as
+370
+x′
+i = Θ⊤
+X
+j∈N(i)∪{i}
+ej,i
+q
+ˆdj ˆdi
+xj,
+(4)
+where N(i) denotes the neighborhood of node i, ej,i are edge weights that can
+371
+be used to encode line impedances and switch states, ˆdj and ˆdi are normalized
+372
+node degrees, and Θ is the transformation matrix.
+373
+3.2.2. Graph Attention Networks
+374
+Graph Attention Networks (GAT) introduces learned attention mecha-
+375
+nisms [? ] to dynamically weight neighbor contributions. Formally, GAT is
+376
+defined by the following equations.
+377
+e(hi, hj) = LeakyReLU(a⊤[Whi∥Whj]),
+αij =
+exp(e(hi, hj))
+P
+k∈Ni exp(e(hi, hk)),
+(5)
+where e(hi, hj) computes the attention logits (raw outputs), a is the learnable
+378
+attention vector, W is the shared transformation matrix, ∥denotes concate-
+379
+nation and αij are normalized attention coefficients via softmax. The node
+380
+13
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+features are updated as follows:
+381
+h′
+i = σ
+ X
+j∈Ni
+αijWhj
+!
+,
+(6)
+enabling adaptive aggregation where critical electrical neighbors receive higher
+382
+weights.
+383
+3.2.3. Gated Graph Convolutional Networks
+384
+Gated Graph Convolutional Networks (GGCN) employs recurrent gated
+385
+message passing [? ] for temporal dependency modeling, expressed as
+386
+m(l+1)
+i
+=
+X
+j∈N(i)
+ej,iΘh(l)
+j ,
+h(l+1)
+i
+= GRU(m(l+1)
+i
+, h(l)
+i ),
+(7)
+where m(l+1)
+i
+is the aggregated message for node i, ej,i are edge weights,
+387
+Θ is the transformation matrix, and GRU updates node states h(l)
+i
+recur-
+388
+rently. This architecture captures multi-hop dependencies through iterative
+389
+refinement, which can be beneficial for modeling voltage propagation in dis-
+390
+tribution networks.
+391
+3.3. Policy, Safety and Learning
+392
+The GNN-MARL framework employs distributed GNN-based actor poli-
+393
+cies πi(oi; θi) that map local observations to reactive power actions, enabling
+394
+PV-inverter agents to leverage topological information via message passing.
+395
+As noted in Section 1, the proposed framework follows centralized training
+396
+with a decentralized execution technique, where a joint critic Q(o, a; ϕ) ag-
+397
+gregates regional graph embeddings with full state visibility during training,
+398
+and the actors operate independently at inference time using only local obser-
+399
+vations. To ensure safety, the framework employs the following three mecha-
+400
+nisms: (i) barrier-shaped reward functions penalizing voltage violations, (ii)
+401
+action clipping within inverter capacity limits, and (iii) zero-reactive fallback
+402
+policies for infeasible power-flow states.
+403
+The training process follows the MADDPG algorithm [? ] with expe-
+404
+rience replay and soft target network updates. Each agent’s GNN policy is
+405
+optimized via policy gradients to maximize the centralized critic’s evalua-
+406
+tion while the critics minimize temporal difference errors by using full state
+407
+14
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+Algorithm 1 GNN-MARL Training
+1: Initialize: Power network graph G = (V, E) with adjacency matrix A
+2: Initialize: GNN-based actor networks πi(θi) and MLP critic networks
+Qi(ϕi) for each agent i
+3: Initialize: Target networks π′
+i(θ′
+i) and Q′
+i(ϕ′
+i)
+4: Initialize: Replay buffer D
+5: for episode = 1 to M do
+6:
+Reset environment, get initial observations o1
+7:
+for step t = 1 to T do
+8:
+for agent i = 1 to N do
+9:
+Extract zone-based observations oi for agent i’s region with
+padding
+10:
+Build node features:
+h(0)
+j
+= [vj, pL
+j , qL
+j , pPV
+j
+] for all nodes j
+11:
+Apply GNN processing:
+ai,t = GNN(h(0), edge_index; θi) + ϵt
+12:
+end for
+13:
+Execute actions at, observe rewards rt and next observations ot+1
+14:
+Store transition (ot, at, rt, ot+1) in D
+15:
+Sample batch B from D
+16:
+for agent i = 1 to N do
+17:
+Compute next actions through target GNN:
+a′ = [π′
+1(o′
+1), . . . , π′
+N(o′
+N)]
+18:
+Compute target: y = ri + γQ′
+i(o′, a′)
+19:
+Update MLP critic:
+ϕi ←ϕi −αQ∇ϕi
+1
+|B|
+P(y −Qi(o, a))2
+20:
+Update GNN actor:
+θi ←θi + απ∇θi
+1
+|B|
+P Qi(o, a1, . . . , πi(oi), . . . , aN)
+21:
+end for
+22:
+Soft update target networks:
+θ′
+i ←τθi + (1 −τ)θ′
+i
+23:
+end for
+24: end for
+information. The process alternates between: (i) data collection through en-
+408
+vironmental interaction with exploration noise, (ii) mini-batch sampling from
+409
+replay buffer, (iii) critic updates minimizing LQ = E[(y −Qi(o, a))2] where
+410
+15
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+y = ri + γQ′
+i(o′, a′), (iv) actor updates via deterministic policy gradients
+411
+∇θiJ = E[∇θiQi(o, πi(oi))], and (v) soft target updates θ′ ←τθ + (1 −τ)θ′.
+412
+The variable γ refers to the discount factor, which determines the extent
+413
+to which future rewards are valued relative to the immediate reward. The
+414
+variable τ refers to the soft-target update co-efficient, which controls how
+415
+quickly the target network parameters θ′ are updated toward the current
+416
+network parameters θ). At inference time, trained actors operate indepen-
+417
+dently without access to the critic using only local graph-based observations
+418
+for real-time voltage control. The complete training procedure is presented
+419
+in Algorithm 1.
+420
+4. Experiments and Results
+421
+In this section, we conduct comprehensive experiments to answer the
+422
+following key research questions. (i) Which GNN policies achieve superior
+423
+performance compared to baseline methods of comparable parameter size
+424
+on small-, medium-, and large-scale distribution networks? The results of
+425
+our experiments reported in Sections 4.5.1, 4.5.2, 4.5.3 address this. (ii) Do
+426
+GNN policies perform well on a power network with loops in its topology?
+427
+We address this in Section 4.5.4. (iii) Is explicit inclusion or modeling of edge
+428
+features (impedance and other power line parameters) necessary or critical for
+429
+optimal performance of GNN policies in voltage control task? Section 4.5.5
+430
+addresses this.
+(iv) How does the performance of GNN-MARL compare
+431
+to the traditional optimization-based method (OPF) on the voltage control
+432
+task? Section 4.5.6 addresses this.
+433
+Additionally, we use the state-of-the-art MADDPG algorithm [? ] with
+434
+RNN policy as the topology unaware MARL baseline. For traditional opti-
+435
+mization based approach, we use OPF [? ].
+436
+4.1. Test Systems and Datasets
+437
+We conducted our evaluation experiments on three IEEE distribution test
+438
+systems of varying complexity and scale. The control variable is the reactive
+439
+power output for each inverter, and there are no uncontrolled generations.
+440
+Table 1 presents details on these systems in terms of voltage levels, number
+441
+of loads, regions, PVs, maximum active power of load and maximum active
+442
+power generation of PV.
+443
+16
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+System
+Voltage
+No. Loads
+No. Regions
+No. PVs
+pL
+max
+pP V
+max
+(kV)
+(MW)
+(MW)
+33-bus
+12.66
+32
+4
+6
+3.5
+8.75
+141-bus
+12.5
+84
+9
+22
+20
+80
+322-bus
+110/20/0.4
+337
+22
+38
+1.5
+3.75
+Table 1: IEEE Test System Specifications
+To make the evaluations realistic, we use Portuguese electricity consump-
+444
+tion data spanning January 12 to January 2015 with comprehensive load
+445
+profiles for 232 customers over a period of 1096 day [? ]. The original dataset
+446
+included 370 locations. The following data preprocessing were conducted on
+447
+the original data set: (i) removal of incomplete profiles (i.e., consumers with
+448
+insufficient data coverage), (ii) linear interpolation for missing values due
+449
+to daylight savings, (iii) adjustment of resolution to 3-minute intervals to
+450
+match real-time control periods, and iv) removal of outliers, defined here as
+451
+values exceeding 7 standard deviations from the mean. Regarding network
+452
+assignment, the 232 load profiles were randomly distributed across buses in
+453
+IEEE-33 and IEEE-141 test system. For larger IEEE-322 test system, profile
+454
+repetition was allowed due to its higher bus count. For each of these sys-
+455
+tems, three load files are used: active load, reactive load, and PV generation
+456
+profiles. Refer to [? ] for more details on the load profile, the PV profile,
+457
+and the irradiation data.
+458
+Further, for our experiments on meshed (looped) distribution networks,
+459
+we extend the conventional radial IEEE test systems by re-introducing switch-
+460
+able lines to create looped variants and verifying the feasibility by running
+461
+power flow to confirm convergence. By doing so, we are able to evaluate the
+462
+behavior of GNN-MARL for AVC in meshed power networks. This addresses
+463
+a key gap in the MARL literature for AVC, which has thus far focused on
+464
+radial topologies.
+465
+4.2. Implementation Details
+466
+We implemented the experiments using the following python libraries:
+467
+PyTorch, Pytorch Geometric, and Pandapower with the exception of the
+468
+traditional optimization based method, OPF, which was implemented in
+469
+MATLAB. The MARL experiments were conducted on a HPC server with
+470
+an NVIDIA A100 GPU with standardized hyperparameters across architec-
+471
+tures. All policy methods were evaluated on three voltage barrier functions:
+472
+17
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+L1, L2, and Bowl. The parameters of the Bowl barrier functions were config-
+473
+ured as follows: a = 2, b = 0.095, c = 0.01, and d = 0.04. In all experiments,
+474
+the maximum voltage deviation is set to ±5%, which is generally the safe op-
+475
+eration range for voltage in distribution networks. To ensure safe operation,
+476
+the action of each agent is limited to [-0.8, 0.8], [-0.4, 0.4], and [-0.4, 0.4] for
+477
+the 33-bus, 141-bus and 322-bus systems, respectively.
+478
+During training, each agent randomly selects an initial state at the be-
+479
+ginning of an episode and each episode lasts for 240 steps, corresponding to
+480
+half a day. In the simulation, six (6) different random seeds are employed
+481
+for all MARL methods to ensure a fair performance comparison. The results
+482
+reported in this study represent averages over these independent experiment
+483
+runs.
+In the training configuration, the number of episodes is set to 120
+484
+with 240 maximum steps per episode, a batch size of 32, evaluation every 20
+485
+episodes over 10 evaluation episodes, and a replay buffer size of 5.0 × 103.
+486
+The clipping coefficient is set to 1.0, with alpha and gamma both set to 0.99.
+487
+The neural networks uses ReLU activation functions with initial standard
+488
+deviation of 0.1, and fixed policy standard deviation of 1.0. Policy updates
+489
+occur once per epoch while value updates occur 10 times. Both policy and
+490
+value learning rates are set to 1.0 × 10−4, with a target learning rate of 0.1.
+491
+GAT
+4
+N
+h
+ADD
+0/1
+Layer
+Type
+Input
+Dimension
+Output
+Dimension
+Attention
+Head
+Aggregation
+Function
+Skip
+Connection
+input Layer
+Activation Function : ReLU
+GAT
+N*h
+1
+0
+ADD
+0/1
+Layer
+Type
+Input
+Dimension
+Output
+Dimension
+Attention
+Head
+Aggregation
+Function
+Skip
+Connection
+Output Layer
+Hidden Layer
+Figure 3: Structure of GNN policy networks (GAT example)
+18
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+To ensure fair comparison, the same critic network is used for all GNN-
+492
+MARL and the topology unaware MARL baseline.
+The structure of the
+493
+critic model is Linear(Input_dim, 64) →LayerNorm() →ReLU() →Lin-
+494
+ear(State_dim, 64) →ReLU() →Linear(64, Output_dim). The policy net-
+495
+work of the baseline MARL method consists of sets of linear and GRU layers
+496
+structured as follows: Linear(State_dim, 64) →LayerNorm() →ReLU()
+497
+→GRU(64, 64) →Linear(64, Action_dim) while Fig. 3 shows the struc-
+498
+ture of the GNN policy networks for GNN-MARL using the GAT example.
+499
+Other GNN policy networks are constructed similarly. Note that we did not
+500
+add additional linear layers to the GNN policy structure to ensure that the
+501
+parameter size remains smaller or similar to that of the baseline for a fair
+502
+comparison.
+503
+4.3. Running the Experiments
+504
+Reward
+Next State
+State
+Pandapower
+DATA
+Actions
+(Q setpoints)
+Agents 1,2,...,N
+Environment
+PV data  and 
+ Load Profiles
+Network to
+Graph
+Graph Based Policy
+Getting network data such as bus
+data, line data and load data from
+environment.
+Find adjacency matrix, node features
+and edge index.
+Feed node features and edge index to
+GNN as input features.
+Input Layer (Node Features and
+edge indexes)
+Output Layer (Policy for each
+agent)
+Hidden Layers
+Figure 4: The GNN MARL Framework
+Figure 4 shows the simulation execution procedure for distributed ac-
+505
+tive voltage control in power distribution networks based on the proposed
+506
+19
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+GNN-MARL framework. As stated earlier, the framework implements cen-
+507
+tralized training with decentralized execution, where GNN policy networks
+508
+process zone-based observations (with padding for variable network sizes)
+509
+and network topology (edge indices) to generate control actions (reactive
+510
+power setpoints).
+511
+At the start of each episode, datasets consisting of noise-perturbed load
+512
+and PV profiles are loaded from different scenarios. The noise perturbation
+513
+helps to improve the robustness of the learned policy. At each time step, these
+514
+profiles are combined with the voltage status computed by Pandapower (i.e.,
+515
+after running the power flow) to construct the next state. Based on these
+516
+simulation results, the reward is also computed. Before being provided to
+517
+the agents, this state is partitioned into a batch of observations according
+518
+to the agents’ locations. Each agent receives only its local observation along
+519
+with the global reward before deciding on an action using its policy network.
+520
+The zoned observations are first converted to graph structured data before
+521
+being fed to the respective policy network except in the case of the baseline
+522
+MARL approach, where the observation conversion to graph structured data
+523
+is not necessary. This procedure is repeated iteratively from one episode to
+524
+the next until the final training epoch is completed.
+525
+4.4. Evaluation Metrics
+526
+The following are the metrics used to evaluate and compare the perfor-
+527
+mance of the proposed GNN-based agents and the baselines. (i) Controllable
+528
+Rate (CR): The ratio of time steps in which the voltage magnitude of all
+529
+buses lie within the safe range during each episode. (ii) Power loss (PL): The
+530
+mean total power loss over all buses per time step during each episode, and
+531
+(iii) Voltage Out of Control (VOC): This refers to the mean of the ratio of
+532
+the voltages out of control per time step during each episode.
+533
+4.5. Main Results
+534
+We present comprehensive experimental results demonstrating the effec-
+535
+tiveness of GNN-MARL for distributed voltage control across multiple IEEE
+536
+test systems. All performance metrics reported here are averages computed
+537
+over six (6) independent experimental runs with different random seeds, en-
+538
+suring the statistical reliability of the results. We use the symbol ↑to indicate
+539
+that the higher the value of the metric, the better the performance and vise
+540
+versa, while we use the symbol ↓to indicate that the higher the value of the
+541
+metric, the lower the performance and vise versa.
+542
+20
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+4.5.1. IEEE-33 Network results
+543
+The evaluation on the IEEE-33 bus system shows that both GNN-based
+544
+and non-GNN-based MARL policies are effective in a small-scale power distri-
+545
+bution network. Table 2 provides a detailed performance comparison across
+546
+different model architectures and barrier functions. As shown in the table,
+547
+the GCN combined with the BL barrier function achieved the best overall
+548
+performance across the three main metrics. Specifically, it attained 0.0092
+549
+(0.92%), 0.9265 (92.65%), and 0.0509MW for VOC, CR, and power loss, re-
+550
+spectively. The GAT-based MARL with the BL barrier function performs
+551
+comparably, closely trailing the GCN-BL-based MARL in all metrics. The
+552
+RNN-L1-based MARL is the third-best method, while GGCN ranks lowest,
+553
+with its best performance obtained under the L2 barrier function. Conse-
+554
+quently, GGCN is the only GNN-based MARL policy that did not outperform
+555
+the topology-unaware RNN-based MARL policy under this configuration.
+556
+Method
+VOC
+CR
+Power Loss
+RNN L1
+0.0132 ± 0.0105
+0.8961 ± 0.0720
+0.0659 ± 0.0131
+GCN L1
+0.0247 ± 0.0268
+0.8535 ± 0.1399
+0.0741 ± 0.0357
+GAT L1
+0.0212 ± 0.0074
+0.8716 ± 0.0252
+0.0687 ± 0.0073
+GGCN L1
+0.0274 ± 0.0098
+0.8283 ± 0.0448
+0.0691 ± 0.0121
+RNN L2
+0.0502 ± 0.0252
+0.7525 ± 0.0660
+0.0690 ± 0.0190
+GCN L2
+0.0194 ± 0.0074
+0.8821 ± 0.0401
+0.0665 ± 0.0113
+GAT L2
+0.0150 ± 0.0079
+0.8775 ± 0.0343
+0.0597 ± 0.0079
+GGCN L2
+0.0193 ± 0.0077
+0.8735 ± 0.0477
+0.0577 ± 0.0060
+RNN BL
+0.0186 ± 0.0219
+0.8938 ± 0.0620
+0.0621 ± 0.0208
+GCN BL
+0.0092 ± 0.0090
+0.9265 ± 0.0498
+0.0509 ± 0.0098
+GAT BL
+0.0104 ± 0.0147
+0.9236 ± 0.0711
+0.0565 ± 0.0139
+GGCN BL
+0.0321 ± 0.0156
+0.8010 ± 0.0612
+0.0703 ± 0.0138
+Table 2: Performance of different MARL policy networks on the IEEE-33 network under
+different voltage barrier functions. Notes: VOC (↓), CR (↑), and Power Loss (↓)
+4.5.2. IEEE-141 Network results
+557
+The evaluation on the IEEE-141 bus system highlights the scalability of
+558
+GNN-based methods for medium-scale power distribution networks. Table 3
+559
+presents detailed comparisons between topology-aware and topology-unaware
+560
+MARL policies across the three barrier functions. From this table, it is evi-
+561
+dent that the GGCN with the BL barrier function delivers the best overall
+562
+21
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+performance, achieving VOC of 0.0953 (9.53%), CR of 0.8275 (82.75%), and
+563
+a power loss of 0.7129 MW. This configuration offers a substantial perfor-
+564
+mance gain over the strongest topology-unaware, RNN-based policy, with
+565
+improvements of 46.58%, 21.75%, and 53.00% in VOC, CR, and power loss,
+566
+respectively, when compared against the best-performing topology-unaware
+567
+setting (RNN-L1) on the IEEE-141 bus system.
+568
+The second-best method in this experiment is GAT-L1, whose CR and
+569
+power loss values closely track those of GGCN-BL. Overall, the table shows
+570
+that all GNN-based policies consistently outperform the topology-unaware
+571
+RNN approach under every barrier function and metric considered in the
+572
+IEEE-141 bus system environment.
+573
+Method
+VOC
+CR
+Power Loss
+RNN L1
+0.1784 ± 0.2582
+0.6799 ± 0.2950
+1.5168 ± 0.6409
+GCN L1
+0.1092 ± 0.0557
+0.8128 ± 0.0700
+0.9168 ± 0.2572
+GAT L1
+0.1045 ± 0.0468
+0.8271 ± 0.0647
+0.8372 ± 0.2211
+GGCN L1
+0.2057 ± 0.0212
+0.7061 ± 0.0292
+1.2163 ± 0.1524
+RNN L2
+0.3223 ± 0.2406
+0.4315 ± 0.2202
+1.5731 ± 1.2875
+GCN L2
+0.1007 ± 0.0504
+0.8243 ± 0.0817
+0.9806 ± 0.4606
+GAT L2
+0.1726 ± 0.0566
+0.6574 ± 0.1166
+1.1765 ± 0.3598
+GGCN L2
+0.1279 ± 0.0471
+0.7405 ± 0.1227
+1.1559 ± 0.7551
+RNN BL
+0.1634 ± 0.0992
+0.6423 ± 0.1424
+1.0393 ± 0.3844
+GCN BL
+0.1371 ± 0.0727
+0.7751 ± 0.1011
+0.9442 ± 0.3109
+GAT BL
+0.1069 ± 0.0345
+0.7982 ± 0.0849
+0.7565 ± 0.1714
+GGCN BL
+0.0953 ± 0.0467
+0.8275 ± 0.0726
+0.7129 ± 0.1944
+Table 3: Performance of different MARL policy networks on the IEEE-141 network
+under different voltage barrier functions. Notes: VOC (↓), CR (↑), and Power Loss (↓)
+4.5.3. IEEE-322 Network Results
+574
+To assess the scalability and effectiveness of the GNN-MARL methods,
+575
+we perform a large-scale evaluation on the IEEE-322 bus system (22 re-
+576
+gions, 38 PV units). The results (Table 4) indicate that the GNN-MARL
+577
+approaches scale well to larger power networks. As shown in Table 4, the
+578
+GAT model with the Bowl barrier function delivers the best overall perfor-
+579
+mance across all metrics, achieving VOC of 0.0320 (3.20%), CR of 0.7679
+580
+(76.79%), and PL of 0.0379 MW. This represents a substantial improvement
+581
+over the best topology-unaware method in all key performance metrics, with
+582
+22
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+50.10%, 21.33%, and 23.74% improvements in VOC, CR, and power loss,
+583
+respectively, compared with the best-performing topology-unaware configu-
+584
+ration (RNN-L1) in the IEEE-322 bus system environment.
+585
+The second-best method in this evaluation is GAT-L2, whose performance
+586
+is consistently close to that of GAT-BL. From Table 4, it is evident that all
+587
+GNN-based methods outperform the topology-unaware RNN approach under
+588
+all barrier functions and metrics in the IEEE-322 bus system environment,
+589
+with the single exception of the L1 barrier, where GCN-L1 performs worse
+590
+than RNN-L1.
+591
+Method
+VOC
+CR
+Power Loss
+RNN L1
+0.0641 ± 0.0307
+0.6329 ± 0.1024
+0.0497 ± 0.0121
+GCN L1
+0.0656 ± 0.0261
+0.5914 ± 0.1774
+0.0575 ± 0.0345
+GAT L1
+0.0501 ± 0.0173
+0.7008 ± 0.0937
+0.0428 ± 0.0042
+GGCN L1
+0.0468 ± 0.0099
+0.7148 ± 0.0541
+0.0492 ± 0.0170
+RNN L2
+0.0680 ± 0.0221
+0.6018 ± 0.0999
+0.0432 ± 0.0078
+GCN L2
+0.0526 ± 0.0227
+0.7009 ± 0.0541
+0.0414 ± 0.0102
+GAT L2
+0.0395 ± 0.0185
+0.7507 ± 0.0863
+0.0388 ± 0.0089
+GGCN L2
+0.0557 ± 0.0283
+0.6609 ± 0.1222
+0.0482 ± 0.0120
+RNN BL
+0.0681 ± 0.0098
+0.5010 ± 0.0680
+0.0500 ± 0.0106
+GCN BL
+0.0255 ± 0.0179
+0.7213 ± 0.2747
+0.0587 ± 0.0474
+GAT BL
+0.0320 ± 0.0112
+0.7679 ± 0.0637
+0.0379 ± 0.0058
+GGCN BL
+0.0639 ± 0.0186
+0.6223 ± 0.0795
+0.0482 ± 0.0069
+Table 4: Performance of different MARL policy networks on the IEEE-322 network
+under different voltage barrier functions. Notes: VOC (↓), CR (↑), and Power Loss (↓)
+4.5.4. Results on Power Networks with Loops in its Topology
+592
+The goal of this set of experiments is to assess whether the performance
+593
+of GNN policies deteriorates in networks containing loops, which would in-
+594
+dicate susceptibility to over-smoothing (where node representations become
+595
+overly similar, impairing GNN performance) or instability. However, stable
+596
+or improved performance suggests effective handling of loops. In general,
+597
+the presence of loops in a graph influences the way information is repeatedly
+598
+mixed during the GNN message-passing process.
+599
+Our study of GNN-MARL on looped (non-radial) distribution networks
+600
+demonstrates a notable robustness of GNN-based MARL to network topology
+601
+in the power system control task. Table 5 reports our systematic assessment
+602
+23
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+of GNN-MARL performance on the distributed voltage control problem for
+603
+a non-radial distribution grid. To the best of our knowledge, this is the first
+604
+RL/MARL work on AVC to carry out such an evaluation.
+605
+As shown in Table 5, the GGCN with the L2 barrier function attains
+606
+the best overall performance in the looped network scenario, with a VOC
+607
+of 0.0107 (1.07%), a CR of 0.9288 (92.88%), and a PL of 0.668 MW. A
+608
+closer examination of these results highlights distinct architectural advan-
+609
+tages among the GNN policies. GGCN offers superior overall voltage con-
+610
+trol with moderate power efficiency, whereas GAT consistently achieves the
+611
+lowest voltage violations and power losses across different barrier functions.
+612
+Particularly, GAT with the BL barrier function delivers the highest power ef-
+613
+ficiency, recording the lowest power loss (0.0545 MW) among all GNN-MARL
+614
+configurations in the looped network case.
+615
+Figure 5 compares the performance of GNN-MARL methods in both ra-
+616
+dial and looped networks. The figure shows that, in general, GNN-MARL
+617
+maintains comparable performance across radial and looped topologies for
+618
+all GNN policies and barrier functions, with no notable degradation. Specif-
+619
+ically, GCN-L1, GCN-L2, GCN-BL, and GAT-BL perform marginally better
+620
+on the radial network than on the looped network. Conversely, GAT-L1,
+621
+GGCN-L2, and GGCN-BL exhibit slightly improved performance on the
+622
+looped network. For GAT-L1 and GAT-L2, the results on radial and looped
+623
+topologies are essentially equivalent, underscoring the strong robustness of
+624
+these GNN-MARL configurations to network topology.
+625
+Method
+VOC
+CR
+Power Loss
+GCN L1
+0.0303 ± 0.0177
+0.8195 ± 0.1017
+0.0729 ± 0.0171
+GAT L1
+0.0203 ± 0.0165
+0.8744 ± 0.0929
+0.0582 ± 0.0109
+GGCN L1
+0.0274 ± 0.0201
+0.8383 ± 0.0983
+0.0750 ± 0.0303
+GCN L2
+0.0251 ± 0.0174
+0.8456 ± 0.0959
+0.0773 ± 0.0119
+GAT L2
+0.0168 ± 0.0088
+0.8838 ± 0.0520
+0.0704 ± 0.0168
+GGCN L2
+0.0107 ± 0.0082
+0.9288 ± 0.0484
+0.0668 ± 0.0147
+GCN BL
+0.0227 ± 0.0111
+0.8652 ± 0.0502
+0.0707 ± 0.0090
+GAT BL
+0.0135 ± 0.0089
+0.9073 ± 0.0497
+0.0545 ± 0.0111
+GGCN BL
+0.0156 ± 0.0116
+0.9035 ± 0.0685
+0.0622 ± 0.0146
+Table 5: Performance of different MARL policy networks on the looped network under
+different voltage barrier functions. Notes: VOC (↓), CR (↑), and Power Loss (↓)
+24
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+GCN L1
+GAT L1
+GGCN L1
+GCN L2
+GAT L2
+GGCN L2
+GCN BL
+GAT BL
+GGCN BL
+0
+2
+4
+6
+8
+10
+(a) VOC (↓)
+VOC (%)
+Radial
+Looped
+GCN L1
+GAT L1
+GGCN L1
+GCN L2
+GAT L2
+GGCN L2
+GCN BL
+GAT BL
+GGCN BL
+0
+20
+40
+60
+80
+100
+(b) CR (↑)
+CR (%)
+GCN L1
+GAT L1
+GGCN L1
+GCN L2
+GAT L2
+GGCN L2
+GCN BL
+GAT BL
+GGCN BL
+0
+0.1
+0.2
+0.3
+(c) Power Loss (↓)
+Power Loss (MW)
+Figure 5: Comparision of GNN-MARL performance in radial vs looped network topologies.
+Overall, GGCN and GAT achieved the best performance on meshed net-
+626
+works. This can be explained by their ability to regulate how information
+627
+from neighboring nodes is aggregated. GGCN employs a gating mechanism
+628
+to control how much of the incoming messages are preserved at each up-
+629
+25
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+date step, which curbs uncontrolled signal propagation along loops. GAT,
+630
+on the other hand, learns attention weights over neighbors, enabling it to
+631
+down-weight redundant or less informative nodes. By contrast, GCN aggre-
+632
+gates all neighbors uniformly, so cyclic structures can lead to over-smoothing
+633
+as features keep recirculating, causing node embeddings to become overly
+634
+similar and ultimately impairing model performance.
+635
+4.5.5. Evaluating the influence of Edge Features
+636
+We performed an in-depth analysis of how explicitly incorporating edge
+637
+features (such as impedances and other transmission line parameters) affects
+638
+GNN-MARL methods for distributed voltage control. In this study, we used
+639
+a GNN-MARL framework with GAT-based policies as the underlying GNN
+640
+architecture. We compare the performance of GNN-MARL with GATe (GAT
+641
+extended with edge features) against standard GAT policy networks across
+642
+all test networks and barrier functions. The outcomes of this experiment are
+643
+shown in Figure 6. As illustrated, GNN-MARL with the GATe policy yields
+644
+better performance on the IEEE-141 network, achieving improved voltage
+645
+control metrics by explicitly encoding network impedances and line parame-
+646
+ters. In contrast, for the other networks (IEEE-33, IEEE-322, and IEEE-33
+647
+with loops), GNN-MARL with the standard GAT policy outperforms the
+648
+GATe-based approach on all voltage metrics. This indicates that node con-
+649
+nectivity alone provides sufficient topological information for GNN-MARL to
+650
+generalize across different network sizes. However, for networks that exhibit
+651
+high sensitivity to voltage variations (such as IEEE-141 in this study), ex-
+652
+plicitly incorporating edge features can improve voltage control performance.
+653
+26
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+IEEE-33
+IEEE-141
+IEEE-322
+IEEE-33-Loop
+0
+10
+20
+30
+VOC (↓)
+VOC (%)
+IEEE-33
+IEEE-141
+IEEE-322
+IEEE-33-Loop
+0
+20
+40
+60
+80
+100
+CR (↑)
+CR (%)
+IEEE-33
+IEEE-141
+IEEE-322
+IEEE-33-Loop
+0
+0.5
+1
+1.5
+Power Loss (↓)
+Power Loss (MW)
+GAT
+GATe
+Figure 6: Comparing the performance of GAT based GNN-MARL approach with and
+without the use of edge features.
+4.5.6. Comparing GNN and RNN policy agents with traditional optimization
+654
+based approach
+655
+To demonstrate the benefits of incorporating topological information, we
+656
+conduct a detailed comparison of optimal GNN-MARL against MARL and
+657
+OPF baselines on the IEEE-33, IEEE-141, and IEEE-322 test systems. As
+658
+summarized in Table 6, exploiting the intrinsic graph structure of these net-
+659
+works for voltage control yields substantial performance gains. In particular,
+660
+on the IEEE-141 test network, GNN-MARL attains roughly a 47% reduc-
+661
+tion in VOC violations, a 22% increase in CR, and a 52% improvement in PL
+662
+relative to the conventional MARL baseline using an RNN policy. Compara-
+663
+ble performance enhancements are consistently observed across all network
+664
+sizes, with GNN-MARL exhibiting superior voltage regulation through ex-
+665
+plicit representation of network topology and electrical relationships.
+666
+METHOD
+IEEE-33
+IEEE-141
+IEEE-322
+VOC (%)
+CR (%)
+PL (MW)
+VOC (%)
+CR (%)
+PL (MW)
+VOC (%)
+CR (%)
+PL (MW)
+OPF
+0.00
+100.00
+0.056±0.046
+0.00
+100.00
+0.819±0.922
+5.00
+86.80
+0.057±0.036
+RNN
+1.32
+89.61
+0.066±0.013
+17.84
+67.99
+1.517±0.641
+6.41
+63.29
+0.050±0.012
+GNN
+0.92
+92.65
+0.051±0.010
+9.53
+82.75
+0.713±0.194
+3.20
+76.79
+0.038±0.006
+Table 6: Performance comparison of topology-aware, topology-unaware, and traditional
+OPF-bassed solution. The values in bold represents best result while the underlined one
+refers to the second best performance for each metric. Notes: VOC (↓), CR (↑), and PL
+(↓)
+Compared with the OPF solution (used as the theoretical upper bound for
+667
+27
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+the voltage control problem in this work), the GNN-MARL method achieved
+668
+VOC values of 0.92% and 9.53% for the IEEE-33 and IEEE-141 test networks,
+669
+respectively. In contrast, the OPF approach attained fully efficient VOC per-
+670
+formance on both of these networks. However, for the IEEE-322 test network,
+671
+the GNN-MARL outperformed OPF in terms of VOC. Although OPF gen-
+672
+erally showed better CR performance, for the largest network (IEEE-322),
+673
+its CR decreased to about 87%, while GNN-MARL and MARL achieved
+674
+around 77% and 63%, respectively. Furthermore, GNN-MARL yielded the
+675
+lowest PL across all test networks. Taken together, these results indicate
+676
+that GNN-MARL has strong potential as an effective voltage control strat-
+677
+egy, particularly as network size increases.
+678
+5. Discussion
+679
+This section presents the design rationale behind the performance and
+680
+topology robustness of GNN policies. It also provides guidance on selecting
+681
+appropriate types of GNN policy networks to achieve optimal GNN-MARL
+682
+performance across different systems, taking into account network size, com-
+683
+putational constraints, and robustness to topology changes. Furthermore, it
+684
+addresses key considerations in choosing suitable voltage barrier functions.
+685
+5.1. Design Rationale for Topology Robustness of GNN Policies
+686
+The results of our experiments show that GNN policies maintains high
+687
+controllability on both radial and looped power networks (Tables 2 – 5),
+688
+with consistent VOC, CR, and PL improvements over conventional MARL
+689
+approaches with RNN policies. Two design choices explain this robustness:
+690
+(i) permutation-equivariant graph encoders preserve relational structure of
+691
+power networks, enabling transfer across network topologies, and (ii) edge
+692
+conditioning (switch states, impedances) exposes energized network paths to
+693
+the GNN-MARL policies. Further, the optimal shallow-to-moderate GNN
+694
+depth aligns with localized electrical influence in distribution networks, thus
+695
+explaining why GNN-MARL with GCN/GAT policy networks excel as net-
+696
+work size increases while avoiding the over-smoothing effects that affect many
+697
+GNN models.
+698
+5.2. On when to Choose Different GNN Policy Network Architectures
+699
+Our detailed evaluations of GNN-MARL across several test networks re-
+700
+veal distinct performance patterns that can guide architecture selection for
+701
+28
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+practical deployments. From the evaluations results, we observe that GNN
+702
+architecture choice for MARL policy networks in voltage control application
+703
+depends on network characteristics, computational constrains, and perfor-
+704
+mance priorities.
+705
+5.2.1. Network Size Considerations
+706
+From 4, we observe that for smaller networks (IEEE-33), the GNN-MARL
+707
+approach with the GCN-BL policy delivers the best performance (slightly
+708
+surpassing GAT-BL) and also achieves the best VOC and PL performance.
+709
+However, as the size of the network increases to IEEE-141, the GGCN model
+710
+combined with the Bowl barrier function becomes the most effective, yielding
+711
+the best overall results. For the largest network considered (IEEE-322), GAT-
+712
+BL performs best (with results similar to GAT-L1), providing the strongest
+713
+voltage control performance among all GNN-MARL configurations.
+714
+We also observe that for all test systems, the GAT-based policy is either
+715
+the best or the second best performing policy, thus making it the overall
+716
+best GNN policy. This can be explained by the fact that, unlike GCN and
+717
+GGCN, GAT learns how important each neighbor is instead of weighting all
+718
+neighbors equally or relaying on fixed gates, thus making GAT more flexible
+719
+on graphs where neighbors contribute unevenly and more robust to noisy or
+720
+irrelevant edges (which is the case with the power networks).
+721
+5.2.2. Computational Efficiency Trade-offs
+722
+Among the GNN-based policies examined in this study, GCN provides the
+723
+most computationally efficient option with a complexity of O(|E|), making
+724
+it well-suited for real-time deployment and small-scale networks, where it
+725
+delivers strong performance with excellent power efficiency. GAT, in contrast,
+726
+increases representational power through attention mechanisms but incurs a
+727
+complexity of O(|E|·H), where H is the number of attention heads; it proves
+728
+particularly advantageous for large-scale power networks while still achieving
+729
+low power losses. The GNN-MARL approach with a GGCN policy attains the
+730
+best results on medium-scale networks with competitive power efficiency, but
+731
+its performance degrades on larger networks. This is partly due to the fact
+732
+that GGCN relies on recurrent gated message passing with a computational
+733
+complexity of O(T ·|E|·D2) and space complexity of O(T ·|V |·D), where T is
+734
+the number of unrolling steps (typically 3–5) and D is the hidden dimension.
+735
+29
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+5.2.3. Topology Robustness
+736
+From our experiments, we find that all examined GNN architectures de-
+737
+liver stable performance on both radial and looped network topologies, keep-
+738
+ing CR within a 5% variance and achieving competitive power losses (in the
+739
+0.055–0.077 MW range for the looped case). This robustness arises from the
+740
+permutation-equivariant property of GNN encoders, which preserves struc-
+741
+tural relationships in the network even as the topology changes. In contrast,
+742
+the RNN baselines exhibit a substantial drop in CR performance (20–30%)
+743
+when transitioning between different topologies.
+744
+5.2.4. Edge Feature Utilization
+745
+From our experiments, we find that explicitly modeling edge features pro-
+746
+vides a modest advantage in small networks, where switch statuses and line
+747
+impedances play a major role in local voltage regulation. However, for larger
+748
+networks, implicit edge information modeling through adjacency matrices
+749
+proves sufficient. This suggests that direct edge feature encoding becomes
+750
+less important as network connectivity grows. This finding has direct impli-
+751
+cations in real-world deployment, as it removes the need to collect detailed
+752
+transmission line characteristics, which is difficult and an extra burden to
+753
+obtain in most cases, for achieving better GNN-MARL performance on the
+754
+voltage control problem.
+755
+5.3. Barrier Function Selection
+756
+The choice of voltage barrier function significantly influences the learn-
+757
+ing and generalization ability of MARL approaches in voltage control tasks.
+758
+Consequently, we tested several barrier functions in our experiments. We
+759
+find that the impact of the chosen barrier on the performance of both GNN-
+760
+MARL and the baseline MARL with an RNN policy depends on the specific
+761
+characteristics of the power network and the policy architecture.
+For in-
+762
+stance, on the IEEE-33 test system, GNN-MARL with GCN-BL and GAT-
+763
+BL policies achieved the best results, whereas GGCN with a BL barrier
+764
+yielded inferior performance compared to GGCN policies using L1 or L2
+765
+barrier functions. This pattern is consistently observed across all networks
+766
+considered in our evaluation. Therefore, determining a universally effective
+767
+voltage barrier function, one that remains optimal regardless of the choice of
+768
+the policy network, the size of the PDN or the characteristics of the system,
+769
+remains an open challenge.
+770
+30
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+6. Conclusion and Future Directions
+771
+GNN-based multi-agent reinforcement learning (GNN-MARL) consistently
+772
+outperforms conventional MARL with topology unaware policies for voltage
+773
+control across all evaluated distribution networks, with the performance mar-
+774
+gin widening as both network size and structural complexity increase. The
+775
+graph convolutional network with Bowl barrier function (GCN-BL) performs
+776
+best on small networks (IEEE-33), gated graph convolutional networks with
+777
+Bowl barrier function (GGCN-BL) on medium networks (IEEE-141), and
+778
+graph attention newtorks with Bowl barrier function (GAT-BL) on large net-
+779
+works (IEEE-322). Across these settings, GNN-MARL achieves low voltage
+780
+constraint violations (VOC), high constraint satisfaction rates (CR), and im-
+781
+proved power loss (PL) efficiency. Among the GNN architectures examined
+782
+in this study, the GAT-based policy achieved the strongest overall perfor-
+783
+mance, ranking either first or second in every scenario considered. This can
+784
+be attributed to the fact that, in contrast to GCN and GGCN, GAT ex-
+785
+plicitly learns the relevance of each neighbor rather than assigning uniform
+786
+weights or relying on predetermined gates. As a result, GAT is better suited
+787
+to graphs where neighbors have uneven influence and is more resilient to
+788
+noisy or irrelevant edges, which is generally the case in power networks.
+789
+To the best of our knowledge, this paper is the first MARL-based study
+790
+to demonstrate successful voltage regulation in looped (meshed) distribu-
+791
+tion systems, achieving nearly the same performance as in radial networks
+792
+while preserving low power losses. Compared to the traditional optimization-
+793
+based OPF benchmark, GNN-MARL closely tracks VOC and CR on small
+794
+networks, exhibits more pronounced performance gaps on medium-sized sys-
+795
+tems, and exceeds OPF in terms of VOC on the largest network, while con-
+796
+sistently delivering lower power losses than both OPF and topology-unaware
+797
+MARL.
+798
+Further, our experiments show that high-level topology information (i.e.,
+799
+the adjacency matrix) is sufficient for learning effective control policies: the
+800
+inclusion of explicit edge attributes (such as line impedances) yields nearly
+801
+identical performance. Collectively, these findings highlight GNN-MARL as
+802
+a scalable, topology-aware, and energy-efficient framework for distributed
+803
+voltage control in modern power grids with high renewable penetration, re-
+804
+silient to different and looped network configurations, and less sensitive to
+805
+topology-induced retraining requirements.
+806
+Future research should explore spatio-temporal GNN models for evolving
+807
+31
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed
+
+network topologies, richer topological abstractions (e.g., hypergraph-based
+808
+representations), real-world hardware-in-the-loop testing, probabilistic un-
+809
+certainty quantification, and multi-objective optimization that jointly con-
+810
+siders voltage quality, economic performance, and stability.
+811
+Declaration of competing interest
+812
+The authors declare that they have no known competing financial inter-
+813
+ests or personal relationships that could have appeared to influence the work
+814
+reported in this paper.
+815
+Data availability
+816
+The datasets used in this work are provided by [? ] and can be down-
+817
+loaded from the following links: (i) voltage control data - https://bit.ly/
+818
+3KK83kU and (ii) traditional control data - https://bit.ly/44TV4Uz.
+819
+Acknowledgment
+820
+This work was supported in part by DAAD under the Nigerian-German
+821
+Postgraduate Training Program PhD (No. 57401043). Additionally, the work
+822
+was also partly supported by the Common European-scale Energy Artificial
+823
+Intelligence Federated Testing and Experimentation Facility (EnerTEF), a
+824
+project funded by the European Union’s HORIZON Innovation Actions, with
+825
+grant No. 101172887
+826
+32
+This preprint research paper has not been peer reviewed. Electronic copy available at: https://ssrn.com/abstract=5960743
+Preprint not peer reviewed

@@ -1,0 +1,821 @@
+Air combat autonomous maneuver decision for one-on-one within visual
+range engagement base on robust multi-agent reinforcement learning
+Weiren KONG, Deyun ZHOU, Kai ZHANG and Zhen YANG
+Abstract— Based on a robust multi-agent reinforcement
+learning (MARL) algorithm framework, an autonomous ma-
+neuver decision-making algorithm for UCAV air combat in one-
+on-one combat in the visible range is designed and implemented.
+This algorithm can solve the problem that the single agent
+reinforcement learning algorithm cannot converge during the
+training process due to the unstable environment. At the same
+time, considering the shortcomings of the MADDPG algorithm
+in a strong competitive environment, it is easy to obtain a very
+fragile strategy, which is only targeted at a speciﬁc equilibrium
+strategy. In this paper, a minimax module is introduced to
+obtain the expected perturbation, which can locally approach
+the worst-case perturbation through the gradient. Through
+simulation tests of algorithm convergence and policy quality,
+the algorithm is found to be effective.
+Index Terms— Robust MADDPG, Air combat, Reinforcement
+learning, Maneuver strategy
+I. INTRODUCTION
+With the development of unmanned combat air vehicle
+(UCAV) technology in the military ﬁeld, the role and status
+of UCAV is also increasing, and the signiﬁcance on the
+battleﬁeld is becoming more and more important [1]; UCAV
+can fully exploit the performance of aircraft and make large
+overload maneuvers that are difﬁcult to make by manned
+combat aircraft. Therefore, it is foreseeable that UCAV will
+become the protagonist of the future air combat. Due to the
+small size of most UCAVs, it is not possible to equip Medium
+Range Air-to-air Missile (MRAM). Therefore, aerial combat
+within visual range (WVR), referred to as dogﬁght, is likely
+to become the main aerial combat scene of UCAV.
+The
+current
+UCAV
+can
+autonomously
+or
+semi-
+autonomously ﬁnish simple military missions such as
+detecting, tracking and combating ground targets. Such as
+the RQ-4 "Global Hawk" strategy unmanned reconnaissance
+aircraft. However, UCAV is not competent for the WVR
+aerial autonomous combat mission with high real-time
+requirements.
+The UCAV autonomous 1-vs-1 WVR aerial combat ma-
+neuver decision refers to the automatic generation of the
+maneuvering decision process of 1-vs-1 WVR aerial combat
+engagement for the UCAVs[2].
+This work was not supported by any organization
+Weiren
+KONG
+is
+with
+Northwestern
+Polytechnical
+University,
+Xi’an,710072, China weirenkong@qq.com
+Deyun
+ZHOU
+is
+with
+Northwestern
+Polytechnical
+University,
+Xi’an,710072, China dyzhou@nwpu.edu.cn
+Kai
+ZHANG
+is
+with
+Northwestern
+Polytechnical
+University,
+Xi’an,710072, China zhangkainpu@mail.nwpu.edu.cn
+Zhen
+YANG
+is
+with
+Northwestern
+Polytechnical
+University,
+Xi’an,710072, China nwpuyz@foxmail.com
+In this paper, the UCAV 1-vs-1 WVR aerial combat task is
+modeled as a Zero-sum Markov Games (ZSMG). We deﬁne
+an UCAV as an agent. If the environment model is known
+and differentiable, it is feasible to solve ZSMG problem
+by differential game method. However, UCAV’s precise
+dynamic model modeling is very complex, and there are
+many non-differentiable modules. In addition, the dynamic
+model of enemy UCAV is not available. Therefore, this
+paper adopts multi-agent reinforcement learning (MARL)
+framework to study UCAV policy. MARL is a model-free
+learning method, which is suitable for the UCAV 1-vs-1
+WVR aerial combat scenario.
+Reinforcement learning (RL) has been successfully ap-
+plied in various ﬁelds, such as video games, chess and card
+games, self-driving cars and so on. However, The UCAV
+1-vs-1 WVR aerial combat is a process of environmental
+instability for one UCAV, and Markov Decision Process
+(MDP) can not be used to model it. To some extent, it makes
+no sense for UCAVs to optimize their polices based on this
+unstable state of the environment. Policies that are optimized
+in the current state may not be valid in the next changed state
+of the environment. This leads to the inability to directly
+use the experience replay method for training, which is why
+the traditional single-agent reinforcement learning algorithm
+fails. In addition, the variance of the policy gradient can be
+exponentially large when the number of agents increases.
+II. RELATED WORK
+Various studies on autonomous aerial combat have been
+per- formed since early 1960s. Several remarkable works
+have been published in literature. At present, many modeling
+and solving methods for autonomous decision-making of air
+combat maneuvers have been formed, which can be roughly
+divided into three categories:
+(1) Based on basic ﬁghter maneuvers(BFM) library. In [3],
+the ﬁrst systematic study and summary on the establishment
+of BFM expert system is proposed. The design of the
+maneuver library, the control application and the maneuver
+recognition based on the BFM expert system was proposed,
+and the various problems in the maneuver decision based
+on the action library is elaborated in [4], [5], Based on the
+combination of BFM library, target prediction and impact
+point’s calculation, an autonomous aerial combat framework
+for two-on-two engagements. is proposed [6].
+(2) Based on optimization method. In [1], Using Approxi-
+mate Dynamic Programming(ADP), a real time autonomous
+one-to-one air combat method is studied and the results
+2020 IEEE 16th International Conference on Control & Automation (ICCA)
+Oct 9-11, 2020 (Virtual) Sapporo, Hokkaido, Japan
+978-1-7281-9093-8/20/$31.00 ©2020 IEEE
+506
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:12:17 UTC from IEEE Xplore.  Restrictions apply. 
+
+are tested in Real-time indoor autonomous vehicle test en-
+vironment (RAVEN) . In [8], Particle swarm optimization,
+ant colony optimization and game theory are applied on
+a cooperative air combat framework and the results are
+compared.
+(3) Based on artiﬁcial intelligence method. Using genetic
+based machine learning, these algorithms demonstrated the
+ability to discover model-free tactics in an air combat en-
+vironment [9], [7]. The Q-learning method generates novel
+actions with a designed action value function and enables a
+successful outmaneuvering of the target [10].
+III. PRELIMINARY
+A. Zero-sum Markov Games
+In this paper, we adopt the two player Zero-sum Markov
+Games (ZSMG) theory as a modeling framework for the
+UCAV 1-vs-1 WVR aerial combat task. Firstly, the formal
+deﬁnition of Markov Games (MG) is brieﬂy introduced.
+MG is an extension of Markov Decision Process (MDP),
+which uses elements of game theory and allows multiple
+agents to compete with each other to model systems that
+accomplish their tasks. Formally, an MG over a set of k
+agents is deﬁned as [11]:
+(1) S: environment states.
+(2) A1...Ak: the action spaces of k agents. The action
+space of the ith agent is Ai, 1 ⩽i ⩽k.
+(3) T : a state transition function which is determined
+by the current state and the next action of all agents. If
+the environment is stochastic, its function relationship is as
+follows:
+T : S × S × A1 × ... × Ak →[0, 1]
+(1)
+(4) R1...Rk: the reward functions of k agents. For the ith
+agent (1 ⩽i ⩽k), its function relationship is as follows:
+Ri : S × A1 × ... × Ak × S →R
+(2)
+The goal of ith agent is to ﬁnd a policy πi that maximizes
+the discount sum of its rewards Gi.
+Gi = Es∼ρπ1,π2...πk ,a∼πi[
+T
+∑
+t=0
+γtRt
+i]
+(3)
+Where, ρπ1,π2...πk is a stationary distribution probability for
+given k agents polices π1, π2...πk, T is the length of each
+trajectory; γ ∈[0, 1] is the discount factor; and Rt
+i is reward
+of the ith agent at tth step in a trajectory.
+ZSMG is a special case of MG. It only considers two
+players, called agent and opponent, who have opposite
+reward functions and symmetrical utility functions. It can
+be formalized as a quintile ⟨S, T , A, O, R⟩. Where, S is a
+set of environment states;T is the state transition function,
+where T (s, a, o, s′) deﬁnes a transition function from state s
+to state s′ when the agent executes action a and the opponent
+executes action o in stochastic environment; A and O are
+the action spaces of agent and opponent; R is the reward
+function of agent and −R is the reward function of opponent.
+B. 1-vs-1 WVR aerial combat engagement description
+The two players in air 1-vs-1 WVR aerial combat engage-
+ment, referred to as blue and red, are assumed to maneuver
+in same horizontal plane. The objective of each player is to
+reach the tail of the adversary and track stably to satisfy the
+launching condition of the missiles or the shooting condition
+of the guns.
+In the following, 1-vs-1 WVR aerial combat is modeled
+by ZSMG. And the control decisions of the each players are
+made at same discrete time interval.
+1) System state: System state of the air combat is deﬁned
+by the positions,speeds, heading and bank angles of a blue
+UCAV (denoted by the b subscript) and a red UCAV (denoted
+by the r subscript). The system state vector is as follows:
+(xb, yb, xr, yr, vb, vr, ϕb, ϕr, ψb, ψr)
+(4)
+Where, (x, y) are position variables of the UCAV. The
+position variables of the aircraft have no limits, thus allowing
+for ﬂight at any positions in xy plane. v is speed of the UCAV.
+ϕ is the heading angle of UCAV and ψ is the bank angle
+of UCAV. The aircraft bank angle is limited based on the
+maximum capabilities of the actual UCAV and the desire
+to limit the maximum turning capabilities of the aircraft,
+the heading variables are allowed to take any value between
+±180◦.
+2) Continuous action space: In previous studies, seven
+basic aircraft maneuvers were often used as a set of
+actions[19]. This paper uses a continuous actions space to
+control the UCAVs. Since the air combat is studied occurred
+in the same horizontal plane, there are two continuous control
+variables to control UCAV, which are the thrust acceleration
+and the bank angular rate of the UCAV. pitch angular rate
+and yaw angular rate are not considered. Therefore, action
+space can be noted as:
+(ut, u ˙ψ)
+(5)
+Where, ut is the thrust acceleration of the UCAV and
+u ˙ψ is the bank angular rate of the UCAV. They have upper
+and lower limits, and their upper and lower limits will vary
+depending on the performance of the UCAV. Together they
+will affect the performance of the UCAVs acceleration and
+turning maneuvers.
+3) Rewards: According to the actual air combat scene, the
+purpose of blue is to enter the red’s tail attack area, and can
+stably lock the opponent, which can enable blue to launch
+close-range combat air-to-air missiles to effectively attack
+red. In order to describe rewards conveniently, the combat
+geometry and parameters shown in Fig. 1 are employed.
+In Fig. 1, λb is antenna train angle (ATA) of blue, which is
+the angle between LOS vector ρ and the blue’s velocity vb. It
+represents the degree of tracking red. ϵb is aspect angle (AA)
+of blue, which is the angle between between LOS vector
+ρ and red’s velocity vr. It represents the degree of stable
+tracking the red. The ATA and AA are allowed to take any
+value between ±180◦.
+507
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:12:17 UTC from IEEE Xplore.  Restrictions apply. 
+
+Fig. 1. Aircraft relative geometry showing Aspect Angle (AA) and Antenna
+Train Angle (ATA)
+In this paper, 1-vs-1 WVR aerial combat is regarded as
+a ZSMG problem. So, the rewards of both sides should be
+opposite to each other. According to the purpose of 1-vs-
+1 WVR aerial combat, The reward function is designed as
+follows:
+Rb = −Rr =
+
+
+
+1.0,
+|λb(s)| < 30◦∧|ϵb(s)| < 60◦
+−1.0,
+|λr(s)| < 30◦∧|ϵr(s)| < 60◦
+0,
+otherwise
+(6)
+According to the air combat geometry shown in Fig. 1,
+the geometric relationship between AA and ATA of the two
+UCAVs can be obtained as follows:
+|λb(s)| + |ϵr(s)| = 180◦
+|λr(s)| + |ϵb(s)| = 180◦
+(7)
+C. Robust Multi-Agent Deep Deterministic Policy Gradient
+1) Deterministic Policy Gradient (DPG) and Deep De-
+terministic Policy Gradient (DDPG): DPG algorithm [13]
+is improved from Policy Gradient (PG) algorithm . Unlike
+PG algorithm, the policy of DPG algorithm is deterministic:
+µ : S →A. Since it is a deterministic policy, there is a
+policy parameter θ in value function Q(s, a), it is necessary
+to derive the value function from policy. The gradient of the
+objective J(θ) = Es∼µ[G] should be written as follows:
+∇θJ(θ) = Es∼ρµθ [∇θµθ(s)∇aQµ(s, a)|a=µθ(s)]
+(8)
+In (8), there are no expectations related to actions, so
+compared with stochastic policy, policy strategies need less
+learning data and have high efﬁciency, especially in the case
+of large dimension of action spaces.
+DDPG [13] is improved from DPG in which policy and
+value function are approximated with deep neural networks.
+Similar to the idea of DQN [14] algorithm,to make the train-
+ing process more stable and the algorithm more convergent,
+experience replay and dual networks structure are introduced.
+DDPG is an off-policy algorithm, and samples trajectories
+from the experience replay buffer that are stored throughout
+training.
+2) Multi-Agent
+Deep
+Deterministic
+Policy
+Gradient
+(MADDPG): In multi-agent environment, for each single
+agent, the environment is non-stationary, which violates the
+Markov hypothesis. In the case of 1-vs-1 air combat, it
+is impossible to determine the state of the enemy UAV
+according to the current state and our actor, if only the
+action space of our UCAV is used as the action space of
+the MDP environment. Particularly, in the multi-agent com-
+petitive environment, the problem of non-stationary problem
+is particularly serious.
+In order to solve the problem of reinforcement learning in
+a multi-agent environment, Lowe et al proposed the MAD-
+DPG algorithm [15], which applies the DDPG algorithm to a
+multi-agent environment. MADDPG algorithm puts forward
+the idea of "centralized training, decentralized execution,
+which learns a centralized Q function for each agent. MAD-
+DPG algorithm can alleviate non-stationary problems and
+stabilize training based on global information.
+More concretely, the paper takes two-players ZSMG as
+an example of multi-agent environment and let µa is the
+agent policy and let µo is the opponent policy. Then we
+can write the gradient of the expected return for agent and
+opponent with polices µa and µo,Ja(θa) = Es∼µa,µo[Ga],
+Jo(θo) = Es∼µa,µo[Go] as:
+∇θaJa(θa) = Es∼D[∇θµa(s)∇aQµa(s, a, o)|a=µa(s)] (9)
+Where, Qµa(s, a, o) is a centralized action-value func-
+tion of agent that takes as input agent and opponent, and
+Qµo(s, a, o) is a centralized action-value function of oppo-
+nent. The experience replay buffer D contains the tuples
+(s, s′, a, o, R) recording experiences of agent and opponent,
+where s′ denote the next state from s after taking actions
+(a, o). The centralized action-value functions are updated
+used temporal-difference learning.
+3) Robust MADDPG: In MARL, agent’s policy is very
+sensitive to other agents’ polices in the same environment.
+Particularly in competitive environments, the learned policies
+can be easily broken when the opponents change their poli-
+cies. In [18], minimax mulit-agent deep deterministic policy
+gradient (M3DDPG) algorithm is proposed. For robust multi-
+agent reinforcement learning, which leverages the minimax
+concept and introduces a minimax learning objective. we can
+write the minimax learning objective of agent JMa(θa) as:
+JMa(θa) = Es∼µ[Ga]
+= min
+o
+Es∼ρµ[
+T
+∑
+t=0
+γtR(st, at, ot)|at=µa(st)]
+= Es0∼ρ[min
+o
+QMa(s0, a0, o0)|a0=µa(s0)]
+(10)
+Where, in Eq 10, QMa(s, a, o) is minimax Q function.
+which is naturally centralized and can be rewritten in a
+recursive form:
+QMa(s, a, o) =R(s, a, o, s′)+
+γEs′[min
+o′ QMa(s′, a′, o′)|a′=µa(s′)]
+(11)
+508
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:12:17 UTC from IEEE Xplore.  Restrictions apply. 
+
+QMa(s, a, o) conditions on the current state s as well as
+the current actions a and o and represents the current reward
+plus the discounted worst case future return starting from the
+next state s′.
+Since QMa(s, a, o) is approximated by a deep learning
+network, solving min
+o
+QMa(s, a, o) is very intractable. The
+computational cost will be very large by Monte-Carlo simu-
+lation. In [1], the paper introduce an efﬁcient and end-to-end
+solution, multi-agent adversarial learning (MAAL). MAAL’s
+main idea is to treat QMa(s, a, o) as a linearized function,
+and then solve the local minimum of QMa(s, a, o) with a
+1-step gradient descent. This idea is similar to adversarial
+training technique originally developed for supervised learn-
+ing. Apply adversarial training technique to Eq. (11) and
+eventually derive the gradient of JMa(θa):
+∇θaJa(θa) = Es∼D
+
+
+∇θµa(s)∇aQµa(s, a, o∗)|
+a = µa(s)
+o∗= o + bϵ
+bϵ = −α∇oQµa(s, a, o)
+
+
+(12)
+Where, bϵ is the desired perturbation which can be locally
+approximated by the gradient direction at Qµa(s, a, o) to the
+worst case perturbation by taking a small gradient step. α
+is a tunable coefﬁcient representing the perturbation rate.
+Robust MADDPG only requires one additional gradient
+computation, and can be executed in a fully end-to-end
+fashion.
+IV. POTENTIAL-BASED REWARD SHAPING
+Deep reinforcement learning(DRL) has always restricted
+practical applications due to the long training time and com-
+putational power requirements of the agents. For example,
+AlphaZero trains a good result, requires a lot of computing
+power, and trains for 3 days. So shortening the training turn-
+around time has been an important issue.
+For the 1-vs-1 WVR aerial combat, it is very difﬁ-
+cult to train the policy of actual combat performance di-
+rectly.Therefore, this paper proposes reward shaping to ac-
+celerate training, so that the training turn-around time is
+accelerated.
+Shaping reward is a reward for designers’ rewards for
+nature’s gains from the environment. Rewards provide a
+visual representation of domain knowledge, especially for de-
+signers who may have designed environmental rewards[16].
+In addition, reward shaping does not require modiﬁcation of
+the agent or environment, making implementation relatively
+simple.
+However, if the design of shaping reward is not appropri-
+ate, it may slow down the convergence time of the training
+algorithm, or it may change the optimal strategy. Even the
+converged policy will never reach the goal[16].
+Potential-based reward shaping (PBRS) was proposed to
+ensure such problems that mentioned above do not occur[17].
+The shaping reward Rrs given in this approach is the
+difference of a potential function Φ deﬁned over a source
+state s and a destination state s′:
+Rrs = R + γΦ(s) −Φ(s′)
+(13)
+Where R is the original reward from the environment and
+γ is the same discount factor in Eq. 11.
+Potential-based reward shaping has been proven to not
+alter the Nash equilibria of the multi-agent system, but
+potential-based reward shaping affects the exploration of
+the shaped agent. Therefore, it can change the joint policy
+converged upon as even just one agents modiﬁed exploration
+can sufﬁciently redirect the search of joint policy space to
+converge to a different point of equilibrium. Therefore, I
+need to combine prior knowledge of air combat to design
+a shaping reward that allows both UCAVs to converge to a
+better Nash equilibrium policies.
+A. Reward Shaping for Orientation
+According to the actual air combat scene, the purpose of
+both UCAVs is to enter the opponent’s tail attack area, and
+can stably lock the opponent, which can enable UCAV to
+launch close-range combat air-to-air missiles to effectively
+attack the enemy UCAV. For this purpose, make the antenna
+train angle λ and aspect angle ϵ of the UCAV as small as
+possible. Design shaping reward of orientation as follows:
+Φo(s) = 180◦−(|λb(s)| + |ϵb(s)|)
+180◦
+(14)
+The range of Φo(s) is [−1, 1]. λb(s) and ϵb(s) can be
+calculated from the current system state s, and its calculation
+formula is as follows:
+|λb(s)| = |ϕb −τb(s)|
+|ϵb(s)| = |ϕr −τb(s)|
+τb(s) = tan−1
+( yr −yb
+xr −xb
+)
+(15)
+B. Reward Shaping for Distance
+In the air combat process, both the missile and the cannon
+have corresponding attack distances, including the maximum
+attack distance, the minimum attack distance, the inescapable
+distance and so on. So a shaping reward for distanced needs
+to be designed to make UCAV tend to the desired distance
+De. Design shaping reward for distanced as follows:
+Φd(s) = Φo(s) exp−kd|De−D(s)|
+(16)
+Where, D(s) =
+√
+(xr −xb)2 + (yr −yb)2 is the distance
+between two UCAVs and kd is a coefﬁcient. The range
+of Φd(s) is [−1, 1]. The shaping reward for distance can
+effectively adjust the distance of two UCAVs according to
+the current air combat situation. For example, if the blue is
+in the defensive position, then it need to increase the distance
+as much as possible to get rid of red; if the blue is in the
+offensive position, then it need to make the distance as close
+as possible to the desired distance.
+509
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:12:17 UTC from IEEE Xplore.  Restrictions apply. 
+
+C. Reward Shaping for Velocity
+The expected velocity of UAV is determined by the current
+air combat situation. For example, when blue is in the
+offensive situation, the expected velocity of blue is the same
+as that of red, so as to prevent overshooting caused by too
+fast velocity or prevent be easily thrown away by red caused
+by too low velocity. On the contrary, when the blue is in the
+defensive situation, the blue expects the velocity is difference
+from the velocity of red, so that it is convenient to reverse
+the defensive situation through velocity advantage as the
+offensive situation. Design shaping reward for velocity as
+follows:
+Φv(s) = Φo(s) exp−kv|vb−vr|
+(17)
+Where, kv is a coefﬁcient. The range of Φv(s) is [−1, 1].
+D. Combined Shaping Reward
+The shaping reward components, Eq. (14), Eq. (16) and
+Eq. (17), are combined to obtain the resultant shaping
+reward:
+Φ(s) = Φo(s) + Φd(s) + Φv(s)
+(18)
+V. ALGORITHM FRAMEWORK
+In this section, I will elaborate on the training algo-
+rithm for one-on-one WVR engagements. The proposed is
+an extension of Robust MADDPG algorithm. The overall
+framework of training algorithm is shown in Fig. 2.
+Fig. 2.
+The overall framework of training algorithm for robust MADDPG
+Training process for one-on-one within visual range air combat engagement
+The algorithm framework consists of two parts: air combat
+environment model and robust Multi-Agent Reinforcement
+Learning. Air combat simulation environment model will be
+explained in detail in the chapter of experiment and analysis.
+For the part of robust Multi-Agent Reinforcement Learn-
+ing, Each UCAV has its own actor and critic. Similar to
+MADDPG algorithm, there are evaluate network and target
+network in actor and critical, and replay buffer to ensure
+the stability of training algorithm. Different from MADDPG
+algorithm, there is a "minimax" module, which is used to
+solve bϵ which is the desired perturbation which can be locally
+approximated by the gradient direction at Qµa(s, a, o) to the
+worst case perturbation by taking a small gradient step. The
+Robust MADDPG Training process for one-on-one within
+visual range air combat engagement is shown in Algorithm
+1.
+VI. EXPERIMENT AND ANALYSIS
+A. Air Combat Simulation Environment
+Air combat simulation environment model includes 2-
+DOF kinematic and dynamics models of two UCAVs. In
+the inertial coordinate system, the equation of kinematic and
+dynamics of the UCAV is shown as Eq. (20).
+
+
+
+
+
+
+
+
+
+
+
+˙x = v cos ψ
+˙y = v sin ψ
+˙v = ut
+m
+˙φ = u ˙φ
+˙ψ = g tan φ
+v
+(20)
+Where, m is the mass of UCAV, g = 9.81.
+In this paper, we use Python 3 language to coding the
+program of simulation environment, which can use script to
+deﬁne the initial states, maximum episode length and other
+parameters. At the same time, the simulation environment
+can record the state data of two UCAVs in real time. The
+visualization interface is shown in Fig. 3.
+Fig. 3.
+The visualization interface of air combat simulation environment
+B. Algorithm Parameters
+The robust MADDPG algorithm is built by TensorFlow
+module. Both Actor and Critic use a fully connected network,
+The Actor network and Critic network both consists of two
+hidden layers with 300 and 300 units respectively and the
+activation function is tanh function. The learning rate for
+optimizer is 10−3. Model is trained by a random sampling
+strategy with batch sizes of 64, the maximum eposide length
+is 15,and the replay buffer size is 10000. The OU process
+is used to add noise to the action value to increase the
+exploration of the action space. Initial state parameters are
+shown in Table I. It should be mentioned that in order to
+prevent two UCAVs from "biting each other’s tail" in air
+combat due to the same performance, two UCAVs are set to
+have different minimum turning radius. Among them, blue
+UCAV is better than red UCAV.
+510
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:12:17 UTC from IEEE Xplore.  Restrictions apply. 
+
+Algorithm 1 Robust MADDPG Training process for one-on-one within visual range air combat engagement
+1: for episode = 1 to M do
+2:
+Initialize a random process N for action exploration, and receive two UCAV initial state information s0;
+3:
+for t = 1 to max-episode-length do do
+4:
+For blue UCAV, select action a = µa(s) + Nt and for red UCAV, select action o = µo(s) + Nt w.r.t. the current
+policy and exploration;
+5:
+Execute actions a and o and observe reward R and new state information; s′;
+6:
+Get Rrs using reward shaping(R, s, s′);
+7:
+Store (s, (a, o), Rrs, s′) in replay buffer D, and set s ←s′;
+8:
+for agent i ∈[UCAVa, UCAVo] do
+9:
+Sample a random minibatch of S samples (sk, (ak, ok), Rk
+rs, s′k)from D;
+10:
+Set yk = Rk
+rs + γQMi(s′, i′, o′)|i′=µi(sk),o′=µo(sk)+bϵ with bϵ deﬁned in Eq. (12);
+11:
+Update critic by minimizing the loss L(θi) = 1
+S
+∑
+k(yk −QMi(s′, i′, o′))2;
+12:
+Update actor using the sampled policy gradient with bϵ deﬁned in Eq. (12):
+∇θiJi(θi) = 1
+S
+∑
+k
+∇θiµi(sk)∇iQµi
+Mi(s, i, o∗)
+(19)
+13:
+end for
+14:
+Update target network parameters for each agent i: θ′
+i ←τθi + (1 −τ)θ′
+i;
+15:
+end for
+16: end for
+TABLE I
+THE INITIAL STATE OF TRAINING PROCESS
+Parameter
+Blue UCAV
+Red UCAV
+x
+0
+[-2000,2000] randomly
+y
+0
+[-2000,2000] randomly
+v
+200
+[100,300] randomly
+ψ
+0
+0
+φ
+0
+0
+C. Convergence of Training Process
+Using the above parameters, we use MADDPG algorithm
+and robust MADDPG algorithm to learn air combat maneu-
+ver strategy for one-on-one within visual range engagement.
+I use the average reward obtained by blue UCAV in each
+episode as a quantitative indicator to measure the air combat
+situation advantage of blue UCAV in this episode. As the
+reward is 0,1 or -1, the average reward in each episode is
+equivalent to advantage steps ratio. The convergence pro-
+cesses of the average reward of blue UAV are demonstrated
+in Fig. 4.
+It can be seen from Fig. 4 that during the whole train-
+ing process, the average reward of MADDPG and Robust
+MADDPG converge to higher results (the best value is
+1). However, the convergence curve of robust MADDPG
+algorithm is better than that of MADDPG algorithm in the
+whole training process.
+D. Evaluate the Quality of Learned Air Combat Maneuver
+Strategy
+To evaluate the quality of learned air combat maneuver
+strategy trained by robust MADDPG, we measure the per-
+formance of strategies by MADDPG, robust MADDPG and
+Approximate Dynamic Programming(ADP), Among them,
+0
+0.5
+1
+1.5
+2
+2.5
+3
+3.5
+4
+4.5
+Episode
+106
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1
+Mean reward in episode (Advantage steps ratio)
+Robust MADDPG
+MADDPG
+Fig. 4.
+The convergence processes of the average reward of blue UAV
+using MADDPG and robust MADDPG
+the strategy of hostile UAV in ADP adopts the maximum
+maneuver turn right.
+The results are demonstrated in Fig. 5. It can be seen
+from the ﬁgure that the air combat strategy obtained by
+using robust MADDPG algorithm has a slight advantage
+(the winning rate is about 60% in the strategy obtained by
+MADDPG. The air combat strategy of ADP algorithm is the
+worst of the three strategies.
+VII. CONCLUSIONS AND FUTURE WORKS
+A. Conclusions
+Using the robust MADDPG algorithm framework, a ro-
+bust Multi-Agent reinforcement learning algorithm for au-
+511
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:12:17 UTC from IEEE Xplore.  Restrictions apply. 
+
+Robust MA vs MA
+Robust vs ADP
+MA vs ADP
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+Win ratio
+Fig. 5.
+Comparison between Robust MADDPG (Robust MADDPG),
+MADDPG (MA) and ADP on rate of winning of air combat
+tonomous maneuver decision of UCAV in air combat of
+one-on-one within visual range engagements is designed and
+implemented. This algorithm can prevent the training process
+from not converging due to the unstable environment when
+using the single agent reinforcement learning algorithm. At
+the same time, considering the disadvantage of MADDPG
+algorithm in the competitive environment, it is easy to get a
+very fragile strategy which only aims at a certain equilibrium
+strategy, this paper introduces a minimax module to get the
+desired perturbation which can be locally approximated by
+the gradient direction to the worst case perturbation by taking
+a small gradient step. Through the simulation test of the
+convergence and the quality of the strategy, it is found that
+the algorithm is effective.
+B. Future Works
+This algorithm is only limited to ofﬂine learning, and does
+not continue to learn in the use of strategies. This will be a
+very big limitation. My future work will focus on the use of
+"lifelong learning" and other mechanisms, so that UAVs can
+carry out distributed online learning.
+VIII. ACKNOWLEDGMENTS
+Thanks to Professor ZHOU, my supervisor, for his guid-
+ance on algorithm ideas, and Kai ZHANG for debugging and
+modifying my simulation program.
+REFERENCES
+[1] McGrew J S, How J P, Williams B, et al. Air-combat strategy using
+approximate dynamic programming[J]. Journal of guidance, control,
+and dynamics, 2010, 33(5): 1641-1654.
+[2] Fu L, Liu J, Meng G, et al. Survey of manned/unmanned air com-
+bat decision technology[C]//The 27th Chinese Control and Decision
+Conference (2015 CCDC). IEEE, 2015: 353-357.
+[3] Gongzhang Z Y L J S. Recognition method for tactical maneuver of
+target in autonomous close-in air combat [J][J]. Journal of Beijing
+University of Aeronautics and Astronautics, 2007, 9.
+[4] Shin H, Lee J, Kim H, et al. An autonomous aerial combat framework
+for two-on-two engagements based on basic ﬁghter maneuvers[J].
+Aerospace Science and Technology, 2018, 72: 305-315.
+[5] Duan H, Wei X, Dong Z. Multiple UCAVs cooperative air combat
+simulation platform based on PSO, ACO, and game theory[J]. IEEE
+Aerospace and Electronic Systems Magazine, 2013, 28(11): 12-19.
+[6] Smith R E, Dike B A, Mehra R K, et al. Classiﬁer systems in combat:
+two-sided learning of maneuvers for advanced ﬁghter aircraft[J].
+Computer Methods in Applied Mechanics and Engineering, 2000,
+186(2-4): 421-437.
+[7] Ernest N, Car D, Schumacher C, et al. Genetic fuzzy based artiﬁcial
+intelligence for unmanned combat aerial vehicle control in simulated
+air combat missions[J]. Journal of Defense Management, 2016, 6(1):
+2167-0374.1000144.
+[8] Duan H, Li P, Yu Y. A predator-prey particle swarm optimization
+approach to multiple UCAV air combat modeled by dynamic game
+theory[J]. IEEE/CAA Journal of Automatica Sinica, 2015, 2(1): 11-
+18.
+[9] Luo D L, Shen C L, Wang B, et al. Air combat decision-making
+for cooperative multiple target attack using heuristic adaptive genetic
+algorithm[C]//2005 International Conference on Machine Learning
+and Cybernetics. IEEE, 2005, 1: 473-478.
+[10] Liu P, Ma Y. A deep reinforcement learning based intelligent deci-
+sion method for UCAV air combat[C]//Asian Simulation Conference.
+Springer, Singapore, 2017: 274-286.
+[11] Altman E. Flow control using the theory of zero sum Markov games[J].
+IEEE Transactions on Automatic Control, 1994, 39(4): 814-818.
+[12] Lillicrap T P, Hunt J J, Pritzel A, et al. Continuous control with deep
+reinforcement learning[J]. arXiv preprint arXiv:1509.02971, 2015.
+[13] Silver D, Lever G, Heess N, et al. Deterministic policy gradient
+algorithms[C]. 2014.
+[14] Mnih V, Kavukcuoglu K, Silver D, et al. Playing atari with deep
+reinforcement learning[J]. arXiv preprint arXiv:1312.5602, 2013.
+[15] Lowe R, Wu Y, Tamar A, et al. Multi-agent actor-critic for mixed
+cooperative-competitive environments[C]//Advances in neural infor-
+mation processing systems. 2017: 6379-6390.
+[16] Ng A Y, Harada D, Russell S. Policy invariance under reward
+transformations: Theory and application to reward shaping[C]//ICML.
+1999, 99: 278-287.
+[17] Devlin S, Kudenko D. Theoretical considerations of potential-based
+reward shaping for multi-agent systems[C]//The 10th International
+Conference on Autonomous Agents and Multiagent Systems-Volume
+1. International Foundation for Autonomous Agents and Multiagent
+Systems, 2011: 225-232.
+[18] Li S, Wu Y, Cui X, et al. Robust multi-agent reinforcement learning
+via minimax deep deterministic policy gradient[C]//Proceedings of the
+AAAI Conference on Artiﬁcial Intelligence. 2019, 33: 4213-4220.
+[19] Austin F, Carbone G, Falco M, et al. Automated maneuvering de-
+cisions for air-to-air combat[C]//Guidance, navigation and control
+conference. 1987: 2393.
+512
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:12:17 UTC from IEEE Xplore.  Restrictions apply. 

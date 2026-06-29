@@ -1,0 +1,1467 @@
+372
+IEEE TRANSACTIONS ON INDUSTRIAL INFORMATICS, VOL. 22, NO. 1, JANUARY 2026
+Distributed Robust Dispatch for Networked
+Microgrids With Coalition Game-Guided
+Multiagent Adversarial Safe
+Reinforcement Learning
+Tianjiao Pu
+, Senior Member, IEEE, Shuai Du
+, Lei Dong, Member, IEEE, and Ji Qiao
+Abstract—The
+integration
+of
+distributed
+energy
+re-
+sources introduces demand-side ﬂexibility and uncertainty,
+challenging dispatch of networked microgrids (MGs). This
+article
+proposes
+a
+coalition
+game-guided
+multiagent
+adversarial safe reinforcement learning (SRL) method
+to
+achieve
+distributed
+robust
+dispatch
+under
+privacy
+protection. Leveraging SRL for rapid decision-making with
+safety guarantees, we further overcome the reliance on
+predeﬁned source-load distributions inherent in existing
+SRL approaches. Speciﬁcally, we employ the Wasserstein
+generative
+adversarial
+network
+to
+assume
+additional
+distributional information on source and load transition
+probabilities. This unique design for MG dispatch enhances
+decision
+robustness
+under
+source-load
+ﬂuctuations
+compared to existing adversarial training, which gives
+adversary the same action space as the protagonist.
+To
+ensure
+privacy-preserving
+multiagent
+training,
+we
+construct a coalition game-guided training framework.
+This framework adjusts protagonists’ rewards based on
+game theory to ensure global convergence only with
+MGs’ boundary power, and uses Hash-based message
+authentication code to guarantee data integrity. Unlike
+existing
+multiagent
+reinforcement
+learning
+methods
+relying
+on
+global
+critic,
+our
+method
+avoids
+sharing
+privacy-sensitive local states and actions. Simulations
+on a modiﬁed IEEE-123 bus system and an actual power
+grid-derived test system validate the effectiveness.
+Index Terms—Adversarial safe reinforcement learning,
+coalition game-guided multiagent training framework, dis-
+tributed robust dispatch, networked microgrids.
+Received 29 April 2025; revised 6 August 2025; accepted 11 August
+2025. Date of publication 3 October 2025; date of current version 2
+January 2026. This work was supported in part by the National Natural
+Science Foundation of China under Grant 52277098, in part by the Na-
+tional Natural Science Foundation of China under Grant U2066213, and
+in part by the Science and Technology Project of State Grid Corporation
+of China under Grant 5108-202218280A-2-233-XG. Paper no. TII-25-
+2786. (Corresponding author: Shuai Du.)
+Tianjiao Pu, Shuai Du, and Ji Qiao are with China Electric Power Re-
+search Institute, Beijing 100192, China (e-mail: tjpu@epri.sgcc.com.cn;
+dushuai@epri.sgcc.com.cn; qiaoji@epri.sgcc.com.cn).
+Lei Dong is with North China Electric Power University, Beijing
+100096, China (e-mail: donglei@ncepu.edu.cn).
+Digital Object Identiﬁer 10.1109/TII.2025.3609841
+I. INTRODUCTION
+A
+S a critical component of the distribution system (DS),
+the microgrid (MG) encompasses a signiﬁcant portion
+of distributed energy resources (DERs), including micro gas
+turbines (MTs), renewable energy sources (RESs), and energy
+storage systems (ESSs). Networked microgrids (NMGs), which
+consist of multiple MGs with coordinated energy management,
+have become a prevalent conﬁguration. Distributed economic
+dispatch for NMGs is an essential strategy for improving overall
+economic efﬁciency and facilitating the increased utilization of
+renewable energy sources.
+As the system scale progressively expands, complexity of
+the economic dispatch problem increases correspondingly. To
+expedite real-time decision-making and circumvent the need
+for global information aggregation, existing model-driven op-
+timization approaches predominantly employ fully distributed
+methods based on consensus algorithms and focus on privacy
+protection [1], [2]. While effective for deterministic scenarios,
+these methods face fundamental limitations in addressing the
+uncertainty arising from RESs and load. Thus, several stud-
+ies have employed uncertainty optimization techniques such
+as stochastic optimization (SO) [3], robust optimization (RO)
+[4], [5], and distributionally robust optimization (DRO) [6],
+[7]. DRO combines the strengths of SO and RO by utilizing
+ambiguity sets of probability distributions rather than speciﬁc
+distributions, thereby achieving a better tradeoff between ro-
+bustness and economic efﬁciency. However, as the network size
+and the number of management entities increase, the complexity
+of solving the problem escalates, leading to a signiﬁcant increase
+in decision-making time.
+Reinforcement learning (RL), as a prominent data-driven
+approach, leverages the powerful nonlinear ﬁtting capabilities of
+deep neural networks to generate policies, signiﬁcantly reducing
+decision time through ofﬂine training. It is increasingly being
+applied in MG dispatch [8], [9]. Given the communication
+challenges within today’s high-dimensional systems, the adop-
+tion of multiagent RL (MARL) has become more widespread
+[10], [11]. However, RL methods typically incorporate operation
+constraints as penalty terms in reward function, which may result
+in unsafe decisions. And MARL training still depends on sharing
+1941-0050 © 2025 IEEE. All rights reserved, including rights for text and data mining, and training of artiﬁcial intelligence and similar technologies.
+Personal use is permitted, but republication/redistribution requires IEEE permission. See https://www.ieee.org/publications/rights/index.html
+for more information.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:36:45 UTC from IEEE Xplore.  Restrictions apply. 
+
+PU et al.: DISTRIBUTED ROBUST DISPATCH FOR NMGS WITH COALITION GAME-GUIDED MULTIAGENT ADVERSARIAL SRL
+373
+states and actions to achieve a global critic, overlooking the
+privacy information contained.
+The safety requirements associated with the real-world
+application of RL have led to the development of safe RL (SRL).
+The primary model of SRL is built upon the constrained Markov
+decision process (CMDP), which extends traditional Markov
+decision process (MDP) by integrating safety constraints that re-
+ﬂect real-world conditions. SRL methods update policies within
+the CMDP context and guarantee both performance improve-
+ment and constraint satisfaction, which have been progressively
+applied to the economic dispatch of NMGs. Zhang et al. [12]
+presented a multiagent safe policy learning method based on
+constrained policy optimization (CPO) for optimal power man-
+agement of NMGs. Lu et al. [13] proposed a multiagent SRL
+algorithm based on proximal policy optimization (PPO) for
+optimizing the energy trading strategy in NMGs. A two-stage
+data-driven method with safety model framework was con-
+structed in [14] to hierarchically coordinate NMGs. However,
+these studies assume predeﬁned probability distributions for
+source and load, which inadequately capture their uncertainty
+and lack robustness.
+In addition to safety, robustness is also a critical requirement
+for the practical application of RL. The modeling of robust-
+ness typically involves the robust MDP, which directly incor-
+porates uncertainty in the elements of the MDP. However, the
+robust MDP formulation assumes no distributional information
+on elements, which may obtain overly conservative solutions
+like RO. Therefore, another more complex formulation, named
+as distributionally robust Markov decision process (DR-MDP)
+[15], has emerged. DR-MDP assumes uncertainty in the latent
+distribution generating the MDP elements. It explicitly encodes
+a prior probability distribution and facilitates a better balance
+between performance and robustness. To solve the DR-MDP
+problem, existing methods usually construct the adversary agent
+to model environmental discrepancies, and then alternately opti-
+mize the policies of both the adversary and the protagonist until
+convergence [16], [17], [18]. However, these methods simply
+give adversary the same action space as the protagonist, which
+is a generic design for ﬁelds such as robotics and autonomous
+driving, but cannot fully consider the source-load uncertainty
+in MG dispatch problem. What is more, the protagonists in
+these works only use traditional RL. As the adversary ﬁnds the
+worst-case scenario, it is necessary to improve the protagonist’s
+safety by SRL.
+In summary, the existing NMGs dispatch methods have
+evolved from model-driven optimization to MARL, and sub-
+sequently use SRL for safety. However, existing SRL meth-
+ods assume predeﬁned probability distributions for RESs and
+load, which inadequately captures source-load uncertainty and
+results in insufﬁcient robustness. The adversarial training is
+the mainstream method for enhancing robustness, but exist-
+ing adversary setup is not suitable for the robust dispatch
+under source-load ﬂuctuations. Furthermore, existing MARL
+methods rely on global critics by sharing states and ac-
+tions of agents, which cannot ensure data security and in-
+tegrity. To address these problems, our contributions are as
+follows.
+1) A distributionally robust adversarial SRL method is
+proposed for MG robust dispatch. We propose the dis-
+tributionally robust CMDP (DR-CMDP) to bound ac-
+tion space with safety constraints and assume additional
+distribution on the state transition probability that is
+strongly correlated with source-load ﬂuctuation. To solve
+the DR-CMDP problem, we construct an adversary agent
+to simulate the distribution’s ambiguity set, instead of
+using predeﬁned source-load distributions or giving ad-
+versary the same action space as the protagonist. By
+fully considering the characteristics of MG dispatch to
+conﬁgure the adversary, our method is more suitable for
+MG dispatch under source-load uncertainty.
+2) A coalition game-guided multiagent training framework
+is proposed for collaboration of NMGs. This framework
+only uses the boundary power of MGs to realize a coali-
+tiongameforconvergenceguidance,andusesHash-based
+message authentication code (HMAC) to guarantee the
+data integrity. Based on the beneﬁt from coalition game,
+we adjust agents’ reward functions to guarantee conver-
+gence, and propose a gradient penalty method to further
+enhance algorithmic performance.
+3) Combining the adversarial SRL with the coalition game-
+guided framework, a distributed robust dispatch scheme
+for NMGs is proposed. It can manage power ﬂexi-
+bility and uncertainty of DERs under privacy protec-
+tion, without relying on precise mechanistic models or
+predictions.
+The rest of this article is organized as follows. Section II
+presents the proposed multiagent training framework. Sec-
+tion III introduces the DR-CMDP formulation. Section IV
+proposes the distributionally robust adversarial SRL. Simula-
+tions is shown in Section V. Finally, Section VI concludes this
+article.
+II. COALITION GAME-GUIDED MULTIAGENT FRAMEWORK
+The proposed framework is shown in Fig. 1. In order that
+MARL converges to Nash equilibrium, rationality and con-
+vergence are two desirable properties [19]. The proposed ad-
+versarial SRL can meet rationality. To ensure convergence of
+multiagent training, we need to further guarantee stability of
+the coalition formed by all MGs, which involves satisfying the
+following properties.
+Property 1 (Superadditivity): Value of disjoint coalitions’
+union is no less than the sum of coalitions’ separate values.
+Property 2 (Nonempty core): The coalition cannot be further
+divided into subcoalitions that enable the participants to gain
+more beneﬁt in the core.
+Inspired by [20], we employ the mid-market rate (MMR) to
+guaranteesuperadditivity,whichsetsthelocalbuyandsellprices
+as the average of the superior import and export prices, thereby
+incentivizing coalition participants to collaborate. However, the
+MMR method alone does not guarantee that all participants will
+join the grand coalition. As a solution, the Shapley value method
+is used to ensure the nonempty core by allocating beneﬁts based
+on marginal contributions.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:36:45 UTC from IEEE Xplore.  Restrictions apply. 
+
+374
+IEEE TRANSACTIONS ON INDUSTRIAL INFORMATICS, VOL. 22, NO. 1, JANUARY 2026
+Fig. 1.
+Proposed framework.
+A. Shapley Value Method
+Using cooperative game theory, we deﬁne the value func-
+tion vt to represent a coalition’s characteristic. In this work, it
+is speciﬁcally deﬁned as the cost reduction achieved through
+collaborative optimization
+vt(S) = (λb
+t −λM,b
+t
+)
+
+n∈S
+[P BB
+n,t]
++ + (λs
+t −λM,s
+t
+)
+
+n∈S
+[P BB
+n,t]
+−
+(1)
+where n denotes MG index, S denotes the set of partial MGs,
+λb
+t, λs
+t denote superior import and export prices. λM,b
+t
+, λM,s
+t
+denotelocalbuyandsellpricescomputedbyMMR.P BB
+n,t denotes
+the active power at boundary busn (BBn) only considering
+MGn.
+Building upon the aforementioned elements, the Shapley
+value method facilitates the allocation of beneﬁts based on
+marginal contributions. Assume that a coalition has been formed
+among certain participants at time t. When a new participant,
+denoted as n, joins the coalition, its marginal contribution is
+quantiﬁed as
+δn,t(S) = vt(S ∪{n}) −vt(S).
+(2)
+The beneﬁt that MG n joins the ultimate grand coalition N is
+determined as
+φn,t(N, vt) =
+
+S⊆N/{i}
+S!(N −S −1)!
+N!
+δn,t(S).
+(3)
+The allocation of beneﬁts in accordance with φn,t can effec-
+tively measure the marginal contributions and ﬁnally uphold the
+stability of the coalition. However, the computational complex-
+ity of the Shapley value method grows exponentially with the
+increase of participants. As an extension, the Aumann-Shapley
+(A-S) value method overcomes the above shortcoming and is
+often employed as an alternative solution in cases involving
+numerous participants.
+B. A-S Value Method
+The A-S value is a natural combination of average and
+marginal cost sharing rules [21]. Each participant’s value is its
+marginal contributions averaged over all vectors lP BB
+t
+, 0 ≤l ≤
+1. P BB
+t
+is the boundary power vector from MGs that participate
+Fig. 2.
+Interconnected NMGs.
+in coalition N. Thus, the beneﬁt is calculated as
+φn,t(N, vt) = P BB
+n,t
+ 1
+0
+∂vt(lP BB
+t
+)
+∂P BB
+n,t
+dl.
+(4)
+The numerical calculation of (4) is achieved by discretizing
+l into L segments to represent the value function vt, which
+is nondifferentiable with respect to P BB
+n,t. Thus, the A-S based
+solution is calculated using the following discrete form as:
+φn,t(N, vt) = P BB
+n,t
+L
+
+l=1
+vt(lP BB
+t
+/L + ΔP BB
+n,t) −vt(lP BB
+t
+/L)
+L · ΔP BB
+n,t
+.
+(5)
+By comparing computation times, the threshold in the number
+of agents for selecting between the two allocation approaches is
+determined. Details are presented in Section V-E.
+C. Privacy-Preserving and Coalition Game-Guided
+Multiagent Training
+After obtaining beneﬁt φn,t, each agent calculates reward
+function (23) by incorporating its own operation costs (24) and
+the beneﬁts (25). The integration of beneﬁt enables individual
+agent training to approximate the global optima. Furthermore, a
+gradient penalty method is proposed in (38) based on the beneﬁt
+to further enhance algorithmic performance.
+In addition to the decomposition of optimization objective,
+we also need to handle global power ﬂow constraints. Unlike
+model-drivenoptimization,RLdirectlycalculatespowerﬂowby
+interacting with the environment after selecting actions in each
+training episode. To avoid local data sharing, we decompose
+the power ﬂow calculation. As shown in Fig. 2, BB1 is set as
+the slack bus of NMGs, while BB2 and BB3 are selected to
+balance power of MG2 and MG3 like slack bus. In each training
+episode, MG2 and MG3 prioritize power ﬂow calculations,
+enabling MG1 to subsequently complete its calculation using
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:36:45 UTC from IEEE Xplore.  Restrictions apply. 
+
+PU et al.: DISTRIBUTED ROBUST DISPATCH FOR NMGS WITH COALITION GAME-GUIDED MULTIAGENT ADVERSARIAL SRL
+375
+the determined BB2 and BB3 power. Then, MG1 transmits
+voltages of BB2 and BB3 to the respective MGs as their BB
+reference voltages in the next episode. This process iterates
+through training process, ﬁnally achieving voltage consensus
+and global convergence.
+As mentioned above, the proposed multitraining framework
+achieves decomposition of dispatch problem while preventing
+exposure of local information. To further ensure data security
+and integrity for privacy protection, we incorporate a veriﬁcation
+mechanism: HMAC [22]. It can ensure the validity of senders’
+identitiesforsecureinformationsourceandchecktheintegrityof
+receivedmessagesbeforeeveryepisode’straining.Theproposed
+method leverages ofﬂine training, thus compromised training
+episodes detected through HMAC can be safely discarded while
+retaining previously validated policy updates. This fault-tolerant
+characteristic enables training continuity with minimal perfor-
+mance degradation.
+III. DISTRIBUTIONALLY ROBUST CONSTRAINED MARKOV
+DECISION PROCESS FORMULATION
+The multiagent optimization has been realized with the frame-
+work proposed in Section II. Thus, we only focus on each MG’s
+dispatch problem in this section. Let P, Q denote active and
+reactive power, E denote ESS energy, V, I denote voltage and
+current amplitudes, r, x denote resistance and reactance. The
+superscript MT,ESS,BB,PV,D denotes MT, ESS, BB, PV, and
+load. Operational constraints are speciﬁed using upper bound
+U, lower bound L, and ramp limit R. The subscript includes
+t, n, i, ij, representing dispatch time, MG index, bus index, and
+branch index. The set Ωn encompasses all buses and branches
+in MG n. Then, the dispatch model for MG n can be described
+as follows with xn = {P ESS
+n,[1,T ], QESS
+n,[1,T ], P MT
+n,[1,T ], QMT
+n,[1,T ]}:
+min
+xn Fn =
+T
+
+t=1
+⎧
+⎨
+⎩
+
+i∈Ωn
+
+ac
+i(P MT
+i,t )2 + bc
+iP MT
+i,t + cc
+i
+	
++λb
+t[P BB
+n,t]+ + λs
+t[P BB
+n,t]−
+⎫
+⎬
+⎭(6)
+s.t. (∀i, ij ∈Ωn,
+∀t ∈[1, T])
+P MT,L
+i
+≤P MT
+i,t ≤P MT,U
+i
+(7)
+QMT,L
+i
+≤QMT
+i,t ≤QMT,U
+i
+(8)
+−P MT,R
+i
+≤P MT
+i,t −P MT
+i,t−1 ≤P MT,R
+i
+(9)
+EL
+i ≤Ei,t ≤EU
+i
+(10)
+P ESS,L
+i
+≤P ESS
+i,t
+≤P ESS,U
+i
+(11)
+QESS,L
+i
+≤QESS
+i,t ≤QESS,U
+i
+(12)
+
+i→h
+Pih,t −
+
+j→i
+(Pji,t −rjiI2
+ji,t)
+= P MT
+i,t + P ESS
+i,t + P PV
+i,t −P D
+i,t
+(13)
+
+i→h
+Qih,t
+
+j→i
+(Qji,t−xjiI2
+ji,t)=QMT
+i,t +QESS
+i,t −QD
+i,t (14)
+V 2
+i,t −V 2
+j,t−2(rijPij,t+xijQij,t)+(r2
+ij+x2
+ij)I2
+ij,t =0
+(15)
+V 2
+i,tI2
+ij,t ≥P 2
+ij,t + Q2
+ij,t
+(16)
+(V L
+i )
+2 ≤V 2
+i,t ≤(V U
+i )
+2
+(17)
+0 ≤I2
+ij,t ≤(IU
+ij)
+2
+(18)
+P BB,L
+i
+≤P BB
+i,t ≤P BB,U
+i
+.
+(19)
+The objective (6) is to minimize MG’s total operation cost,
+including the buy cost and generation cost, by controlling the
+internal MTs and ESSs. The generation cost is deﬁned as a
+quadratic function of the active power, with the coefﬁcients
+ac, bc, cc. The constraints include MT constraints (7)–(9), ESS
+constraints (10)–(12), DistFlow power ﬂow constraints (13)–
+(16), and power ﬂow calculation results constraints (17)–(19).
+To reformulate the dispatch model, we propose DR-CMDP
+which can be expressed as (s, a, R, C, ρ, p). DR-CMDP com-
+bines the advantages of both CMDP and DR-MDP. Compared
+to traditional MDP [9], it incorporates the constraint function
+C to bound action space with safety constraints, and assumes
+additional distributions on state transition probability p to fur-
+ther enhance robustness. Formally, p is treated as an uncertain
+element, which follows a distribution μ in an ambiguity set. As
+a result, the proposed DR-CMDP can be deﬁned as follows.
+1) State s: The agent is required to issue dispatch commands
+in advance, and to mitigate the potential deviation caused
+by inaccurate predictions of photovoltaic (PV) generation
+and load demand. Thus, we deﬁne the state s based on the
+information available to the agent from the environment
+sn,t =
+{t, PMT
+n,t−1, En,t−1, PPV
+n,t−4,. . . , PPV
+n,t−1, P D
+n,t−4, . . . , P D
+n,t−1}.
+(20)
+In the training process, a dynamic mean and variance of
+all experienced states in replay buffer are maintained for
+continuous normalization of states.
+2) Action a: The action a is consistent with the dispatch
+commands in MG
+an,t = {P ESS
+n,t , QESS
+n,t , P MT
+n,t , QMT
+n,t}.
+(21)
+Actions are sampled from policy πθ generated by a DNN,
+where θ is the DNN’s network parameters to optimize
+at ∼πθ(at|st) = DNNθ(st).
+(22)
+3) Reward Function R: Based on the framework proposed
+in Section II, the reward function Rn,t for each agent
+consists of two components: 1) the operation cost reward
+RF
+n,t, which is aligned with the optimization objective
+to guide the training process of each agent; and 2) the
+coalition contribution reward Rφ
+n,t, which reﬂects the
+beneﬁts derived from the coalition game and ensures the
+convergence of multiagent training
+Rn,t = RF
+n,t + Rφ
+n,t
+(23)
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:36:45 UTC from IEEE Xplore.  Restrictions apply. 
+
+376
+IEEE TRANSACTIONS ON INDUSTRIAL INFORMATICS, VOL. 22, NO. 1, JANUARY 2026
+Fig. 3.
+Adversary generates the distribution µ, then successively sam-
+ples the probability p and the next state sn,t+1 in order to ﬁnd the
+worst-case dispatch scenario.
+RF
+n,t = −
+⎧
+⎨
+⎩
+
+i∈Ωn
+
+ac
+i(P MT
+i,t )2 + bc
+iP MT
+i,t + cc
+i
+	
++λb
+t[P BB
+n,t]+ + λs
+t[P BB
+n,t]−
+⎫
+⎬
+⎭
+(24)
+Rφ
+n,t = φn,t(N, vt).
+(25)
+4) Constraint Function C: To incorporate the operation con-
+straints into SRL, the constraint function C is derived
+from the limitations imposed by controllable units and
+power ﬂow. As RL can directly calculate power ﬂow
+after selecting actions, we only contain the power ﬂow
+calculation results constraints (17)–(19) in C, and then it
+can be formulated as
+xn,t ∈{P MT
+i,t , P ESS
+i,t , ΔP MT
+i,t = P MT
+i,t −P MT
+i,t−1,
+QMT
+i,t , QESS
+i,t ,Ei,t, Vi,t, Iij,t, PBB
+i,t }, ∀i, ij ∈Ωn
+(26)
+Cn,t =
+
+i,ij∈Ωn
+max(0, xn,t/xU
+n,t −1)
++ max(0, 1 −xn,t/xL
+n,t).
+(27)
+5) Initial State ρ: Given the deﬁnition of the state s, it is
+reasonable to assume a ﬁxed initial state ρ, determined by
+the previous day’s actions and environmental conditions.
+6) State Transition Probability p: As shown in Fig. 3, we
+assume additional distributional information on the tran-
+sition probability p and create an adversary agent with
+network parameters ϕ to simulate its distribution μ. The
+state s and reward R of the adversary agent are identical to
+those of the protagonist agent. To simplify the transition
+probability, the state sn,t is divided into two components:
+s1,n,t and s2,n,t
+s1,n,t = {t, P MT
+n,t−1, En,t−1, P PV
+n,t−4, . . . , P PV
+n,t−2,
+P D
+n,t−4, . . . , P D
+n,t−2}
+(28)
+s2,n,t = {P PV
+n,t−1, P D
+n,t−1}.
+(29)
+Then transition probability p(sn,t+1|sn,t, an,t) is determined
+by p(s1,n,t+1|sn,t, an,t) and p(s2,n,t+1|sn,t, an,t). As the ac-
+tions an,t have been transmitted to the environment at time
+t, the elements of s1,n,t+1 are all available from the environ-
+ment. Thus, p(s1,n,t+1|sn,t, an,t) = 1. The next time’s PV and
+load are only correlated with historical data and are indepen-
+dent of the actions, i.e., p(s2,n,t+1|sn,t, an,t) = p(s2,n,t+1|sn,t).
+In conclusion, the state transition probability is simpliﬁed to
+p(s2,n,t+1|sn,t), and we construct a Wasserstein generative ad-
+versarial network with gradient penalty (WGAN-GP) to simu-
+late its distribution
+s2,n,t+1 ∼p(s2,n,t+1|sn,t) ∼μϕ(p|sn,t)
+= WGAN −GPϕ(sn,t).
+(30)
+The adoption of WGAN as our adversary agent is motivated
+by its capability in empirical distribution ﬁtting and the superior-
+ity of Wasserstein distance. We leverage GAN’s approximation
+capacity to gain empirical distribution from historical data.
+Then, the critical design consideration lies in selecting appro-
+priate metric between generated distributions and the empirical
+distribution. Traditional metrics like KL/JS divergence fail to
+provide meaningful results when distributions’ support sets do
+not coincide, which is common as the adversary agent will be
+updated alternately with the protagonist agent. In contrast, the
+Wasserstein distance maintains effectiveness and differentia-
+bility regardless of support overlap conditions, and can fully
+reﬂect the geometric structures of distributions [23]. These
+characteristics are conducive to ﬁnding the worst-case dispatch
+scenario.
+IV. DISTRIBUTIONALLY ROBUST ADVERSARIAL SRL FOR
+ROBUST ECONOMIC DISPATCH
+A. Problem Deﬁnition
+1) Unconstrained
+Loss
+Function: Having
+endowed
+the
+agents with the ability to represent policies and perturb transition
+models, we are now poised to present an unconstrained version
+of adversarial loss function. In the kth episode, the protagonist
+agent and the adversary agent are updated by solving a max-min
+problem
+min
+ϕ max
+θ
+Eμϕ
+
+Eπθ,p∼μϕ
+ T
+
+t=0
+γtRt
+
+(31)
+where γ ∈[0, 1] is a discount coefﬁcient determining the bias
+towards the rewards received at different times.
+2) Constraints Deﬁnition: Problem (31) is ill-deﬁned due
+to the unconstrained nature of the parameterized policy and
+transition. To form a well-behaved optimization objective, we
+impose constraints to restrict search spaces and ensure conver-
+gence, containing policy safety constraint, policy trust region
+constraint, and transition Wasserstein distance constraint.
+According to (27), the operation constraints are satisﬁed when
+C ≤0. To ensure long-term effectiveness, a common approach
+is to constrain the expected discounted return
+JC(θ) = Eπθ
+ T
+
+t=0
+γtCt
+
+≤0.
+(32)
+However, constraints based on expectation only reﬂect the
+average risk of the policy whereas ignoring the variance, making
+it challenging to differentiate between risky and safe policies.
+Thus, our policy safety constraint replaces it with conditional
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:36:45 UTC from IEEE Xplore.  Restrictions apply. 
+
+PU et al.: DISTRIBUTED ROBUST DISPATCH FOR NMGS WITH COALITION GAME-GUIDED MULTIAGENT ADVERSARIAL SRL
+377
+value at risk (CVaR) with a risk level α
+CVaRα
+ T
+
+t=0
+γtCt
+
+≤0.
+(33)
+CVaR is the representative risk measure used to analyze the
+tails of distributions. Given the cumulative distribution function
+(cdf) on the discounted return X = T
+t=0 γtCt, CVaR is ob-
+tained by calculating the expectation only for the region where
+cdf value is above the conﬁdence level 1 −α
+CVaRα(X) = E [X |X ≥Icdf(1 −α)]
+(34)
+where Icdf is the inverse cdf. The CVaR risk measure demon-
+strates parameter-dependent characteristics: As α →1, CVaR
+degenerates to the conventional expected value. A decreasing
+α value indicates heightened focus on tail risk quantiﬁcation.
+When α →0, CVaR converges to the upper bound sup(X),
+achieving maximum safety margin and robustness at the expense
+of economic efﬁciency through overconservatism. Therefore,
+α = 0.05 is the most common choice, ensuring probabilistic
+security for 95% worst-case scenarios while tolerating extreme
+tail events beyond the 5% quantile.
+It is essential to ensure that the policy update step remains
+sufﬁciently appropriate to enhance training stability. To achieve
+this, we impose a constraint on the average Kullback-Leibler
+(KL) divergence DKL between the new policy and the old policy,
+known as the policy trust region constraint
+Eπθ [DKL(πθk−1, πθ)] ≤δ.
+(35)
+For a valid transition Wasserstein distance constraint set
+under predetermined uncertainty, our method assumes access
+to samples from a reference dynamics model (30) and bounds
+the learned transition in an average ε-Wasserstein ball around
+the initial distribution μ0 with Wasserstein distance DW
+Eμϕ [DW (μϕ0, μϕ)] ≤ε.
+(36)
+B. Solution Methodology
+1) Updating Protagonist Agent’s Actor Network: It is clear
+that the transition Wasserstein distance constraint is indepen-
+dent from θ. Given a ﬁxed set of ϕ, the parameters θ can be
+updated in the kth episode by solving the subproblem
+max
+θ
+Eπθ
+ T
+
+t=0
+γtRt
+
+s.t. CVaRα
+ T
+
+t=0
+γtCt
+
+≤0
+Eπθ [DKL(πθk−1, πθ)] ≤δ.
+(37)
+Based on the trust region optimization framework, the ob-
+jective can be reformulated using importance sampling and the
+advantagefunction.Thedetailderivationcanbefoundin[24].To
+promote sufﬁcient exploration, an additional entropy bonus H is
+added as suggested in [25]. Furthermore, we propose a gradient
+penalty method to enhance convergence. The disparity in unit
+generation costs is the most signiﬁcant factor inﬂuencing the
+MT power output, yet the cost coefﬁcients of other MGs remain
+unavailable. Therefore, we leverage the beneﬁts derived from
+the coalition game to indirectly represent these discrepancies,
+and penalize the policy gradient based on the rate of change of
+beneﬁt with respect to boundary power (to avoid division by
+zero, multiplication is used instead of division). As a result, the
+objective function is rewritten as
+max
+θ
+Et
+⎡
+⎢⎢⎢⎢⎢⎢⎣
+πθ(at|st)
+πθk−1(at|st) A
+πθk−1
+R
+(st, at)
+
+
+
+advantagefunction
+
+
+
+importancesampling
++ χ1 H(πθk−1(·|st))
+
+
+
+entropy
+−χ2 (φre
+k,t −φk−1,t)(P BB
+k,t −P BB
+k−1,t)ak,t[′P MT
+k,t
+′]
+
+
+
+gradientpenalty
+⎤
+⎥⎦
+(38)
+where φre
+k,t is the beneﬁt calculated under the assumption that
+theremainingMGshaveP BB
+k,t = P BB
+k−1,t toeliminatetheireffects.
+ak,t[′P MT
+k,t
+′] represents only this action’s gradient information is
+retained for penalty. χ1, χ2 are positive coefﬁcients.
+To make the CVaR constraint (34) tractable and computation-
+ally efﬁcient, we assume X follows a Gaussian distribution to
+utilize closed-form (39) as commonly used in [26] and [27]
+CVaRα(X) = μ + PDF(Icdf(1 −α))
+α
+σ
+(39)
+where μ, σ are the mean and variance of the Gaussian distribu-
+tion, pdf(·) is the probability density function (pdf). To get μ, σ,
+the square function is deﬁned as
+JS(θ) = Eπθ
+⎡
+⎣
+ T
+
+t=0
+γtCt
+2⎤
+⎦.
+(40)
+Then, the discounted return X follows the Gaussian distri-
+bution N(JC(θ), JS(θ) −JC(θ)2), and the policy safety con-
+straint can be approximated as:
+JC(θ) + pdf(Icdf(1 −α))
+α
+
+JS(θ) −JC(θ)2 ≤0
+(41)
+where JC(θ) and JS(θ) can also be reformulated using impor-
+tance sampling and the advantage function.
+Finally, CPO [28] provides an effective solution to the equiv-
+alent problem, which iteratively solves the problem with linear
+approximation on the objective (38) and policy safety constraint
+(41), as well as quadratic approximation on the policy trust
+region constraint (35). Moreover, we employ domain random-
+ization to randomly change MG topology before each episode’s
+training while maintaining radial structure, thereby enhancing
+the method’s adaptability to diverse topologies.
+2) Updating Protagonist Agent’s Critic Network: The critic
+network is also constructed as a DNN to approximate state value
+function V πθk , which is necessary for calculating advantage
+function Aπθk . We employ the generalized advantage estimation
+(GAE) for calculation, and use all MGs’ sharing information
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:36:45 UTC from IEEE Xplore.  Restrictions apply. 
+
+378
+IEEE TRANSACTIONS ON INDUSTRIAL INFORMATICS, VOL. 22, NO. 1, JANUARY 2026
+Fig. 4.
+Modiﬁed IEEE-123 system divided into three MGs.
+P BB
+t
+to address the inherent the non-stationarity problem of
+multiagent training. Choose A
+πθk
+R
+as an example
+ε
+πθk
+R,t = Rt + γV
+πθk
+R
+(st+1, P BB
+t+1) −V
+πθk
+R
+(st, P BB
+t
+)
+(42)
+A
+πθk
+R (st, at, P BB
+t
+) =
+T
+
+t=0
+(βγ)tε
+πθk
+R,t
+(43)
+where β is the GAE parameter. The critic network is trained to
+minimize the square-error loss using gradient descent (GD)
+Lcritic =
+
+t
+
+V
+πθk
+R
+(st+1, P BB
+t+1) −
+T
+
+t=0
+γtRt
+2
+.
+(44)
+3) Updating Adversary Agent: WGAN-GPs are separately
+established for PV and load. The ofﬂine process of the adversary
+agent is divided into two stages: pretraining and training.
+In the pretraining stage, the adversary agent uses historical
+data of PV or load to train WGAN-GP, ensuring that the ini-
+tial distribution μ0 generated by WGAN-GP under the initial
+parameters ϕ0 is close to the empirical distribution of the real
+transition probability obtained from historical data. The initial
+parameters ϕ0 serve as the starting point for the iteration process
+in the training stage.
+It is obvious that the policy safety constraint and policy trust
+region constraint are only applied to θ. Therefore, in the training
+stage, the adversary is tasked with solving the minimization
+problem subject to the transition Wasserstein distance con-
+straint. Similar to the protagonist, by employing importance
+sampling, advantage function, and entropy, the adversary can
+also transform the objective function as follows:
+min
+ϕ
+Et
+⎡
+⎢⎢⎢⎢⎢⎢⎣
+μϕ(pt|st)
+μϕk(pt|st)
+pμϕ(st+1|st)
+pμϕk (st+1|st) Aμϕk (st, at)
+
+
+
+advantagefunction
+
+
+
+importancesampling
+−χ3 H(μϕk(·|st))H(pμϕk (·|st))
+
+
+
+entropy
+⎤
+⎥⎦
+s.t. Et [DW (μϕ0(pt|st), μϕ(pt|st))] ≤ε.
+(45)
+Algorithm 1: The Proposed Method.
+GAE computes the advantage function only using the state s
+and the reward R, which are identical for both the protagonist
+and the adversary. Thus, there is no need for an additional
+critic network when uploading the adversary. Problem (45) can
+be effectively solved by optimizing the following Wasserstein
+distance-penalized loss function with PPO:
+Ladver = Et
+ μϕ(pt|st)
+μϕk(pt|st)
+pμϕ(st+1|st)
+pμϕk (st+1|st)Aπθk+1(st, at)
+−χ3H(μϕk(·|st))H(pμϕk (·|st))
++χ4 |DW (μϕ0(pt|st), μϕ(pt|st)) −ε|
+
+(46)
+where χ3, χ4 are positive coefﬁcients.
+Combining the framework proposed in Section II, the
+Pseudocode
+of
+the
+proposed
+method
+is
+presented
+in
+Algorithm 1.
+V. NUMERICAL RESULTS
+A. IEEE-123 Bus System
+To verify the effectiveness of the proposed method, the mod-
+iﬁed IEEE-123 bus system, as depicted in Fig. 4, is used for
+simulation. The system is divided into three MGs, each consist-
+ing of a MT, a PV panel, an ESS, and 4 controllable switches.
+NMGs can trade with superior grid at BB1, with the transfer
+power not exceeding 600 kW. The dispatch cycle spans 24 h,
+divided into 24 time intervals, each with a 1-h time step. The
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:36:45 UTC from IEEE Xplore.  Restrictions apply. 
+
+PU et al.: DISTRIBUTED ROBUST DISPATCH FOR NMGS WITH COALITION GAME-GUIDED MULTIAGENT ADVERSARIAL SRL
+379
+TABLE I
+OPERATION PARAMETERS OF DEVICES
+TABLE II
+TIME-OF-USE ELECTRICITY PRICES
+Fig. 5.
+Boxplots of historical data. (a) PV. (b) Load.
+device parameters are provided in Table I, while the time-of-use
+electricity prices are shown in Table II.
+B. Pretraining of Adversary Agent
+Before RL training, we pretrain the adversary agents to simu-
+late distributions of real PV generation and load demand, which
+are sourced from California Independent System Operator [29].
+The data are widespread adopted by other power system studies
+[30], [31], [32]. The box plots in Fig. 5 depict the variability
+in PV and load over the course of one year, with different
+MGs selecting varying peak values P peak in Table I. Meanwhile,
+the red points in box plots represent outliers, which have been
+removed before pretraining to enhance the reliability of the data.
+Fig. 6 illustrates the pretraining curves of a) WGAN-GPpv and
+b) WGAN-GPload, each including the Wasserstein distance, the
+generator loss and the discriminator loss. It is evident that both
+WGAN-GPs demonstrate excellent pretraining convergence,
+providing reasonable initial parameters ϕ0 for the training stage.
+C. Algorithm Comparison
+To demonstrate the advantages of the proposed algorithm,
+several model-driven optimization methods and RL methods are
+selected as benchmarks.
+(a)
+(b)
+Fig. 6.
+Pre-training results of WGAN-GPs: (a) PV and (b) load.
+TABLE III
+COMPARISON AMONG DIFFERENT METHODS
+1) Comparison With Model-Based Methods: Select second-
+order cone programming (SOCP), distributed model predictive
+control (DMPC) with 4 h optimization horizon, and DRO as
+benchmarks. Three dispatching cases are set for comparison.
+Case I: Dispatch under the initial scenario jointly generated by
+untrained adversary agents without ﬂuctuation.
+Case II: Dispatch under the worst-case scenario jointly gener-
+ated by well-trained adversary agents without ﬂuctuation.
+Case III: Dispatch and training under the scenario of Case I,
+assuming actual PV generation and load ﬂuctuate to match
+the worst-case scenario of Case II after real-time decision-
+making.
+The results are shown in Table III. Although SOCP can yield
+relatively lower optimal solutions in both Cases I and II, its
+dispatch decisions lead to power shortages when actual source
+and load ﬂuctuate like Cases III. These shortages can only be
+mitigated by costly purchases from the superior grid, resulting
+in a higher total cost.
+DMPC possesses feedback correction capability, enabling the
+utilization of real-time data to adjust source-load prediction
+results, thereby enhancing accuracy. In Case III, it demonstrates
+lower optimization costs compared to SOCP. By decomposing
+the global problem and employing rolling horizon optimization,
+DMPC reduces solution time despite requiring iterations for co-
+ordination. However, as deterministic optimization, its decision
+accuracy remains dependent on source-load prediction, which
+still reduces robustness.
+DRO,asamainstreamuncertaintyoptimizationmethod,mod-
+els RESs and load as stochastic variables. Through construct-
+ing ambiguity sets of their probability distributions based on
+historical data, it considers source-load ﬂuctuations by select-
+ing the worst-case distribution under chance constraints. This
+method eliminates reliance on prediction while achieving high
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:36:45 UTC from IEEE Xplore.  Restrictions apply. 
+
+380
+IEEE TRANSACTIONS ON INDUSTRIAL INFORMATICS, VOL. 22, NO. 1, JANUARY 2026
+TABLE IV
+PERFORMANCE OF METHODS UNDER DIFFERENT PREDICTION ERRORS
+(a)
+(b)
+Fig. 7.
+Training performance, including (a) operation costs and (b)
+constraint violations (CVs) calculated based on constraint function C.
+robustness. However, the introduction of stochastic variables
+andchanceconstraintssigniﬁcantlyincreasesmodelcomplexity,
+resulting in prolonged computation time.
+In contrast, the proposed method shifts the majority of the
+computational burden to ofﬂine training and constructs adver-
+sary agents based on DR-CMDP to account for the source-load
+uncertainty. Similarly prediction-independent, it attains robust-
+ness comparable to DRO while substantially reducing online
+decision time.
+Furthermore, we compare various degrees of prediction errors
+in Table IV. It is observed that at a prediction error of 6%, our
+method already exhibits better performance. In scenarios, which
+require lower robustness, the radius of the ambiguity set can be
+decreased, allowing our algorithm to outperform SOCP even
+under smaller prediction errors.
+2) Comparison With RL Methods: Select PPO, PPO-Lag,
+multiagent soft actor-critic (MASAC), MASAC-Lag, and ﬁrst
+order constrained optimization in policy space (FOCOPS) as
+benchmarks. Compare the training performance and practical
+implementation effectiveness in Case III. Results are shown in
+Fig. 7 and Table V, respectively.
+Traditional RL methods PPO and MASAC introduce opera-
+tion constraints as penalty terms in the reward function, which
+provides limited constraint enforcement. Thus, these methods
+often violate constraints during training to enhance performance
+and frequently lead to constraint violations (CVs) in practical
+implementation.
+SRL methods PPO-Lag, MASAC-Lag, and FOCOPS aim to
+learn policies that minimum operation costs while satisfying
+safety constraints. Although these methods exhibit relatively
+low CVs compared to RL, there still exist CVs. Furthermore,
+these methods assume that source and load follow predeﬁned
+TABLE V
+PRACTICAL EFFECTIVENESS OF DIFFERENT RL METHODS
+(a)
+(b)
+Fig. 8.
+Training results, including (a) rewards and (b) Wasserstein
+distance.
+(a)
+(b)
+Fig. 9.
+Training results of different seasons, including (a) rewards dur-
+ing training and (b) the worst-case scenarios generated by well-trained
+adversaries.
+distributions, resulting in insufﬁcient decision robustness under
+source-load ﬂuctuations in practical implementation.
+TheproposedmethodemploysCVaRconstrainedSRLtotrain
+the protagonist while constructing adversary to simulate the
+distribution characteristics of source-load ﬂuctuations, which
+guarantee both safety and robustness. The lowest cost without
+CV in Case III veriﬁes its advantages, and the comparison with
+its non-CVaR implementation demonstrates the effectiveness of
+the CVaR constraint.
+D. Training Performance and Operation Outcomes
+The training results are presented in Fig. 8. Fig. 8(a) shows
+the training curves of overall reward under three conditions: 1)
+alternately training the protagonist and the adversary, 2) training
+the protagonist alone, and 3) training the adversary alone. The
+protagonist works to increase the reward, whereas the adversary
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:36:45 UTC from IEEE Xplore.  Restrictions apply. 
+
+PU et al.: DISTRIBUTED ROBUST DISPATCH FOR NMGS WITH COALITION GAME-GUIDED MULTIAGENT ADVERSARIAL SRL
+381
+(a)
+(b)
+Fig. 10.
+Effectiveness of the proposed framework, including (a) effec-
+tiveness of the coalition game-based guidance theory and (b) the data
+integrity ensurance.
+(a)
+(b)
+(c)
+(d)
+Fig. 11.
+Optimization results of daily dispatch, including (a) networked
+MGs, (b) MG1, (c) MG2, and (d) MG3.
+Fig. 12.
+Optimization results of system voltage. Voltage amplitudes are
+maintained at [0.968, 1.050] p.u.
+aims to minimize the reward in search of the worst-case dis-
+patch scenario. Fig. 8(b) illustrates the Wasserstein distance of
+the adversary, indicating that both WGAN-GPs can ensure the
+transition Wasserstein distance constraint.
+The adversary agents trained above are pretrained using a
+full year’s source and load data. To further demonstrate the
+TABLE VI
+PERFORMANCE OF METHODS UNDER DIFFERENT TOPOLOGIES
+method’s adaptability to seasonal variations in RESs and load,
+we conduct separate pretraining and training sessions using data
+from each season. The training results shown in Fig. 9(a), and
+the worst-case scenarios generated by adversaries are presented
+in Fig. 9(b). It is obvious that the method can handle ﬂuctuations
+in energy availability due to seasonal changes.
+To validate the effectiveness of the coalition game-guided
+multiagent framework, we train agents without coalition game
+guidance as a control group in Fig. 10(a). The ablation study
+conﬁrms that removing the guidance leads to degraded training
+convergence, including slower convergence rate and worse ﬁnal
+reward. Furthermore, to verify the convergence of multiagent
+training under HMAC veriﬁcation, we assume that HMAC de-
+tects data corruption once every 10 training episodes. Fig. 10(b)
+indicates that the compromised training episodes can be safely
+discarded, ensuring the data integrity.
+Randomly select a worst-case scenario for daily dispatch
+veriﬁcation. The results for a) networked MGs, b) MG1, c)
+MG2, and d) MG3 are exhibited in Fig. 11. It is assumed
+that the costs associated with PV generation and ESSs are
+negligible, and the unit generation cost of MG1 is more eco-
+nomical than that of the other MGs. Speciﬁc price parameters
+are detailed in Table I. As a result, when the load exceeds
+the PV generation, the networked MGs prioritize meeting the
+demand by ﬁrst utilizing PV and ESSs, followed by the MT
+of MG1, and ﬁnally addressing any deﬁcits through the MT of
+MG2 or by procuring additional power from the superior grid.
+On the other hand, when PV generation exceeds the load, the
+excess energy is ﬁrst used to meet demand and charge the ESSs.
+Any remaining surplus electricity is sold to superior grid for
+proﬁt.
+The voltage amplitudes of all three MGs are shown in Fig. 12,
+which further veriﬁes the safety of the proposed method.
+To validate the algorithm’s performance under topological
+variations, we conducted tests on 5 randomly selected radial
+topologies without retraining. Table VI shows that the proposed
+method achieves safe and robust decision-making, even when
+confronted with network reconﬁgurations.
+E. Scalability Tests
+We construct a 716-bus test MG based on a practical system
+shown in Fig. 13, and increase controllable units by conﬁguring
+5 MTs and 5 ESSs. A test system comprising 6 such MGs is
+established to validate the scalability of our algorithm in larger-
+scale networks with more agents and controllable units.
+To determine when to employ the A-S value method, we
+compare computation times under varying numbers of agents.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:36:45 UTC from IEEE Xplore.  Restrictions apply. 
+
+382
+IEEE TRANSACTIONS ON INDUSTRIAL INFORMATICS, VOL. 22, NO. 1, JANUARY 2026
+Fig. 13.
+716-bus test MG.
+(a)
+(b)
+Fig. 14.
+Results of (a) time comparison and (b) training performance.
+TABLE VII
+PERFORMANCE OF METHODS UNDER DIFFERENT TEST SYSTEMS
+Using the time of A-S method with 2 agents as the baseline, the
+comparison results in Fig. 14(a) demonstrate that the time of the
+Shapley method increases signiﬁcantly faster when the number
+reaches 6 or more. Consequently, we adopted A-S value method
+to reduce computation time in such conditions.
+The training performance of the proposed method in the
+4296-bus system is shown in Fig. 14(b), while its practical
+decision-making outcomes are summarized in Table VII. The
+results indicate that the proposed method maintains safe and
+robust performance even in more complex systems.
+VI. CONCLUSION
+In this article, a distributed economic dispatch method for
+NMGs is proposed to deal with DERs’ ﬂexibility, operation
+constraints, and source-load uncertainty under privacy protec-
+tion. For each MG, a distributionally robust adversarial SRL
+methodisproposed.WeemployCVaRconstrainedSRLtosafely
+train the protagonist while constructing adversary to assume
+additional distributional information on the state transition prob-
+ability, which is strongly correlated with source-load ﬂuctuation.
+By fully considering the source-load uncertainty to conﬁgure the
+adversary, our method is more suitable for MG robust dispatch.
+To realize multiagent convergence under privacy protection, a
+coalition game-guided training framework is constructed with
+HMAC. The coalition game ensures stability of NMGs only
+using boundary power, and the HMAC guarantee data integrity
+for complete privacy protection. The numerical results verify the
+effectiveness. However, the framework’s dependence on accu-
+rate historical data for WGAN-GP pretraining and its scalability
+to larger network considering the hierarchical structure of actual
+DS are still limited. Future research directions should incor-
+porate hierarchical coordination mechanisms with distribution
+system operators to address these limitations.
+REFERENCES
+[1] W. Chen, Z. Wang, H. Dong, J. Mao, and G.-P. Liu, “Privacy-preserving
+distributed economic dispatch of microgrids over directed networks via
+State decomposition: A fast consensus algorithm,” IEEE Trans. Ind. In-
+form., vol. 20, no. 3, pp. 4092–4102, Mar. 2024.
+[2] W. Fu, Y. Gao, Y. Zhang, S. Hu, and Y. Huang, “A distributed time-varying
+inherentprivacy-preservingconsensusalgorithmforintegratedenergysys-
+tems,” IEEE Trans. Ind. Inform., vol. 21, no. 2, pp. 1180–1189, Feb. 2025,
+doi: 10.1109/TII.2024.3475418.
+[3] K. Vemalaiah, D. Khatod, and N. Padhy, “Synergistic day-ahead schedul-
+ing framework for smart distribution grid under uncertainty,” IEEE Trans.
+Ind. Inform., vol. 20, no. 7, pp. 9681–9691, Jul. 2024.
+[4] A. Rajaei, S. Fattaheian-Dehkordi, M. Fotuhi-Firuzabad, M. Moeini-
+Aghtaie, and M. Lehtonen, “Developing a distributed robust energy Man-
+agement framework for active distribution systems,” IEEE Trans. Sustain.
+Energy, vol. 12, no. 4, pp. 1891–1902, Oct. 2021.
+[5] X.Li,L.Ding,andZ.Kong,“Distributedrobustlow-carbonoptimalenergy
+management in islanded microgrids,” IEEE Trans. Ind. Inform., vol. 20,
+no. 7, pp. 9803–9813, Jul. 2024.
+[6] Y. Wen, Z. Hu, X. Chen, Z. Bao, and C. Liu, “Centralized distributionally
+robust chance-constrained dispatch of integrated transmission-distribution
+systems,” IEEE Trans. Power Syst., vol. 39, no. 2, pp. 2947–2959,
+Mar. 2024.
+[7] L. Li, C. Ning, H. Qiu, W. Du, and Z. Dong, “Online data-stream-driven
+distributionally robust optimal energy management for hydrogen-based
+multimicrogrids,” IEEE Trans. Ind. Inform., vol. 20, no. 3, pp. 4370–4384,
+Mar. 2024.
+[8] S. Saﬁri, A. Nikoofard, M. Khosravy, and T. Senjyu, “Multi-agent
+distributed reinforcement learning algorithm for free-model economic-
+environmental power and CHP dispatch problems,” IEEE Trans. Power
+Syst., vol. 38, no. 5, pp. 4489–4500, Sep. 2023.
+[9] C. Mu et al., “Multi-objective interval optimization dispatch of microgrid
+via deep reinforcement learning,” IEEE Trans. Smart Grid, vol. 15, no. 3,
+pp. 2957–2970, May 2024.
+[10] S. Liu, S. Han, and S. Zhu, “Reinforcement learning-based energy trading
+and management of regional interconnected microgrids,” IEEE Trans.
+Smart Grid, vol. 14, no. 3, pp. 2047–2059, May 2023.
+[11] Y. Wang, M. Xiao, Y. You, and H. V. Poor, “Optimized energy dispatch for
+microgrids with distributed reinforcement learning,” IEEE Trans. Smart
+Grid, vol. 15, no. 3, pp. 2946–2956, May 2024.
+[12] Q. Zhang, K. Dehghanpour, Z. Wang, F. Qiu, and D. Zhao, “Multi-agent
+safe policy learning for power management of networked microgrids,”
+IEEE Trans. Smart Grid, vol. 12, no. 2, pp. 1048–1062, Mar. 2021.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:36:45 UTC from IEEE Xplore.  Restrictions apply. 
+
+PU et al.: DISTRIBUTED ROBUST DISPATCH FOR NMGS WITH COALITION GAME-GUIDED MULTIAGENT ADVERSARIAL SRL
+383
+[13] R. Lu et al., “SMA-PDPPO: Safe multiagent primal-dual deep reinforce-
+ment learning for industrial parks energy trading,” IEEE Trans. Ind.
+Inform., vol. 21, no. 3, pp. 2640–2649, Mar. 2025.
+[14] Y. Xia, Y. Xu, and X. Feng, “Hierarchical coordination of networked-
+microgrids toward decentralized operation: A safe deep reinforce-
+ment learning method,” IEEE Trans. Sustain. Energy, vol. 15, no. 3,
+pp. 1981–1993, Jul. 2024.
+[15] H. Xu and S. Mannor, “Distributionally robust Markov decision pro-
+cesses,” in Proc. Adv. Neural Inf. Process. Syst., 2010, Art. no. 23.
+[16] L. Pinto et al., “Robust adversarial reinforcement learning,” in Proc. Int.
+Conf. Mach. Learn., 2017, pp. 2817–2826.
+[17] P. Huang et al., “Robust reinforcement learning as a Stackelberg game via
+adaptively-regularized adversarial training,” in Proc. 31st Int. Joint Conf.
+Artif. Intell., 2022, pp. 3099–3106.
+[18] Z. Zhang et al., “Robust deep reinforcement learning in robotics via
+adaptive gradient-masked adversarial attacks,” 2025, arXiv:2503.20844.
+[19] M.BowlingandM.Veloso,“Rationalandconvergentlearninginstochastic
+games,” in Proc. 17th Int. Joint Conf. Artif. Intell., 2001, pp. 1021–1026.
+[20] S. Nikkhah, A. Allahham, M. Royapoor, J. W. Bialek, and D. Giaouris,
+“Optimising building-to-building and building-for-grid services under un-
+certainty: A robust rolling horizon approach,” IEEE Trans. Smart Grid,
+vol. 13, no. 2, pp. 1453–1467, Mar. 2022.
+[21] Q. Zhou, M. Shahidehpour, T. Sun, D. Feng, and M. Yan, “Cooperative
+game for carbon obligation allocation among distribution system operators
+to incentivize the proliferation of renewable energy,” IEEE Trans. Smart
+Grid, vol. 10, no. 6, pp. 6355–6365, Nov. 2019.
+[22] H. Krawczyk, R. Canetti, and M. Bellare, “HMAC: Keyed-hashing for
+message authentication,” RFC 2104, Internet Engineering Task Force,
+Feb. 1997.
+[23] V. Panaretos and Y. Zemel, “Statistical aspects of Wasserstein distances,”
+Annu. Rev. Statist. Appl., vol. 6, no. 1, 2019, Art. no. 12663.
+[24] J. Schulman et al., “Trust region policy optimization,” Comput. Sci., vol.
+9, pp. 1889–1897, 2015.
+[25] J. Schulman et al., “Proximal policy optimization algorithms,” 2017,
+arXiv:1707.06347.
+[26] Y. Tang, J. Zhang, and R. Salakhutdinov, “Worst cases policy gradients,”
+in Proc. Conf. Robot Learn., 2020, pp. 1078–1093.
+[27] D. Kim and S. Oh, “TRC: Trust region conditional value at risk for
+safe reinforcement learning,” IEEE Robot. Autom. Lett., vol. 7, no. 2,
+pp. 2621–2628, Apr. 2022.
+[28] J. Achiam, D. Held, A. Tamar, and P. Abbeel, “Constrained policy opti-
+mization,” in Proc. 34th Int. Conf. Mach. Learn., 2017, pp. 22–31.
+[29] OASIS, “California ISO open access same-time information system,”
+(n.d.). [Online]. 2025. Available: http://oasis.caiso.com
+[30] H. Li and H. He, “Learning to operate distribution networks with safe
+deep reinforcement learning,” IEEE Trans. Smart Grid, vol. 13, no. 3,
+pp. 1860–1872, May 2022.
+[31] N. Costilla-Enriquez, M. A. Ortega-Vazquez, A. Tuohy, A. Motley, and
+R. Webb, “Operating dynamic reserve dimensioning using probabilistic
+forecasts,” IEEE Trans. Power Syst., vol. 38, no. 1, pp. 603–616, Jan. 2023.
+[32] E. Samani, M. Kohansal, and H. Mohsenian-Rad, “A data-driven conver-
+gence bidding strategy based on reverse engineering of market partici-
+pants’ performance: A case of California ISO,” IEEE Trans. Power Syst.,
+vol. 37, no. 3, pp. 2122–2136, May 2022.
+Tianjiao Pu (Senior Member, IEEE) received
+the M.S. degree in electrical engineering from
+Tianjin University, Tianjin, China, in 1997.
+He is a Doctoral Supervisor and Professorate
+Senior Engineer. He is the Director with the Arti-
+ﬁcial Intelligence Application Research Depart-
+ment, China Electric Power Research Institute,
+a Fellow of IET, a Senior Member of IEEE, a
+Senior Member of CSEE, Vice-Chairman and
+Secretary General of the Artiﬁcial Intelligence
+Committee of CSEE, and the Deputy Editor-in-
+Chief of IET Smart Grid. He is currently with China Electric Power
+Research Institute. His research interests include research and man-
+agement of power dispatching automation, smart grid simulation, active
+distribution network, artiﬁcial intelligence, and other ﬁelds.
+Shuai Du received the B.S. degree in electrical
+engineering from North China Electric Power
+University, Beijing, China, in 2020. He is cur-
+rently working toward the Ph.D. degree in power
+system automation with China Electric Power
+Research Institute, Beijing, China.
+His research interests include the applica-
+tions of reinforcement learning in optimization
+dispatch of active distribution network.
+Lei Dong (Member, IEEE) received the M.S.
+degree in electrical engineering and automation
+from Tianjin University, Tianjin, China, in 1996.
+She is currently an Associate Professor and
+master supervisor with School of Electrical and
+Electronic Engineering, North China Electric
+Power University, China. Her research inter-
+ests include power system analysis and control,
+power system optimal dispatch and operation
+control, and application of artiﬁcial intelligence
+in power system.
+Ji Qiao received the Ph.D. degree in electrical
+engineering from Tsinghua University, Beijing,
+China, in 2018.
+He is currently with the China Electric Power
+Research Institute, Beijing, China. His research
+interests include Big Data and AI applications in
+power system analysis and operation.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:36:45 UTC from IEEE Xplore.  Restrictions apply. 

@@ -1,0 +1,1460 @@
+Robustness Testing for Multi-Agent Reinforcement
+Learning: State Perturbations on Critical Agents
+1st Ziyuan Zhou
+Department of Computer Science
+Tongji University
+China, Shanghai
+2nd Guanjun Liu
+Department of Computer Science
+Tongji University
+China, Shanghai
+Abstract—Multi-Agent Reinforcement Learning (MARL) has
+been widely applied in many fields such as smart traffic and
+unmanned aerial vehicles. However, most MARL algorithms
+are vulnerable to adversarial perturbations on agent states.
+Robustness testing for a trained model is an essential step for
+confirming the trustworthiness of the model against unexpected
+perturbations. This work proposes a novel Robustness Testing
+framework for MARL that attacks states of Critical Agents
+(RTCA). The RTCA has two innovations: 1) a Differential
+Evolution (DE) based method to select critical agents as victims
+and to advise the worst-case joint actions on them; and 2)
+a team cooperation policy evaluation method employed as the
+objective function for the optimization of DE. Then, adversarial
+state perturbations of the critical agents are generated based on
+the worst-case joint actions. This is the first robustness testing
+framework with varying victim agents. RTCA demonstrates
+outstanding performance in terms of the number of victim agents
+and destroying cooperation policies.
+I. INTRODUCTION
+Multi-Agent Reinforcement Learning (MARL) is wildly
+utilized in Multi-Agent Systems (MAS) such as smart trans-
+portation [1] and unmanned aerial vehicles [2], [3] as a result
+of its superior performance in team decision-making problems.
+As the number of agents increases and the joint-action space
+of MAS grows exponentially, MARL faces the issues of high
+combinatorial complexity and poor scalability. Centralized
+Training and Decentralized Execution (CTDE) is currently the
+more popular framework to address these problems, in which,
+all agents share the global information in the training process,
+while in the execution phase, each agent makes independent
+decisions based on its own perceptions and policy. Value
+decomposition networks (VDN) [4] and monotonic value
+function factorization (QMIX) [5] are classical CTDE-based
+MARL. They introduce a network in the training process to
+guarantee the Individual-Global-Max (IGM) [6].
+However, it is shown that the agents trained by these
+classical MARL are sensitive to state perturbation [7], [8],
+[9], [10]. In reality, the states of agents are often perturbed
+due to the presence of sensor noise and malicious attacks.
+Furthermore, state perturbations to some of the agents can not
+only mislead the decision of victims but also have an impact
+on the cooperative policy of the team. Robustness testing for
+a model trained by MARL is an essential step for confirming
+the trustworthiness of MAS against unexpected perturbations.
+The perturbation types are so diverse that it is impossible
+to cover all possible cases during testing. Consequently, it
+is vital to generate perturbation states via adversarial attacks
+that have the most significant impact on team collaboration.
+Intuitively, the more stealthy and disruptive the attack is, the
+more potential it is for robustness testing.
+There has been a lot of robustness testing technique on
+Single-Agent Reinforcement Learning (SARL), such as using
+the adversarial attack based on the gradient of the neural
+network [11], [12] or constructing an adversary as an RL
+agent [13] to generate the adversarial observation. However,
+there have been a few related research to test the robustness
+of MARL against state perturbation of agents. Zhou et al. [10]
+demonstrate that the adversary for MARL can be formulated
+as the Stochastic Game (SG) and there exists the joint optimal
+adversarial state. But the influence of individual policy on
+teams is not considered during the attack in [7], [10]. They
+only generate adversarial observation misleading the victim
+to take actions that are not within expectations, which may
+not lead to the failure of team tasks. The methods in [14],
+[15], [9] consider the effect of individual actions on teams
+by constructing the adversary as SARL or MARL agent.
+However, the adversary is trained at the assumption that the
+victim is determined. When the victim changes, it needs to be
+retrained.
+Compared with single-agent situations, multi-agent situa-
+tions face the following challenges:
+1) The victims are uncertain which makes the robustness
+testing process can not formulate as SG. The testing
+process becomes more difficult due to this uncertainty.
+2) An agent doing a sub-optimal action does not necessarily
+lead to team failure.
+3) The centralized training process is usually unknown and
+not be employed during testing. Besides, centralized
+training is based on the assumption that all agents make
+the optimal decision. As a result, it may not evaluate
+accurately the team reward when the agent takes the sub-
+optimal action. How to estimate the team reward for the
+adversary is important.
+Facing these challenges, this work aims to propose a stealthy
+and effective attack method on states of Critical Agents for
+Robustness Testing (RTCA) which has the following novel
+contributions:
+Under review
+arXiv:2306.06136v1  [cs.LG]  9 Jun 2023
+
+1) We propose a novel robust testing framework that has two
+steps. The first step based on Differential Evolution (DE)
+aims to select critical agents as victims and determine
+the worst joint actions they should take to decrease
+the accumulated reward of the team. The second step
+is a targeted attack to compute adversarial observation
+according to the outcomes of the first step.
+2) We introduce a Sarsa-based approach for learning the
+joint action-value function MARL to evaluate the team
+cooperation policy. The function has a good representa-
+tion of the relationship between individual actions and
+team accumulated rewards and is used as the objective
+function for the optimation of DE.
+3) The results demonstrate that RTCA achieves superior
+performance when attacking a smaller number of agents.
+RTCA is more suitable for robustness testing of models
+trained by MRAL due to its stealthiness and effectiveness.
+II. PRELIMINARY
+In this section, we introduce Decentralized Partially Observ-
+able Markov Processes (Dec-POMDPs) and State-Adversiral
+Stochastic Games (SASG). Important concepts are described
+as follows:
+• Adversarial perturbation aims to mislead the actions of
+agents to minimize the expected cumulative discount
+reward of the team.
+• Clean observation is generated from the environment
+state.
+• Adversarial observation is an observation after adding an
+adversarial perturbation to a clean observation.
+• The adversary aims to generate the adversarial perturba-
+tion.
+• Victim is the agent that observation is perturbed by the
+adversary, i.e., attacked by the adversary.
+• Critical agents are those whose actions have the greatest
+impact on the team at a time step.
+A. Decentralized Partially Observable Markov Processes
+A Dec-POMDP [16] is defined as a tuple
+
+S, {Ai}i∈N , {Oi}i∈N , N, Z, p, r, γ
+
+where N is the set of agents, the number of agents is
+N
+∆= |N|, each agent i ∈N
+∆={1, · · · , N}, S is the state
+set of the environment, the state s ∈S, ai ∈Ai is the
+action of agent i, Ai is the action space of the agent i,
+oi ∈Oi drawn according to observation function Z (s, a) :
+S × A1 × · · · × AN →O1 × · · · × ON is the observation
+of agent i, Oi is the observation space of agent i, r is the
+immediate reward, for each agent r1 = · · · = rN = r,
+R (s, a, s′) : S × A1 × · · · × AN × S →R is the reward
+function of all agents, p : S × A1 × · · · × AN →∆(S) is the
+transition probability based on the joint action a and γ ∈[0, 1]
+is the discount factor over time. The environment is the partial
+observation, thus, the observation of the agent is equal to the
+agent state in this paper.
+It is NEXP-complete to solve Dec-POMDPs due to the
+combinatorial problem [17]. CTED is a potential learning
+paradigm to solve Dec-POMDPs. There has a centralized
+controller to evaluate the team cooperation policy based on
+the environmental state in the training process. And in the
+execution process, each agent makes action according to its
+observation. One of the most classical solutions is via Q-
+function factorization, including VDN [4] and QMIX [5]. The
+factorization needs to satisfy the IGM condition [6], i.e.,
+arg max
+a
+Qjt (τ, a) =
+
+
+
+arg max
+a1 Q1
+ τ 1, a1
+· · ·
+arg max
+aN QN
+ τ N, aN
+
+
+,
+(1)
+where τ ∈T 1 × · · · × T N is the joint action-observation
+histories, T i is the set of action-observation histories of agent
+i, Qjt : T 1 × · · · × T N × A1 × · · · × AN →R is the joint
+action-value function to evaluate the team cooperation policy.
+VDN and QMIX are methods to provide additivity and
+monotonicity two sufficient conditions for IGM, respectively:
+Qjt (τ, a) =
+N
+X
+i=1
+Qi  τ i, ai
+,
+(2)
+∂Qjt (τ, a)
+∂Qi (τ i, ai) ≥0, 0 ≤i < N.
+(3)
+B. State-Adversiral Stochastic Game
+An SASG [10] is defined as a tuple
+
+S, {Ai}i∈N , {Bi}i∈M, {ri}i∈N , M, N, p, γ
+
+where Bi is the set of adversarial states of agent i, M ⊆
+N is the set of victim agents and the number of victims is
+M
+∆= |M|. Assume that the adversarial perturbation vi(s) of
+agent i is deterministic vi : S →Bi. The value and action-
+value functions of SASG are
+bV i
+π◦v (s) = Eπ◦v,p
+ ∞
+X
+k=0
+γkri
+t+k+1|st = s
+!
+,
+(4)
+bQi
+π◦v (s, a) = Eπ◦v,p
+ ∞
+X
+k=0
+γkri
+t+k+1|st = s, at = a
+!
+, (5)
+where π ∈Q1 × · · · × QN : S →A1 × · · · × AN is the
+joint policy, πi ∈Qi : S →Ai is the policy of agent i, Qi
+is the policy space of agent i, v
+∆=  vi, · · · , vM
+denotes the
+joint adversarial perturbation and π◦v denotes the joint policy
+under the joint adversarial perturbation.
+The value function and the action-value function can re-
+spectively be written as follows:
+bV i
+π◦v∗(s) = min
+vi
+bV i
+π◦(vi,v−i
+∗) (s) ,
+(6)
+bQi
+π◦v∗(s, a) = min
+vi
+bQi
+π◦(vi,v−i
+∗) (s, a) ,
+(7)
+where v∗
+∆=  v1
+∗, · · · , vM
+∗
+
+is the joint optimal adversarial
+perturbation, vi is an arbitrary valid adversarial perturbation
+
+Environment
+Agent 1
+ 
+ 
+Differential Evolution
+Adversarial Observation 
+Generator
+Agent 2
+Agent N
+Agent 1
+Agent  2
+Victim  N-1
+Victim N
+Sarsa-based
+
+,
+i
+i
+a
+
+
+
+1
+,
+,
+,
+N
+jt
+Q
+s a
+a
+
+jt
+Q
+1
+,
+,
+,
+,
+N
+s a
+a
+r
+
+Fig. 1. The illustration of RTCA.
+and v−i
+∗
+∆=  v1
+∗, · · · , vi−1
+∗
+, vi+1
+∗
+, · · · , vM
+∗
+
+. The goal of the joint
+optimal adversarial perturbation is to minimize the expected
+cumulative discount reward of every victim agent.
+In [10], the properties of SASG are discussed, including
+the existence and contraction of the joint optimal adversarial
+perturbation. And they point out that solving the joint optimal
+adversarial perturbation is equal to solving an SG which can be
+solved by MARL. Therefore, there is some research to solve
+this one via MARL [14], [15], [9]. However, the victim agents
+are certain in the training process. If the victims are changing,
+MARL models have to retrain. We solve this problem in the
+next section.
+III. ROBUSTNESS TESTING ON CRITICAL AGENT STATES
+In this section, we define agent State Adversarial Dec-
+POMDPs (SA-Dec-POMDPs) and propose a novel framework
+to solve it.
+Definition 1 (SA-Dec-POMDPs): An SA-Dec-POMDP is
+defined as a tuple
+
+S, {Ai}i∈N , {Oi}i∈N , {Bi}i∈M, N, M, Z, r, p, γ
+
+where B is the set of the adversarial observation of agent i.
+Assume that the adversarial perturbation vi(τ i) of agent i is
+a deterministic function vi : T i →Bi.
+Similar to SASG, the adversary aims to minimize the expected
+cumulative discount reward of the team via manipulating the
+observation of the victim. The value function and the action-
+value function of the adversary can be written as follows:
+bV i
+πi◦vi∗
+ τ i
+= min
+vi
+bV i
+πi◦vi
+ τ i
+,
+(8)
+bQi
+πi◦vi
+∗
+ τ i, ai
+= min
+vi
+bQi
+π◦vi
+ τ i, ai
+.
+(9)
+Obviously, solving the optimal joint policy for the adversary
+in SA-Dec-POMDPs is equivalent to solving the optimal
+joint policy for the agent in Dec-POMDPs. The action space
+of the agent in Dec-POMDPs is the adversarial observation
+space of the adversary in SA-Dec-POMDPs. Given this, we
+can leverage CTDE-based MARL to address this problem.
+However, it should be noted that victim agents are known
+with certainty, including the number of victims M and their
+respective indexes. When the value of M changes, the SA-
+Dec-POMDP also changes, it is necessary to retrain the
+adversary agent via CTDE-based MARL.
+Not only in SA-Dec-POMDPs but SG and SASG, the set
+of agents N is a certainty. And learning a MARL model
+to generate adversarial observations is challenging when the
+space of one BM is large. In this paper, we propose a novel ro-
+bustness testing framework, i.e., solving of SA-Dec-POMDPs
+named RTCA as shown in Figure 1 that can choose critical
+agents from the set of N as the set of victims M and provide
+guidance on the worst joint action of victims, followed by
+generating adversarial observations on them. Furthermore, our
+RTCA does not require any training, allowing for a variable
+set of victims M to be used.
+A. Selection of critical agents and worst actions
+We present a method based on DE for selecting critical
+agents and worst joint actions in MARL. The goal of this
+method is to identify those agents and their actions that have
+the greatest influence on the overall performance of the system.
+Motivated by CTDE, if the joint action-value function is
+known for the adversary, the objective of the adversary is as
+follows:
+vde (τ) = arg
+min
+M,{ai
+i∈M} Qjt
+ τ, aM, a−M
+(10)
+where aM and a−M are the joint action of the victim and the
+other agents, respectively. We employ DE to accomplish this
+objective. The DE algorithm is a global optimization algorithm
+[18], [19], [20] that the concept of population evolution
+for exploring the global optimal solution and is extensively
+applied to solve complex optimization problems. It maintains
+a population of candidate solutions, which are represented
+as vectors in a high-dimensional search space. During each
+iteration of the DE algorithm, new candidate solutions are
+generated by perturbing the vectors in the population and
+combining them using a simple arithmetic operator. The fitness
+of candidate solutions is then evaluated using the objective
+function, and the best ones are selected to form the next
+generation of the population.
+The main advantage of the DE algorithm is the use of a
+differential mutation operator, which perturbs the candidate
+solutions in a way that is guided by the difference between two
+randomly selected vectors from the population. This operator
+allows the algorithm to explore the search space efficiently
+and to converge to a high-quality solution in a relatively short
+time.
+In this paper, we encode the critical agent and the corre-
+sponding worst joint action into a candidate solution. One
+candidate solution contains the actions of M victims and that
+
+Algorithm 1: Selection of critical agents and worst
+actions
+Input: Objective function Qjt, the joint
+action-observation histories τ, the joint policy
+of agents π, the value Qjt (τ, a), population
+size 400, scaling factor F = 0.5, crossover rate
+CR, maximum number of iterations T
+Output: Dbest ∈D
+∆={M, {ˆai}i∈M}
+1 Initialize population D with 400 random solutions; and
+Evaluate the fitness of each solution in the population
+based on Qjt; while t = 1, 2, · · · , T do
+2
+for each solution xj ∈D do
+3
+Randomly select three distinct solutions Dd1,
+Dd2 and Dd3 from D;
+4
+Generate a mutant vector Dj according to (11);
+5
+Generate a trial vector uj by performing a
+binary crossover between xj and Dj with
+crossover rate CR;
+6
+Generate joint action of the victim agent aM
+u
+and aM
+D based on uj and Dj, respectively.
+7
+Evaluate the fitness of uj;
+8
+if Qjt(τ, aM
+u , a−M) < Qjt(τ, aM
+D , a−M) then
+9
+Replace Dj with uj in the population D;
+10
+t = t + 1;
+11 Select and return the best solution found, Dbest, from
+P.
+is a tuple of 2M elements: the indexes of critical agents
+and their joint worst actions aii∈M. We use the same setting
+with [21]. At the start of the algorithm, a population of 400
+candidate solutions D is generated. During every iteration, an
+additional 400 candidate solutions are generated utilizing the
+following standard DE formula:
+Dj (g + 1) = Dd1 (g) + F (Dd2 (g) −Dd3 (g))
+d1 ̸= d2 ̸= d3,
+(11)
+where g is the current generation index, and each element Dj
+of the candidate solution is combined with three randomly
+chosen elements using a scaling parameter F set to 0.5. The
+indices of the randomly chosen elements are represented by
+d1, d2, and d3. The whole process is presented in Algorithm
+1.
+By doing so, we can identify which agents are most critical
+to the team performance, and which actions on them are
+most likely to lead to failure or sub-optimal outcomes. The
+advantages of using DE to compute the index of critical agents
+and their joint worst actions are as follows:
+• Less information. The joint action-value function is not
+necessarily differentiability. In fact, the joint action-
+value network of QMIX is non-differentiability making
+it difficult for the adversary to estimate the team reward.
+Furthermore, we consider the case of a discrete action
+space and the situation where a subset of agents becomes
+Algorithm 2: Sarsa-based joint action-value function
+1 Initialize ˜Qθ
+jt and replay buffer R;
+2 for t = 1, 2, . . . , T do
+3
+Get the current state of the environment s and the
+observation of each agent
+
+o1, · · · , oN
+;
+4
+Take the ϵ-greedy joint action a according to
+
+Q1
+ τ 1, a1
+, · · · , QN
+ τ N, aN
+and get the
+next state s′ and observation
+
+o′1, · · · , o′N
+;
+5
+Put ⟨s, a, r, s′⟩in R;
+6
+if |R| ≥BS then
+7
+Sample BS transitions from replay buffer R
+{⟨sk, ak, rk, s′
+k⟩}k=1,2,··· ,BS;
+8
+Update the parameters θ via minimizing (12).
+the victim. Even if the joint action-value network is
+differentiable, such as in VDN, gradient-based attack
+methods cannot be used to solve the worst-case joint
+action. DE is ideal for addressing this type of problem.
+• More flexibility. It is not necessary to know the structure
+of the joint action-value function; only its inputs and
+outputs are required. Therefore, networks trained in any
+way can be attacked. In addition, the number of victims
+M only needs to remain constant during the current time
+step and can be changed arbitrarily in the future without
+the need for retraining.
+B. Sarsa-based joint action-value function
+In Section 4.1, we assume that the joint action-value
+function is known to the adversary. However, in reality, this
+component is not being deployed. We cannot directly compute
+Qjt, and more importantly, the training of Qjt in CTDE is
+based on the assumption that all agents make the optimal
+decision. As a result, the joint action-value function in VDN
+or QMIX may not evaluate the team reward. To solve this
+problem, we train a joint action-value network based on Sarsa
+[22] during the execution process.
+Since the π is fixed in the execution process, we use ϵ-
+greedy to explore all situations possible, not just the good
+trajectories. We construct the joint action-value function ˜Qjt
+as a neural network with parameters θ. Its input is the
+environment state s and the joint action of agent a. Learning
+object of ˜Qjt is to minimize:
+Ljt (θ) =
+BS
+X
+k=1
+h
+Rk + γ ˜Qjt (s′
+k, a′
+k) −˜Qjt (sk, ak)
+i
+,
+(12)
+where BS is the batch size. The training process is shown in
+Algorithm 2.
+C. Generation of adversarial observations
+After obtaining the index of the critical agent and the worst
+joint action, we aim to generate adversarial perturbation using
+these to induce the victim to take the worst actions.
+
+Algorithm 3: RTCA
+1 Initialize the environment.
+2 for t = 1, 2, . . . , T do
+3
+Get the current state of the environment s and the
+observation of each agent
+
+o1, · · · , oN
+;
+4
+Generate the victim index and the worst action
+according to Algorithms 1 and 2;
+5
+Generate the adversarial state according to (14);
+6
+Take action based on the clean observation for the
+normal agent and based on the adversarial
+observation for the victim agent.
+In the classification tasks, there are many methods of
+targeted attacks[23], [24], [25], which add the perturbation to
+the sample to make the neural network output the targeted
+label. In our setting, this type of method can be used to
+generate adversarial perturbations based on the policy of the
+victim agents, misleading them to output the targeted action.
+This process can be achieved by optimizing the following
+objective function,
+Lsa
+ θi, ˆoi
+= min
+ˆoi∈Bi
+
+−
+X
+aj∈Ai
+
+ˆai = aj
+log
+ πθi  aj|ˆoi
++
+X
+aj∈Ai
+
+zi = aj
+log
+ πθi  aj|ˆoi 
+,
+(13)
+where zi is the action of victim agent i based on the clean
+observation, θi is the parameter of the policy network of victim
+agent i, ˆai is the target action of victim agent i and ˆoi is the
+perturbation observation of agent i. This optimization makes
+the victim take the action which is closer to the target action
+and farther to the true one. We use Fast Gradient Sign Method
+(FGSM) [23] to address this optimization problem. FGSM
+uses the one-step calculation of gradient descent as follows:
+ˆoi = clip
+ ˆoi + αsgn
+ ∇ˆoiLsa
+ θi, ˆoi, ˆai
+(14)
+where α is the step size. If the effective value range of o is
+[m, n], then
+clip (o) =
+
+
+
+o, o ∈[m, n]
+m, o < m
+n, o > n
+.
+(15)
+Our RTCA is presented in Algorithm 3.
+IV. EXPERIMENT RESULTS AND ANALYSIS
+In this section, we demonstrate the outstanding performance
+of RTCA in generating adversarial observation from the per-
+spective of the number of victims and decreasing the team
+reward.
+A. Experiment settings
+1) Environment settings: We evaluate our robustness testing
+framework on the StarCraft Multi-Agent Challenge (SMAC)
+[26]. SMAC is a distributed real-time strategy game widely
+used to evaluate the performance of RL. The main task is
+to defeat the opponent through cooperation among agents. We
+conduct experiments on four maps containing 8 Marines (8m),
+2 Stalkers & 3 Zealots (2s3z), 3 Stalkers & 5 Zealots (3s5z),
+and 3 Stalkers & 6 Zealots (3s6z).
+• Observation space: At each time step, the agents obtain
+information about their field of view, including the fol-
+lowing information about their opponent and teammates:
+distance, relative x, y, health, shield, and unit type. The
+state of the environment contains information about all
+units on the map. Specifically, the coordinates of all
+agents relative to the center of the map, as well as
+the elements present in their observations are contained.
+The global state is only used in the centralized training
+process. During the testing process, we only attack the
+observations of the agents.
+• Action space: In the SMAC environment, each agent has
+access to four possible actions: move, attacking opponent,
+stop, and no-op. Movement is restricted to four cardinal
+directions: north, south, east, or west. The attack can only
+be performed if the enemy unit is within the shooting
+range. The stop is to do nothing and the no-op can take
+when the agent is dead.
+• Reward: The overall goal is to increase the win rate of the
+agents as much as possible. SMAC uses shaped reward
+by default, and at each time step, the agents receive a
+reward based on the hit point damage. In addition, the
+agent receives an additional reward for each opponent it
+defeats and for winning by defeating all opponents. All of
+these rewards are normalized to ensure that the maximum
+cumulative reward earned in an episode is 20.
+2) Benchmark methods: The victim agent is trained via
+VDN and QMIX with two million steps. We compare RTCA
+with the following state-of-art robustness testing method.
+• Random noise. The adversary adds some random pertur-
+bations to the observation of the victim agent. We use
+uniform distribution noise as a way to interfere with the
+decision-making of the victim.
+• FGSM [23]. The adversary generates the adversarial
+perturbation according to the gradient on the decision-
+making network of the victim. It does not consider the
+effect of the perturbation on team cumulative reward, but
+only the disruption of individual policy, i.e., making the
+victim do actions that are inconsistent with those in the
+clean observation.
+• ATLA [13]. The adversary is trained via PPO [27] in the
+single-agent scenario. We use MAPPO [28] as adversaries
+in the multi-agent scenario. For MAPPO agents, the input
+is the clean observation, the action is the adversarial ob-
+servation, and the reward is the negative of victimization
+teams. In the training process, we set all agents in the
+environment are victims.
+• PAAD [29]. The adversary is trained in two steps includ-
+ing the director giving advice for the worst joint action
+and the actor generating the adversarial observation based
+
+0
+1
+2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+8m
+FGSM
+FGSM
+ATL A
+PA AD
+RTCS
+0
+1
+2
+0.2
+0.4
+0.6
+0.8
+1.0
+2s3z
+0
+1
+2
+0.0
+0.2
+0.4
+0.6
+0.8
+3s5z
+0
+1
+2
+0.2
+0.4
+0.6
+0.8
+3s6z
+Fig. 2.
+The illustration of robustness test for QMIX. The horizontal coordinate indicates the number of victims and the vertical coordinate indicates the
+winning rate.
+0
+1
+2
+0.2
+0.4
+0.6
+0.8
+1.0
+8m
+FGSM
+FGSM
+ATL A
+PA AD
+RTCS
+0
+1
+2
+0.0
+0.2
+0.4
+0.6
+0.8
+2s3z
+0
+1
+2
+0.0
+0.2
+0.4
+0.6
+0.8
+3s5z
+Fig. 3. The illustration of robustness test for VDN. The horizontal coordinate indicates the number of victims and the vertical coordinate indicates the winning
+rate.
+TABLE I
+THE PERFORMANCE OF QMIX AND VDN IN THE NUMBER OF VICTIMS IS 0, 1, AND 2 UNDER THE RANDOM NOISE. WR IS THE WINNING RATE. |M| IS
+THE NUMBER OF VICTIMS.
+Envs
+Number of victims
+0
+1
+2
+Victim
+WR
+Reward
+WR
+Reward
+WR
+Reward
+8m
+QMIX
+0.97
+19.74±1.45
+1.00
+20.00
+0.90
+19.31±2.10
+VDN
+1.00
+20.00
+1.00
+20.00
+0.94
+19.48±1.99
+2s3z
+QMIX
+0.97
+19.73±1.47
+1.00
+20.00
+0.94
+19.72±1.08
+VDN
+0.90
+19.58±1.41
+0.94
+19.64±1.43
+0.90
+19.55±1.43
+3s5z
+QMIX
+0.90
+19.52±1.52
+0.94
+19.73±1.09
+0.94
+19.69±1.28
+VDN
+0.84
+19.22±1.94
+0.74
+18.90±2.09
+0.87
+19.44±1.61
+3s6z
+QMIX
+0.90
+19.48±1.64
+0.90
+19.45±1.70
+0.90
+19.37±1.94
+on this action. The director is a PPO agent in the single-
+agent scenario. We use the same method (i.e., VDN or
+QMIX) with victims to train MARL directors and set all
+agents in the environment are victims.
+3) Perturbation settings: The perturbation is set as a ℓ∞
+with a range of 0.1. In our RTCA, the victim set is changed
+at each time step. For fairness, it is randomly changed in the
+benchmark methods. We conduct 32 episodes and use winning
+rates and average team cumulative rewards to evaluate the
+performance of those attack methods.
+B. Results and discussions
+The experiment results are shown in Tables I and II.
+Figures 2 and 3 provide a more intuitive presentation of the
+experimental results. The robustness of VDN is not evaluated
+in the 3s6z scenario as its performance is lacking.
+In the 8m scenario, the agents are homogeneous and play
+the same role in the team. The purpose of IGM in MARL is
+to solve the problem of lazy agents and make the contribution
+of each agent to the team as equal as possible. However, from
+our experimental results, it can be seen that the overall effect
+of selecting critical agents as victims is better than random
+selection. There might exist more than one critical agent
+because each on the team in the 8m scenario performs the same
+job, and there is an opportunity that the crucial agent can be
+chosen at random. As a result, when attacking just one agent,
+the PAAD outperforms the RTCA in terms of QMIX. However,
+the average team cumulative reward based on PAAD has a high
+variance, indicating that there is some randomness in which
+the agent is chosen as a critical one. Our strategy demonstrates
+superior performance in attacking QMIX in scenarios with
+heterogeneous agents. For the robustness testing of VDN,
+RTCA only performs poorly in the 2s3z scenario but is similar
+to PAAD and FGSM. The performance of the model trained
+by VDN in the 2s3z scenario is poor which causes the ˜Qjt
+
+TABLE II
+THE RESULTS OF ROBUSTNESS TESTING FOR QMIX AND VDN. WR IS THE WINNING RATE. M IS THE NUMBER OF VICTIMS. THE SMALLER THE WR
+AND REWARD, THE BETTER. BOLD SCORES REPRESENT THE BEST PERFORMANCE.
+Envs
+Adversary
+FGSM
+ATLA
+PAAD
+RTCA
+M
+Victim
+WR
+Reward
+WR
+Reward
+WR
+Reward
+WR
+Reward
+8m
+QMIX
+0.90
+19.25±2.30
+0.97
+19.79±1.18
+0.77
+18.18±3.45
+0.84
+18.86±2.61
+1
+VDN
+0.68
+17.24±4.04
+0.97
+19.75±1.34
+0.87
+19.04±2.49
+0.68
+17.36±3.87
+QMIX
+0.42
+15.57±3.82
+1.00
+20.00
+0.52
+16.05±4.15
+0.29
+14.20±3.83
+2
+VDN
+0.16
+12.30±3.62
+0.90
+19.31±2.12
+0.23
+13.15±3.86
+0.06
+10.78±2.79
+2s3z
+QMIX
+0.65
+17.87±3.13
+0.97
+19.87±0.79
+0.87
+19.08±2.41
+0.52
+16.93±3.43
+1
+VDN
+0.45
+16.64±3.34
+0.94
+19.67±1.44
+0.48
+16.89±3.29
+0.52
+16.97±3.37
+QMIX
+0.13
+13.29±2.96
+0.93
+19.52±1.85
+0.10
+14.27±2.32
+0.10
+13.75±2.73
+2
+VDN
+0.03
+11.81±1.98
+0.87
+19.25±2.02
+0.03
+12.33±2.29
+0.06
+12.49±2.48
+3s5z
+QMIX
+0.65
+17.92±3.03
+0.84
+19.26±1.79
+0.65
+18.19±2.63
+0.32
+16.35±2.91
+1
+VDN
+0.42
+16.48±3.39
+0.77
+19.21±1.76
+0.52
+17.49±3.12
+0.06
+14.25±2.69
+QMIX
+0.13
+13.83±2.83
+0.81
+19.13±1.85
+0.10
+13.23±2.72
+0.00
+12.70±1.50
+2
+VDN
+0.03
+10.64±2.69
+0.81
+19.49±1.32
+0.03
+11.95±3.01
+0.00
+9.71±1.51
+3s6z
+QMIX
+0.61
+18.11±2.66
+0.94
+19.71±1.12
+0.48
+17.15±3.10
+0.35
+16.48±3.02
+1
+0.06
+13.15±2.56
+0.74
+18.97±2.02
+0.16
+14.08±3.05
+0.06
+13.40±2.58
+2
+learned to be worse, making it difficult for the adversary to
+accurately compute the worst joint action.
+The attack results of random noise are very poor and
+even enhance the winning rate of the victim, which indicates
+that some noise has a positive effect on the decision-making
+of MARL agents. This is not appropriate for finding the
+robustness fault of MARL. Likewise, the ATLA method has
+poor results, similar to those of random noise. We analyze
+the reason for this and believe that it is because the joint
+observation space of agents grows exponentially with the
+number of agents in a multi-agent task. This is very difficult
+for MAPPO agents to learn the relationship between clean
+observations and their joint actions (i.e., joint adversarial
+observations). Thus, its effectiveness is poor. Overall, we can
+conclude that:
+• Random noise does not consider the policy of the victim,
+therefore it is a weak attack method.
+• FGSM only considers the policy of the victim, not the
+team cooperation. Bad actions by the victim do not
+necessarily lead to the worst for the team.
+• ATLA has a large action space making it difficult to
+generate the adversarial observation.
+• PAAD considers the effect of victims on the team, but
+the victim must be certain.
+• RTCA is the most suitable for robustness testing of
+MARL due to its flexibility and strong attack. Further-
+more, this kind of attack is more stealthy because the
+victim agent changes at every time step.
+C. Ablation study
+We use the value decomposition network and mixing net-
+work in VDN and QMIX, respectively, to indicate the impact
+of the action-value function ˜Qjt. The results are demonstrated
+in Table III. The joint action-value function of QMIX more
+accurately represents the quality of the joint policy than VDN.
+Therefore, critical agents can be chosen as victims and their
+worst joint actions can be calculated using Qjt of QMIX.
+According to the experimental results, it can be seen that using
+TABLE III
+ABLATION STUDY. THE ROBUSTNESS OF QMIX AND VDN IS EVALUATED
+BASED ON THEIR ACTION-VALUE FUNCTIONS. M IS THE NUMBER OF
+VICTIMS
+Envs
+Qjt
+VDN/QMIX
+˜Qjt
+M
+Victim
+WR
+Reward
+WR
+Reward
+8m
+QMIX
+0.74
+18.15±3.14
+0.84
+18.86±2.61
+1
+VDN
+0.84
+18.60±3.19
+0.68
+17.36±3.87
+QMIX
+0.35
+14.49±4.21
+0.29
+14.20±3.83
+2
+VDN
+0.16
+12.23±3.65
+0.06
+10.78±2.79
+2s3z
+QMIX
+0.52
+17.02±3.26
+0.52
+16.93±3.43
+1
+VDN
+0.87
+19.41±1.54
+0.52
+16.97±3.37
+QMIX
+0.10
+13.44±2.53
+0.10
+13.75±2.73
+2
+VDN
+0.39
+15.90±3.73
+0.06
+12.49±2.48
+3s5z
+QMIX
+0.48
+17.08±3.11
+0.32
+16.35±2.91
+1
+VDN
+0.42
+16.69±3.27
+0.06
+14.25±2.69
+QMIX
+0.03
+13.14±2.08
+0.00
+12.70±1.50
+2
+VDN
+0.00
+11.70±2.17
+0.00
+9.71±1.51
+3s6z
+QMIX
+0.39
+17.06±2.75
+0.35
+16.48±3.02
+1
+0.00
+13.45±1.97
+0.06
+13.40±2.58
+2
+˜Qjt achieves results comparable to QMIX, and even better in
+complex scenarios (3s5z and 3s6z). On the other hand, because
+Qjt of VDN cannot accurately evaluate the quality of the joint
+action well, it is not advisable to employ it as the objective
+function of DE.
+D. Transferability of ˜Qjt
+The purpose of this section is to evaluate the transferability
+of the ˜Qjt. In this context, transferability is defined as the
+ability of the ˜Qjt trained using the data sampled by one MARL
+to transfer the experience to another and successfully attack it.
+The results present in Table IV indicate that the ˜Qjt learned via
+QMIX policy sampling can be successfully attacked against
+VDN agents in a majority of the cases considered. Correspond-
+ingly, the ˜Qjt trained with VDN policy sampling demonstrated
+high success rates in successfully attacking QMIX agents
+in most of the cases. Such observations hold significant
+implications for improving the applicability of adversarial
+attacks.In a word, the Sarsa-based ˜Qjt exhibits advantageous
+
+TABLE IV
+TRANSFERABILITY OF ˜Qjt. M IS THE NUMBER OF VICTIMS.
+Envs
+˜Qjt
+QMIX
+VDN
+M
+Victim
+WR
+Reward
+WR
+Reward
+8m
+QMIX
+0.84
+18.86±2.61
+0.81
+18.56±2.96
+1
+VDN
+0.29
+13.83±4.11
+0.68
+17.36±3.87
+QMIX
+0.29
+14.20±3.83
+0.48
+15.96±3.98
+2
+VDN
+0.10
+11.63±2.95
+0.06
+10.78±2.79
+2s3z
+QMIX
+0.52
+16.93±3.43
+0.55
+17.11±3.29
+1
+VDN
+0.48
+16.25±3.81
+0.52
+16.97±3.37
+QMIX
+0.10
+13.75±2.73
+0.03
+13.37±1.98
+2
+VDN
+0.00
+12.06±1.64
+0.06
+12.49±2.48
+3s5z
+QMIX
+0.32
+16.35±2.91
+0.48
+16.95±3.23
+1
+VDN
+0.13
+14.05±3.02
+0.06
+14.25±2.69
+QMIX
+0.00
+12.70±1.50
+0.03
+13.52±1.91
+2
+VDN
+0.00
+10.00±1.65
+0.00
+9.71±1.51
+transferability qualities and possesses considerable prospects
+for usage as a black-box attack.
+V. RELATED WORK
+A. Adversarial attacks on SARL
+An extensive body of research has been conducted on
+methods related to generating adversarial examples in clas-
+sification tasks. Furthermore, recent studies have emerged that
+explore adversarial attacks in the context of SARL. Based on
+a survey [30], adversarial attacks on SARL can be classified
+into four distinct categories including perturbations to the state
+space, the reward function, the action space, and the model
+space. Huang et al. [11] utilize FGSM for creating adversarial
+examples of agent input states. Their findings illustrate the
+efficacy of adversarial attacks for the model trained by RL.
+Pattanaik et al. [31] propose three types of methods con-
+taining random noise, gradient-based, and stochastic gradient
+decrease. The sample efficient model-based adversarial attack
+is introduced by Weng et al. [32]. To achieve this, they
+propose a two-step attack framework including the learning
+for the dynamic environment model and the generation of
+the adversarial state based on the environment model. Huang
+et al [12] propose the State-Adversarial Markov Decision
+Process (SA-MDP) which indicates the optimal adversary
+exists. Besides, they improve the gradient-based attack in [31]
+and propose a robust Sarsa attack. They use Sarsa to learn the
+critic network in continuous action space while we use Sarsa
+to train the joint action-value network in a discrete one. [13]
+and [29] are introduced in Section 4.
+B. Adversarial attacks on MARL
+There are few studies on adversarial attacks in MARL. Lin
+et al. [9] propose the method of generating adversarial states
+for MARL, they use a two-step attack similar to [29] which
+reduces the team reward by perturbing the state of only a fixed
+agent. Pham et al. [33] extend [32] to multi-agent setting.
+Guo et al. [7] propose a comprehensive robustness testing
+framework named MARLSafe from three aspects: state, action,
+and reward. In these methods, the set of victim agents is fixed,
+while in RTCA, the set of victim agents is variable.
+VI. CONCLUSION
+In this paper, we present a robust testing framework for a
+model trained by the state-of-the-art MARL. In our framework,
+based on DE, the critical agents are selected as victims and
+their worst joint actions are advised. Moreover, in order to
+evaluate the team cooperation policy, we present a Sarsa-based
+method to learn the joint action-value function in MARL.
+When the indexes of victims and their joint worst actions
+are known, we use the target attack method to generate the
+adversarial observation on them. The results clearly indicate
+the superiority of our RTCA over the existing ones. Our next
+work tends to apply RTCA to continuous action spaces such
+as MADDPG [34] and MAAC [35] to test their robustness
+against observation perturbations of critical agents.
+REFERENCES
+[1] T. Wu, P. Zhou, K. Liu, Y. Yuan, X. Wang, H. Huang, and D. O. Wu,
+“Multi-agent deep reinforcement learning for urban traffic light control
+in vehicular networks,” IEEE Transactions on Vehicular Technology,
+vol. 69, no. 8, pp. 8243–8256, 2020.
+[2] H. Shi, G. Liu, K. Zhang, Z. Zhou, and J. Wang, “Marl sim2real transfer:
+Merging physical reality with digital virtuality in metaverse,” IEEE
+Transactions on Systems, Man, and Cybernetics: Systems, vol. 53, no. 4,
+pp. 2107–2117, 2023.
+[3] L. Wang, K. Wang, C. Pan, W. Xu, N. Aslam, and L. Hanzo, “Multi-
+agent deep reinforcement learning-based trajectory planning for multi-
+uav assisted mobile edge computing,” IEEE Transactions on Cognitive
+Communications and Networking, vol. 7, no. 1, pp. 73–84, 2021.
+[4] P. Sunehag, G. Lever, A. Gruslys, W. M. Czarnecki, V. Zambaldi,
+M. Jaderberg, M. Lanctot, N. Sonnerat, J. Z. Leibo, K. Tuyls, and
+T. Graepel, “Value-decomposition networks for cooperative multi-agent
+learning based on team reward,” in Proceedings of the 17th International
+Conference on Autonomous Agents and MultiAgent Systems, AAMAS
+’18, (Richland, SC), p. 2085–2087, International Foundation for Au-
+tonomous Agents and Multiagent Systems, 2018.
+[5] T. Rashid, M. Samvelyan, C. S. De Witt, G. Farquhar, J. Foerster, and
+S. Whiteson, “Monotonic value function factorisation for deep multi-
+agent reinforcement learning,” J. Mach. Learn. Res., vol. 21, jan 2020.
+[6] K. Son, D. Kim, W. J. Kang, D. E. Hostallero, and Y. Yi, “QTRAN:
+Learning to factorize with transformation for cooperative multi-agent
+reinforcement learning,” in Proceedings of the 36th International Con-
+ference on Machine Learning (K. Chaudhuri and R. Salakhutdinov, eds.),
+vol. 97 of Proceedings of Machine Learning Research, pp. 5887–5896,
+PMLR, 09–15 Jun 2019.
+[7] J. Guo, Y. Chen, Y. Hao, Z. Yin, Y. Yu, and S. Li, “Towards comprehen-
+sive testing on the robustness of cooperative multi-agent reinforcement
+learning,” in Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition (CVPR) Workshops, pp. 115–122, June
+2022.
+[8] S. He, S. Han, S. Su, S. Han, S. Zou, and F. Miao, “Robust multi-agent
+reinforcement learning with state uncertainties,” 2023.
+[9] J. Lin, K. Dzeparoska, S. Q. Zhang, A. Leon-Garcia, and N. Papernot,
+“On the robustness of cooperative multi-agent reinforcement learning,”
+in 2020 IEEE Security and Privacy Workshops (SPW), pp. 62–68, 2020.
+[10] Z. Zhou and G. Liu, “Romfac: A robust mean-field actor-critic reinforce-
+ment learning against adversarial perturbations on states,” arXiv preprint
+arXiv:2205.07229, 2022.
+[11] S. Huang, N. Papernot, I. Goodfellow, Y. Duan, and P. Abbeel,
+“Adversarial attacks on neural network policies,” arXiv preprint
+arXiv:1702.02284, 2017.
+[12] H. Zhang, H. Chen, C. Xiao, B. Li, M. Liu, D. Boning, and C.-J. Hsieh,
+“Robust deep reinforcement learning against adversarial perturbations
+on state observations,” in Advances in Neural Information Processing
+Systems (H. Larochelle, M. Ranzato, R. Hadsell, M. Balcan, and H. Lin,
+eds.), vol. 33, pp. 21024–21037, Curran Associates, Inc., 2020.
+[13] H. Zhang, H. Chen, D. S. Boning, and C.-J. Hsieh, “Robust reinforce-
+ment learning on state observations with learned optimal adversary,” in
+International Conference on Learning Representations, 2021.
+
+[14] S. Han, S. Su, S. He, S. Han, H. Yang, and F. Miao, “What is the solution
+for state adversarial multi-agent reinforcement learning?,” arXiv preprint
+arXiv:2212.02705, 2022.
+[15] S. Li, J. Guo, J. Xiu, P. Feng, X. Yu, J. Wang, A. Liu, W. Wu, and
+X. Liu, “Attacking cooperative multi-agent reinforcement learning by
+adversarial minority influence,” arXiv preprint arXiv:2302.03322, 2023.
+[16] F. A. Oliehoek and C. Amato, A concise introduction to decentralized
+POMDPs. Springer, 2016.
+[17] D. S. Bernstein, R. Givan, N. Immerman, and S. Zilberstein, “The
+complexity of decentralized control of markov decision processes,”
+Mathematics of operations research, vol. 27, no. 4, pp. 819–840, 2002.
+[18] R. Storn and K. Price, “Differential evolution – a simple and efficient
+heuristic for global optimization over continuous spaces,” J. of Global
+Optimization, vol. 11, p. 341–359, dec 1997.
+[19] Bilal, M. Pant, H. Zaheer, L. Garcia-Hernandez, and A. Abraham,
+“Differential evolution: A review of more than two decades of research,”
+Engineering Applications of Artificial Intelligence, vol. 90, p. 103479,
+2020.
+[20] K. R. Opara and J. Arabas, “Differential evolution: A survey of
+theoretical analyses,” Swarm and Evolutionary Computation, vol. 44,
+pp. 546–558, 2019.
+[21] J. Su, D. V. Vargas, and K. Sakurai, “One pixel attack for fooling deep
+neural networks,” IEEE Transactions on Evolutionary Computation,
+vol. 23, no. 5, pp. 828–841, 2019.
+[22] On-line Q-learning using connectionist systems, vol. 37. 1994.
+[23] I. J. Goodfellow, J. Shlens, and C. Szegedy, “Explaining and harnessing
+adversarial examples,” arXiv preprint arXiv:1412.6572, 2014.
+[24] M. Li, C. Deng, T. Li, J. Yan, X. Gao, and H. Huang, “Towards trans-
+ferable targeted attack,” in Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition (CVPR), June 2020.
+[25] A. Madry, A. Makelov, L. Schmidt, D. Tsipras, and A. Vladu, “Towards
+deep learning models resistant to adversarial attacks,” in 6th Interna-
+tional Conference on Learning Representations, ICLR 2018, Conference
+Track Proceedings, (Vancouver, BC, Canada), OpenReview.net, 30 Apr
+– 3 May 2018.
+[26] M. Samvelyan, T. Rashid, C. Schroeder de Witt, G. Farquhar,
+N. Nardelli, T. G. J. Rudner, C.-M. Hung, P. H. S. Torr, J. Foerster, and
+S. Whiteson, “The starcraft multi-agent challenge,” in Proceedings of the
+18th International Conference on Autonomous Agents and MultiAgent
+Systems, AAMAS ’19, (Richland, SC), p. 2186–2188, International
+Foundation for Autonomous Agents and Multiagent Systems, 2019.
+[27] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Prox-
+imal policy optimization algorithms,” arXiv preprint arXiv:1707.06347,
+2017.
+[28] C. Yu, A. Velu, E. Vinitsky, J. Gao, Y. Wang, A. Bayen, and Y. WU,
+“The surprising effectiveness of ppo in cooperative multi-agent games,”
+in Advances in Neural Information Processing Systems (S. Koyejo,
+S. Mohamed, A. Agarwal, D. Belgrave, K. Cho, and A. Oh, eds.),
+vol. 35, pp. 24611–24624, Curran Associates, Inc., 2022.
+[29] Y. Sun, R. Zheng, Y. Liang, and F. Huang, “Who is the strongest
+enemy? towards optimal and efficient evasion attacks in deep RL,” in
+International Conference on Learning Representations, 2022.
+[30] I. Ilahi, M. Usama, J. Qadir, M. U. Janjua, A. Al-Fuqaha, D. T.
+Hoang, and D. Niyato, “Challenges and countermeasures for adversarial
+attacks on deep reinforcement learning,” IEEE Transactions on Artificial
+Intelligence, vol. 3, no. 2, pp. 90–109, 2022.
+[31] A. Pattanaik, Z. Tang, S. Liu, G. Bommannan, and G. Chowdhary,
+“Robust deep reinforcement learning with adversarial attacks,” in Pro-
+ceedings of the 17th International Conference on Autonomous Agents
+and MultiAgent Systems, AAMAS ’18, (Richland, SC), p. 2040–2042,
+International Foundation for Autonomous Agents and Multiagent Sys-
+tems, 2018.
+[32] T.-W. Weng, K. D. Dvijotham*, J. Uesato*, K. Xiao*, S. Gowal*,
+R. Stanforth*, and P. Kohli, “Toward evaluating robustness of deep rein-
+forcement learning with continuous control,” in International Conference
+on Learning Representations, 2020.
+[33] N. H. Pham, L. M. Nguyen, J. Chen, H. T. Lam, S. Das, and T.-W. Weng,
+“Evaluating robustness of cooperative marl: A model-based approach,”
+arXiv preprint arXiv:2202.03558, 2022.
+[34] R. Lowe, Y. WU, A. Tamar, J. Harb, O. Pieter Abbeel, and I. Mor-
+datch, “Multi-agent actor-critic for mixed cooperative-competitive en-
+vironments,” in Advances in Neural Information Processing Systems
+(I. Guyon, U. V. Luxburg, S. Bengio, H. Wallach, R. Fergus, S. Vish-
+wanathan, and R. Garnett, eds.), vol. 30, Curran Associates, Inc., 2017.
+[35] S. Iqbal and F. Sha, “Actor-attention-critic for multi-agent reinforcement
+learning,” in Proceedings of the 36th International Conference on
+Machine Learning (K. Chaudhuri and R. Salakhutdinov, eds.), vol. 97
+of Proceedings of Machine Learning Research, pp. 2961–2970, PMLR,
+09–15 Jun 2019.

@@ -1,0 +1,1422 @@
+Robust Multi-Agent Coordination via
+Evolutionary Generation of Auxiliary Adversarial Attackers*
+Lei Yuan1,2 †, Ziqian Zhang1 †, Ke Xue1, Hao Yin1, Feng Chen1,
+Cong Guan1, Lihe Li1, Chao Qian1, Yang Yu1,2
+1National Key Laboratory for Novel Software Technology, Nanjing University, Nanjing 210023, China
+2Polixir Technologies, Nanjing 210000, China
+{yuanl, xuek, yinh, guanc}@lamda.nju.edu.cn, {191240076, chenf, lilh}@smail.nju.edu.cn, {qianc, yuy}@nju.edu.cn
+Abstract
+Cooperative multi-agent reinforcement learning (CMARL)
+has shown to be promising for many real-world applica-
+tions. Previous works mainly focus on improving coordina-
+tion ability via solving MARL-specific challenges (e.g., non-
+stationarity, credit assignment, scalability), but ignore the
+policy perturbation issue when testing in a different environ-
+ment. This issue hasn’t been considered in problem formula-
+tion or efficient algorithm design. To address this issue, we
+firstly model the problem as a limited policy adversary Dec-
+POMDP (LPA-Dec-POMDP), where some coordinators from
+a team might accidentally and unpredictably encounter a lim-
+ited number of malicious action attacks, but the regular coor-
+dinators still strive for the intended goal. Then, we propose
+Robust Multi-Agent Coordination via Evolutionary Genera-
+tion of Auxiliary Adversarial Attackers (ROMANCE), which
+enables the trained policy to encounter diversified and strong
+auxiliary adversarial attacks during training, thus achiev-
+ing high robustness under various policy perturbations. Con-
+cretely, to avoid the ego-system overfitting to a specific at-
+tacker, we maintain a set of attackers, which is optimized to
+guarantee the attackers high attacking quality and behavior
+diversity. The goal of quality is to minimize the ego-system
+coordination effect, and a novel diversity regularizer based
+on sparse action is applied to diversify the behaviors among
+attackers. The ego-system is then paired with a population
+of attackers selected from the maintained attacker set, and
+alternately trained against the constantly evolving attackers.
+Extensive experiments on multiple scenarios from SMAC in-
+dicate our ROMANCE provides comparable or better robust-
+ness and generalization ability than other baselines.
+1
+Introduction
+Recently, cooperative multi-agent reinforcement learning
+(CMARL) has attracted extensive attention (Hernandez-
+Leal, Kartal, and Taylor 2019; Gronauer and Diepold 2022)
+and shows potential in numerous domains like autonomous
+vehicle teams (Peng et al. 2021), multi-agent path finding
+(Greshler et al. 2021), multi-UAV control (Yun et al. 2022),
+and dynamic algorithm configuration (Xue et al. 2022b).
+*Corresponding author: Yang Yu.
+†These authors contributed equally.
+Copyright © 2023, Association for the Advancement of Artificial
+Intelligence (www.aaai.org). All rights reserved.
+Existing CMARL methods mainly focus on solving spe-
+cific challenges such as non-stationarity (Papoudakis et al.
+2019), credit assignment (Wang et al. 2021a), and scalabil-
+ity (Christianos et al. 2021) to improve the coordination abil-
+ity in complex scenarios. Either value-based methods (Sune-
+hag et al. 2018; Rashid et al. 2018; Wang et al. 2021b) or
+policy-gradient-based methods (Foerster et al. 2018; Lowe
+et al. 2017; Yu et al. 2022) have demonstrated remark-
+able coordination ability in a wide range of tasks (e.g.,
+SMAC (Samvelyan et al. 2019) and Hanabi (Yu et al. 2022)).
+Despite these successes, the mainstream CMARL methods
+are still difficult to be applied in real world, as they mainly
+consider training and testing policy in a nondistinctive en-
+vironment. Thus, the policy learned by those methods may
+suffer from a performance decrease when encountering any
+disagreement between training and testing (Guo et al. 2022).
+Training a robust policy before deployment plays a
+promising role for the mentioned problem and makes
+excellent progress in single-agent reinforcement learning
+(SARL) (Moos et al. 2022; Xu et al. 2022). Previous works
+typically employ an adversarial training paradigm to obtain a
+robust policy. These methods generally model the process of
+policy learning as a minimax problem from the perspective
+of game theory (Yu et al. 2021) and optimize the policy un-
+der the worst-case situation (Pinto et al. 2017; Zhang et al.
+2020a; Zhang, Wang, and Boedecker 2022). Nevertheless,
+the multi-agent problem is much more complex (Zhang,
+Yang, and Bas¸ar 2021), as multiple agents are making deci-
+sions simultaneously in the environment. Also, recent works
+indicate that a MARL system is usually vulnerable to any at-
+tack (Guo et al. 2022). Some MARL works study the robust-
+ness from various aspects, including the uncertainty in local
+observation (Lin et al. 2020), model function (Zhang et al.
+2020a), and message sending (Xue et al. 2022c). The men-
+tioned methods either focus on investigating the robustness
+from different aspects, or apply techniques such as heuristic
+rules and regularizers used in SARL to train a robust coordi-
+nation policy. However, how unpredictable malicious action
+attacks cause policy perturbation has not been fully explored
+in CMARL.
+In this work, we aim to develop a robust CMARL frame-
+work when malicious action attacks on some coordinators
+The Thirty-Seventh AAAI Conference on Artificial Intelligence (AAAI-23)
+11753
+
+from a team exist. Concretely, we model the problem as a
+limited policy adversary Dec-POMDP (LPA-Dec-POMDP),
+where some coordinators may suffer from malicious action
+attacks, while the regular coordinators should still try to
+complete the intended goal.
+Towards developing such a robust policy, we propose RO-
+MANCE, an adversarial training paradigm based on the evo-
+lutionary generation of auxiliary attackers. Specifically, we
+maintain a set of attackers with high attacking quality and
+behavior diversity among all generated attackers to avoid the
+ego-system overfitting to a specific attacker, where high at-
+tack quality requires the attacker to minimize the ego-system
+reward, and diversity refers to generating different behaviors
+among attackers. A sparse action regularizer is also intro-
+duced to promote behavior diversity for different attackers.
+Furthermore, to prevent the attackers from being too tricky
+for the ego-system to complete the intended mission, we
+limit the total number of attacks to a fixed value. For the
+training of the ego-system, we pair it with a population of
+attackers selected from the maintained set to complete the
+given mission, then iteratively select and update the attacker
+population under the customized quality score and diversity
+distance. Finally, we obtain a highly robust coordination pol-
+icy under different types and degrees of action perturbations.
+To evaluate the proposed methods, we conduct exten-
+sive experiments on multiple maps from SMAC (Samvelyan
+et al. 2019) and compare ROMANCE against multiple base-
+lines. Empirical results demonstrate that our proposed ad-
+versarial training paradigm can indeed obtain attackers with
+high attack ability and diverse behaviors. Also, the coordi-
+nation policy trained against the population can achieve high
+robustness and generalization effectiveness with alternative
+numbers of attacks during testing. Furthermore, visualiza-
+tion experiments indicate how ROMANCE improves robust-
+ness under malicious action perturbations.
+2
+Related Work
+Multi-agent reinforcement learning (MARL) has made
+prominent progress these years (Hernandez-Leal, Kartal,
+and Taylor 2019; Gronauer and Diepold 2022). Many meth-
+ods have emerged as efficient ways to promote coordina-
+tion among agents, and most of them can be roughly di-
+vided into policy-based and value-based methods. MAD-
+DPG (Lowe et al. 2017), COMA (Foerster et al. 2018),
+DOP (Wang et al. 2021c), and MAPPO (Yu et al. 2022) are
+typical policy gradient-based methods that explore the opti-
+mization of multi-agent policy gradient methods. MADDPG
+applies the CTDE (Centralized Training Decentralized Ex-
+ecution) paradigm to train the policies and optimizes each
+policy via DDPG (Lillicrap et al. 2016). COMA also applies
+the centralized critic to optimize the policy but employs a
+counterfactual model to calculate the marginal contribution
+of each agent in the multi-agent system. DOP takes a for-
+ward step to apply a centralized linear mixing network to
+decompose the global reward in a cooperative system and
+shows performance improvement for MADDPG and COMA
+significantly. Recently, MAPPO applies the widely proven
+learning efficiency of proximal policy optimization tech-
+nique in single-agent reinforcement learning into MARL.
+Another category of MARL approaches, value-based meth-
+ods, mainly focus on the factorization of the value function.
+VDN (Sunehag et al. 2018) aims to decompose the team
+value function into agent-wise ones by a simple additive
+factorization. Following the Individual-Global-Max (IGM)
+principle (Son et al. 2019), QMIX (Rashid et al. 2018) im-
+proves the way of value function decomposition by learning
+a non-linear mixing network, which approximates a mono-
+tonic function value decomposition. QPLEX (Wang et al.
+2021b) takes a duplex dueling network architecture to fac-
+torize the joint value function, which achieves a full expres-
+siveness power of IGM. Wang et al. (2021a) recently give
+theoretical analysis of the IGM by applying a multi-agent fit-
+ted Q-iteration algorithm. More details and advances about
+MARL can be seen in reviews (Zhang, Yang, and Bas¸ar
+2021; Canese et al. 2021; Zhu, Dastani, and Wang 2022).
+Adversarial training plays a promising role for the RL
+robustness (Moos et al. 2022), which involves the pertur-
+bations occurring in different cases, such as state, reward,
+policy, etc. These methods then train the RL policy in an
+adversarial way to acquire a robust policy in the worst-
+case situation. Robust adversarial reinforcement learning
+(RARL) (Pinto et al. 2017) picks out specific robot joints
+that the adversary acts on to find an equilibrium of the
+minimax objective using an alternative learning adversary.
+RARARL (Pan et al. 2019) takes a further step by introduc-
+ing risk-averse robust adversarial reinforcement learning to
+train a risk-averse protagonist and a risk-seeking adversary,
+this approach shows substantially fewer crashes compared to
+agents trained without an adversary on a self-driving vehicle
+controller. The mentioned methods only learn a single ad-
+versary, and this approach does not consistently yield robust-
+ness to dynamics variations under standard parametrizations
+of the adversary. RAP (Vinitsky et al. 2020) and GC (Song
+and Schneider 2022) then learn population-based augmenta-
+tion to the Robust RL formulation. See (Ilahi et al. 2021;
+Moos et al. 2022) for detailed reviews, and (Smirnova,
+Dohmatob, and Mary 2019; Zhang et al. 2020a,b; Oikarinen
+et al. 2021; Xie et al. 2022) for some recent advances.
+Robust MARL has attracted widespread attention re-
+cently (Guo et al. 2022). M3DDPG (Li et al. 2019) learns
+a minimax extension of MADDPG (Lowe et al. 2017)
+and trains the MARL policy in an adversarial way, which
+shows potential in solving the poor local optima caused
+by opponents’ policy altering. In order to model the uncer-
+tainty caused by the inaccurate knowledge of the model, R-
+MADDPG (Zhang et al. 2020c) introduces the concept of ro-
+bust Nash equilibrium, and treats the uncertainty as a natural
+agent, demonstrating high superiority when facing reward
+uncertainty. For the observation perturbation of CMARL,
+Lin et al. (2020) learn an adversarial observation policy to
+attack the system, showing that the ego-system is highly vul-
+nerable to observational perturbations. RADAR (Phan et al.
+2021) learns resilient MARL policy via adversarial value de-
+composition. Hu and Zhang (2022) further design an action
+regularizer to attack the CMARL system efficiently. Xue
+et al. (2022c) recently consider the multi-agent adversar-
+ial communication, learning robust communication policy
+when some message senders are poisoned. To our knowl-
+11754
+
+edge, no previous work has explored CMARL under LPA-
+Dec-POMDP, neither in problem formulation nor efficient
+algorithm design.
+Furthermore, some other works focus on the robustness
+when coordinating with different teammates, referring to ad-
+hoc teamwork (Stone et al. 2010; Gu et al. 2022; Mirsky
+et al. 2022), or zero-shot coordination (ZSC) (Hu et al. 2020;
+Lupu et al. 2021; Xue et al. 2022a). The former methods aim
+at creating an autonomous agent that can efficiently and ro-
+bustly collaborate with previously unknown teammates on
+tasks to which they are all individually capable of contribut-
+ing as team members. While in the ZSC setting, a special
+case of ad-hoc teamwork, agents work toward a common
+goal and share identical rewards at each step. The intro-
+duction of adversarial attacks makes the victim an unknown
+teammate with regard to regular agents, while it is even more
+challenging because the unknown teammate might execute
+destructive actions. Our proposed method takes a further
+step toward this direction for robust CMARL.
+3
+Problem Formulation
+This paper considers a CMARL task under the framework
+of Dec-POMDP (Oliehoek and Amato 2016), which is de-
+fined as a tuple M = ⟨N, S, A, P, Ω, O, R, γ⟩. Here N =
+{1, . . . , n} is the set of agents, S is the set of global states,
+A = A1 × ... × An is the set of joint actions, Ωis the set
+of observations, and γ ∈[0, 1) represents the discounted
+factor. At each time step, agent i receives the observation
+oi = O(s, i) and outputs the action ai ∈Ai. The joint ac-
+tion a = (a1, ..., an) leads to the next state s′ ∼P(·|s, a)
+and a global reward R(s, a, s′). To relieve the partial observ-
+ability, we encode the history (o1
+i , a1
+i , . . . , ot−1
+i
+, at−1
+i
+, ot
+i) of
+agent i until timestep t into τi, then with τ = ⟨τ1, . . . , τn⟩,
+the formal objective is to find a joint policy π(τ, a)
+which maximizes the global value function Qπ
+tot(τ, a) =
+Es,a [P∞
+t=0 γtR(s, a) | s0 = s, a0 = a, π].
+We aim to optimize a policy when some coordinators
+from a team suffer from policy perturbation. The vulner-
+ability of CMARL makes it difficult to tolerate an unlim-
+ited number of perturbations. To avoid the ego-system from
+being entirely destroyed, we assume a limited number of
+perturbations and formulate such setting as a LPA-Dec-
+POMDP:
+Definition 1 (Limited Policy Adversary Dec-POMDP)
+Given a Dec-POMDP M = ⟨N, S, A, P, Ω, O, R, γ⟩, we
+define a limited policy adversary Dec-POMDP (LPA-Dec-
+POMDP) ˆ
+M = ⟨N, S, A, P, K, Ω, O, R, γ⟩by introducing
+an adversarial attacker πadv : S× A × N →A. The
+attacker perturbs the ego-agents’ policy by forcing the
+agents to execute joint action ˆa ∼πadv(·|s, a, k) such
+that s′ ∼P(·|s, ˆa), r = R(s, ˆa, s′). Where K ∈N is the
+number of attacks that meets P
+t
+P
+i∈N I(ˆai
+t ̸= ai
+t) ≤K,
+and k ≤K indicates the current remaining attack number.
+To efficiently address the attacking problem, we introduce
+a class of disentangled adversarial attacker policies by de-
+composing a policy into two components: victim selection
+and policy perturbation, in Def. 2.
+Definition 2 (Disentangled Adversarial Attacker Policy)
+For an adversarial attacker policy πadv, if there exist a
+victim selection function v : S × N →∆( ˆ
+N) and a policy
+perturbation function g : ˆ
+N × A × N →∆(A), such that
+the following two equations hold:
+πadv(ˆa|s, a, k) = v(i|s, k)g(ˆa|i, a, k)
+g(ˆa|i, a, 0) = g(ˆa|null, a, k) = I(ˆa = a),
+where ˆ
+N = N ∪{null}, i ∼v(·|s, k), then we say that v
+and g disentangle πadv.
+As for the policy perturbation function, many heuristic-
+based methods (Pattanaik et al. 2018; Tessler, Efroni, and
+Mannor 2019; Sun et al. 2021) have been proposed to find
+adversarial perturbations for a fixed RL policy. A common
+attacking way is to force the victim to select the action with
+the minimum Q-values at some steps (Pattanaik et al. 2018).
+Thus, for policy perturbation function g, an effective and ef-
+ficient form could be g(ˆa|i, a, k) = g(ˆai, a−i|i, a, k) =
+I(ˆai = arg minai Qi(τ i, ai)), if k > 0 and i ̸= null. For
+efficiency, we only focus on disentangled attacker policy
+πadv = v◦g with a heuristic-based policy perturbation in the
+rest of the paper, and, without loss of generality, we suppose
+g performs a deterministic perturbation with ˆa = g(i, a, k).
+4
+Method
+In this section, we will explain the design of ROMANCE,
+a novel framework to learn a robust coordination policy un-
+der the LPA-Dec-POMDP. We first discuss the optimization
+object of each attacker and then show how to maintain a set
+of high-quality solutions with diverse behaviors by specially
+designed update and selection mechanisms. Finally, we pro-
+pose ROMANCE, an alternating training paradigm, to im-
+prove the robustness of CMARL agents (ego-system) under
+policy perturbations.
+4.1
+Attacker Optimization Objective
+In this section, we discuss how to train a population of ad-
+versarial attacker policies Padv = {πj
+adv}np
+j=1 = {vj ◦g}np
+j=1
+under a fixed joint ego-system policy π, where np is the
+population size. We anticipate the attacker population un-
+der the goal of high quality and diversity, where the qual-
+ity objective requires it to minimize the ego-system’s return
+and diversity encourages attackers to behave differently. To
+achieve the mentioned goal, we first show that an individual
+optimal adversarial attacker could be solved under a specific
+MDP setting and then discuss how to solve it.
+Theorem 1 Given an LPA-Dec-POMDP
+ˆ
+M = ⟨N, S, A,
+P, K, Ω, O, R, γ⟩, a fixed joint policy π of the ego-system
+and a heuristic-based policy perturbation function g, there
+exists an MDP
+¯
+M = ( ¯S, ¯
+A, ¯P, ¯R, γ) such that the opti-
+mal adversarial attacker π∗
+adv for
+ˆ
+M is disentangled by
+an optimal policy v∗of
+¯
+M and g, where ¯S = S × N,
+¯s = (s, k), ¯s′ = (s′, k′), k, k′ ≤K indicates the remaining
+attack budget, ¯
+A = N ∪{null}, ¯R(¯s, ¯a, ¯s′) = −R(s, ˆa, s′),
+¯P(¯s′|¯s, ¯a) =
+
+
+
+0
+k −k′ /∈{0, 1}
+P(s′|s, ˆa)I(ˆa = a)
+k −k′ = 0
+P(s′|s, ˆa)I(ˆa ̸= a)
+k −k′ = 1
+,
+11755
+
+where ¯d(¯s0) = d(s0)I(k0 = K), d and ¯d are distributions
+over initial state in ˆ
+M and ¯
+M, respectively, and a = π(s),
+ˆa = g(¯a, π(s), k) are original and forced action of ego-
+system, respectively.
+The intuition behind Thm. 1 is that the adversarial attacker
+is aimed at minimizing the reward earned by the ego-system.
+Under a fixed heuristic-based policy perturbation function g,
+the adversarial attacker hopes to find an optimal victim pol-
+icy v to help decide which agent and when to enforce the
+attack. The proof can be found in Appendix. The construc-
+tion of ¯
+M makes it possible to apply off-the-shelf DRL al-
+gorithms to solve an optimal agent v of ¯
+M, thus deriving the
+optimal adversarial attacker of the LPA-Dec-POMDP.
+Notice that limited numbers of attack, which could only
+be executed K times, making the action sparse in both agent
+and time dimension. Such sparse action often plays a vital
+role in obtaining a high reward and thus would be exploited
+aggressively. However, the opportunities for taking sparse
+action are limited. If the attacker exhausts the opportuni-
+ties at the very beginning, it will lead to sub-optimality. To
+guide the agent to take sparse action more cautiously, Spar-
+sity Prior Regularized Q learning (SPRQ) (Pang et al. 2021)
+constructs a regularized MDP by assigning a low probability
+to sparse action based on a reference distribution and solves
+the task by proposing a regularized objective:
+max
+v
+E[
+T
+X
+t=0
+γt( ¯Rt −λDKL(v(·|¯st), pref(·)))],
+(1)
+where λ ∈R, pref is the reference distribution which as-
+signs a small probability δ to sparse action “attack” and 1−δ
+to “not attack” (i.e., pref(·) = ( δ
+|N|, ... δ
+|N|, 1 −δ) in this
+case), and DKL is the Kullback-Leibler (KL) divergence.
+As claimed in Proposition 3.1 and 3.2 of (Pang et al. 2021),
+the regularized optimal policy can be obtained by:
+v(¯a|¯s) = pref(¯a) exp (
+¯
+Qv(¯s,¯a)
+λ
+)
+Z(¯s)
+,
+(2)
+where ¯Qv(¯s, ¯a) is the regularized Q function under v, and
+Z(¯s) = P
+¯a∈¯
+A pref(¯a) exp
+¯
+Qv(¯s,¯a)
+λ
+is the partition function.
+Following the proposed regularized Bellman optimality
+operator, we parameterize Q-function with ϕ and the SPRQ
+loss function is thus defined as follows:
+Lopt(ϕ) = E[( ¯Qϕ(¯st, ¯at) −y)2],
+(3)
+where y = ¯rt+γλ log (E¯a′
+t+1∼pref (·)[exp (
+¯
+Qϕ−(¯st+1,¯a′
+t+1)
+λ
+)]),
+and ϕ−are the parameters of the target network.
+Applying the above technique can lead to an attacker with
+high attack efficiency, nevertheless, only one attacker can
+easily overfit to a specific ego-system type, still leading to
+poor generalization ability over unseen situation. Inspired
+by the wildly proved ability of Population-Based Train-
+ing (PBT) (Jaderberg et al. 2019), we introduce a diver-
+sity regularization objective to ensure the effective behav-
+ior diversity of the whole population. The divergence of ac-
+tion distribution under same states is a reliable proxy for
+measuring the diversity between policies. In this way, we
+use Jensen-Shannon Divergence (JSD) (Fuglede and Topsøe
+2004) to reflect the diversity of the population Padv(ϕ) =
+{πϕj
+adv}np
+j=1 = {vϕj ◦g}np
+j=1, which can be calculated as:
+JSD({vϕj(·|¯s)}np
+j=1) = 1
+np
+np
+X
+j=1
+DKL(vϕj(·|¯s), ¯v(·|¯s)), (4)
+where ¯v(¯a|¯s) =
+1
+np vϕj(¯a|¯s) is the average policy. Then, for
+the population, the regularization objective is defined as:
+Ldiv(ϕ) = E¯s∼Sa[JSD({vϕj(·|¯s)}np
+j=1)],
+(5)
+where Sa = Snp
+j=1 Sj
+a = Snp
+j=1{¯s|k > 0, ¯a ̸= null, ¯a ∼
+vϕj(·|¯s)} is the union set of states (attack points) chosen to
+be attacked by adversarial attackers.
+Considering the mentioned sparse attack and behavior di-
+versity, our full loss function can be derived:
+Ladv(ϕ) = 1
+np
+np
+X
+j=1
+Lopt(ϕj) −αLdiv(ϕ),
+(6)
+where Lopt and Ldiv are defined in Eq. (3) and Eq. (5), re-
+spectively, and α is an adjustable hyper-parameter to control
+the balance between quality and behavior diversity.
+4.2
+Evolutionary Generation of Attackers
+Despite the effectiveness of PBT with the objective in
+Eq. (6), the ego-system may overfit to some specific types
+of attackers in the current population and thus forget the at-
+tacking modes occurring in the early training stage. To avoid
+this catastrophic result, we attempt to further improve the
+coverage of adversary policy space.
+Among different methods, Quality-Diversity (QD) algo-
+rithms (Cully and Demiris 2017; Chatzilygeroudis et al.
+2021) can obtain a set of high-quality solutions with di-
+verse behaviors efficiently, which have recently been used
+to discover diverse policies (Wang, Xue, and Qian 2022),
+generate environments (Bhatt et al. 2022) and partners (Xue
+et al. 2022a) in RL. As a specific type of evolutionary al-
+gorithms (B¨ack 1996), QD algorithms usually maintain an
+archive (i.e., a set of solutions with high-performance and
+diverse behaviors generated so far) and simulate the natural
+evolution process with iterative update and selection.
+Inspired by QD algorithms, we design specialized update
+and selection mechanisms to generate desired auxiliary ad-
+versarial attackers. We maintain an archive Arcadv with the
+maximum size na, where each individual (i.e., attacker) is
+assigned its quality score and behavior. Specifically, given
+an ego-agent joint policy π, the quality score of adversarial
+attacker πϕi
+adv is defined as the attacker’s discounted cumula-
+tive return:
+Quality(πϕi
+adv) = E¯τ[
+X
+t
+γt ¯R(¯s, ¯a)|π],
+(7)
+where ¯τ is trajectory of attacker πϕi
+adv, and ¯R is defined in
+Thm. 1. To describe the behavior of πϕi
+adv, we calculate the
+distance between it and another attacker πϕj
+adv:
+Dist(πϕi
+adv, πϕj
+adv) = E¯s∼Si,j
+a [JSD(vϕi(·|¯s), vϕj(·|¯s))], (8)
+11756
+
+where Si,j
+a
+= Si
+a ∪Sj
+a is the attack points set. For simplic-
+ity, we use Quality(i) and Dist(i, j) to denote the quality
+score of πϕi
+adv and the distance between πϕi
+adv and πϕj
+adv, re-
+spectively, and i, j are their indexes in the archive.
+In each iteration, we use fitness-based selection (Blickle
+and Thiele 1996) according to their quality scores to se-
+lect np adversarial attackers from the archive and inter-
+act with the ego-system. Next, we take the optimization
+step described in Eq. (6) as an implicit mutation opera-
+tor and derive new attackers. The archive is then updated
+one by one by adding the newly generated attackers. We
+avoid adding attackers with similar behaviors to keep the
+archive diverse (Cully and Mouret 2013; Wang, Xue, and
+Qian 2022). That is, whenever we want to add a new attacker
+to the archive, we first choose the most similar attacker in the
+archive and calculate their behavior distance. If the distance
+exceeds a certain threshold, the new attacker will be added.
+Otherwise, we keep one at random. Note that if the current
+archive size exceeds the capacity na after adding the new at-
+tacker, the oldest one will be deleted. The full procedure of
+the mentioned process is shown in Algo. 1 in Appendix, and
+we refer to such an iteration as a generation.
+4.3
+Robustness Training Paradigm
+After obtaining a set of attackers with high quality in attack-
+ing and high diversity in behaviors, we aim to learn a robust
+ego-system under the existing attackers. We first investigate
+LPA-Dec-POMDP with a fixed adversarial attacker πadv and
+how ego-agent joint policy could be optimized.
+Theorem 2 Given an LPA-Dec-POMDP
+ˆ
+M = ⟨N, S, A,
+P, K, Ω, O, R, γ⟩, a fixed deterministic adversarial attacker
+policy πadv, there exists a Dec-POMDP ˜
+M = ⟨N, ˜S, A, ˜P,
+Ω, ˜O, ˜R, γ⟩, such that the optimal policy of ˜
+M is the optimal
+policy for
+ˆ
+M given πadv, where ˜S = S × N, ˜s = (s, k),
+˜s′ = (s′, k′), ˜d(˜s0) = d(s0)I(k0 = K), ˜O(˜s, i) = O(s, i),
+˜R(˜s, a, ˜s′) = R(s, ˆa, s′),
+˜P(˜s′|˜s, a) =
+0
+k −k′ /∈{0, 1}
+P(s′|s, ˆa)
+otherwise
+,
+where ˜d and d are distributions over initial state in ˜
+M and
+ˆ
+M, respectively, and ˆa = πadv(s, a, k) indicates the exe-
+cuted joint action of the ego-system.
+Theorem 3 Given
+ˆ
+M = ⟨N, S, A, P, K, Ω, O, R, γ⟩, a
+stochastic adversarial attacker policy πadv, there exists a
+Dec-POMDP
+˜
+M = ⟨N, ˜S, A, ˜P, Ω, ˜O, ˜R, γ⟩, such that
+∀π, we have ˜Vπ(˜s) ≤ˆVπ◦πadv(s, k), where ˜s = (s, k),
+ˆVπ◦πadv(s, k) denotes the state value function in the orig-
+inal LPA-Dec-POMDP ˆ
+M, for ∀s ∈S, ∀k ∈{0, 1, ..., K}.
+The intuition behind Thm. 2 is that the constructed
+Dec-POMDP ˜
+M is functionally identical to the LPA-Dec-
+POMDP given the fixed πadv. This theorem unveils that
+LPA-Dec-POMDP can be viewed as a particular version
+of Dec-POMDP whose policy should be robust under the
+“under-attack” transition and reward function. The theorem
+is also easy to be extended to a population version where
+πadv ∼p(Padv), where p is some distribution over the pop-
+ulation of adversarial attackers Padv. Thm. 3 illustrates that,
+under the circumstance where πadv is a stochastic policy, the
+value function in the new Dec-POMDP is the lower bound
+of the value function of the same joint policy in the original
+LPA-Dec-POMDP. Related proof can be found in Appendix.
+The theorem reveals that by optimizing the ego-system un-
+der the constructed Dec-POMDP
+˜
+M, we can get a robust
+ego-system under the Limited Adversary Dec-POMDP ˆ
+M.
+Accordingly, many CMARL algorithms can be applied.
+Specifically, we take QMIX (Rashid et al. 2018) as the prob-
+lem solver, where there exists a Q network Qi(τ i, ai) for
+each agent i and a mixing network that takes each Q value
+along with the global state as input and produces the value
+of Qtot. Under the Dec-POMDP ˜
+M proposed in Thm. 3, we
+parameterize QMIX with θ and train it through minimizing:
+Lego(θ) = E[(Qtot(˜τ, a, ˜s; θ) −ytot)2],
+(9)
+where ytot = ˜r + γ maxa′ Qtot(˜τ ′, a′, ˜s′; θ−), and θ−are
+parameters of a periodically updated target network.
+In our ROMANCE framework, we select a population of
+adversarial attackers from the archive, alternatively optimize
+the adversarial attackers or ego-system by fixing the other,
+and update the archive accordingly. The full algorithm of
+our ROMANCE can be seen in Algo. 2 in Appendix.
+5
+Experiments
+In this section, we conduct extensive experiments to answer
+the following questions: 1) Can ROMANCE1 achieve high
+robustness compared to other baselines in different scenar-
+ios? 2) Can ROMANCE obtain a set of attackers with high
+attacking quality and diversity? 3) Can ROMANCE be inte-
+grated into multiple CMARL methods, and how does each
+hyperparameter influence the performance of ROMANCE?
+We conduct experiments on SMAC (Samvelyan et al.
+2019), a widely used combat scenario of StarCraft II unit mi-
+cromanagement tasks, where we train the ally units to beat
+enemy units controlled by the built-in AI with an unknown
+strategy. At each timestep, agents can move or attack any
+enemies and receive a global reward equal to the total dam-
+age done to enemy units. Here we consider multiple maps
+include maps 2s3z, 3m, 3s vs 3z, 8m, MMM, and 1c3s5z.
+The detailed descriptions are presented in Appendix.
+To ensure fair evaluation, we carry out all the experiments
+with five random seeds, and the results are presented with a
+95% confidence interval. Detailed network architecture, hy-
+perparameter setting of ROMANCE are shown in Appendix.
+5.1
+Competitive Results and Analysis
+We implement ROMANCE based on QMIX (Rashid et al.
+2018) for its widely proven coordination ability. Then, RO-
+MANCE is compared against four baselines: the vanilla
+QMIX, which is obtained to complete the task without
+any adversarial training, RANDOM, which adds random
+1Code is available at https://github.com/zzq-bot/ROMANCE
+11757
+
+Assault
+Assault
+Retreat
+Assault
+Retreat & 
+regroup
+: victim
+: attacker
+: original action
+: forced action
+: regular agents
+Figure 1: Visualization of action selection under unseen
+action attack. The first and second rows show the policy
+learned without and with ROMANCE, respectively.
+attack during training, and two strong baselines named
+RARL (Pinto et al. 2017) and RAP (Vinitsky et al. 2020).
+RARL (Pinto et al. 2017) trains a robust agent in the pres-
+ence of an adversarial attacker who applies disturbance to
+the system. Iteratively, the attacker learns to be an optimal
+destabilization policy, and then the agent learns to fulfill the
+original task while being robust to the adversarial attacker.
+RAP (Vinitsky et al. 2020) extends RARL by introduc-
+ing population based training. At each rollout, it samples an
+attacker uniformly from the population and trains the agent
+and attackers iteratively as RARL does. The introduction of
+population improves the generalization by forcing the agent
+to be robust to a wide range of attackers, thus avoiding being
+exploited by some specific attackers.
+Robustness Visualization
+At first glance, we conduct ex-
+periments on map MMM to investigate how the training
+framework influences the coordination policy behavior un-
+der unpredictable attacks. As shown in Fig. 1, when one
+coordinator from a well-trained coordination policy suffers
+from an action attack, the policy without adversarial train-
+ing will still take the original coordination pattern but ignore
+the emergent situation, resulting in a sub-optimal policy. As
+seen at the beginning of the battle, the survivors learned by
+vanilla QMIX still try to assault but ignore the attacked Ma-
+rauder when it is drawn away by a malicious attack, causing
+severe damage to the team. Still, our ROMANCE can obtain
+a policy where the survivors retreat and wait for the Ma-
+rauder to regroup for efficient coordination. At the middle
+stage of the battle, when some Marines are close to death but
+cannot get healed because the Medivac’s action is being at-
+tacked, the survivors with full health learned by ROMANCE
+will charge forward to replace the dying Marine and cover
+him to let him get healed, while policy learned by vanilla
+QMIX still ramble in the map but ignore the teammates.
+Training phase evaluation
+Fig. 2 shows the learning
+curves of different methods of maps 3s vs 3z and 2s3z when
+facing fixed unknown attackers. ROMANCE outperforms
+all baselines in both maps at each generation either in terms
+of convergence speed or asymptotic performance. RAN-
+DOM achieves the worst performance in almost every gen-
+0
+200
+400
+600
+800
+Generations
+0
+20
+40
+60
+80
+Test…Win…Rate…%
+RARL
+RAP
+RANDOM
+ROMANCE
+(a) 3s vs 3z
+0
+200
+400
+600
+800
+Generations
+0
+20
+40
+60
+80
+Test…Win…Rate…%
+RARL
+RAP
+RANDOM
+ROMANCE
+(b) 2s3z
+Figure 2: Averaged test win rates on two maps.
+eration, indicating that adding random policy perturbation
+can somehow improve the exploration ability under an en-
+vironment without attack but has no effect on tasks where
+attackers exist. The superiority of ROMANCE over RARL
+and RAP demonstrates the necessity of adversarial popula-
+tion and diverse population training, respectively. In Fig. 3,
+we present the learning curves of different methods imple-
+mented on QPLEX and VDN on map 2s3z. The curves show
+that ROMANCE can significantly enhance the robustness of
+value-based MARL algorithms when they are integrated.
+0
+200
+400
+600
+800
+Generations
+0
+20
+40
+60
+80
+Test…Win…Rate…%
+RARL
+RAP
+RANDOM
+ROMANCE
+(a) VDN
+0
+200
+400
+600
+800
+Generations
+0
+20
+40
+60
+80
+Test…Win…Rate…%
+RARL
+RAP
+RANDOM
+ROMANCE
+(b) QPLEX
+Figure 3: Average test win rates of VDN and QPLEX on
+map 2s3z during the training phase.
+Robustness Comparison
+We here come to show whether
+ROMANCE can improve the coordination ability under dif-
+ferent unpredictable attacks compared with multiple base-
+lines. As shown in Tab. 1, we present three settings, where
+“Natural” means no attackers or the attack number K = 0
+during testing, “Random Attack” indicates that every agent
+in the ego-system might be attacked randomly at each step,
+“EGA (Evolutionary Generation based Attackers)” are un-
+seen attackers with high performance and diversity gener-
+ated by our method in multiple extra runs, which could be
+viewed as out-of-distribution attackers for different meth-
+ods. In the “Natural” setting, ROMANCE achieves com-
+parable or better performance compared to other baselines.
+RARL achieves inferiority over other baselines because it
+aims to learn a worst-case performance, leading to a pes-
+simistic result for the coordination ability. RAP and RAN-
+DOM show superiority over the vanilla QMIX in some
+maps, such as 2s3z. We believe this is because random
+attacks or a weak adversarial population during training
+can promote exploration for MARL under natural circum-
+stances. Furthermore, when suffering from a random attack
+during testing (i.e., the “Random Attack” setting), vanilla
+11758
+
+Method
+Map Name
+2s3z
+K = 8
+3m
+K = 4
+3s vs 3z
+K = 8
+8m
+K = 5
+MMM
+K = 8
+1c3s5z
+K = 6
++/ −/ ≈
+Natural
+vanilla QMIX
+92.8 ± 1.62
+97.9 ± 1.02
+98.3 ± 0.78
+98.2 ± 0.45
+95.8 ± 1.59
+88.8 ± 2.13
+1/1/4
+RARL
+96.4 ± 1.19
+86.0 ± 5.38
+80.6 ± 27.5
+95.3 ± 3.31
+89.3 ± 7.01
+76.9 ± 9.85
+0/4/2
+RAP
+98.1 ± 0.76
+91.3 ± 4.93
+99.3 ± 0.51
+91.7 ± 7.96
+95.3 ± 4.98
+86.7 ± 10.5
+0/1/5
+RANDOM
+98.0 ± 0.60
+95.3 ± 2.07
+99.6 ± 0.35
+98.6 ± 0.90
+93.8 ± 7.56
+93.1 ± 4.41
+1/0/5
+ROMANCE
+97.9 ± 1.34
+96.0 ± 1.83
+97.8 ± 1.78
+94.3 ± 3.94
+97.1 ± 1.49
+93.9 ± 1.24
+Random
+Attack
+vanilla QMIX
+78.8 ± 1.28
+78.7 ± 1.49
+87.0 ± 0.36
+66.2 ± 2.08
+70.0 ± 3.97
+66.6 ± 2.03
+0/5/1
+RARL
+84.3 ± 2.40
+67.6 ± 5.01
+70.1 ± 29.1
+75.7 ± 7.00
+62.2 ± 10.2
+56.5 ± 10.8
+0/5/1
+RAP
+87.3 ± 1.87
+73.5 ± 3.49
+89.8 ± 4.81
+78.4 ± 8.22
+84.2 ± 9.05
+66.8 ± 9.66
+0/1/5
+RANDOM
+83.9 ± 6.38
+76.4 ± 2.27
+91.9 ± 1.32
+72.0 ± 3.46
+72.9 ± 7.09
+60.5 ± 21.3
+0/2/4
+ROMANCE
+89.1 ± 1.97
+78.1 ± 5.13
+93.0 ± 1.82
+76.2 ± 5.36
+85.8 ± 8.66
+77.9 ± 1.96
+EGA
+vanilla QMIX
+26.7 ± 4.28
+20.7 ± 2.13
+30.9 ± 1.52
+42.7 ± 9.79
+37.9 ± 3.13
+35.2 ± 8.66
+0/6/0
+RARL
+56.1 ± 11.8
+86.1 ± 0.98
+60.9 ± 14.2
+66.3 ± 7.25
+41.5 ± 11.6
+35.3 ± 4.00
+0/6/0
+RAP
+64.1 ± 11.9
+84.0 ± 4.27
+65.1 ± 4.41
+84.4 ± 8.88
+74.9 ± 15.5
+45.4 ± 6.83
+0/4/2
+RANDOM
+48.3 ± 17.3
+66.2 ± 16.6
+54.4 ± 7.83
+55.6 ± 12.5
+53.1 ± 6.09
+43.3 ± 10.3
+0/6/0
+ROMANCE
+81.6 ± 0.84
+89.7 ± 1.52
+90.5 ± 1.97
+86.2 ± 5.11
+84.0 ± 11.5
+66.5 ± 3.24
+Table 1: Average test win rates of different methods under various attack settings, where K is the number of attacks during
+training, “Natural” means no attack during testing, “Random Attack” indicates every agent in the ego-system may be attacked
+randomly, and “EGA” means our evolutionary generation based attackers. The best result of each column is highlighted in
+bold. The symbols ‘+, ‘−’ and ‘≈’ indicate that the result is significantly superior to, inferior to, and almost equivalent to
+ROMANCE, respectively, according to the Wilcoxon rank-sum test (Mann and Whitney 1947) with confidence level 0.05.
+Method
+K = 6
+K = 7
+K = 8
+K = 9
+K = 10
+K = 11
+K = 12
+K = 14
+vanilla QMIX
+59.2 ± 2.66
+42.1 ± 0.81
+26.7 ± 4.28
+17.3 ± 0.62
+12.2 ± 0.33
+8.74 ± 0.14
+6.42 ± 0.84
+2.82 ± 0.70
+RARL
+72.7 ± 4.22
+65.2 ± 9.11
+56.1 ± 11.8
+46.3 ± 12.1
+38.0 ± 13.5
+31.8 ± 13.1
+25.9 ± 12.3
+18.6 ± 10.9
+RAP
+81.7 ± 7.37
+73.6 ± 7.46
+64.1 ± 11.9
+53.5 ± 11.7
+42.5 ± 11.6
+33.9 ± 11.4
+25.8 ± 10.7
+14.0 ± 7.50
+RANDOM
+69.3 ± 10.9
+56.8 ± 12.8
+48.3 ± 17.3
+34.7 ± 17.3
+25.5 ± 15.8
+19.8 ± 14.3
+14.9 ± 12.6
+10.0 ± 9.69
+ROMANCE
+89.9 ± 1.19
+86.4 ± 1.87
+81.6 ± 0.84
+75.1 ± 0.58
+66.7 ± 1.56
+57.4 ± 1.61
+48.6 ± 2.60
+41.5 ± 2.17
+Table 2: Average test win rates of each method when the test number of attacks K changes on map 2s3z. The best result of each
+column is highlighted in bold, and the column for the training number (i.e., K = 8) is highlighted as gray.
+QMIX has the most remarkable performance decrease in
+most maps, demonstrating the multi-agent coordination pol-
+icy’s vulnerability without any adversarial training. Methods
+based on adversarial training such as RANDOM, RARL,
+and RAP show superiority over vanilla QMIX, indicat-
+ing that adversarial training can improve the robustness
+of MARL policy. We further find that when encounter-
+ing strong attackers (i.e., the “EGA” setting), all baselines
+sustain a severe performance decrease. The proposed RO-
+MANCE achieves a high superiority over other baselines on
+most maps under different attack modes, indicating it can in-
+deed learn a robust coordination policy under different pol-
+icy perturbation conditions.
+Beyond-limited-budget evaluation
+As this study consid-
+ers a setting where the number of attacks is fixed during the
+training phase, we evaluate the generalization ability when
+altering the attack budget during testing. We conduct exper-
+iments on map 2s3z with the number of attacks K = 8 dur-
+ing training. As shown in Tab. 2, when the budget is different
+from the training phase, policy learned with vanilla QMIX
+and RANDOM sustain a severe performance decrease even
+when the budget slightly changes, indicating that these two
+methods may overfit to the training situation and lack of gen-
+eralization. RARL and RAP show superiority over vanilla
+QMIX and RANDOM, demonstrating that adversarial train-
+ing can relieve the overfitting problem but is still inferior
+to ROMANCE along with the budget increasing, manifest-
+ing the high generalization ability gained by the training
+paradigm of ROMANCE.
+5.2
+Attacker Population Validation
+As our method needs to maintain a set of adversarial at-
+tackers, we design experiments to investigate the attackers
+generated by our method. As shown in Fig. 4(a), the mul-
+tiple attack methods can correspondingly decrease the ego-
+system’s performance, and our EGA (Evolutionary Genera-
+tion based Attackers) show high superiority over others both
+in return and test win rate, demonstrating the effectiveness
+of the proposed training paradigm. EGA, EGA w/o sa, and
+PBA (Population-Based Attackers) outperform ATA (Alter-
+nating Training Attackers) and RANDOM, indicating that
+population training can indeed improve the attacking abil-
+ity. Nevertheless, PBA works inefficiently, showing that only
+randomly initialized individuals in the population are insuf-
+ficient for efficient population training. The superiority of
+EGA over its ablation EGA w/o sa demonstrates the effec-
+tiveness of sparse action regularizer.
+Furthermore, we analyze the behavior representations
+learned by each attacking method in a two-dimensional
+plane using the t-SNE method (Van der Maaten and Hinton
+2008). As shown in Fig. 4(b), we can discover that the tra-
+ditional population-based training paradigm can only gen-
+erate attackers with very limited diversity and quality, with
+most points gathering around in a few specific areas, while
+11759
+
+: High-quality individuals
+: PBA Others: EGA
+/
+(a) Attack quality on map 3m
+(b) Behavior diversity of the population
+(c) Sparse attack learned by ROMANCE
+Figure 4: Attacker quality validation, where EGA and EGA w/o sa are our Evolutionary Generation of Attackers with and
+without sparse action regularizer, respectively; PBA and ATA refer to Population-Based Attackers and Alternate Training At-
+tackers, respectively; RANDOM means that we select a coordinator to attack randomly; (a) The attacking quality. (b) The
+t-SNE projection of attackers on map 3m. (c) Attack points produced on two maps with and without sparse action regularizer.
+QMIX
+QPLEX
+VDN
+0
+20
+40
+60
+80
+Test…Win…Rate…%
+w/…ROMANCE
+w/o…ROMANCE
+(a) Integrative Abilities
+0
+0.01
+0.1
+1
+10
+0
+25
+50
+75
+100
+Test…Win…Rate…%
+(b) Sensibility of α
+Figure 5: More experiments about ROMANCE.
+our EGA can find widespread points with both high qual-
+ity and diversity. Fig. 4(c) shows that our sparse action reg-
+ularizer can efficiently promote the sparse attacking points
+to disperse as much as possible within one episode, which
+can also implicitly promote the diversity of the attackers in
+a population by preventing attackers from exhausting the at-
+tack opportunities at the very beginning.
+5.3
+Integrative and Parameter Sensitive Studies
+ROMANCE is agnostic to specific value decomposition
+MARL methods. We can regard it as a plug-in model
+and integrate it with existing MARL value decomposition
+methods like QPLEX (Wang et al. 2021b), QMIX (Rashid
+et al. 2018), and VDN (Sunehag et al. 2018). As shown
+in Fig. 5(a), when integrating with ROMANCE, the perfor-
+mance of the baselines vastly improves on map 2s3z, indi-
+cating that the proposed training paradigm can significantly
+enhance robustness for these value-based MARL methods.
+One of the crucial elements of our framework is the hyper-
+parameter α which controls the attack quality and diversity.
+We here conduct experiments to study the sensibility of α
+in Eq. (6) for the whole framework. As shown in Fig. 5(b),
+on map 3s vs 3z, the performance is more influenced when
+we set α = 0 or 0.01, which refers to optimizing the at-
+tacking quality only but almost ignoring the diversity goal,
+indicating the importance of behavior diversity for the pop-
+ulation training. Nevertheless, other choices have a negligi-
+ble impact on the performance. We believe this is because
+the customized selection and update operators of the evolu-
+tion mechanism can help balance the two goals for a slightly
+larger α. More experimental results, such as how each pa-
+rameter influences ROMANCE, are shown in Appendix.
+6
+Conclusion
+This paper considers the robust cooperative MARL problem,
+where some coordinators suffer from unpredictable policy
+perturbation. We first formalize this problem as an LPA-
+Dec-POMDP, where some coordinators from a team may
+sustain action perturbation accidentally and unpredictably.
+We then propose ROMANCE, an efficient approach to learn
+robust multi-agent coordination via evolutionary generation
+of auxiliary adversarial attackers. Experimental results on
+robustness and generalization testing verify the effective-
+ness of ROMANCE, and more analysis results also con-
+firm it from multiple aspects. As our method aims to learn
+a disentangled adversarial attacker policy, which demands a
+heuristic-based policy perturbation function, future work on
+more reasonable and efficient ways such as observation per-
+turbation and automatic search for the best budget for differ-
+ent tasks would be of great value. Furthermore, how to de-
+sign efficient and effective robust multi-agent reinforcement
+learning algorithms for the open-environment setting (Zhou
+2022) is also valuable for the MARL community.
+Acknowledgments
+This work is supported by National Key Research and De-
+velopment Program of China (2020AAA0107200), the Na-
+tional Science Foundation of China (61921006, 62022039),
+and the program B for Outstanding Ph.D. candidate of Nan-
+jing University. We would like to thank Jingcheng Pang,
+Chengxing Jia, and the anonymous reviewers for their help-
+ful discussions and support.
+11760
+
+References
+B¨ack, T. 1996.
+Evolutionary Algorithms in Theory and
+Practice: Evolution Strategies, Evolutionary Programming,
+Genetic Algorithms. Oxford University Press.
+Bhatt, V.; Tjanaka, B.; Fontaine, M. C.; and Nikolaidis, S.
+2022. Deep surrogate assisted generation of environments.
+In NeurIPS.
+Blickle, T.; and Thiele, L. 1996. A comparison of selec-
+tion schemes used in evolutionary algorithms. Evolutionary
+Computation, 4(4): 361–394.
+Canese, L.; Cardarilli, G. C.; Di Nunzio, L.; Fazzolari, R.;
+Giardino, D.; Re, M.; and Span`o, S. 2021. Multi-agent rein-
+forcement learning: A review of challenges and applications.
+Applied Sciences, 11(11): 4948.
+Chatzilygeroudis, K.; Cully, A.; Vassiliades, V.; and Mouret,
+J.-B. 2021. Quality-Diversity optimization: A novel branch
+of stochastic optimization. In Black Box Optimization, Ma-
+chine Learning, and No-Free Lunch Theorems, 109–135.
+Springer.
+Christianos, F.; Papoudakis, G.; Rahman, M. A.; and Al-
+brecht, S. V. 2021. Scaling multi-agent reinforcement learn-
+ing with selective parameter sharing. In ICML, 1989–1998.
+Cully, A.; and Demiris, Y. 2017. Quality and diversity op-
+timization: A unifying modular framework. IEEE Transac-
+tions on Evolutionary Computation, 22(2): 245–259.
+Cully, A.; and Mouret, J.-B. 2013.
+Behavioral repertoire
+learning in robotics. In GECCO, 175–182.
+Foerster, J.; Farquhar, G.; Afouras, T.; Nardelli, N.; and
+Whiteson, S. 2018. Counterfactual multi-agent policy gra-
+dients. In AAAI, 2974–2982.
+Fuglede, B.; and Topsøe, F. 2004. Jensen-Shannon diver-
+gence and Hilbert space embedding. In ISIT.
+Greshler, N.; Gordon, O.; Salzman, O.; and Shimkin, N.
+2021. Cooperative multi-agent path finding: Beyond path
+planning and collision avoidance. In MRS, 20–28.
+Gronauer, S.; and Diepold, K. 2022. Multi-agent deep rein-
+forcement learning: A survey. Artificial Intelligence Review,
+55(2): 895–943.
+Gu, P.; Zhao, M.; Hao, J.; and An, B. 2022. Online ad hoc
+teamwork under partial observability. In ICLR.
+Guo, J.; Chen, Y.; Hao, Y.; Yin, Z.; Yu, Y.; and Li,
+S. 2022.
+Towards comprehensive testing on the robust-
+ness of cooperative multi-agent reinforcement learning.
+arXiv:2204.07932.
+Hernandez-Leal, P.; Kartal, B.; and Taylor, M. E. 2019. A
+survey and critique of multiagent deep reinforcement learn-
+ing. Autonomous Agents and Multi-Agent Systems, 33(6):
+750–797.
+Hu, H.; Lerer, A.; Peysakhovich, A.; and Foerster, J. N.
+2020. “Other-Play” for zero-shot coordination. In ICML,
+4399–4410.
+Hu, Y.; and Zhang, Z. 2022. Sparse adversarial attack in
+multi-agent reinforcement learning. arXiv:2205.09362.
+Ilahi, I.; Usama, M.; Qadir, J.; Janjua, M. U.; Al-Fuqaha, A.;
+Hoang, D. T.; and Niyato, D. 2021. Challenges and coun-
+termeasures for adversarial attacks on deep reinforcement
+learning. IEEE Transactions on Artificial Intelligence, 3(2):
+90–109.
+Jaderberg, M.; Czarnecki, W. M.; Dunning, I.; Marris, L.;
+Lever, G.; Castaneda, A. G.; Beattie, C.; Rabinowitz, N. C.;
+Morcos, A. S.; Ruderman, A.; et al. 2019. Human-level per-
+formance in 3D multiplayer games with population-based
+reinforcement learning. Science, 364(6443): 859–865.
+Li, S.; Wu, Y.; Cui, X.; Dong, H.; Fang, F.; and Russell, S.
+2019. Robust multi-agent reinforcement learning via min-
+imax deep deterministic policy gradient. In AAAI, 4213–
+4220.
+Lillicrap, T. P.; Hunt, J. J.; Pritzel, A.; Heess, N.; Erez, T.;
+Tassa, Y.; Silver, D.; and Wierstra, D. 2016.
+Continuous
+control with deep reinforcement learning. In ICLR.
+Lin, J.; Dzeparoska, K.; Zhang, S. Q.; Leon-Garcia, A.; and
+Papernot, N. 2020. On the robustness of cooperative multi-
+agent reinforcement learning. In SPW, 62–68.
+Lowe, R.; Wu, Y.; Tamar, A.; Abbeel, J. H. P.; and Mordatch,
+I. 2017.
+Multi-agent actor-critic for mixed cooperative-
+competitive environments. In NeurIPS, 6379–6390.
+Lupu, A.; Cui, B.; Hu, H.; and Foerster, J. N. 2021. Trajec-
+tory diversity for zero-shot coordination. In ICML, 7204–
+7213.
+Mann, H. B.; and Whitney, D. R. 1947. On a test of whether
+one of two random variables is stochastically larger than the
+other. The annals of mathematical statistics, 50–60.
+Mirsky, R.; Carlucho, I.; Rahman, A.; Fosong, E.; Macke,
+W.; Sridharan, M.; Stone, P.; and Albrecht, S. V. 2022. A
+survey of ad hoc teamwork: Definitions, methods, and open
+problems. arXiv:2202.10450.
+Moos, J.; Hansel, K.; Abdulsamad, H.; Stark, S.; Clever, D.;
+and Peters, J. 2022. Robust reinforcement learning: A re-
+view of foundations and recent advances. Machine Learning
+and Knowledge Extraction, 4(1): 276–315.
+Oikarinen, T.; Zhang, W.; Megretski, A.; Daniel, L.; and
+Weng, T.-W. 2021.
+Robust deep reinforcement learning
+through adversarial loss. In NeurIPS, 26156–26167.
+Oliehoek, F. A.; and Amato, C. 2016. A Concise Introduc-
+tion to Decentralized POMDPs. Springer.
+Pan, X.; Seita, D.; Gao, Y.; and Canny, J. 2019. Risk averse
+robust adversarial reinforcement learning. In ICRA, 8522–
+8528.
+Pang, J.-C.; Xu, T.; Jiang, S.-Y.; Liu, Y.-R.; and Yu, Y. 2021.
+Sparsity prior regularized Q-learning for sparse action tasks.
+arXiv:2105.08666.
+Papoudakis, G.; Christianos, F.; Rahman, A.; and Albrecht,
+S. V. 2019.
+Dealing with non-stationarity in multi-agent
+deep reinforcement learning. arXiv:1906.04737.
+Pattanaik, A.; Tang, Z.; Liu, S.; Bommannan, G.; and
+Chowdhary, G. 2018. Robust deep reinforcement learning
+with adversarial attacks. In AAMAS, 2040–2042.
+11761
+
+Peng, Z.; Li, Q.; Hui, K. M.; Liu, C.; and Zhou, B. 2021.
+Learning to simulate self-driven particles system with coor-
+dinated policy optimization. In NeurIPS, 10784–10797.
+Phan, T.; Belzner, L.; Gabor, T.; Sedlmeier, A.; Ritz, F.;
+and Linnhoff-Popien, C. 2021. Resilient multi-agent rein-
+forcement learning with adversarial value decomposition. In
+AAAI, 11308–11316.
+Pinto, L.; Davidson, J.; Sukthankar, R.; and Gupta, A. 2017.
+Robust adversarial reinforcement learning. In ICML, 2817–
+2826.
+Rashid, T.; Samvelyan, M.; Schroeder, C.; Farquhar, G.; Fo-
+erster, J.; and Whiteson, S. 2018. QMIX: Monotonic value
+function factorisation for deep multi-agent reinforcement
+learning. In ICML, 4295–4304.
+Samvelyan, M.; Rashid, T.; Schroeder de Witt, C.; Farquhar,
+G.; Nardelli, N.; Rudner, T. G.; Hung, C.-M.; Torr, P. H.;
+Foerster, J.; and Whiteson, S. 2019. The StarCraft multi-
+agent challenge. In AAMAS, 2186–2188.
+Smirnova, E.; Dohmatob, E.; and Mary, J. 2019. Distribu-
+tionally robust reinforcement learning. arXiv:1902.08708.
+Son, K.; Kim, D.; Kang, W. J.; Hostallero, D. E.; and Yi, Y.
+2019. Qtran: Learning to factorize with transformation for
+cooperative multi-agent reinforcement learning. In ICML,
+5887–5896.
+Song, Y.; and Schneider, J. 2022.
+Robust reinforcement
+learning via genetic curriculum. In ICRA, 5560–5566.
+Stone, P.; Kaminka, G. A.; Kraus, S.; and Rosenschein, J. S.
+2010. Ad hoc autonomous agent teams: Collaboration with-
+out pre-coordination. In AAAI.
+Sun, Y.; Zheng, R.; Liang, Y.; and Huang, F. 2021. Who Is
+the strongest enemy? Towards optimal and efficient evasion
+attacks in deep RL. In ICLR.
+Sunehag, P.; Lever, G.; Gruslys, A.; Czarnecki, W. M.; Zam-
+baldi, V. F.; Jaderberg, M.; Lanctot, M.; Sonnerat, N.; Leibo,
+J. Z.; Tuyls, K.; and Graepel, T. 2018. Value-decomposition
+networks for cooperative multi-agent learning based on team
+reward. In AAMAS, 2085–2087.
+Tessler, C.; Efroni, Y.; and Mannor, S. 2019. Action robust
+reinforcement learning and applications in continuous con-
+trol. In ICML, 6215–6224.
+Van der Maaten, L.; and Hinton, G. 2008. Visualizing data
+using t-SNE. Journal of Machine Learning Research, 9(11):
+2579–2605.
+Vinitsky, E.; Du, Y.; Parvate, K.; Jang, K.; Abbeel, P.; and
+Bayen, A. 2020. Robust reinforcement learning using ad-
+versarial populations. arXiv:2008.01825.
+Wang, J.; Ren, Z.; Han, B.; Ye, J.; and Zhang, C. 2021a.
+Towards understanding cooperative multi-agent Q-learning
+with value factorization. In NeurIPS, 29142–29155.
+Wang, J.; Ren, Z.; Liu, T.; Yu, Y.; and Zhang, C. 2021b.
+QPLEX: Duplex dueling multi-agent Q-learning. In ICLR.
+Wang, Y.; Han, B.; Wang, T.; Dong, H.; and Zhang, C.
+2021c.
+DOP: Off-policy multi-agent decomposed policy
+gradients. In ICLR.
+Wang, Y.; Xue, K.; and Qian, C. 2022.
+Evolutionary di-
+versity optimization with clustering-based selection for re-
+inforcement learning. In ICLR.
+Xie, A.; Sodhani, S.; Finn, C.; Pineau, J.; and Zhang, A.
+2022. Robust policy learning over multiple uncertainty sets.
+arXiv:2202.07013.
+Xu, M.; Liu, Z.; Huang, P.; Ding, W.; Cen, Z.; Li, B.; and
+Zhao, D. 2022. Trustworthy reinforcement learning against
+intrinsic vulnerabilities: Robustness, safety, and generaliz-
+ability. arXiv:2209.08025.
+Xue, K.; Wang, Y.; Yuan, L.; Guan, C.; Qian, C.; and Yu, Y.
+2022a. Heterogeneous multi-agent zero-shot coordination
+by coevolution. arXiv:2208.04957.
+Xue, K.; Xu, J.; Yuan, L.; Li, M.; Qian, C.; Zhang, Z.; and
+Yu, Y. 2022b. Multi-agent dynamic algorithm configuration.
+In NeurIPS.
+Xue, W.; Qiu, W.; An, B.; Rabinovich, Z.; Obraztsova, S.;
+and Yeo, C. K. 2022c. Mis-spoke or mis-lead: Achieving ro-
+bustness in multi-agent communicative reinforcement learn-
+ing. In AAMAS, 1418–1426.
+Yu, C.; Velu, A.; Vinitsky, E.; Gao, J.; Wang, Y.; Bayen, A.;
+and Wu, Y. 2022. The surprising effectiveness of PPO in
+cooperative multi-agent games. In NeurIPS.
+Yu, J.; Gehring, C.; Sch¨afer, F.; and Anandkumar, A.
+2021. Robust reinforcement learning: A constrained game-
+theoretic approach. In L4DC, 1242–1254.
+Yun, W. J.; Park, S.; Kim, J.; Shin, M.; Jung, S.; Mohaisen,
+A.; and Kim, J.-H. 2022. Cooperative multi-agent deep rein-
+forcement learning for reliable surveillance via autonomous
+multi-UAV control. IEEE Transactions on Industrial Infor-
+matics.
+Zhang, H.; Chen, H.; Boning, D. S.; and Hsieh, C.-J. 2020a.
+Robust reinforcement learning on state observations with
+learned optimal adversary. In ICLR.
+Zhang, H.; Chen, H.; Xiao, C.; Li, B.; Liu, M.; Boning,
+D. S.; and Hsieh, C. 2020b.
+Robust deep reinforcement
+learning against adversarial perturbations on state observa-
+tions. In NeurIPS.
+Zhang, K.; Sun, T.; Tao, Y.; Genc, S.; Mallya, S.; and Basar,
+T. 2020c. Robust multi-agent reinforcement learning with
+model uncertainty. In NeurIPS, 10571–10583.
+Zhang, K.; Yang, Z.; and Bas¸ar, T. 2021. Multi-agent re-
+inforcement learning: A selective overview of theories and
+algorithms. Handbook of Reinforcement Learning and Con-
+trol, 321–384.
+Zhang, Y.; Wang, J.; and Boedecker, J. 2022. Robust rein-
+forcement learning in continuous control tasks with uncer-
+tainty set regularization. arXiv:2207.02016.
+Zhou, Z.-H. 2022. Open-environment machine learning. Na-
+tional Science Review, 9(8).
+Zhu, C.; Dastani, M.; and Wang, S. 2022.
+A survey of
+multi-agent reinforcement learning with communication.
+arXiv:2203.08975.
+11762

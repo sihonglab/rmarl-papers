@@ -1,0 +1,851 @@
+Black-box Adversarial Robustness Testing with
+Partial Observation for Multi-Agent Reinforcement
+Learning
+Bang Zhang, Wenjian Luo*, Kesheng Chen, Yujiang Liu, Shuhan Qi, Xuan Wang
+Guangdong Provincial Key Laboratory of Novel Security Intelligence Technologies, Institute of Cyberspace Security,
+School of Computer Science and Technology, Harbin Institute of Technology, Shenzhen 518055, Guangdong, China
+Email: 23s150192@stu.hit.edu.cn, luowenjian@hit.edu.cn, 22s151138@stu.hit.edu.cn,
+23S151125@stu.hit.edu.cn, shuhanqi@cs.hitsz.edu.cn, wangxuan@cs.hitsz.edu.cn
+Abstract—Multi-Agent Reinforcement Learning (MARL) has
+shown great success in many aspects. However, the cooperative
+policy trained by MARL is vulnerable to adversarial attacks
+towards agents’ observations, which could cause immeasurable
+damage to the agent team. A few techniques have been de-
+veloped to test the robustness of MARL, but the feasibility of
+real implementation is not carefully considered. In this work,
+we propose a two-step framework to conduct destructive and
+sparse attacks under realistic conditions. The first step contains
+two attack scenes: Ally Observation Attack (AOA) and Enemy
+Observation Attack (EOA), which have limitations on the use
+of agents’ observations. The first step selects victim agent from
+the team and screens the attack time, while the second step
+generates adversarial perturbation and adds it to the observation
+of the chosen victim in a black-box environment. To the best
+of our knowledge, this is the first work to test the robustness
+with partial observation and conduct the test in a black-box
+environment. Experiments on SMAC environments demonstrate
+that our methods show great performance in reducing the win
+rate and the team reward of the agent team trained by QMIX
+algorithm with lower perturbation steps.
+Index Terms—multi-agent reinforcement learning, black box
+attack, adversarial attack, robustness testing, partial observation.
+I. INTRODUCTION
+Multi-Agent Reinforcement Learning (MARL) has achieved
+remarkable success in a wide range of real-world applications,
+including unmanned aerial vehicle control [1], autonomous
+driving [2] and traffic management [3]. As MARL algorithms
+play a increasingly critical role in practical scenarios, the
+robustness of them desires to be carefully tested. Agents
+trained under classical MARL algorithms are found vulnerable
+to adversarial attacks towards agents’ observations. Suffering
+from such adversarial attacks, agents would choose actions vi-
+olate their origin strategies, which could cause huge damage to
+the team. In cooperative Multi-Agent Reinforcement Learning
+(c-MARL), the cooperation between agents are learned during
+training time and can help the team better complete tasks.
+However, the performance of the team is easier to be affected
+when agents in the team suffer attacks. Testing robustness of
+c-MARL is an urgent task need to be solved.
+*Corresponding author
+To better test the robustness of models trained by MARL
+algorithms, we believe that an ideal testing framework should
+not only be highly destructive to cause more damage to the
+team performance, but also stealthy and practical, meaning
+that it should require minimal perturbation steps and operate
+under realistic implementing conditions. Unfortunately, many
+existing robustness testing methods for MARL ignore the
+realistic conditions, which limit their practical applicability.
+If the required conditions could help methods perform well
+but are not easy to achieve in real situations, we would not
+find a proper way to maintain the robustness of models trained
+by MARL algorithms.
+There exists many techniques for testing robustness of
+reinforcement learning algorithms [4], [5], but only a few of
+them discuss about multi-agent environments. According to
+the victims of the attacking methods, the robustness testing
+methods for MARL could be classified into two types. The
+first kind of methods attack one determined agent in the
+team [6]. Attacking one determined agent could achieve good
+performance when the environment is simple, but it could
+face bottleneck when environments become more complex.
+Therefore, the second kind of methods, which attack multiple
+agents or change the attacking victims over time, is the key to
+test robustness [7]–[9]. However, there are still some problems
+need to be solved in existing methods:
+• The adversary often uses MARL algorithms or differen-
+tial evolution to select the victim agent and the attack
+time, which requires much prior knowledge about the
+agent team, training before the attack, or doing real-
+time computation during attacks. Due to these reasons,
+the adversary need to retrain or recompute when the
+environments get changed, and the immediacy of the
+method is also under trial.
+• Carrying out existing methods often requires the access
+to all agents’ observations, which is not always realistic
+in real implementation. There is an urgent need for the
+enhancement of practicality of testing methods.
+• Some methods assume the adversary can change the
+actions of agents instead of using adversarial attacks
+2025 IEEE 31th International Conference on Parallel and Distributed Systems (ICPADS) | 979-8-3315-4901-5/25/$31.00 ©2025 IEEE | DOI: 10.1109/ICPADS67057.2025.11323102
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:36 UTC from IEEE Xplore.  Restrictions apply. 
+
+to perturb the observations. The other methods using
+adversarial attacks need the parameters of the model.
+Both are often hard to implement in reality.
+To bridge this gap between methodological rigor and practi-
+cal implementability, we propose a novel two-step framework
+to conduct destructive and sparse attacks under realistic con-
+ditions. In the first step, we design two attack scenes: Ally
+Observation Attack (AOA) and Enemy Observation Attack
+(EOA), which simulates the real scenario with strict limitations
+on the use of agents’ observations. Based on two different
+scenes, the first step is to identify a suitable victim agent and
+determines an optimal timing for the attack based on limited
+available information. In the second step, we propose black-
+box methods to generate adversarial perturbations, which will
+be added to the observations of the selected victim agent at
+the chosen time step. To the best of our knowledge, this is
+the first work to systematically address black-box adversarial
+robustness testing in MARL under strict partial observation
+constraints. What’s more, the observations used to guide
+attacks are the features of the MARL environment, which
+improve the performance of our method. Our contributions
+are concluded as follows:
+• This paper proposes a two-step attack method which is
+easier to implement and closer to real-world applications.
+The first step is to select the victim agent and screen the
+attack time through partial observation of the agent in the
+team or partial observation of the enemy. The second step
+is to add perturbations to the observation of the victim
+agent through an extended black-box adversarial attack
+method.
+• We focus on the practicality of method implementa-
+tion. In addition to minimize the requirements for the
+observations of agents, we consider both query attacks
+and substitute model attacks for black-box adversarial
+perturbations generation.
+• We carry out a variety of experiments to show that our
+method can greatly reduce the win rate and team rewards
+of the agent team trained by QMIX [10] with lower
+perturbation steps. We also verify the effectiveness of
+the components of the proposed method through ablation
+study. Our method combines stealthiness and destructive-
+ness, and is more realistic in implementation, making
+it suitable for robustness testing of models trained by
+MARL algorithms.
+II. RELATED WORK
+In this section, we will introduce the classical MARL algo-
+rithm QMIX, adversarial attacks and review existing robust-
+ness testing methods for models trained by MARL algorithms.
+To facilitate clarity, we first clarify several key concepts central
+to our work:
+• Clean observations [7], [11] refer to the states observed
+by agents from environment in normal situation. Each
+agent possesses a limited observation range and only has
+its own observation when executing.
+Agent team
+（controlled by MARL）
+Enemy team
+(controlled by computer)
+Victim agent selected 
+by attack methods
+Fig. 1. Running screenshot of SMAC environment.
+• Adversarial perturbations [8], [9] refer to the perturba-
+tions added to clean observations of agents. The pur-
+pose of adding adversarial perturbations is to mislead
+the actions of agents. These perturbations are generated
+and injected by an adversary, thereby converting clean
+observations into adversarial ones.
+• In the environment, the agent team is trained by MARL
+algorithms and competes against script-controlled ene-
+mies. Agents within the team cooperate with each other
+and are referred to as allies. The agent selected to be
+added adversarial perturbations in the team is called a
+victim [6], [12].
+Fig. 1 illustrates a typical running screenshot of the
+StarCraft Multi-Agent Challenge (SMAC) environment [14],
+which is widely adopted for evaluating c-MARL algorithms.
+The red units circled in the left side is the agent team
+controlled by models trained by the MARL algorithm, and the
+agent pointed out by blue circle is the victim agent selected
+by the attack method. The blue units circled in the right side
+is enemies controlled by scripts in game. Ally and enemy both
+are the concepts defined in the environment. The adversary’s
+objective is to compromise the victim agent so as to lead the
+team to failure in the game.
+A. CTDE and QMIX
+Centralized Training with Decentralized Execution (CTDE)
+[11], [13] is a leading framework in MARL. In this paradigm,
+agents leverage shared information during a central training
+phase to develop coordinated strategies. During execution,
+however, each agent takes actions independently based solely
+on its own local observations. This effectively combines the
+advantages of centralized learning with the practical require-
+ments of decentralized deployment.
+QMIX [10] represents a successful instantiation of CTDE
+framework, addressing limitations of earlier value decompo-
+sition methods such as VDN [13]. As a value-based MARL
+algorithm, QMIX integrates concepts from Actor Critic [15]
+and DQN [16], [17]. Using the CTDE framework, QMIX
+utilizes a centralized mixing network to receive global states
+to guide agents in updating their own parameters. Each agent
+in QMIX is controlled by a DRQN [18], which is a DQN
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:36 UTC from IEEE Xplore.  Restrictions apply. 
+
+network based on RNN, and the mixing network uses the Q-
+value of the selected action of each agent to estimate the joint
+action value. This joint value estimation is then used to update
+the agents’ networks, thereby enhancing overall team
+B. Adversarial Attacks
+Adversarial example aims at adding small perturbations to
+the model inputs to lead the model give wrong classifications
+to the inputs at a high confidence. It was first defined by [19].
+Adversarial attacks could be divided into two types: the white
+box attack and the black-box attack.
+In the white box attack, the adversary needs sufficient access
+to the model parameters and gradients to launch an attack.
+Fast Gradient Sign Method (FGSM) [20] is a classical white
+box attack, which uses the gradients of loss functions on the
+inputs to quickly generate adversarial perturbations. Besides
+FGSM, Project Gradient Descent (PGD) [21] and the Basic
+Iterative Method (BIM) [22] also use the gradients to launch
+attacks. C&W [23] is another white box attack which generates
+adversarial examples based on optimization, while DeepFool
+[24] is a boundary based attack. In the black-box attack, an
+adversary does not need to know about the model structures
+or gradients, attack could be implemented by querying the
+model or using the transferability of adversarial examples.
+Query-based methods could generate adversarial examples by
+estimating the gradients such as ZOO [25] and AutoZOOM
+[26], or find the decision boundary of the model such as
+the Boundary Attack [27]. Methods such as [28] consider
+about improving the transferability of adversarial examples
+generated by local surrogate models.
+In robustness testing for MARL algorithms, we value the
+immediacy of attacking methods, so we will choose the
+methods that could quickly generate adversarial examples such
+as FGSM.
+C. Robustness Testing Methods for MARL
+While numerous studies have explored robustness testing for
+single-agent reinforcement learning [4], [5], [31], fewer have
+addressed the multi-agent setting. Early work which applied
+adversarial attacks on MARL algorithms to test robustness
+such as [6] only attack one determined agent in the team,
+which might be limited in performance when environments
+become more complex. Other work likes [33], [34] which at-
+tacks on multiple determined agents need retrain the adversary
+when victims changed.
+Recently, some work such as [8], [9], [40] use a MARL
+algorithm or differential evolution to select victim agents from
+the team, and the victims could be multiple and changed
+by time steps. Those techniques could better test the MARL
+algorithm for they could cause huge damage to the team. How-
+ever their methods for selecting victims and corresponding
+actions would harm the immediacy of implementation. There
+are some methods such as [7], [35] use adversarial examples to
+attack the state of agents with no specific target. However, the
+appropriate limitations of using agents’ observations as well
+as the difficulties of launching such a white box attack have
+not been carefully considered yet. Generally, the adversary
+does not have the observations of all agents in the beginning
+and should not have too much information of the agent model
+before game. Testing methods should be more realistic in the
+implementation conditions to reasonably improve the MARL
+algorithms. Therefore, we try to present a black-box testing
+method with realistic conditions in this paper.
+III. BLACK-BOX ATTACKS WITH PARTIAL OBSERVATION
+A. Problem Formulation
+A c-MARL game could be modeled as decentralized par-
+tially observable Markov process (Dec-POMDP), which could
+be defined as tuple ⟨N, S, A, T, R, O, Z, γ⟩, where N is the
+number of agents,γ is discount factor, S is the state space
+includes the information of environment and agents. A =
+[A1, A2, . . . , An] is the action space of the joint actions, at
+each time step, agenti will choose ai ∈Ai, and the envi-
+ronment will transit to next state according to state transition
+function T (s′ | s, a) : S×A×S →[0, 1]. Observation function
+Z : S ×A →O determines the observations oi ∈O which are
+drawn by each agent individually at each time step, and then
+all agents will get the same immediate reward r defined by the
+shared team reward function R : S ×A×S →R. The purpose
+of the agent team is to find optimal actions for each agent at
+each time step to maximize the team reward. Therefore, if we
+apply adversarial attacks on MARL algorithms, we need to
+figure out which agent to attack and when to attack first.
+In this paper, We propose a two-step attack framework. The
+first step is to select an agent from the agent team as the
+victim and screen a specific time step as the attack time. The
+second step is to generate adversarial perturbations and add
+them to the victim’s observation, causing the actions of the
+victim agent to be misled and causing damage to the team.
+The two-step attack framework is shown as Fig. 2.
+B. Select the Victim Agent and the Attack Time
+The purpose of the first attack step is to select the victim
+agent for adding adversarial perturbations in the next step as
+well as screen the attack time. In order to make the attacks
+possess stealthiness and destructiveness and be implementable,
+the algorithm requires to seek the following properties:
+• Minimize the number of times to attack.
+Fig. 2. Schematic diagram for two-step attack.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:36 UTC from IEEE Xplore.  Restrictions apply. 
+
+Fig. 3. Selecting victim agent in AOA.
+• Maximize the reduction in team rewards.
+• The implementation conditions should be as closer to
+real-world applications as possible.
+As discussed in the last section, existing methods for testing
+robustness require a large amount of computations and the
+observations of all agents. Some methods using adversarial
+attacks even need the model parameters. Those are difficult
+to achieve in reality. The method proposed in this paper aims
+to use the properties of MARL itself to select the optimal
+attack time and victim agents. Therefore, we have designed
+the following two scenes.
+1) Ally Observation Attack: It is very likely to happen
+that the adversary cannot get the observations of all agents
+in the beginning of the game. Thus the adversary needs a
+medium to gradually gain more information of the agent team.
+In order to sparingly and reasonably obtaining and using the
+observations of agents, one possible scenario is that we can
+obtain the partial observation of an single agent in the team,
+which is named as Ally Observation Attack (AOA). Since we
+only require the observation of the single agent without further
+information of the model parameters or policy, the implement
+conditions of this scenario is relatively easy to satisfy. Then,
+based on the observation values of this agent, we can gradually
+know about other agents appearing in the observation, thereby
+selecting the victim agent from them. The main idea is that
+we can not get any information of an agent or attack it unless
+we have observed it. Noted that the adversary cannot avoid
+using the observation of the corresponding agent to generate
+adversarial perturbations, such observation may be constructed
+by inference. The victim agent selecting method of AOA is
+shown in Fig. 3.
+By using the partial observation ot of a single agent agentt
+from the team, we can get access to {agenti | agenti in ot},
+which are the other ally agents observed in this observation. By
+selecting one agent out of them as the victim agent agentv, the
+adversary can add adversarial perturbations to the observation
+of this victim agent. This attack can lead the victim agent
+take actions that contradict to its original strategy, which
+could break the cooperation between the agents and cause a
+devastating blow to the team. To be more specific, we select
+the victim agent from the observed agents by comparing the
+difference between the Q-values before and after being added
+Algorithm 1 Ally Observation Attack
+Input: Observation ot of the selected agent agentt
+Output: The victim agent agentv
+1: Get the observation ot of the agent agentt.
+2: while the game is running do
+3:
+Get agents set s : {agenti | agenti in ot}
+4:
+for (agenti ∈s): do
+5:
+Calculate ∆Qi
+6:
+end for
+7:
+Select the agent agenti with argmax (∆Qi) as victim
+agent
+8:
+Return agentv = agenti
+9: end while
+perturbation:
+∆Qi = Qi −Q′
+i
+(1)
+Here the Qi and Q′
+i refer to the Q-values of the action selected
+by the agent before being added perturbation and after being
+added perturbation, which are the outputs of the agent model.
+This method is a sparse attack method for the reason that
+the attack is stopped when there are no other agents observed
+by the selected agent agentt, or when agentt is destroyed.
+The attack is launched at the screened time step when there
+exist agents observed by agentt. Therefore the attack time
+is decided by the agent itself. The adversary could break the
+stance of the team at a early stage by attacking at this time.
+We have also verified the effectiveness and rationality of the
+AOA method in selecting the attack time and victim agents in
+experiments. The pseudocode of the AOA method is shown in
+Algorithm 1.
+2) Enemy Observation Attack: In another scene, the ad-
+versary is unable to obtain any observations of the agents
+at the initial stage and can only obtain information about
+the agents through the observations of the enemies, which
+is named as the Enemy Observation Attack (EOA). In this
+case, the implementation conditions are more realistic but
+the attack difficulty is also harder.The adversary obtains the
+partial observation values oe of a single enemy, and when
+the agents {agenti | agenti in oe} are observed in oe, the
+adversary selects one out of them as the victim agent agentv.
+The schematic diagram of the victim agent selecting method
+of EOA is shown in Fig. 4.
+The EOA method also calculates the ∆Qi of the agents
+observed in oe, and selects the agent with the largest difference
+as the victim agent. When there is no agent appears in the
+enemy’s observation or the enemy is destroyed, the EOA
+method will not launch any attack, so this is a sparse attack
+method. We will show the performance of the EOA method
+in the experimental section.
+C. Generation of Adversarial Perturbations
+The representative methods of generating adversarial per-
+turbations are FGSM, PGD etc. But most of them generate
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:36 UTC from IEEE Xplore.  Restrictions apply. 
+
+Fig. 4. Selecting victim agent in EOA.
+perturbations by using the gradients of model loss function
+∇XL (θ, X). However, in MARL, the loss function about
+the team reward is only used during training, which can not
+be accessed by the adversary during executing. In order to
+generate adversarial perturbations more feasibly, we propose
+the following black-box methods to generate perturbations
+through the Q-value of agents.
+1) Query Based Black-Box Adversarial Attack: The input
+of the agent model is the observation, which is the current
+state observed by agent, and the output of the model is the
+corresponding scores to each of the agent’s available actions,
+which is known as Q-values. Agents will choose the action
+with the largest Q-value at each time step, and the purpose
+of the adversarial attack is to mislead the agent to choose the
+action which is not optimal. We define the Q-value of the
+action chosen by agentk as Qk, which is also the maximum
+Q-value. Suppose we use FGSM to attack. Then the adversarial
+perturbations are generated by the gradient of Q-value on
+observation, which has the following form:
+dpertubation (X) = ϵ × sgn (∇XQk)
+(2)
+Where ϵ is the size of the perturbation step, ∇XQk is the
+gradient of Q-value on input. In the real black-box scene,
+we can not calculate the gradient of Q-value through the
+parameters of the model. So we use the following equations
+to estimate the gradient:
+∇XQk ≈
+∆Qk
+∆x1
+, ∆Qk
+∆x2
+, . . . , ∆Qk
+∆xn
+
+(3)
+In the above equation, the subscripts 1, 2, . . . , n of X refer to
+the indices of the input features. We add a small perturbation
+to the i-th feature of the input, and use the difference of output
+Q-value to get ∆Qk
+∆xi and estimate gradient. Then we can use
+Eq. 2 to generate adversarial perturbations, and add them to
+the victim agent’s observation.
+2) Using Substitute Models to Generate Perturbations:
+The black-box method for generating adversarial perturbations
+above requires to repeatedly query the victim agent model,
+which could attract the attention of the victim. To deal with
+the problem, we investigate on the transferability of adversarial
+examples on the MARL environment. In particular, different
+agents in the same team trained under the same MARL
+Fig. 5. Generating perturbations by substitute model.
+algorithm show the similar reaction to the same adversarial
+perturbations.
+As shown in Fig. 5, we use the observation of agent1,
+input it into the model of agent0 to get output, and generate
+adversarial perturbations by the output. Finally, we add the
+adversarial perturbations back to the observation of agent1
+to mislead its choice on actions. Experimental results in the
+next section demonstrate that this method is effective, which
+means different agents under the same task have similarity
+between models. Therefore, we can transfer the observations of
+different target agents to the agent model prepared in advance
+to generate corresponding adversarial perturbations, and add
+them back to the target agents. So we do not need to query
+different agents in this process.
+IV. EXPERIMENTS
+A. Experiment Settings
+1) Environment Settings: We choose StarCraftII Multi-
+Agent Challenge (SMAC) [14] to evaluate our methods.
+SMAC is a complex environment based on the popular real-
+time strategy game StarCraft II. In SMAC, the agent team
+needs to control a group of agents to defeat enemies controlled
+by computers in a highly dynamic environment, which is
+a huge test to the cooperation between agents. There are
+different maps in SMAC, each map has different numbers of
+agents to control as well as different number of enemies to
+defeat. In order to cover diverse cases, we choose two maps,
+i.e., 2s3z and MMM, to conduct experiments. In 2s3z map,
+there are 2 Stalkers and 3 Zealots in the agent team and the
+enemy team. In MMM map, there are 1 Medivac, 2 Marauders
+and 7 Marines in the agent team. Thus 2s3z is a simpler
+map compared to MMM, which could help us further discuss
+the performance and characteristics of the robustness testing
+methods.
+2) Evaluation Metrics: The performance of the agent team
+in SMAC environments is evaluated by the following metrics:
+the win rate (WR), the death number of enemies (DE), the
+death number of allies (DA) and the team reward (TR). We
+also use the perturbation steps (PS) to evaluate the stealthiness
+of methods in experiments, which means the number of steps
+that adversary adds perturbations to the observations. In each
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:36 UTC from IEEE Xplore.  Restrictions apply. 
+
+(a) Win Rate Curve
+(b) Team Reward Curve
+Fig. 6. Win rate curve and team reward curve of the agent team with the change of ϵ under AOA.
+(a) Win Rate Curve
+(b) Team Reward Curve
+Fig. 7. Win rate curve and team reward curve of the agent team with the change of ϵ under EOA.
+experiment, we run 100 independent games and calculate the
+average value of the metrics.
+3) MARL Algorithm:
+We choose QMIX as our target
+MARL algorithm to train the agent team for robustness testing
+due to its widespread adoption in cooperative multi-agent tasks
+and its representative use of the CTDE framework. Its value
+decomposition mechanism make it a suitable representative
+for studying the vulnerability of MARL policies under partial
+observation. The performance of agents without attack in the
+two maps is shown in Table 1.
+TABLE I
+THE PERFORMANCE OF THE AGENT TEAM TRAINED BY QMIX WITHOUT
+ATTACKS
+MAP
+Algorithm
+WR
+DE
+DA
+TR
+2s3z
+QMIX
+100
+5.00
+1.74
+19.9
+MMM
+QMIX
+99
+9.65
+2.90
+19.4
+B. Experiment Results of Testing AOA
+We first apply the AOA attacking method on the agent team
+trained by QMIX to test the performance by selecting only
+one agent from the team as the victim. The curve of win
+rate and team reward of the agent team with the change of
+ϵ under the AOA method is shown in Fig. 6. We find that
+the AOA method even performs better when the environment
+becomes more complex. This phenomenon is accord with the
+law that the deep learning models become more vulnerable
+as the dimensions become higher. To be more specific, by
+applying the AOA method to attack the agent team, we can
+separate agents from each other to destruct the connections
+between them when there exists allies in the observation of the
+certain agent. And then, the team strategy learned in training
+would cease to be effective, which will lead the agent team to
+failure in the battle.
+When selecting only one agent from the team as the victim
+agent at each time step, the AOA method can reduce the win
+rate of the agent team from 100% to 4% in 2s3z map, and from
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:36 UTC from IEEE Xplore.  Restrictions apply. 
+
+TABLE II
+THE ABLATION STUDY OF AOA METHOD. THE COMPARED ALGORITHMS
+OF THE FIRST STEP AND SECOND STEP ARE NAMED “ALL” AND “RAND”
+FOR SHORT.
+MAP
+Algorithm WR
+DE
+DA
+TR
+PS
+2s3z
+AOA
+4
+2.24
+4.84
+11.7
+35.3
+ALL
+4
+2.04
+4.79
+11.4
+54.3
+RAND
+17
+3.27
+4.62
+14.0
+38.1
+MMM
+AOA
+0
+1.94
+9.04
+6.4
+21.6
+ALL
+0
+1.41
+9.46
+6.0
+102.6
+RAND
+8
+3.62
+9.40
+8.5
+24.2
+99% to 0% in MMM map. The team reward is reduced from
+nearly 20 to 11.6 in 2s3z map and 6.1 in MMM map. Those
+results show that the AOA method can cause huge damage to
+the agent team with partial observation.
+To further explore the performance of the AOA method, we
+set ablation study to evaluate the validity of components in the
+method. We divide the process of selecting the victim agent
+from the team into two steps as follows.
+• The first step is using the observation of the certain agent
+to select onr from the agents appearing in the observatios
+out of the team, which actually screens the attack time
+step at meantime.
+• The second step is calculating ∆Q of agents to select the
+victim agent.
+To evaluate the validity of the first step, we choose to compare
+the AOA method with the algorithm as follow: The adversary
+has the observations of all agents, from the start of the game
+to the end of the game. The adversary always selects the agent
+with the biggest ∆Q to attack. For the AOA method nearly
+reaches convergence when ϵ equals to 0.3, we conduct the
+evaluation with ϵ = 0.3. The results are shown in Table 2.
+From Table 2, we can see that the AOA method requires
+the less steps to add perturbations, which is the 65% and 21%
+of the compared method, respectively, while maintaining the
+reduction of the win rate and the team reward. What’s more,
+AOA only uses the partial observation, the adversary only has
+access to the observation of the single agent in the beginning
+while the compared method has the access to all agents’
+observations. The first step actually finds an optimal subset of
+victim agents and the attack time steps by the characteristics of
+MARL environments, and has a more realistic implementation
+in using agents’ observations.
+Towards the second step, we choose to compare the AOA
+method with the algorithm as follow: The adversary randomly
+selects one agent from the agents set observed in the first step
+as the victim agent to attack. The results are shown in Table
+2 with ϵ = 0.3.
+From Table 2, it can be observed that there is a gap in
+performance between “RAND” (randomly select a victim)
+and “AOA” (use ∆Q to select a victim). But considering that
+randomly selecting a victim omits the step to query the model,
+the adversary should weigh the performance and feasibility of
+the method.
+C. Experiment Results of Testing EOA
+In the EOA method, it is more difficult to attack because
+we can not launch an attack when there is no agent oberved
+by the enemy, and the agent team could have enough time
+to carry out the c-MARL strategy. The curve of win rate and
+team reward of the agent team with the change of ϵ under the
+EOA method is shown in Fig. 7.
+Compared with AOA, we find that the EOA method even
+performs better in 2s3z map. However the performance in
+MMM map is less than satisfactory. The reason that the effect
+of EOA decreases when environment becomes more complex
+is that the EOA method only launches attacks when agents are
+observed by the certain enemy, which makes the fault-tolerant
+badly reduced.
+D. Experiment Results of Generating Adversarial Perturba-
+tions
+In this part, we test the method of generating adversarial
+perturbations by using substitute models on the AOA method.
+In particular, we assume that the adversary could only query
+the inputs and the corresponding outputs of the model of
+agent0, and the adversary could only calculate ∆Q and gen-
+erate adversarial perturbations by inputting the observations of
+corresponding agents into the model of agent0.
+We use “sAOA” to refer the method using substitute models.
+The results are shown in Fig. 8. Since performance of the AOA
+method nearly reaches convergence at ϵ = 0.3, we only test
+the situations with ϵ = 0.1, 0.2, 0.3.
+The performance of the attack method using substitute mod-
+els is similar to the origin method (i.e., the query based black-
+box adversarial attack), and they achieve almost the same
+performance in MMM map. Relatively, such method does not
+perform so well in simple environment. It is probably because
+in environments with more agents and higher dimensions,
+agents trained under the same MARL algorithm are more
+similar to each other, which makes them easier to suffer from
+adversarial perturbations generated by substitute models.
+V. CONCLUSION
+In this paper, we propose a black-box adversarial robustness
+testing method for the model trained by MARL algorithms
+with partial observation. Our testing method use a two-step
+framework to launch attacks. The first step is to select one
+victim agent from the agent team, and the second step is to
+generate adversarial perturbations and add them to the victim’s
+observation. We propose two algorithms, i.e., AOA and EOA,
+for the first step. They properly use the observation of a single
+agent or enemy to select victim agents. We present a black-box
+adversarial perturbations generation method in the second step,
+and explore to attack by substitute models. The results clearly
+show the great performance of our methods and indicate the
+importance of testing robustness for MARL algorithm with
+realistic implementation.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:36 UTC from IEEE Xplore.  Restrictions apply. 
+
+(a) Win Rate on 2s3z
+(b) Team Reward on 2s3z
+(c) Win Rate on MMM
+(d) Team Reward on MMM
+Fig. 8. Results of Using Substitute Model to Generate Adversarial Perturbations.
+VI. ACKNOWLEDGMENTS
+This study is supported by Shenzhen Fundamental Research
+Program (Grant No. JCYJ20220818102414030) and Guang-
+dong Provincial Key Laboratory of Novel Security Intelligence
+Technologies (Grant No. 2022B1212010005).
+REFERENCES
+[1] J. Cui, Y. Liu, and A. Nallanathan, “The application of multi-agent
+reinforcement learning in uav networks,” in 2019 IEEE International
+Conference on Communications Workshops (ICC Workshops).
+IEEE,
+2019, pp. 1–6.
+[2] S. Shalev-Shwartz, S. Shammah, and A. Shashua, “Safe, multi-
+agent, reinforcement learning for autonomous driving,” arXiv preprint
+arXiv:1610.03295, 2016.
+[3] T. Chu, J. Wang, L. Codec`a, and Z. Li, “Multi-agent deep reinforcement
+learning for large-scale traffic signal control,” IEEE transactions on
+intelligent transportation systems, vol. 21, no. 3, pp. 1086–1095, 2019.
+[4] V. Behzadan and W. Hsu, “Rl-based method for benchmarking the
+adversarial resilience and robustness of deep reinforcement learning
+policies,” in Computer Safety, Reliability, and Security: SAFECOMP 2019
+Workshops, ASSURE, DECSoS, SASSUR, STRIVE, and WAISE, Turku,
+Finland, September 10, 2019, Proceedings 38.
+Springer, 2019, pp. 314–
+325.
+[5] Y. Qiaoben, C. Ying, X. Zhou, H. Su, J. Zhu, and B. Zhang, “Understand-
+ing adversarial attacks on observations in deep reinforcement learning,”
+Science China Information Sciences, vol. 67, no. 5, p. 152104, 2024.
+[6] J. Lin, K. Dzeparoska, S. Q. Zhang, A. Leon-Garcia, and N. Papernot,
+“On the robustness of cooperative multi-agent reinforcement learning,”
+in 2020 IEEE Security and Privacy Workshops (SPW).
+IEEE, 2020, pp.
+62–68.
+[7] J. Guo, Y. Chen, Y. Hao, Z. Yin, Y. Yu, and S. Li, “Towards comprehen-
+sive testing on the robustness of cooperative multi-agent reinforcement
+learning,” in Proceedings of the IEEE/CVF conference on computer vision
+and pattern recognition, 2022, pp. 115–122.
+[8] Y. Hu and Z. Zhang, “Sparse adversarial attack in multi-agent reinforce-
+ment learning,” arXiv preprint arXiv:2205.09362, 2022.
+[9] Z. Zhou and G. Liu, “Robustness testing for multi-agent reinforce-
+ment learning: State perturbations on critical agents,” arXiv preprint
+arXiv:2306.06136, 2023.
+[10] T. Rashid, M. Samvelyan, C. S. De Witt, G. Farquhar, J. Foerster, and
+S. Whiteson, “Monotonic value function factorisation for deep multi-agent
+reinforcement learning,” Journal of Machine Learning Research, vol. 21,
+no. 178, pp. 1–51, 2020.
+[11] C. Yu, A. Velu, E. Vinitsky, J. Gao, Y. Wang, A. Bayen, and Y. Wu,
+“The surprising effectiveness of ppo in cooperative multi-agent games,”
+Advances in neural information processing systems, vol. 35, pp. 24 611–
+24 624, 2022.
+[12] N. H. Pham, L. M. Nguyen, J. Chen, H. T. Lam, S. Das, and T.-W. Weng,
+“Evaluating robustness of cooperative marl: A model-based approach,”
+arXiv preprint arXiv:2202.03558, 2022.
+[13] P. Sunehag, G. Lever, A. Gruslys, W. M. Czarnecki, V. Zambaldi,
+M. Jaderberg, M. Lanctot, N. Sonnerat, J. Z. Leibo, K. Tuyls et al.,
+“Value-decomposition networks for cooperative multi-agent learning,”
+arXiv preprint arXiv:1706.05296, 2017.
+[14] M. Samvelyan, T. Rashid, C. S. De Witt, G. Farquhar, N. Nardelli,
+T. G. Rudner, C.-M. Hung, P. H. Torr, J. Foerster, and S. Whiteson, “The
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:36 UTC from IEEE Xplore.  Restrictions apply. 
+
+starcraft multi-agent challenge,” arXiv preprint arXiv:1902.04043, 2019.
+[15] V. Konda and J. Tsitsiklis, “Actor-critic algorithms,” Advances in neural
+information processing systems, vol. 12, 1999.
+[16] V. Mnih, K. Kavukcuoglu, D. Silver, A. Graves, I. Antonoglou, D. Wier-
+stra, and M. Riedmiller, “Playing atari with deep reinforcement learning,”
+arXiv preprint arXiv:1312.5602, 2013.
+[17] V. Mnih, K. Kavukcuoglu, D. Silver, A. A. Rusu, J. Veness, M. G.
+Bellemare, A. Graves, M. Riedmiller, A. K. Fidjeland, G. Ostrovski et al.,
+“Human-level control through deep reinforcement learning,” nature, vol.
+518, no. 7540, pp. 529–533, 2015.
+[18] M. Hausknecht and P. Stone, “Deep recurrent q-learning for partially
+observable mdps,” in 2015 aaai fall symposium series, 2015.
+[19] C. Szegedy, W. Zaremba, I. Sutskever, J. Bruna, D. Erhan, I. Goodfellow,
+and R. Fergus, “Intriguing properties of neural networks,” arXiv preprint
+arXiv:1312.6199, 2013.
+[20] I. J. Goodfellow, J. Shlens, and C. Szegedy, “Explaining and harnessing
+adversarial examples,” arXiv preprint arXiv:1412.6572, 2014.
+[21] A. Madry, A. Makelov, L. Schmidt, D. Tsipras, and A. Vladu, “Towards
+deep learning models resistant to adversarial attacks,” arXiv preprint
+arXiv:1706.06083, 2017.
+[22] A. Kurakin, I. Goodfellow, and S. Bengio, “Adversarial machine learning
+at scale,” arXiv preprint arXiv:1611.01236, 2016.
+[23] N. Carlini and D. Wagner, “Towards evaluating the robustness of neural
+networks,” in 2017 ieee symposium on security and privacy (sp).
+Ieee,
+2017, pp. 39–57.
+[24] S.-M. Moosavi-Dezfooli, A. Fawzi, and P. Frossard, “Deepfool: a simple
+and accurate method to fool deep neural networks,” in Proceedings of the
+IEEE conference on computer vision and pattern recognition, 2016, pp.
+2574–2582.
+[25] P.-Y. Chen, H. Zhang, Y. Sharma, J. Yi, and C.-J. Hsieh, “Zoo: Zeroth
+order optimization based black-box attacks to deep neural networks
+without training substitute models,” in Proceedings of the 10th ACM
+workshop on artificial intelligence and security, 2017, pp. 15–26.
+[26] C.-C. Tu, P. Ting, P.-Y. Chen, S. Liu, H. Zhang, J. Yi, C.-J. Hsieh, and
+S.-M. Cheng, “Autozoom: autoencoder-based zeroth order optimization
+method for attacking black-box neural networks,” in Proceedings of the
+Thirty-Third AAAI Conference on Artificial Intelligence and Thirty-First
+Innovative Applications of Artificial Intelligence Conference and Ninth
+AAAI Symposium on Educational Advances in Artificial Intelligence,
+2019, pp. 742–749.
+[27] W. Brendel, J. Rauber, and M. Bethge, “Decision-based adversarial
+attacks: Reliable attacks against black-box machine learning models,”
+arXiv preprint arXiv:1712.04248, 2017.
+[28] N. Papernot, P. McDaniel, and I. Goodfellow, “Transferability in ma-
+chine learning: from phenomena to black-box attacks using adversarial
+samples,” arXiv preprint arXiv:1605.07277, 2016.
+[29] J. Orr and A. Dutta, “Multi-agent deep reinforcement learning for multi-
+robot applications: A survey,” Sensors, vol. 23, no. 7, p. 3625, 2023.
+[30] A. Gleave, M. Dennis, C. Wild, N. Kant, S. Levine, and S. Russell,
+“Adversarial policies: Attacking deep reinforcement learning,” arXiv
+preprint arXiv:1905.10615, 2019.
+[31] S. Huang, N. Papernot, I. Goodfellow, Y. Duan, and P. Abbeel,
+“Adversarial
+attacks
+on
+neural
+network
+policies,”
+arXiv
+preprint
+arXiv:1702.02284, 2017.
+[32] Y.-C. Lin, Z.-W. Hong, Y.-H. Liao, M.-L. Shih, M.-Y. Liu, and M. Sun,
+“Tactics of adversarial attack on deep reinforcement learning agents,”
+arXiv preprint arXiv:1703.06748, 2017.
+[33] S. Li, J. Guo, J. Xiu, Y. Zheng, P. Feng, X. Yu, J. Wang, A. Liu, Y. Yang,
+B. An et al., “Attacking cooperative multi-agent reinforcement learning
+by adversarial minority influence,” Neural Networks, p. 107747, 2025.
+[34] S. Han, S. Su, S. He, S. Han, H. Yang, and F. Miao, “What is the
+solution for state-adversarial multi-agent reinforcement learning?” arXiv
+preprint arXiv:2212.02705, 2022.
+[35] Z. Zhou, G. Liu, and M. Zhou, “A robust mean-field actor-critic
+reinforcement learning against adversarial perturbations on agent states,”
+IEEE Transactions on Neural Networks and Learning Systems, 2023.
+[36] F. Waseda, S. Nishikawa, T.-N. Le, H. H. Nguyen, and I. Echizen,
+“Closer look at the transferability of adversarial examples: How they
+fool different models differently,” in Proceedings of the IEEE/CVF Winter
+Conference on Applications of Computer Vision, 2023, pp. 1360–1368.
+[37] T. Orekondy, B. Schiele, and M. Fritz, “Knockoff nets: Stealing function-
+ality of black-box models,” in Proceedings of the IEEE/CVF conference
+on computer vision and pattern recognition, 2019, pp. 4954–4963.
+[38] S. Pal, Y. Gupta, A. Shukla, A. Kanade, S. Shevade, and V. Ganapathy,
+“Activethief: Model extraction using active learning and unannotated pub-
+lic data,” in Proceedings of the AAAI Conference on Artificial Intelligence,
+vol. 34, no. 01, 2020, pp. 865–872.
+[39] S. Kariyappa, A. Prakash, and M. K. Qureshi, “Maze: Data-free model
+stealing attack using zeroth-order gradient estimation,” in Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern Recognition,
+2021, pp. 13 814–13 823.
+[40] Z. Zhou, G. Liu, W. Guo, and M. Zhou, “Adversarial attacks on
+multiagent deep reinforcement learning models in continuous action
+space,” IEEE Transactions on Systems, Man, and Cybernetics: Systems,
+2024.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:35:36 UTC from IEEE Xplore.  Restrictions apply. 

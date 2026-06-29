@@ -1,0 +1,1220 @@
+Reward-Poisoning Attacks on Offline Multi-Agent Reinforcement Learning
+Young Wu, Jeremy McMahan, Xiaojin Zhu, Qiaomin Xie
+University of Wisconsin-Madison
+yw@cs.wisc.edu, jmcmahan@wisc.edu, jerryzhu@cs.wisc.edu, qiaomin.xie@wisc.edu
+Abstract
+In offline multi-agent reinforcement learning (MARL),
+agents estimate policies from a given dataset. We study
+reward-poisoning attacks in this setting where an exogenous
+attacker modifies the rewards in the dataset before the agents
+see the dataset. The attacker wants to guide each agent into a
+nefarious target policy while minimizing the Lp norm of the
+reward modification. Unlike attacks on single-agent RL, we
+show that the attacker can install the target policy as a Markov
+Perfect Dominant Strategy Equilibrium (MPDSE), which ra-
+tional agents are guaranteed to follow. This attack can be
+significantly cheaper than separate single-agent attacks. We
+show that the attack works on various MARL agents includ-
+ing uncertainty-aware learners, and we exhibit linear pro-
+grams to efficiently solve the attack problem. We also study
+the relationship between the structure of the datasets and the
+minimal attack cost. Our work paves the way for studying
+defense in offline MARL.
+Introduction
+Multi-agent reinforcement learning (MARL) has achieved
+tremendous empirical success across a variety of tasks
+such as autonomous driving, cooperative robotics, economic
+policy-making, and video games. In MARL, several agents
+interact with each other and the underlying environment,
+and each of them aims to optimize their individual long-
+term reward (Zhang, Yang, and Bas¸ar 2021). Such prob-
+lems are often formulated under the framework of Markov
+Games (Shapley 1953), which generalizes the Markov Deci-
+sion Process model from single-agent RL. In offline MARL,
+the agents aim to learn a good policy by exploiting a pre-
+collected dataset without further interactions with the envi-
+ronment or other agents (Pan et al. 2022; Jiang and Lu 2021;
+Cui and Du 2022; Zhong et al. 2022). The optimal solution
+in MARL typically involves equilibria concepts.
+While the above empirical success is encouraging, MARL
+algorithms are susceptible to data poisoning attacks: the
+agents can reach the wrong equilibria if an exogenous at-
+tacker manipulates the feedback to agents. For example,
+a third-party attacker may want to interfere with traffic to
+cause autonomous vehicles to behave abnormally; teach
+robots an incorrect procedure so that they fail at certain
+Copyright © 2023, Association for the Advancement of Artificial
+Intelligence (www.aaai.org). All rights reserved.
+tasks; misinform economic agents about the state of the
+economy and guide them to make irrational investments or
+saving decisions; or cause the non-player characters in a
+video game to behave improperly to benefit certain human
+players. In this paper, we study the security threat posed
+by reward-poisoning attacks on offline MARL. Here, the at-
+tacker wants the agents to learn a target policy π† of the at-
+tacker’s choosing (π† does not need to be an equilibrium in
+the original Markov Game). Meanwhile, the attacker wants
+to minimize the amount of dataset manipulation to avoid de-
+tection and accruing high cost. This paper studies optimal
+offline MARL reward-poisoning attacks. Our work serves as
+a first step toward eventual defense against reward-poisoning
+attacks.
+Our Contributions
+We introduce reward-poisoning attacks in offline MARL.
+We show that any attack that reduces to attacking single-
+agent RL separately must be suboptimal. Consequently, new
+innovations are necessary to attack effectively. We present a
+reward-poisoning framework that guarantees the target pol-
+icy π† becomes a Markov Perfect Dominant Strategy Equi-
+librium (MPDSE) for the underlying Markov Game. Since
+any rational agent will follow an MPDSE if it exists, this en-
+sures the agents adopt the target policy π†. We also show the
+attack can be efficiently constructed using a linear program.
+The attack framework has several important features.
+First, it is effective against a large class of offline MARL
+learners rather than a specific learning algorithm. Second,
+the framework allows partially decentralized agents who
+can only access their own individual rewards rather than
+the joint reward vectors of all agents. Lastly, the framework
+only makes the minimal assumption on the rationality of the
+learners that they will not take dominated actions.
+We also give interpretable bounds on the minimal cost to
+poison an arbitrary dataset. These bounds relate the mini-
+mal attack cost to the structure of the underlying Markov
+Game. Using these bounds, we derive classes of games that
+are especially cheap or expensive for the attacker to poison.
+These results show which games may be more susceptible
+to an attacker, while also giving insight to the structure of
+multi-agent attacks.
+In the right hands, our framework could be used by a
+benevolent entity to coordinate agents in a way that im-
+The Thirty-Seventh AAAI Conference on Artificial Intelligence (AAAI-23)
+10426
+
+proves social welfare. However, a malicious attacker could
+exploit the framework to harm learners and only benefit
+themselves. Consequently, our work paves the way for fu-
+ture study of MARL defense algorithms.
+Related Work
+Online Reward-Poisoning:
+Reward poisoning problem
+has been studied in various settings, including online single-
+agent reinforcement learners (Banihashem et al. 2022;
+Huang and Zhu 2019; Liu and Lai 2021; Rakhsha et al.
+2021a,b, 2020; Sun, Huo, and Huang 2020; Zhang et al.
+2020), as well as online bandits (Bogunovic et al. 2021;
+Garcelon et al. 2020; Guan et al. 2020; Jun et al. 2018;
+Liu and Shroff 2019; Lu, Wang, and Zhang 2021; Ma et al.
+2018; Yang et al. 2021; Zuo 2020). Online reward poisoning
+for multiple learners is recently studied as a game redesign
+problem in (Ma, Wu, and Zhu 2021).
+Offline Reward Poisoning:
+Ma et al. (2019); Rakhsha
+et al. (2020, 2021a); Rangi et al. (2022b); Zhang and Parkes
+(2008); Zhang, Parkes, and Chen (2009) focus on adversarial
+attack on offline single-agent reinforcement learners. Gleave
+et al. (2019); Guo et al. (2021) study the poisoning attack
+on multi-agent reinforcement learners, assuming that the at-
+tacker controls one of the learners. Our model instead as-
+sumes that the attacker is not one of the learners, and the
+attacker wants to and is able to poison the rewards of all
+learners at the same time. Our model pertains to many appli-
+cations such as autonomous driving, robotics, traffic control,
+and economic analysis, in which there is a central controller
+whose interests are not aligned with any of the agents and
+can modify the rewards and therefore manipulate all agents
+at the same time.
+Constrained Mechanism Design:
+Our paper is also re-
+lated to the mechanism design literature, in particular, the
+K-implementation problem in (Monderer and Tennenholtz
+2004; Anderson, Shoham, and Altman 2010). Our model
+differs mainly in that the attacker, unlike a mechanism de-
+signer, does not alter the game/environment directly, but in-
+stead modifies the training data, from which the learners in-
+fer the underlying game and compute their policy accord-
+ingly. In practical applications, rewards are often stochastic
+due to imprecise measurement and state observation, hence
+the mechanism design approach is not directly applicable to
+MARL reward poisoning. Conversely, constrained mecha-
+nism design can be viewed as a special case when the re-
+wards are deterministic and the training data has uniform
+coverage of all period-state-action tuples.
+Defense against Attacks on Reinforcement Learning:
+There is also recent work on defending against reward poi-
+soning or adversarial attacks on reinforcement learning; ex-
+amples include (Banihashem, Singla, and Radanovic 2021;
+Lykouris et al. 2021; Rangi et al. 2022a; Wei, Dann, and
+Zimmert 2022; Wu et al. 2022; Zhang et al. 2021a,b). These
+work focus on the single-agent setting where attackers have
+limited ability to modify the training data. We are not aware
+of defenses against reward poisoning in our offline multi-
+agent setting. Given the numerous real-world applications of
+offline MARL, we believe it is important to study the multi-
+agent version of the problem.
+Preliminaries
+Markov Games.
+A finite-horizon general-sum n-player
+Markov Game is given by a tuple G = (S, A, P, R, H, µ)
+(Littman 1994). Here S is the finite state space, and A =
+A1 × · · · × An is the finite joint action space. We use a =
+(a1, . . . , an) ∈A to represent a joint action of the n learn-
+ers; we sometimes write a = (ai, a−i) to emphasize that
+learner i takes action ai and the other n−1 learners take joint
+action a−i. For each period h ∈[H], Ph : S × A →∆(S)
+is the transition function, where ∆(S) denotes the probabil-
+ity simplex on S, and Ph(s′|s, a) is the probability that the
+state is s′ in period h + 1 given the state is s and the joint
+action is a in period h. Rh : S × A →Rn is the mean
+reward function for the n players, where Ri,h(s, a) denotes
+the scalar mean reward for player i in state s and period h
+when the joint action a is taken. The initial state distribution
+is µ.
+Policies and value functions.
+We use π to denote a de-
+terministic Markovian policy for the n players, where πh :
+S →A is the policy in period h and πh(s) specifies the joint
+action in state s and period h. We write πh = (πi,h, π−i,h),
+where πi,h(s) is the action taken by learner i and π−i,h(s)
+is the joint action taken by learners other than i in state s
+period h. The value of a policy π represents the expected
+cumulative rewards of the game assuming learners take ac-
+tions according to π. Formally, the Q value of learner i in
+state s in period h under a joint action a is given recursively
+by
+Qπ
+i,H (s, a) = Ri,H (s, a) ,
+Qπ
+i,h (s, a) = Ri,h (s, a) +
+X
+s′∈S
+Ph (s′|s, a) V π
+i,h+1 (s′) .
+The value of learner i in state s in period h under policy π is
+given by V π
+i,h (s) = Qπ
+i,h (s, πh (s)), and we use V π
+h(s) ∈
+Rn to denote the vector of values for all learners in state s in
+period h under policy π.
+Offline MARL.
+In offline MARL, the learners are given a
+fixed batch dataset D that records historical plays of n agents
+under some behavior policies, and no further sampling is al-
+lowed. We assume that D =
+ s(k)
+h , a(k)
+h , r0,(k)
+h
+H
+h=1
+	K
+k=1
+contains K episodes of length H. The data tuple in period
+h of episode k consists of the state s(k)
+h
+∈S, the joint ac-
+tion profile a(k)
+h
+∈A, and reward vector r0,(k)
+h
+∈Rn, where
+the superscript 0 denotes the original rewards before any at-
+tack. The next state s(k)
+h+1 can be found in the next tuple.
+Given the shared data D, each learner independently con-
+structs a policy πi to maximize their own cumulative re-
+ward. They then behave according to the resulting joint pol-
+icy π = (π1, . . . , πn) in future deployment. Note that in a
+multi-agent setting, the learners’ optimal solution concept
+is typically an approximate Nash equilibrium or Dominant
+Strategy Equilibrium (Cui and Du 2022; Zhong et al. 2022).
+10427
+
+An agent’s access to D may be limited, for example, due
+to privacy reasons. There are multiple levels of accessibil-
+ity. In the first level, the agents can only access data that
+directly involves itself: instead of the tuple (sh, ah, rh),
+agent i would only be able to see (sh, ai,h, ri,h). In the sec-
+ond level, agent i can see the joint action but only its own
+reward: (sh, ah, ri,h). In the third level, agent i can see the
+whole (sh, ah, rh). We focus on the second level in this pa-
+per.
+Let Nh (s, a) = PK
+k=1 1{s(k)
+h
+=s,a(k)
+h
+=a} be the total num-
+ber of episodes containing (s, a, ·) in period h. We consider
+a dataset D that satisfies the following coverage assumption.
+Assumption 1. (Full Coverage) For each (s, a) and h,
+Nh (s, a) > 0.
+While this assumption might appear strong, we later show
+that it is necessary to effectively poison the dataset.
+Attack Model
+We assume that the attacker has access to the original dataset
+D. The attacker has a pre-specified target policy π† and at-
+tempts to poison the rewards in D with the goal of forc-
+ing the learners to learn π† from the poisoned dataset. The
+attacker also desires that the attack has a minimal cost.
+We let C(r0, r†) denote the cost of a specific poisoning,
+where r0 =
+ r0,(k)
+h
+H
+h=1
+	K
+k=1 are the original rewards and
+r† =
+ r†,(k)
+h
+H
+h=1
+	K
+k=1 are the poisoned rewards. We focus
+on the L1-norm cost C(r0, r†) = ∥r0 −r†∥1.
+Rationality.
+For generality, the attacker makes minimal
+assumptions about the learners’ rationality. Namely, the at-
+tacker only assumes that the learners never take dominated
+actions (Monderer and Tennenholtz 2004). For technical rea-
+sons, we strengthen this assumption slightly by introducing
+an arbitrarily small margin ι > 0 (e.g. representing the learn-
+ers’ numerical resolution).
+Definition 1. A ι-strict Markov perfect dominant strategy
+equilibrium (ι-MPDSE) of a Markov Game G is a policy π
+satisfying that for all learners i ∈[n], periods h ∈[H], and
+states s ∈S,
+∀ai ∈Ai, ai ̸= πi,h(s), a−i ∈A−i :
+Qπ
+i,h (s, (πi,h(s), a−i)) ≥Qπ
+i,h (s, (ai, a−i)) + ι.
+Note that a strict MPDSE, if exists, must be unique.
+Assumption 2. (Rationality) The learners will play an ι-
+MPDSE should one exist.
+Uncertainty-aware attack.
+State-of-the-art MARL algo-
+rithms are typically uncertainty-aware (Cui and Du 2022;
+Zhong et al. 2022), meaning that learners are cognizant of
+the model uncertainty due to finite, random data and will
+calibrate their learning procedure accordingly. The attacker
+accounts for such uncertainty-aware learners but does not
+know the learners’ specific algorithm or internal parameters.
+It only assumes that the policies computed by the learn-
+ers are solutions to some game that is plausible given the
+dataset. Accordingly, the attacker aims to poison the dataset
+in such a way that the target policy is an ι-MPDSE for every
+game that is plausible for the poisoned dataset.
+To formally define the set of plausible Markov Games for
+a given dataset D, we first need a few definitions.
+Definition 2. (Confidence Game Set) The confidence set on
+the transition function Ph (s, a) has the form:
+CIP
+h (s, a) :=
+
+Ph (s, a) ∈∆(A) :
+∥Ph (s, a) −ˆPh (s, a) ∥1 ≤ρP
+h (s, a)
+	
+where
+ˆPh(s′|s, a) :=
+1
+Nh(s, a)
+PK
+k=1 1{s(k)
+h+1=s′,s(k)
+h
+=s,a(k)
+h
+=a}
+is the maximum likelihood estimate (MLE) of the true tran-
+sition probability. Similarly, the confidence set on the reward
+function Ri,h (s, a) has the form:
+CIR
+i,h (s, a) :=
+
+Ri,h (s, a) ∈[−b, b] :
+|Ri,h (s, a) −ˆRi,h (s, a) | ≤ρR
+h (s, a)
+	
+,
+where
+ˆRi,h(s, a) :=
+1
+Nh(s, a)
+PK
+k=1 r0,(k)
+i,h 1{s(k)
+h
+=s,a(k)
+h
+=a} is
+the MLE of the reward. Then, the set of all plausible Markov
+Games consistent with D, denoted by CIG, is defined to be:
+CIG :=
+
+G = (S, A, P, R, H, µ) : Ph (s, a) ∈CIP
+h (s, a) ,
+Ri,h (s, a) ∈CIR
+i,h (s, a) , ∀i, h, s, a
+	
+.
+Note that both the attacker and the learners know that all
+of the rewards are bounded within [−b, b] (we allow b = ∞).
+The values of ρP
+h (s, a) and ρR
+h (s, a) are typically given
+by concentration inequalities. One standard choice takes the
+Hoeffding-type form ρP
+h (s, a) ∝1/
+p
+max{Nh(s, a), 1},
+and ρR
+h (s, a) ∝1/
+p
+max{Nh(s, a), 1}, where we recall
+that Nh(s, a) is the visitation count of the state-action pair
+(s, a) (Xie et al. 2020; Cui and Du 2022; Zhong et al. 2022).
+We remark that with proper choice of ρP
+h and ρR
+h , CIG con-
+tains the game constructed by optimistic MARL algorithms
+with upper confidence bounds (Xie et al. 2020), as well as
+that by pessimistic algorithms with lower confidence bounds
+(Cui and Du 2022; Zhong et al. 2022). See the appendix for
+details.
+With the above definition, we consider an attacker that at-
+tempts to modify the original dataset D into D† so that π† is
+an ι-MPDSE for every plausible game in CIG induced by the
+poisoned D†. This would guarantee the learners adopt π†.
+The full coverage Assumption 1 is necessary for the above
+attack goal, as shown in the following proposition. We defer
+the proof to the appendix.
+Proposition 1. If Nh (s, a) = 0 for some (h, s, a), then
+there exist MARL learners for which the attacker’s problem
+is infeasible.
+Poisoning Framework
+In this section, we first argue that naively applying single-
+agent poisoning attacks separately to each agent results in
+suboptimal attack cost. We then present a new optimal poi-
+soning framework that accounts for multiple agents and
+thereby allows for efficiently solving the attack problem.
+10428
+
+A1 \ A2
+1
+2
+1
+(3, 3)
+(1, 2)
+2
+(2, 1)
+(0, 0)
+Table 1: Single-agent attack reduction example
+Ai
+r
+1
+{3, 1}
+2
+{2, 0}
+Table 2: Single-agent attack reduction
+Suboptimality of single-agent attack reduction.
+As a
+first attempt, the attacker could try to use existing single-
+agent RL reward poisoning methods. However, this ap-
+proach is doomed to be suboptimal. Consider the game in
+Table 1 with n = 2 learners, one period, and one state.
+Suppose that the original dataset D has full coverage. For
+simplicity, we assume that each (s, a) pair appears suffi-
+ciently many times so that ρR is small. In this case, the tar-
+get policy π† = (1, 1) is already an MPDSE, so no reward
+modification is needed. However, if we use a single-agent
+approach, each learner i will observe the dataset in Table 2.
+In this case, to learner i it is not immediately clear which
+of the two actions is strictly better, for example, when 1, 2
+appears relatively more often than 3, 0. To ensure that both
+players take action 1, the attacker needs to modify at least
+one of the rewards for each player, thus incurring a nonzero
+(and thus suboptimal) attack cost.
+The example above shows that a new approach is needed
+to construct an optimal poisoning framework tailored to the
+multi-agent setting. Below we develop such a framework,
+first for the simple Bandit Game setting, which is then gen-
+eralized to Markov Games.
+Bandit Game Setting
+As a stepping stone, we start with a subclass of Markov
+Games with |S| = 1 and H = 1, which are sometimes
+called bandit games. A bandit game consists of a single-
+stage normal-form game. For now, we also pretend that the
+learners simply use the data to compute an MLE point esti-
+mate ˆG of the game and then solve the estimated game ˆG.
+This is unrealistic, but it highlights the attacker’s strategy to
+enforce that π† is an ι-strict DSE in ˆG.
+Suppose the original dataset is D =
+
+(a(k), r0,(k))
+	K
+k=1
+(recall we no longer have state or period). Also, let N(a) :=
+PK
+k=1 1{a(k)=a} be the action counts. The attacker’s prob-
+lem can be formulated as a convex optimization problem
+given in (1).
+min
+r† C
+ r0, r†
+s.t. R†(a):=
+1
+N(a)
+K
+X
+k=1
+r†,(k)1{a(k)=a}, ∀a;
+R†
+i
+ π†
+i , a−i
+
+≥R†
+i (ai, a−i) + ι, ∀i, a−i, ai ̸= π†
+i ;
+r†,(k) ∈[−b, b]n , ∀k.
+(1)
+The first constraint in (1) models the learners’ MLE ˆG
+after poisoning. The second constraint enforces that π† is an
+ι-strict DSE of ˆG by definition. We observe that:
+1. The problem is feasible if ι ≤2b, since the attacker can
+always set, for each agent, the reward to be b for the target
+action and −b for all other actions;
+2. If the cost function C(·, ·) is the L1-norm, the prob-
+lem is a linear program (LP) with nK variables and
+(A −1)An−1 + 2nK inequality constraints (assuming
+each learner has |Ai| = A actions);
+3. After the attack, learner i only needs to see its own re-
+wards to be convinced that π†
+i is a dominant strategy;
+learner i does not need to observe other learners’ rewards.
+This simple formulation serves as an asymptotic approxi-
+mation to the attack problem for confidence-bound-based
+learners. In particular, when N(a) is large for all a, the con-
+fidence intervals on P and R are usually small.
+With the above idea in place, we can consider more re-
+alistic learners that are uncertainty-aware. For these learn-
+ers, the attacker attempts to enforce an ι separation between
+the lower bound of the target action’s reward and the upper
+bounds of all other actions’ rewards (similar to arm elimi-
+nation in bandits). With such separation, all plausible games
+in CIG would have the target action profile as the dominant
+strategy equilibrium. This approach can be formulated as a
+slightly more complex optimization problem (2), where the
+second and third constraints enforce the desired ι separation.
+The formulation (2) can be solved using standard optimiza-
+tion solvers, hence the optimal attack can be computed effi-
+ciently.
+min
+r† C(r0, r†)
+s.t. R†(a) :=
+1
+N(a)
+K
+X
+k=1
+r†,(k)1{a(k)=a}, ∀a;
+CIR†
+i (a) :=
+
+Ri(a) ∈[−b, b] :
+Ri(a) −R†
+i(a)
+
+≤ρR(a)
+	
+,
+∀i, a;
+min
+Ri∈CIR†
+i (π†
+i ,a−i)
+Ri ≥
+max
+Ri∈CIR†
+i (ai,a−i)
+Ri + ι,
+∀i, a−i, ai ̸= π†
+i ;
+r†,(k) ∈[−b, b]n , ∀k.
+(2)
+We next consider whether this formulation has a feasi-
+ble solution. Below we characterize the feasibility of the at-
+10429
+
+tack in terms of the margin parameter ι and the confidence
+bounds.
+Proposition 2. The attacker’s problem (2) is feasible if ι ≤
+2b −2ρR (a) , ∀a ∈A.
+Proposition 2 is a special case of the general Theorem 5
+with H = |S| = 1. We note that the condition in Propo-
+sition 2 has an equivalent form that relates to the structure
+of the dataset. We later present this form for a more general
+case.
+When an L1-norm cost function is used, we show in the
+appendix that the formulation (2) can also be efficiently
+solved.
+Proposition 3. With L1-norm cost function C (·, ·), the
+problem (2) can be formulated as a linear program.
+Markov Game Setting
+We now generalize the ideas from the bandit setting to derive
+a poisoning framework for arbitrary Markov Games. With
+multiple states and periods, there are two main complica-
+tions:
+1. In each period h, the learners’ decision depends on Qh,
+which involves both the immediate reward Rh and the
+future return Qh+1;
+2. The uncertainty in Qh amplifies as it propagates back-
+ward in h.
+Accordingly, the attacker needs to design the poisoning at-
+tack recursively.
+Our main technical innovation is an attack formulation
+based on Q confidence-bound backward induction. The at-
+tacker maintains confidence upper and lower bounds on the
+learners’ Q function, Q, and Q, with backward induction.
+To ensure π† becomes an ι-MPDSE, the attacker again at-
+tempts to ι-separate the lower bound of the target action and
+the upper bound of all other actions, at all states and periods.
+Recall Definition 2: given the training dataset D, one can
+compute the MLEs Rh and corresponding confidence sets
+CIR
+i,h for the reward. The attacker aims to poison D into
+D† so that the MLEs and confidence sets become R†
+h and
+CIR†
+i,h, under which π† is the unique ι-MPDSE for all plau-
+sible games in the corresponding confidence game set. The
+attacker finds the minimum cost way of doing so by solv-
+ing a Q confidence-bound backward induction optimization
+problem, given in (3)–(7).
+min
+r† C
+ r0, r†
+(3)
+s.t. R†
+i,h (s, a) :=
+1
+Nh (s, a)
+K
+X
+k=1
+r†,(k)
+i,h 1n
+s(k)
+h
+=s,a(k)
+h
+=a
+o,
+∀h, s, i, a
+CIR†
+i,h (s, a) :=
+n
+Ri,h (s, a) ∈[−b, b]
+:
+Ri,h (s, a) −R†
+i,h (s, a)
+ ≤ρR
+h (s, a)
+o
+,
+∀h, s, i, a
+Qi,H (s, a) :=
+min
+Ri,H∈CIR†
+i,H(s,a)
+Ri,H, ∀s, i, a
+Qi,h (s, a) :=
+min
+Ri,h∈CIR†
+i,h(s,a)
+Ri,h
++
+min
+Ph∈CIP
+h (s,a)
+X
+s′∈S
+Ph (s′) Qi,h+1
+
+s′, π†
+h+1 (s′)
+
+,
+∀h < H, s, i, a
+(4)
+Qi,H (s, a) :=
+max
+Ri,H∈CIR†
+i,H(s,a)
+Ri,H, ∀s, i, a
+Qi,h (s, a) :=
+max
+Ri,h∈CIR†
+i,h(s,a)
+Ri,h
++
+max
+Ph∈CIP
+h (s,a)
+X
+s′∈S
+Ph (s′) Qi,h+1
+
+s′, π†
+h+1 (s′)
+
+,
+∀h < H, s, i, a
+(5)
+Qi,h
+
+s,
+ π†
+i,h(s), a−i
+
+≥Qi,h (s, (ai, a−i)) + ι,
+∀h, s, i, a−i, ai ̸= π†
+i,h (s)
+(6)
+r†,(k)
+h
+∈[−b, b]n , ∀h, k.
+(7)
+The backward induction steps (4) and (5) ensure that Q
+and Q are valid lower and upper bounds for the Q function
+for all plausible Markov Games in CIG, for all periods. The
+margin constraints (6) enforce an ι-separation between the
+target action and other actions at all states and periods. We
+emphasize that the agents need not consider Q at all in their
+learning algorithm; Q only appears in the optimization due
+to its presence in the definition of MPDSE.
+Again, pairing an efficient optimization solver with the
+above formulation gives an efficient algorithm for construct-
+ing the poisoning. We now answer the important questions
+of whether this formulation admits a feasible solution and
+whether these solutions yield successful attacks. The lemma
+below provides a positive answer to the second question.
+Lemma 4. If the attack formulation (3)–(7) is feasible, π†
+is the unique ι-MPDSE of every Markov Game G ∈CIG.
+Moreover, the attack formulation admits feasible solu-
+tions under mild conditions on the dataset.
+Theorem 5. The attacker formulation (3)–(7) is feasible if
+the following condition holds:
+ι ≤2b −(H + 1) ρR
+h (s, a) , ∀h ∈[H] , s ∈S, a ∈A.
+We remark that the learners know the upper bound b and
+may use it to exclude implausible games. The accumulation
+of confidence intervals over the H periods results in the extra
+factor (H + 1) on ρR
+h . Theorem 5 implies that the problem
+is feasible so long as the dataset is sufficiently populated;
+that is, each (s, a) pair should appear frequently enough to
+have a small confidence interval half-width ρR
+h . The follow-
+ing corollary provides a precise condition on the visit ac-
+counts that guarantees feasibility.
+Corollary 6. Given a confidence probability δ and the con-
+fidence interval half-width ρR
+h (s, a) = f(
+1
+Nh(s,a)) for some
+10430
+
+strictly increasing function f, the condition in Theorem 5
+holds if
+Nh(s, a) ≥
+
+f −1  2b −ι
+H + 1
+−1
+.
+In particular, for the natural choice of Hoeffding-type
+ρR
+h (s, a) = 2b
+s
+log ((H |S| |A|) /δ)
+max {Nh (s, a) , 1}, it suffices that,
+Nh(s, a) ≥4b2 (H + 1)2 log ((H |S| |A|) /δ)
+(2b −ι)2
+.
+Despite the inner min and max in the problem (3)–(7), the
+problem can be formulated as an LP, thanks to LP duality.
+Theorem 7. With L1-norm cost function C(·, ·), prob-
+lem (3)–(7) can be formulated as an LP.
+The proofs of the above results can be found in the appendix.
+Cost Analysis
+Now that we know how the attacker can poison the dataset in
+the multi-agent setting, we can study the structure of attacks.
+The structure is most easily seen by analyzing the minimal
+attack cost. To this end, we give general bounds that relate
+the minimal attack cost to the structure of the underlying
+Markov Game. The attack cost upper bounds show which
+games are particularly susceptible to poison, and the attack
+cost lower bounds demonstrate that some games are expen-
+sive to poison.
+Overview of results: Specifically, we shall present two
+types of upper/lower bounds on the attack cost: (i) univer-
+sal bounds that hold for all attack problem instances simul-
+taneously; (ii) instance-dependent bounds that are stated in
+terms of certain properties of the instance. We also discuss
+problem instances under which these two types of bounds
+are tight and coincide with each other.
+We note that all bounds presented here are with respect
+to the L1-cost, but many of them generalize to other cost
+functions, especially the L∞-cost. The proofs of the results
+presented in this section are provided in the appendix.
+Setup: Let I = (D, π†, ρR, ρP , ι) denote an instance
+of the attack problem, and ˆG denote the corresponding
+MLE of the Markov Game derived from D. We denote by
+Ih = (Dh, π†
+h, ρR
+h , ρP
+h , ι) the restriction of the instance to
+period h. In particular, ˆRh(s) derived from Dh is exactly
+the normal-form game at state s and period h of ˆG. We
+define C∗(I) to be the optimal L1-poisoning cost for the
+instance I; that is, C∗(I) is the optimal value of the opti-
+mization problem (3)–(7) evaluated on I. We say the attack
+instance I is feasible if this optimization problem is feasi-
+ble. If I is infeasible, we define C∗(I) = ∞. WLOG, we
+assume that |A1| = · · · = |An| = A. In addition, we define
+the minimum visit count for each period h in D as N h :=
+mins∈S mina∈A Nh (s, a), and the minimum over all peri-
+ods as N := minh∈H N h. We similarly define the maxi-
+mum visit counts as N h = maxs∈S maxa∈A Nh (s, a) and
+N = maxh N h. Lastly, we define ρ = minh,s,a ρR
+h (s, a)
+and ρ = maxh,s,a ρR
+h (s, a), the minimum and maximum
+confidence half-width.
+A1/A2
+1
+2
+...
+|A2|
+1
+−b, −b
+−b, b
+...
+−b, b
+2
+b, −b
+b, b
+...
+b, b
+...
+...
+...
+...
+...
+|A1|
+b, −b
+b, b
+...
+b, b
+Table 3: MLE ˆ
+Rh(s, ·) before attack
+A1/A2
+1
+. . .
+2, ..., |A2|
+1
+b, b
+. . .
+b, b−2ρ−ι
+...
+...
+...
+...
+2, ..., |A1|
+b−2ρ−ι, b
+. . .
+b−2ρ−ι, b−2ρ−ι
+Table 4: MLE ˆ
+Rh(s, ·) after attack
+Universal Cost Bounds
+With the above definitions, we present universal attack cost
+bounds that hold simultaneously for all attack instances.
+Theorem 8. For any feasible attack instance I, we have
+that,
+0 ≤C∗(I) ≤NH|S|nAn2b.
+As these upper and lower bounds hold for all instances, they
+are typically loose. However, they are nearly tight. If π† is
+already an ι-MPDSE for all plausible games, then no change
+to the rewards is needed and the attack cost is 0, hence the
+lower bound is tight for such instances. We can also con-
+struct a high-cost instance to show the near-tightness of the
+upper bound.
+Specifically, consider the dataset for a bandit game, D =
+
+(a(k), r0,(k))
+	K
+k=1, where A = An and each action ap-
+pears exactly N times, i.e., N = N = N and K = NAn.
+The target policy is π† = (1, . . . , 1). The dataset is con-
+structed so that r0,(k)
+i
+= −b if a(k)
+i
+= π†
+i,h (s) and r0,(k)
+i
+=
+b otherwise. These rewards are essentially the extreme op-
+posite of what the attacker needs to ensure π† is an ι-DSE.
+Note, the dataset induces the MLE of the game shown in
+Table 3 for the special case with n = 2 players.
+For simplicity, suppose that the same confidence half-
+width ρR (a) = ρ < b is used for all a. Let ι ∈(0, b)
+be arbitrary. For this instance, to install π† as the ι-DSE, the
+attacker can flip all rewards in a way that is illustrated in
+Table 4, inducing a cost as the upper bound in Theorem 8.
+The situation is the same for n ≥2 learners. Our instance-
+dependent lower bound, presented later in Theorem 12, im-
+plies that any attack on this instance must have cost at least
+NnAn−1(2b+2ρ+ι). This lower bound matches the refined
+upper bound in the proof of Theorem 9, implying the refined
+bounds are tight for this instance. Noticing that the universal
+bound in Theorem 8 only differs by an O(A)-factor implies
+it is nearly tight.
+Instance-Dependent Cost Bounds
+Next, we derive general bounds on the attack cost that de-
+pends on the structure of the underlying instance. Our strat-
+egy is to reduce the problem of bounding Markov Game
+10431
+
+costs to the easier problem of bounding Bandit Game costs.
+We begin by showing that the cost of poisoning a Markov
+Game dataset can be bounded in terms of the cost of poi-
+soning the datasets corresponding to its individual period
+games.
+Theorem 9. For any feasible attack instance I, we have that
+C∗(IH) ≤C∗(I) and,
+C∗(I) ≤
+H
+X
+h=1
+C∗(Ih) + 2bnH|S|N + H2ρ|S|nAnN
+Here we see the effect of the learner’s uncertainty. If ρR
+is small, then poisoning costs slightly more than poisoning
+each bandit instance independently. This is desirable since it
+allows the attacker to solve the much easier bandit instances
+instead of the full problem.
+The lower bound is valid for all Markov Games, but it
+is weak in that it only uses the last period cost. However,
+this is the most general lower bound one can obtain without
+additional assumptions on the structure of the game. If we
+assume additional structure on the dataset, then the above
+lower bound can be extended beyond the last period, forcing
+a higher attack cost.
+Lemma 10. Let I be any feasible attack instance containing
+at least one uniform transition in CIP
+h for each period h, i.e.,
+there is some ˆPh(s′ | s, a) ∈CIP
+h with ˆPh(s′ | s, a) =
+1/|S|, ∀h, s′, s, a. Then, we have that
+C∗(I) ≥
+H
+X
+h=1
+C∗(Ih).
+In words, for these instances the optimal cost for poisoning
+is not too far off from the optimal cost of poisoning each
+period game independently. We note this is where the effects
+of ρP show themselves. If the dataset is highly uncertain on
+the transitions, it becomes likely that a uniform transition
+exists in CIP . Thus, a higher ρP leads to a higher cost and
+effectively devolves the set of plausible games into a series
+of independent games.
+Now that we have the above relationships, we can focus
+on bounding the attack cost for bandit games. To be precise,
+we bound the cost of poisoning a period game instance Ih.
+To this end, we define ι-dominance gaps.
+Definition 3. (Dominance Gaps) For every h ∈[H] , s ∈
+S, i
+∈
+[n] and a−i
+∈
+A−i, the ι-dominance gap,
+dι
+i,h(s, a−i), is defined as
+dι
+i,h (s, a−i) :=
+h
+max
+ai̸=π†
+i,h(s)
+h
+ˆRi,h
+ s, (ai, a−i)
+
++ ρR
+h
+ s, (ai, a−i)
+i
+−ˆRi,h
+
+s,
+ π†
+i,h(s), a−i
+
++ ρR
+h
+
+s,
+ π†
+i,h(s), a−i
+
++ ι
+i
++
+where ˆR is the MLE w.r.t. the original dataset D.
+The dominance gaps measure the minimum amount by
+which the attacker would have to increase the reward for
+learner i while others are playing a−i, so that the action
+π†
+i,h (s) becomes ι-dominant for learner i. We then consol-
+idate all the dominance gaps for period h into the variable
+∆h(ι),
+∆h(ι) :=
+X
+s∈S
+n
+X
+i=1
+X
+a−i
+
+dι
+i,h(s, a−i) + δι
+i,h(s, a−i)
+
+Where δι
+i,h(s, a−i) is a minor overflow term defined in the
+appendix. With all this machinery set up, we can give precise
+bounds on the minimal cost needed to attack a single-period
+game.
+Lemma 11. The optimal attack cost for Ih satisfies
+N h∆h(ι) ≤C∗(Ih) ≤N h∆h(ι).
+Combining these bounds with Theorem 9 gives complete at-
+tack cost bounds for general Markov game instances.
+The lower bounds in both Lemma 10 and Lemma 11 ex-
+pose an exponential dependency on n, the number of play-
+ers, for some datasets D. These instances essentially require
+the attacker to modify ˆRi,h(s, a) for every a ∈A. A con-
+crete instance can be constructed by taking the high-cost
+dataset derived as the tight example before and extending
+it into a general Markov Game. We simply do this by giving
+the game several identical states and uniform transitions. In
+terms of the dataset, each episode consists of independent
+plays of the same normal-form game, possibly with a dif-
+ferent state observed. For this dataset the ι-dominance gap
+can be shown to be dι
+i,h (s, a−i) = 2b + 2ρ + ι. A direct
+application of Lemma 10 gives the following explicit lower
+bound.
+Theorem 12. There exists a feasible attack instance I for
+which it holds that
+C∗(I) ≥NH |S| nAn−1 (2b + 2ρ + ι) .
+Recall the attacker wants to assume little about the learn-
+ers and therefore chooses to install an ι-MPDSE (instead of
+making stronger assumptions on the learners and installing a
+Nash equilibrium or a non-Markov perfect equilibrium). On
+some datasets D, the exponential poisoning cost is the price
+the attacker pays for this flexibility.
+Conclusion
+We studied a security threat to offline MARL where an at-
+tacker can force learners into executing an arbitrary Domi-
+nant Strategy Equilibrium by minimally poisoning historical
+data. We showed that the attack problem can be formulated
+as a linear program, and provided an analysis on the attack
+feasibility and cost. This paper thus helps to raise awareness
+of the trustworthiness of multi-agent learning. We encourage
+the community to study defense against such attacks, e.g. via
+robust statistics and reinforcement learning.
+Acknowledgements
+McMahan is supported in part by NSF grant 2023239.
+Zhu is supported in part by NSF grants 1545481,
+1704117, 1836978, 2023239, 2041428, 2202457, ARO
+MURI W911NF2110317, and AF CoE FA9550-18-1-0166.
+Xie is partially supported by NSF grant 1955997 and JP
+Morgan Faculty Research Awards. We also thank Yudong
+Chen for his useful comments and discussions.
+10432
+
+References
+Anderson, A.; Shoham, Y.; and Altman, A. 2010.
+Inter-
+nal implementation. In Proceedings of the 9th International
+Conference on Autonomous Agents and Multiagent Systems:
+volume 1-Volume 1, 191–198. Citeseer.
+Banihashem, K.; Singla, A.; Gan, J.; and Radanovic, G.
+2022. Admissible Policy Teaching through Reward Design.
+arXiv preprint arXiv:2201.02185.
+Banihashem, K.; Singla, A.; and Radanovic, G. 2021. De-
+fense against reward poisoning attacks in reinforcement
+learning. arXiv preprint arXiv:2102.05776.
+Bogunovic, I.; Losalka, A.; Krause, A.; and Scarlett, J. 2021.
+Stochastic linear bandits robust to adversarial attacks. In In-
+ternational Conference on Artificial Intelligence and Statis-
+tics, 991–999. PMLR.
+Cui, Q.; and Du, S. S. 2022.
+When is Offline Two-
+Player Zero-Sum Markov Game Solvable? arXiv preprint
+arXiv:2201.03522.
+Garcelon, E.; Roziere, B.; Meunier, L.; Teytaud, O.; Lazaric,
+A.; and Pirotta, M. 2020.
+Adversarial Attacks on Linear
+Contextual Bandits. arXiv preprint arXiv:2002.03839.
+Gleave, A.; Dennis, M.; Wild, C.; Kant, N.; Levine, S.; and
+Russell, S. 2019. Adversarial policies: Attacking deep rein-
+forcement learning. arXiv preprint arXiv:1905.10615.
+Guan, Z.; Ji, K.; Bucci Jr, D. J.; Hu, T. Y.; Palombo, J.; Lis-
+ton, M.; and Liang, Y. 2020. Robust stochastic bandit al-
+gorithms under probabilistic unbounded adversarial attack.
+In Proceedings of the AAAI Conference on Artificial Intelli-
+gence, volume 34, 4036–4043.
+Guo, W.; Wu, X.; Huang, S.; and Xing, X. 2021. Adversar-
+ial policy learning in two-player competitive games. In In-
+ternational Conference on Machine Learning, 3910–3919.
+PMLR.
+Huang, Y.; and Zhu, Q. 2019.
+Deceptive reinforcement
+learning under adversarial manipulations on cost signals. In
+International Conference on Decision and Game Theory for
+Security, 217–237. Springer.
+Jiang, J.; and Lu, Z. 2021. Offline decentralized multi-agent
+reinforcement learning. arXiv preprint arXiv:2108.01832.
+Jun, K.-S.; Li, L.; Ma, Y.; and Zhu, J. 2018. Adversarial at-
+tacks on stochastic bandits. Advances in Neural Information
+Processing Systems, 31: 3640–3649.
+Littman, M. L. 1994. Markov games as a framework for
+multi-agent reinforcement learning.
+In Machine learning
+proceedings 1994, 157–163. Elsevier.
+Liu, F.; and Shroff, N. 2019.
+Data poisoning attacks on
+stochastic bandits. In International Conference on Machine
+Learning, 4042–4050. PMLR.
+Liu, G.; and Lai, L. 2021.
+Provably Efficient Black-Box
+Action Poisoning Attacks Against Reinforcement Learning.
+Advances in Neural Information Processing Systems, 34.
+Lu, S.; Wang, G.; and Zhang, L. 2021. Stochastic Graphi-
+cal Bandits with Adversarial Corruptions. In Proceedings of
+the AAAI Conference on Artificial Intelligence, volume 35,
+8749–8757.
+Lykouris, T.; Simchowitz, M.; Slivkins, A.; and Sun, W.
+2021. Corruption-robust exploration in episodic reinforce-
+ment learning. In Conference on Learning Theory, 3242–
+3245. PMLR.
+Ma, Y.; Jun, K.-S.; Li, L.; and Zhu, X. 2018. Data poisoning
+attacks in contextual bandits. In International Conference on
+Decision and Game Theory for Security, 186–204. Springer.
+Ma, Y.; Wu, Y.; and Zhu, X. 2021. Game Redesign in No-
+regret Game Playing. arXiv preprint arXiv:2110.11763.
+Ma, Y.; Zhang, X.; Sun, W.; and Zhu, J. 2019. Policy poison-
+ing in batch reinforcement learning and control. Advances in
+Neural Information Processing Systems, 32: 14570–14580.
+Monderer,
+D.;
+and
+Tennenholtz,
+M.
+2004.
+k-
+Implementation. Journal of Artificial Intelligence Research,
+21: 37–62.
+Pan, L.; Huang, L.; Ma, T.; and Xu, H. 2022. Plan better
+amid conservatism: Offline multi-agent reinforcement learn-
+ing with actor rectification. In International Conference on
+Machine Learning, 17221–17237. PMLR.
+Rakhsha, A.; Radanovic, G.; Devidze, R.; Zhu, X.; and
+Singla, A. 2020. Policy teaching via environment poison-
+ing: Training-time adversarial attacks against reinforcement
+learning. In International Conference on Machine Learning,
+7974–7984. PMLR.
+Rakhsha, A.; Radanovic, G.; Devidze, R.; Zhu, X.; and
+Singla, A. 2021a. Policy teaching in reinforcement learn-
+ing via environment poisoning attacks. Journal of Machine
+Learning Research, 22(210): 1–45.
+Rakhsha, A.; Zhang, X.; Zhu, X.; and Singla, A. 2021b. Re-
+ward poisoning in reinforcement learning: Attacks against
+unknown learners in unknown environments. arXiv preprint
+arXiv:2102.08492.
+Rangi, A.; Tran-Thanh, L.; Xu, H.; and Franceschetti, M.
+2022a. Saving stochastic bandits from poisoning attacks via
+limited data verification. In Proceedings of the AAAI Con-
+ference on Artificial Intelligence, volume 36, 8054–8061.
+Rangi, A.; Xu, H.; Tran-Thanh, L.; and Franceschetti, M.
+2022b. Understanding the Limits of Poisoning Attacks in
+Episodic Reinforcement Learning.
+In Raedt, L. D., ed.,
+Proceedings of the Thirty-First International Joint Confer-
+ence on Artificial Intelligence, IJCAI-22, 3394–3400. Inter-
+national Joint Conferences on Artificial Intelligence Organi-
+zation. Main Track.
+Shapley, L. S. 1953. Stochastic games. Proceedings of the
+national academy of sciences, 39(10): 1095–1100.
+Sun, Y.; Huo, D.; and Huang, F. 2020. Vulnerability-aware
+poisoning mechanism for online rl with unknown dynamics.
+arXiv preprint arXiv:2009.00774.
+Wei, C.-Y.; Dann, C.; and Zimmert, J. 2022. A model selec-
+tion approach for corruption robust reinforcement learning.
+In International Conference on Algorithmic Learning The-
+ory, 1043–1096. PMLR.
+Wu, F.; Li, L.; Xu, C.; Zhang, H.; Kailkhura, B.; Kenthapadi,
+K.; Zhao, D.; and Li, B. 2022. COPA: Certifying Robust
+Policies for Offline Reinforcement Learning against Poison-
+ing Attacks. arXiv preprint arXiv:2203.08398.
+10433
+
+Xie, Q.; Chen, Y.; Wang, Z.; and Yang, Z. 2020. Learning
+zero-sum simultaneous-move markov games using function
+approximation and correlated equilibrium. In Conference on
+learning theory, 3674–3682. PMLR.
+Yang, L.; Hajiesmaili, M.; Talebi, M. S.; Lui, J.; and Wong,
+W. S. 2021. Adversarial Bandits with Corruptions: Regret
+Lower Bound and No-regret Algorithm. In Advances in Neu-
+ral Information Processing Systems (NeurIPS).
+Zhang, H.; and Parkes, D. C. 2008.
+Value-Based Policy
+Teaching with Active Indirect Elicitation.
+In AAAI, vol-
+ume 8, 208–214.
+Zhang, H.; Parkes, D. C.; and Chen, Y. 2009. Policy teaching
+through reward function learning. In Proceedings of the 10th
+ACM conference on Electronic commerce, 295–304.
+Zhang, K.; Yang, Z.; and Bas¸ar, T. 2021. Multi-agent re-
+inforcement learning: A selective overview of theories and
+algorithms. Handbook of Reinforcement Learning and Con-
+trol, 321–384.
+Zhang, X.; Chen, Y.; Zhu, J.; and Sun, W. 2021a.
+Corruption-robust offline reinforcement learning.
+arXiv
+preprint arXiv:2106.06630.
+Zhang, X.; Chen, Y.; Zhu, X.; and Sun, W. 2021b.
+Ro-
+bust policy gradient against strong data corruption. In Inter-
+national Conference on Machine Learning, 12391–12401.
+PMLR.
+Zhang, X.; Ma, Y.; Singla, A.; and Zhu, X. 2020. Adap-
+tive reward-poisoning attacks against reinforcement learn-
+ing.
+In International Conference on Machine Learning,
+11225–11234. PMLR.
+Zhong, H.; Xiong, W.; Tan, J.; Wang, L.; Zhang, T.; Wang,
+Z.; and Yang, Z. 2022. Pessimistic minimax value iteration:
+Provably efficient equilibrium learning from offline datasets.
+arXiv preprint arXiv:2202.07511.
+Zuo, S. 2020. Near Optimal Adversarial Attack on UCB
+Bandits. arXiv preprint arXiv:2008.09312.
+10434

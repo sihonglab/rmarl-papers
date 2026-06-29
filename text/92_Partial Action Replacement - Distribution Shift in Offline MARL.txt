@@ -1,0 +1,1682 @@
+Partial Action Replacement: Tackling Distribution Shift in Offline MARL
+Yue Jin1, Giovanni Montana1, 2, 3
+1 Warwick Manufacturing Group, University of Warwick, Coventry, CV4 7AL, UK
+2 Department of Statistics, University of Warwick, Coventry, CV4 7AL, UK
+3 The Alan Turing Institute, 96 Euston Road, London, NW1 2DB, UK
+{yue.jin.3, g.montana}@warwick.ac.uk
+Abstract
+Offline multi-agent reinforcement learning (MARL) is
+severely hampered by the challenge of evaluating out-of-
+distribution (OOD) joint actions. Our core finding is that
+when the behavior policy is factorized—a common scenario
+where agents act fully or partially independently during data
+collection—a strategy of partial action replacement (PAR)
+can significantly mitigate this challenge. PAR updates a sin-
+gle or part of agents’ actions while the others remain fixed
+to the behavioral data, reducing distribution shift compared
+to full joint-action updates. Based on this insight, we de-
+velop Soft-Partial Conservative Q-Learning (SPaCQL), using
+PAR to mitigate OOD issue and dynamically weighting dif-
+ferent PAR strategies based on the uncertainty of value es-
+timation. We provide a rigorous theoretical foundation for
+this approach, proving that under factorized behavior poli-
+cies, the induced distribution shift scales linearly with the
+number of deviating agents rather than exponentially with
+the joint-action space. This yields a provably tighter value
+error bound for this important class of offline MARL prob-
+lems. Our theoretical results also indicate that SPaCQL adap-
+tively addresses distribution shift using uncertainty-informed
+weights. Our empirical results demonstrate SPaCQL enables
+more effective policy learning, and manifest its remarkable
+superiority over baseline algorithms when the offline dataset
+exhibits the independence structure.
+Introduction
+Multi-agent reinforcement learning (MARL) offers a pow-
+erful paradigm for solving complex coordination problems,
+yet its real-world application is often constrained by the need
+for extensive online environment interaction (Gronauer and
+Diepold 2022; Wong et al. 2022; Dinneweth et al. 2022).
+Offline MARL overcomes this by enabling agents to learn
+from fixed, pre-collected datasets. This approach, however,
+confronts a fundamental obstacle rooted in the combinato-
+rial nature of multi-agent systems: the curse of dimensional-
+ity in the joint-action space. Any finite dataset provides only
+sparse coverage of all possible action combinations. This
+forces the learning algorithm to reason about the value of
+countless out-of-distribution (OOD) joint actions. Standard
+value-based methods, like Q-learning, are notoriously prone
+Copyright © 2026, Association for the Advancement of Artificial
+Intelligence (www.aaai.org). All rights reserved.
+to failure in this regime (Kumar et al. 2020, 2019). A func-
+tion approximator, such as a neural network, can produce ar-
+bitrarily high Q-values for these unseen OOD actions. These
+erroneous estimates guide agents toward divergent policies
+that fail to generalize, making robust offline MARL a signif-
+icant challenge (Yang et al. 2021; Shao et al. 2023).
+This OOD problem can be understood from a geometric
+perspective. The offline dataset represents a sparse collec-
+tion of known joint actions within the vast, high-dimensional
+space of all possible action combinations. A conventional
+Q-learning update requires evaluating a joint action where
+all agents adopt their new, learned policies. This is akin to
+querying a point far from any known data, forcing the Q-
+function to perform a large and unreliable extrapolation into
+uncharted regions of the joint-action space. The core insight
+of our work is that we can avoid such risky extrapolations
+by instead querying points that remain anchored close to the
+known data.
+We operationalize this insight through a principle we term
+partial action replacement: changing only a single or part
+of agents’ actions while keeping the others fixed to actions
+from the dataset. This simple change ensures the Q-value
+is queried for a joint action that differs minimally from
+the known data—requiring only a small, local extrapolation
+rather than a large leap into the unknown. The intuition is
+straightforward: if we change one coordinate of a known
+data point, we stay much closer to familiar territory than if
+we change all coordinates simultaneously.
+Crucially, this approach is most effective when the of-
+fline dataset was collected by agents acting independently or
+whose behaviors are loosely coordinated—a common sce-
+nario in practice, including independent human demonstra-
+tions, independently trained agents, or decentralized systems
+(Chen et al. 2017; Tampuu et al. 2017; Leibo et al. 2017).
+Under this factorized behavior policy assumption, we can
+prove that while the joint-action space remains exponen-
+tially large, our approach of partial replacement achieves
+linear scaling of distribution shift and value estimation error
+with respect to the number of deviating agents. This theoret-
+ical insight directly motivates our algorithmic design.
+Based on this principle, we develop algorithms that nav-
+igate the critical balance between estimation stability and
+inter-agent coordination. We first present Individual CQL
+with Q-sharing (ICQL-QS), which directly implements par-
+arXiv:2511.07629v1  [cs.LG]  10 Nov 2025
+
+tial replacement by changing only one agent’s action at a
+time to maximize stability. While highly stable, this con-
+servative approach may miss valuable coordinated behav-
+iors. Our primary contribution, Soft Partial Conservative Q-
+Learning (SPaCQL), addresses this limitation by forming an
+adaptive algorithm that dynamically weights different coor-
+dination combinations based on uncertainty of target values,
+as measured by the standard deviation of a Q-function en-
+semble (An et al. 2021; Osband et al. 2016).
+We provide a rigorous theoretical foundation for this ap-
+proach. Our analysis formally proves that under factorized
+behavior policies, the distribution shift induced by partial
+action replacement scales linearly with the number of devi-
+ating agents, in stark contrast to the exponential complexity
+of arbitrary joint-action updates. We leverage this result to
+derive a novel, MARL-specific value-error bound for this
+important class of problems and then prove that SPaCQL
+adjusts distribution shift and value-error bound adaptively
+based on uncertainty-informed weights.
+The main contributions of this paper are therefore:
+• We introduce and formalize the principle of partial ac-
+tion replacement, showing that under factorized behavior
+policies, it reduces distribution shift in a multi-agent set-
+ting.
+• We develop SPaCQL, an algorithm that dynamically
+weights partial action replacement strategies based on
+uncertainty estimates, adapting between conservative
+single-agent updates and coordinated multi-agent up-
+dates based on data characteristics.
+• We provide theoretical analysis including a novel value-
+error bound that scales linearly with the number of de-
+viating agents rather than exponentially with the joint-
+action space, applicable when the behavior policy is fac-
+torized.
+• Empirical results demonstrate SPaCQL’s efficacy, espe-
+cially its consistent and remarkable superiority on all
+Random and Medium-Replay datasets where agent be-
+haviors are less coordinated.
+Related Work
+Offline reinforcement learning addresses learning effective
+policies from static datasets without environment interac-
+tion. Single-agent methods like CQL (Kumar et al. 2020),
+IQL (Kostrikov, Nair, and Levine 2022), and BEAR (Ku-
+mar et al. 2019) tackle distribution shift by constraining
+policies or regularizing value functions. The multi-agent
+setting amplifies these challenges due to exponential joint-
+action space growth and coordination requirements. Offline
+MARL research focuses on two main approaches: constrain-
+ing learned policies or regularizing value functions. Our
+work builds on the latter with a novel adaptive mechanism.
+Policy-Constrained Methods
+Building on single-agent
+approaches like AWR (Peng et al. 2019) and AWAC (Nair
+et al. 2020), these methods ensure policies don’t deviate ex-
+cessively from the behavior policy (Pan et al. 2022; Tseng
+et al. 2022). (Pan et al. 2022) use evolution strategies for de-
+centralized regularization, while (Tseng et al. 2022) employs
+a Teacher-Student paradigm where a centralized transformer
+predicts joint actions and individual policies mimic both ac-
+tions and structural relationships.
+Value-Constrained Methods
+These methods constrain
+the value function, penalizing OOD actions (Yang et al.
+2021; Shao et al. 2023; Barde et al. 2024; Ma and Wu 2023;
+Wang and Zhan 2023; Wang et al. 2023).
+CFCQL (Shao et al. 2023) extends CQL (Kumar et al.
+2020) to multi-agent settings, penalizing each agent’s OOD
+action individually while holding others constant—sharing
+motivation with our partial replacement. However, we use
+partial replacement for target value computation (not just
+regularization) and introduce adaptive weighting based on
+uncertainty.
+Others adapt online MARL mechanisms like QMIX
+(Rashid et al. 2018) and QTRAN (Son et al. 2019) to offline
+settings. (Wang and Zhan 2023) and (Wang et al. 2023) de-
+compose global Q-functions: the former uses IQL’s expec-
+tile regression, the latter formulates convex optimization. We
+differ by using centralized training with shared Q-functions,
+capturing coordination implicitly.
+(Barde et al. 2024) use world models to generate trajec-
+tories with uncertainty-modified rewards. Recent works em-
+ploy diffusion models: DoF (Li et al. 2025), MADIFF (Zhu
+et al. 2024), and INS (Fu et al. 2025).
+Uncertainty estimation via ensembles (An et al. 2021; Bai
+et al. 2022; Zhang et al. 2020; Osband et al. 2016; Lakshmi-
+narayanan, Pritzel, and Blundell 2017) helps avoid overesti-
+mating OOD actions. We use ensemble variance to weight
+partial replacement strategies—higher uncertainty reduces
+contribution in Q-updates, adapting to dataset characteris-
+tics.
+Preliminaries
+We study offline MARL in a Decentralized Markov Deci-
+sion Process (Dec-MDP) ⟨S, {Ai}n
+i=1, P, R, n, γ⟩, where n
+agents interact in state space S. At each timestep, agent i
+selects action at,i ∈Ai, forming joint action at ∈A =
+×n
+i=1Ai. The environment transitions to st+1 ∼P(·|st, at)
+and yields reward rt = R(st, at).
+In the offline setting, agents cannot interact with the envi-
+ronment. Learning occurs solely from a static dataset D =
+{(s, a, r, s′)k} collected by behavior policy µ(a|s). The
+goal remains learning a joint policy π(a|s) that maximizes
+expected return J(π) = E[P∞
+t=0 γtrt], with Q-function de-
+fined as:
+Qπ(s, a) = Eπ
+" ∞
+X
+t=0
+γtR(st, at)
+ s0 = s, a0 = a
+#
+.
+The core challenge is that distribution shift between π and µ
+causes Q-learning to overestimate OOD joint actions, lead-
+ing to policy divergence.
+Methodology
+Our approach is founded on a simple insight for mitigating
+the challenge of OOD actions in offline MARL. The core
+problem is that a Q-function trained on a static dataset can
+produce arbitrarily wrong values for novel joint actions not
+
+Table 1: Performance comparison between CFCQL and ICQL-QS
+Algorithm
+Cooperative Navigation
+World
+Exp
+Med
+Med-R
+Rand
+Exp
+Med
+Med-R
+Rand
+CFCQL
+112
+65
+52.2
+62.2
+119.7
+93.8
+73.4
+68
+ICQL-QS
+97.2
+62.5
+58.2
+77.7
+106.5
+88.6
+82.5
+89.9
+seen in the data. A conventional update, which evaluates a
+joint action where all agents follow their new policies, is al-
+most certain to be OOD. Our guiding principle is to avoid
+such large, unreliable extrapolations. Instead, we propose
+to evaluate a partially new joint action that differs from the
+dataset by only one or a few individual actions. This small,
+anchored step is inherently more stable and leads to more
+reliable Q-value estimates.
+ICQL-QS: A Stable but Myopic Baseline
+Our first algorithm, Individual Conservative Q-Learning
+with Q-sharing (ICQL-QS), is the most direct implementa-
+tion of our core idea. While standard CQL penalizes OOD
+actions, we recognize that in MARL, a fully new joint action
+is almost always OOD. ICQL-QS therefore takes a more tar-
+geted approach by constructing a Bellman target that only
+changes one agent’s action at a time.
+This is formalized through an individual Bellman opera-
+tor, T ind
+i
+, for each agent i. This operator computes the ex-
+pected future value by sampling agent i’s next action, a′
+i,
+from its learned policy πi, while sampling the actions of all
+other agents, a′
+−i, from the dataset D:
+T ind
+i
+Q(s, a) := E(s′,a′
+−i)∼D
+a′
+i∼πi(·|s′)
+
+r + γQ(s′, a′
+i, a′
+−i)
+
+.
+(1)
+The full algorithm then learns a shared Q-function, Qθ, by
+minimizing the average of per-agent loss Li(θ):
+Li(θ) = E(s,a)∼D
+
+(Qθ(s, a) −T ind
+i
+Q)2
++ λ
+ E(s,a−i)∼D,ai∼πi[Qθ(s, ai, a−i)] −E(s,a)∼D[Qθ(s, a)]
+
+.
+(2)
+The first term is the squared Bellman error with respect to
+our individual operator, while the second is the conservative
+regularizer that penalizes OOD actions for agent i.
+Although each update appears to be “myopic” by only
+considering a single agent’s deviation, the use of a single,
+shared Q-function means that every update provides a learn-
+ing signal that implicitly couples the agents and fosters co-
+ordination. We formalize this connection to a centralized
+learning objective in our theoretical analysis.
+SPaCQL: An Adaptive Mixture of Partial Backups
+While ICQL-QS achieves stability through single-agent up-
+dates, it cannot capture the value of coordinated multi-agent
+improvements. Yet fully joint updates risk severe extrapo-
+lation errors. The key insight motivating SPaCQL is that
+the optimal number of deviating agents depends on the
+data: random datasets favor conservative single-agent up-
+dates, while expert datasets may not, but may support co-
+Figure 1: Action distributions in different dataset types. Blue, yel-
+low and green lines show the range of agent actions, with aτ
+1 de-
+noting agent 1’s action from the dataset. (a) Random datasets:
+Agents act independently, so agent 2’s actions may span the full
+range regardless of agent 1’s choice. Partial action replacement
+(fixing agent 1) allows reasonable coverage of agent 2’s action
+space. (b) Expert dataset with tight correlation: Agents’ actions
+are strongly correlated within a narrow band. Fixing agent 1 may
+still lead to severe OOD issue. (c) Expert dataset with loose cor-
+relation: While correlated, actions have sufficient spread. Fixing
+agent 1 still allows reasonable coverage of agent 2’s action space.
+This illustrates the potential advantage of partial action replace-
+ment for random datasets and some expert datasets, but it may
+struggle with highly coordinated behaviors.
+ordinated deviations. Rather than committing to either ex-
+treme, SPaCQL adaptively interpolates between them. Our
+initial experiments confirmed this intuition, revealing a stark
+performance trade-off dependent on dataset quality.
+The performance comparison between CFCQL (Shao
+et al. 2023) and ICQL-QS showed in Table 1 indicates that
+on datasets composed of noisy, “random,” or exploratory
+behavior, ICQL-QS demonstrates superior performance. By
+staying close to the data manifold, they minimize distribu-
+tion shift and avoid the OOD extrapolation errors that plague
+joint-action methods in sparse data regimes. Figure 1 illus-
+trates the potential advantage of partial action replacement
+in terms of mitigating OOD issue especially for random
+datasets.
+Conversely, on “expert” datasets containing highly coor-
+dinated trajectories, CFCQL using a full joint-action update
+can outperform ICQL-QS. On the one hand, the advantage
+of ICQL-QS in mitigating OOD issue may not be promi-
+nent on expert dataset, as illustrated in Figure 1 (b). On the
+other hand, evaluating fully novel joint actions is essential
+for learning the value of synergistic maneuvers, and a factor-
+ized approach is “coordination-blind” in this setting and can
+become overly pessimistic. However, as illustrated in Figure
+1 (c), on some expert datasets, partial action replacement
+may still have a considerable advantage in mitigating OOD
+issue.
+Our experiments shown in Figure 2 confirm this advan-
+tage of mitigating OOD issue by measuring the uncertainty
+of Q-estimates. We empirically compare the estimation un-
+certainty of different target-value strategies, measured by the
+standard deviation across a Q-function ensemble. As shown,
+a standard joint-action update (CFCQL) exhibits higher un-
+certainty than ICQL-QS that uses partial action replacement.
+This presents a clear challenge: no single, fixed backup
+strategy is optimal across all data regimes. This motivates
+our primary objective: to design a unified algorithm that can
+gracefully and automatically interpolate between these two
+
+Figure 2: Comparison of the uncertainty of Q-value estimation
+between CFCQL and ICQL-QS on the Cooperative Navigation
+benchmark. Uncertainty is measured as the standard deviation of
+Q-estimates from an ensemble of networks. ICQL-QS, which uses
+partial action replacement yields significantly lower estimation un-
+certainty on Random dataset consistently. On Expert dataset, the
+two methods show similar estimation uncertainty, but finally ICQL-
+QS still leads to lower uncertainty.
+extremes, letting the data itself decide how many coordi-
+nated deviations are safe to consider at any given moment.
+The Soft-Partial Bellman Operator
+Instead of committing to a fixed strategy, we introduce
+SPaCQL, which constructs its Bellman target as a mixture
+of n base operators, {T (k)}n
+k=1, where each operator corre-
+sponds to replacing exactly k agents’ actions.
+For any integer k ∈{1, . . . , n}, we define a Bellman op-
+erator T (k) that bootstraps from a next-state action where
+exactly k agents (chosen uniformly at random) deviate from
+the behavior policy, while the other n−k agents’ actions are
+taken from the logged data.
+T (k)Q(s, a) := Es′∼D,a′(k)
+h
+r + γ Q
+
+s′, a′(k)i
+.
+(3)
+Each of these operators is a γ-contraction in the ℓ∞norm.
+The final SPaCQL operator, T SP, is a convex combination
+of these base operators, with mixture weights wk:
+T SPQ(s, a) :=
+n
+X
+k=1
+wk T (k)Q(s, a).
+(4)
+As a convex combination of γ-contractions, T SP is itself
+guaranteed to be a γ-contraction.
+The SPaCQL Algorithm and Learning Objective
+The learning objective for SPaCQL, L(θ), which combines
+the TD error for our adaptive Bellman operator, is:
+L(θ) = ED
+h
+(Qθ(s, a) −YSP)2i
++ ξc,
+(5)
+where ξc = α Pn
+i=1 λi(E(s,a−i)∼D,ai∼πi[Qθ(s, ai, a−i)] −
+E(s,a)∼D[Qθ(s, a)]) is a conservative penalty same as that
+used in CFCQL.
+The target YSP is constructed using the soft-partial opera-
+tor, with an ensemble for conservatism:
+YSP := r + γ
+n
+X
+k=1
+wk min
+j
+Qtar
+j
+ s′, a′(k)
+.
+(6)
+The weights are determined by uncertainty: high ensem-
+ble disagreement signals poor data coverage, so we down-
+weight the corresponding risky deviations. We measure un-
+certainty via Q-ensemble variance:
+uk =
+q
+Varj
+
+Qθj(s′, a′(k))
+
+.
+(7)
+Algorithm 1: SPaCQL
+1: Initialize: Q-ensemble {Qθj}, target ensemble { ¯Q¯θj}, poli-
+cies {πψi}n
+i=1, target policies {¯π ¯
+ψi}n
+i=1, replay buffer D
+2: for each iteration do
+3:
+Sample batch B = {(s, a, r, s′, a′)} from D
+4:
+Set L(θ) ←0
+5:
+for each transition (s, a, r, s′, a′) in B do
+6:
+for k = 1 to n do
+7:
+Sample k agent indices {σρ}k
+ρ=1
+8:
+Sample {aπ
+σρ ∼πσρ(·|s′)}k
+ρ=1
+9:
+Construct a′(k) ←a′: ∀σρ ∈{σρ}k
+ρ=1, replace the
+σρ-th component of a′(k) with aπ
+σρ
+10:
+uk ←
+q
+Varj
+
+Qθj(s′, a′(k))
+
+11:
+Set yk =
+1
+uk minj ¯Qθj(s′, a′(k))
+12:
+end for
+13:
+YSP = r + γ P
+k yk/ P
+k
+1
+uk
+14:
+L(θ) += P
+j
+ Qθj(s, a) −YSP
+2 + ξc
+15:
+end for
+16:
+θ ←θ −ηθ∇θL(θ)
+17:
+¯θ ←(1 −τ)¯θ + τθ
+18:
+— Agent policy update —
+19:
+for each agent i do
+20:
+ψi ←ψi + ηπ∇πiEs,a−i∼D,ai∼πiQθ1(s, a)
+21:
+¯ψi ←(1 −τ) ¯ψi + τψi
+22:
+end for
+23: end for
+We then map this uncertainty signal to the weight vector us-
+ing the normalized standard deviation of the Q-values at the
+next state: wk =
+1/uk
+P
+k 1/uk , such that higher variance pushes
+weight to more conservative, smaller-k backups. A complete
+algorithm is shown in Algorithm 1.
+Theoretical Analysis
+We provide a theoretical foundation explaining why par-
+tial action replacement alleviates distribution shift in offline
+MARL. Our key insight is that while the joint-action space
+grows exponentially in the number of agents, the distribution
+shift induced by partial replacement grows only linearly. All
+proofs are in Appendix .
+Setting and key assumptions
+We consider a finite Dec-MDP ⟨S, {Ai}n
+i=1, P, R, γ⟩and
+a fixed dataset D = {(s, a, r, s′)} of i.i.d. transitions. Re-
+wards are bounded: |R(s, a)| ≤1.
+Assumption 1 (Factorized behavior policy). The behavior
+policy is factorized: µ(s, a) = Qn
+i=1 µi(ai | s).
+The finite state-action space assumption is standard in
+theoretical MARL analysis and allows us to use discrete
+probability measures and avoid measure-theoretic complica-
+tions. The i.i.d. assumption on dataset transitions simplifies
+the analysis by avoiding temporal correlations, though our
+practical algorithm works with standard trajectory data. As-
+sumption 1 is crucial—it means the data collection process
+involved independent agent policies, which is realistic for
+
+many multi-agent scenarios where agents were trained sepa-
+rately or act without explicit coordination. This assumption
+enables us to decompose distribution shifts across individual
+agents, which is fundamental to our analysis. The bounded
+rewards assumption is standard and can always be achieved
+through reward clipping; it ensures value functions remain
+bounded and Lipschitz continuous.
+Metric and total variation.
+On the finite state-action
+space we use the 0-1 metric. We define total variation dis-
+tance as TV(ν, ν′) :=
+1
+2∥ν −ν′∥1. Under the 0-1 metric,
+the Wasserstein-1 distance equals total variation:
+W1(ν, ν′) = TV(ν, ν′) = 1
+2∥ν −ν′∥1
+(8)
+The choice of 0-1 metric simplifies the analysis signif-
+icantly—in discrete spaces, it makes Wasserstein distance
+equivalent to total variation distance, eliminating the need
+for optimal transport calculations while still capturing mean-
+ingful notions of distribution similarity.
+Lipschitz constant of Q.
+With bounded rewards, the op-
+timal value function obeys ∥Q⋆∥∞≤1/(1 −γ) and is
+2/(1 −γ)-Lipschitz under the 0-1 metric. To see this, note
+that for any two state-action pairs (s, a) and (s′, a′):
+|Q⋆(s, a) −Q⋆(s′, a′)| ≤
+∞
+X
+t=0
+γt · 2 =
+2
+1 −γ
+(9)
+since rewards are bounded by 1 and the 0-1 metric ensures
+the maximum difference is 2.
+This Lipschitz property is automatic given bounded re-
+wards and provides the key tool for translating distribution
+shifts into value function estimation errors. The specific con-
+stant 2/(1 −γ) is tight and captures how value function
+smoothness degrades as the discount factor approaches 1.
+Mixed policies.
+For any subset S ⊆{1, . . . , n}, define:
+π(S) :=
+ Y
+i∈S
+πi
+! 
+Y
+j /∈S
+µj
+
+
+(10)
+and let d(S) denote its discounted occupancy measure.
+These mixed policies are the key technical tool for our
+analysis. π(S) represents a policy where agents in set S fol-
+low their learned policies πi while agents outside S follow
+the behavior policies µj. This construction allows us to de-
+compose the transition from behavior policy µ = π(∅) to
+learned policy π = π({1,...,n}) through a sequence of inter-
+mediate policies, enabling us to track how distribution shift
+accumulates as we add more deviating agents.
+Distribution-Shift Control via Partial Replacement
+Total-variation convention.
+For two stochastic kernels
+κ, κ′ on S we write
+TV(κ, κ′) := sup
+s∈S
+1
+2∥κ(s, ·) −κ′(s, ·)∥1.
+Under the 0-1 ground metric, W1(κ, κ′) = TV(κ, κ′).
+Lemma 1 (Linear Divergence Bound). For every S
+⊆
+{1, . . . , n}:
+W1
+
+d(S), d(∅)
+≤
+γ
+1 −γ
+X
+i∈S
+TV(πi, µi)
+(11)
+The proof shows that despite the exponential joint-action
+space, the occupancy shift grows additively with the number
+of deviating agents.
+This result formalizes our core intuition: while there are
+|A|n possible joint actions, the distribution shift from chang-
+ing k agents’ policies is only k times larger than changing
+a single agent’s policy. This linear scaling is the theoretical
+foundation for why partial action replacement is fundamen-
+tally more stable than full joint-action updates.
+Value-Estimation Error
+Theorem 1 (Tight Value-Error Bound). Let ˆQ be the Q-
+function learned offline and ˆV π = Edπ,π ˆQ. We assume that
+the learning process ensures ˆQ is
+2
+1−γ -Lipschitz under the
+0-1 metric. While this property is not automatically guaran-
+teed for neural network approximators, it can be encouraged
+with techniques like spectral normalization or gradient clip-
+ping and serves as a key theoretical assumption. Then:
+|V π −ˆV π| ≤εSubopt + εFQI +
+4γ
+(1 −γ)2
+n
+X
+i=1
+TV(πi, µi)
+(12)
+where εSubopt = ∥Qπ −Q⋆∥∞and εFQI = ∥Q⋆−ˆQ∥∞.
+The proof is provided in Appendix .
+Remark.
+If only a single agent k deviates from µ, the last
+term reduces to
+4γ
+(1−γ)2 TV(πk, µk), strictly improving on
+the usual joint-TV bound.
+Generalization to Correlated Behavior Policies
+The guarantee in Theorem 1 relies on the assumption that
+the behavior policy µ is fully factorized. We now relax this
+assumption and show that the linear scaling of distribution
+shift is robust, degrading gracefully with the degree of cor-
+relation in the dataset.
+First, we define a measure of the maximal correla-
+tion present in the behavior policy. Let µ⊗(a | s) :=
+Qn
+i=1 µi(ai | s) be the product of the marginal behavior
+policies.
+Definition 1 (Maximal Excess Correlation). The maximal
+excess correlation, κ, is the largest Total Variation distance
+between the true joint behavior policy and its factorized ap-
+proximation, over all states:
+κ := sup
+s∈S
+1
+2
+µ( · | s) −µ⊗( · | s)
+
+1
+where κ ∈[0, 1]. If µ is perfectly factorized, then κ = 0.
+With this, we can state a more general version of our
+distribution-shift bound.
+
+Lemma 2 (Linear Divergence with Correlations). For any
+subset of agents S ⊆{1, . . . , n}, the distribution shift is
+bounded by:
+W1
+ d(S), dµ
+≤
+γ
+1 −γ
+ X
+i∈S
+TV(πi, µi) + κ
+!
+(13)
+This generalized lemma allows us to bound the value-
+estimation error without the factorization assumption.
+Theorem 2 (Value-Error Bound with Correlations). Under
+the same conditions as Theorem 1, but without the assump-
+tion of a factorized behavior policy, the value estimation er-
+ror is bounded by:
+|V π −ˆV π| ≤εSubopt + εFQI
++
+4γ
+(1 −γ)2
+ n
+X
+i=1
+TV(πi, µi) + κ
+!
+(14)
+Proof. The proof is identical to that of Theorem 1, substi-
+tuting the bound from Lemma 2.
+This result shows that correlations in the behavior pol-
+icy introduce a simple additive penalty κ to the error bound.
+Crucially, this penalty is independent of the number of
+agents, n. This means the “curse of dimensionality” is still
+avoided; the bound remains linear in n and is simply shifted
+upwards by a constant reflecting the data’s inherent corre-
+lation. The theory therefore remains informative even when
+the factorization assumption is violated.
+Theoretical Guarantee of SPaCQL
+SPaCQL retains the strong theoretical guarantees of our
+framework without requiring any new structural assump-
+tions on the Q-function. The expected distribution shift un-
+der the SPaCQL operator is linear in the effective number of
+deviating agents, keff = P
+k wk ·k. This leads directly to our
+final value-error bound.
+Theorem 3 (SPaCQL Value-Error Bound). Let ˆQ be the
+function learned by SPaCQL and define the average single-
+agent policy deviation as TV(π, µ) = 1
+n
+Pn
+i=1 TV(πi, µi).
+The value estimation error is bounded by:
+|V π−ˆV π| ≤εSubopt+εFQI+
+4γ
+(1 −γ)2 Es′∼dπ 
+keff(s′)
+
+TV(π, µ).
+Proof Sketch. The proof follows the same structure as that
+of Theorem 1. The key difference is that the distribution shift
+term W1(dπ, dµ) is replaced by the expected shift under the
+SPaCQL operator. This expectation is taken over the mixture
+of policies P
+k wk(s′)π(k), leading to a dependency on the
+state-dependent effective number of deviations, keff(s′).
+The error scales with the effective number of deviations,
+keff, which the algorithm adapts on a state-by-state basis.
+When the weights concentrate on k = 1, we recover the
+tight ICQL-QS bound; when they shift towards k = n, we
+approach the looser, full-joint bound, thus formalizing the
+algorithm’s adaptive nature.
+Gradient Interpretation of ICQL-QS
+While Lemma 1 and Theorem 1 establish the stability ben-
+efits of partial action replacement, a natural question arises:
+can partial replacement achieve effective coordination? One
+might worry that updating Q-function separately with loss
+(2), even with a shared Q-function, may lead to miscoordi-
+nated policies that fail to capture beneficial joint behaviors.
+The following result addresses this concern by revealing
+the implicit coordination mechanism in ICQL-QS:
+Proposition 1 (Gradient equivalence of ICQL-QS). Let
+T ind
+i
+be the individual Bellman operator and define the
+averaged-individual operator:
+T ai := 1
+n
+n
+X
+i=1
+T ind
+i
+(15)
+Then the parameter update for the TD component in ICQL-
+QS is equivalent to stochastic gradient descent on central-
+ized TD loss, under the semi-gradient assumption where the
+gradient is not backpropagated through the target network
+(i.e., treating T aiQθ as a fixed target with respect to θ):
+1
+2ED
+h Qθ −T aiQθ
+2i
+(16)
+This result shows that ICQL-QS, despite appearing to
+perform individual agent updates, is mathematically equiv-
+alent to centralized training on an averaged objective. The
+shared Q-function acts as an implicit coordination mecha-
+nism: each agent’s update influences the value estimates for
+all possible joint actions, enabling coordination without ex-
+plicit joint reasoning. This provides theoretical justification
+for why partial action replacement can maintain coordina-
+tion benefits while achieving the stability advantages estab-
+lished in our previous results.
+Experimental settings and results
+Experimental setup
+We conduct a comprehensive eval-
+uation of SPaCQL on two widely used offline MARL
+benchmarks: Multi-Agent Particle Environments (MPE) and
+Multi-Agent MuJoCo (MaMujoco). We use the same dataset
+as in recent works (Shao et al. 2023; Pan et al. 2022;
+Kostrikov, Nair, and Levine 2022). For MPE, there are
+three distinct tasks: Cooperative Navigation (CN), Predator-
+Prey (PP), and World. For MaMujoco, there is Half-Cheetah
+(Half-C). To assess performance under varying data quality,
+each task utilizes four dataset types: Expert (Exp), Medium
+(Med), Medium-Replay (Med-R), and Random (Rand).
+Our implementation uses an ensemble of 10 Q-networks
+to estimate value functions and their uncertainty. To ensure
+robust results, we run all experiments with 5 different ran-
+dom seeds and report the mean and standard deviation of
+the normalized scores. All hyperparameters for our method
+and the CFCQL baseline are identical to those specified in
+the original CFCQL paper. All experiments are implemented
+with pytorch and run on NVIDIA Tesla V100 GPUs.
+Baselines
+The performance of SPaCQL is compared
+against a suite of state-of-the-art offline MARL algorithms.
+These baselines are chosen to represent the primary avenues
+of research in the field:
+
+Table 2: The average normalized score on offline MARL tasks. The best performance is highlighted in bold.
+Dataset
+OMAR
+MACQL
+IQL
+MA-TD3+BC
+DoF
+CFCQL
+SPaCQL
+MPE
+CN
+Exp
+114.9 ± 2.6
+12.2±31
+103.7±2.5
+108.3±3.3
+136.4±3.9
+112±4
+111.9±4.5
+Med
+47.9±18.9
+14.3±20.2
+28.2±3.9
+29.3±4.8
+75.6±8.7
+65.0±10.2
+78.6±6.4
+Med-R
+37.9±12.3
+25.5±5.9
+10.8±4.5
+15.4±5.6
+57.4±6.8
+52.2±9.6
+71.9±13.2
+Rand
+34.4±5.3
+45.6±8.7
+5.5±1.1
+9.8±4.9
+35.9±6.8
+62.2±8.1
+78.2±14
+PP
+Exp
+116.2±19.8
+108.4±21.5
+109.3±10.1
+115.2±12.5
+125.6±8.6
+118.2±13.1
+111.2±16.4
+Med
+66.7±23.2
+55±43.2
+53.6±19.9
+65.1±29.5
+86.3±10.6
+68.5±21.8
+61.9±20
+Med-R
+47.1±15.3
+11.9±9.2
+23.2±12
+28.7±20.9
+65.4±12.5
+71.1±6
+75.0±12.7
+Rand
+11.1±2.8
+25.2±11.5
+1.3±1.6
+5.7±3.5
+16.5±6.3
+78.5±15.6
+89.4±13.7
+World
+Exp
+110.4±25.7
+99.7±31
+107.8±17.7
+110.3±21.3
+135.2±19.1
+119.7±26.4
+112.3±7.8
+Med
+74.6±11.5
+67.4±48.4
+70.5±15.3
+73.4±9.3
+85.2±11.2
+93.8±31.8
+98.1±17.7
+Med-R
+42.9±19.5
+13.2±16.2
+41.5±9.5
+17.4±8.1
+58.6±10.4
+73.4±23.2
+105.2±11.1
+Rand
+5.9±5.2
+11.7±11
+2.9±4.0
+2.8±5.5
+13.1±2.1
+68±20.8
+94.3±7.4
+MaMujoco
+Half-C
+Exp
+113.5±4.3
+50.1±20.1
+115.6±4.2
+114.4±3.8
+-
+118.5±4.9
+110.5±5.9
+Med
+80.4±10.2
+51.5±26.7
+81.3±3.7
+75.5±3.7
+-
+80.5±9.6
+70.3±7.8
+Med-R
+57.7±5.1
+37.0±7.1
+58.8±6.8
+27.1±5.5
+-
+59.5±8.2
+66.1±3.4
+Rand
+13.5±7.0
+5.3±0.5
+7.4±0.0
+7.4±0.0
+-
+39.7±4.0
+43.8±4.9
+• Policy-constrained methods: OMAR (Pan et al. 2022),
+IQL (Kostrikov, Nair, and Levine 2022), and MA-
+TD3+BC (Fujimoto and Gu 2021; Pan et al. 2022).
+• Value-constrained methods: MACQL (Shao et al. 2023)
+and CFCQL (Shao et al. 2023).
+• Diffusion model-based methods: DoF (Li et al. 2025), a
+recent approach using diffusion models.
+Main quantitative results
+The average normalized scores
+across all tasks and datasets are presented in Table 2, where
+all baseline algorithm scores are reported as in the corre-
+sponding papers. Overall, SPaCQL outperforms all baseline
+algorithms on 10 of the 16 tasks. The most significant per-
+formance gains are observed on datasets with low-quality or
+uncoordinated data. SPaCQL consistently demonstrates re-
+markable superiority over all baselines on every “Random”
+and “Medium-Replay” dataset across all four tasks (CN, PP,
+World, and Half-C). For instance, on the World task with the
+“Random” dataset, SPaCQL achieves a score of 94.3 ± 7.4,
+whereas the next-best baseline, CFCQL, scores only 68 ±
+20.8.
+On high-quality “Expert” datasets, the performance is
+comparable across several algorithms. Here, methods like
+DoF, which is the top performer on all three MPE Ex-
+pert datasets, show strong results. This highlights that when
+the dataset already contains highly coordinated trajectories,
+keeping close to the underlying policies is enough.
+Analysis of adaptive weights
+To verify that SPaCQL’s
+adaptive mechanism functions as intended, we visualize the
+learned weights in Figure 3. The results show the algo-
+rithm dynamically adjusts its strategy based on dataset qual-
+ity. On unstructured datasets like “Random” and “Medium-
+Replay”, the weight for single-agent deviations (w1) is dom-
+inant, prioritizing stability by staying close to the data mani-
+fold. Conversely, on “Expert” datasets, the weights for co-
+ordinated deviations (w2 and w3) increase, showing that
+SPaCQL shifts its focus to find better coordinated policies
+when the data suggests coordination is reliable.
+(a) World
+(b) CN
+Figure 3: Values of weights with min-max normalization.
+Discussion and Conclusions
+Our theoretical analysis reveals a key insight: distribution
+shift in offline MARL scales linearly with the number of de-
+viating agents, not exponentially with the joint-action space.
+This striking result suggests the “curse of dimensionality”
+in this setting may be overstated, as the distribution shift
+penalty accumulates additively across agents.
+Our algorithm, SPaCQL, is built on this principle. It ex-
+plicitly manages the stability-coordination trade-off by us-
+ing partial action replacement, dynamically weighting dif-
+ferent coordination combinations based on uncertainty to
+achieve a provably tighter value-error bound.
+This work suggests a broader principle for offline MARL:
+algorithms should minimize simultaneous deviations from
+the behavior policy. While complete theoretical safety guar-
+antees are pending analysis, the empirical motivation for
+SPaCQL is strong, as it adapts to the dataset by dynamically
+selecting the most reliable update strategy. Important future
+directions therefore include developing more sophisticated
+weighting schemes and uncertainty estimation techniques.
+By formalizing partial action replacement and demon-
+strating its theoretical advantages, we provide a more op-
+timistic perspective on the challenges of offline MARL. The
+linear scaling of distribution shift suggests that principled,
+localized approaches can overcome seemingly intractable
+combinatorial barriers in multi-agent learning.
+
+References
+An, G.; Moon, S.; Kim, J.-h.; and Song, H. O. 2021.
+Uncertainty-Based Offline Reinforcement Learning with Di-
+versified Q-Ensemble. In 35th Conference on Neural Infor-
+mation Processing Systems (NeurIPS 2021).
+Bai, C.; Wang, L.; Yang, Z.; Deng, Z.; Garg, A.; Liu, P.; and
+Wang, Z. 2022. Pessimistic Bootstrapping for Uncertainty-
+Driven Offline Reinforcement Learning.
+In International
+Conference on Learning Representations.
+Barde, P.; Foerster, J.; Nowrouzezahrai, D.; and Zhang, A.
+2024. A Model-Based Solution to the Offline Multi-Agent
+Reinforcement Learning Coordination Problem. Proceed-
+ings of the 23rd International Conference on Autonomous
+Agents and Multiagent Systems, 141–150.
+Chen, Y. F.; Liu, M.; Everett, M.; and How, J. P. 2017. De-
+centralized non-communicating multiagent collision avoid-
+ance with deep reinforcement learning. Proceedings - IEEE
+International Conference on Robotics and Automation, 285–
+292.
+Dinneweth, J.; Boubezoul, A.; Mandiau, R.; and Espi´e, S.
+2022. Multi-agent reinforcement learning for autonomous
+vehicles: a survey. Autonomous Intelligent Systems, 2(1).
+Fu, Y.; Zhu, Y.; Zhao, J.; Chai, J.; and Zhao, D. 2025. INS:
+Interaction-aware Synthesis to Enhance Offline Multi-agent
+Reinforcement Learning.
+In The Thirteenth International
+Conference on Learning Representations.
+Fujimoto, S.; and Gu, S. S. 2021. A Minimalist Approach
+to Offline Reinforcement Learning. In 35th Conference on
+Neural Information Processing Systems (NeurIPS 2021).
+Gronauer, S.; and Diepold, K. 2022. Multi - agent deep rein-
+forcement learning : a survey. Artificial Intelligence Review,
+55(2): 895–943.
+Kostrikov, I.; Nair, A.; and Levine, S. 2022. Offline Rein-
+forcement Learning with Implicit Q-Learning. In Interna-
+tional Conference on Learning Representations.
+Kumar, A.; Fu, J.; Tucker, G.; and Levine, S. 2019. Stabiliz-
+ing off-policy Q-learning via bootstrapping error reduction.
+In 33rd Conference on Neural Information Processing Sys-
+tems (NeurIPS 2019).
+Kumar, A.; Zhou, A.; Tucker, G.; and Levine, S. 2020. Con-
+servative Q-Learning for Offline Reinforcement Learning.
+In 34th Conference on Neural Information Processing Sys-
+tems (NeurIPS 2020).
+Lakshminarayanan, B.; Pritzel, A.; and Blundell, C. 2017.
+Simple and Scalable Predictive Uncertainty Estimation us-
+ing Deep Ensembles. 31st Conference on Neural Informa-
+tion Processing Systems.
+Leibo, J. Z.; Zambaldi, V.; Lanctot, M.; Marecki, J.; and
+Graepel, T. 2017. Multi-agent Reinforcement Learning in
+Sequential Social Dilemmas. In Proceedings of the 16th In-
+ternational Conference on Autonomous Agents and Multia-
+gent Systems (AAMAS 2017), 464–473.
+Li, C.; Deng, Z.; Lin, C.; Chen, W.; Fu, Y.; Liu, W.; Ab, W.;
+Wang, C.; and Shen, S. 2025. Dof: A diffusion factorization
+framework for offline multi-agent reinforcement learning. In
+The Thirteenth International Conference on Learning Rep-
+resentations.
+Ma, J.; and Wu, F. 2023. Learning to Coordinate from Of-
+fline Datasets with Uncoordinated Behavior Policies.
+In
+Proc. ofthe 22nd International Conference on Autonomous
+Agents and Multiagent Systems (AAMAS 2023), Aamas,
+1258–1266.
+Nair, A.; Gupta, A.; Dalal, M.; and Levine, S. 2020. AWAC:
+Accelerating Online Reinforcement Learning with Offline
+Datasets. arXiv preprint arXiv:2006.09359.
+Osband, I.; Blundell, C.; Pritzel, A.; and Van Roy, B. 2016.
+Deep exploration via bootstrapped DQN. Advances in Neu-
+ral Information Processing Systems, 4033–4041.
+Pan, L.; Huang, L.; Ma, T.; and Xu, H. 2022.
+Plan Bet-
+ter Amid Conservatism: Offline Multi-Agent Reinforcement
+Learning with Actor Rectification. Proceedings of Machine
+Learning Research, 162: 17221–17237.
+Peng, X. B.; Kumar, A.; Zhang, G.; and Levine, S.
+2019. Advantage-Weighted Regression: Simple and Scal-
+able Off-Policy Reinforcement Learning.
+arXiv preprint
+arXiv:1910.00177.
+Rashid, T.; Samvelyan, M.; De Witt, C. S.; Farquhar, G.;
+Foerster, J.; and Whiteson, S. 2018.
+QMIX: Monotonic
+value function factorisation for deep multi-agent reinforce-
+ment Learning. 35th International Conference on Machine
+Learning, ICML 2018, 10: 6846–6859.
+Shao, J.; Qu, Y.; Chen, C.; Zhang, H.; and Ji, X. 2023. Coun-
+terfactual Conservative Q Learning for Offline Multi-agent
+Reinforcement Learning. 37th Conference on Neural Infor-
+mation Processing Systems (NeurIPS 2023).
+Son, K.; Kim, D.; Kang, W. J.; Hostallero, D.; and Yi, Y.
+2019. QTRAN: Learning to factorize with transformation
+for cooperative multi-agent reinforcement learning. 36th In-
+ternational Conference on Machine Learning, ICML 2019,
+2019-June: 10329–10346.
+Tampuu, A.; Matiisen, T.; Kodelja, D.; Kuzovkin, I.; Korjus,
+K.; Aru, J.; Aru, J.; and Vicente, R. 2017. Multiagent coop-
+eration and competition with deep reinforcement learning.
+PLoS ONE, 12(4).
+Tseng, W. C.; Wang, T. H.; Yen-Chen, L.; and Isola, P. 2022.
+Offline Multi-Agent Reinforcement Learning with Knowl-
+edge Distillation. In Advances in Neural Information Pro-
+cessing Systems, volume 35.
+Wang, X.; Xu, H.; Zheng, Y.; and Zhan, X. 2023. Offline
+Multi-Agent Reinforcement Learning with Implicit Global-
+to-Local Value Regularization. In 37th Conference on Neu-
+ral Information Processing Systems (NeurIPS 2023).
+Wang, X.; and Zhan, X. 2023. Offline Multi-Agent Rein-
+forcement Learning with Coupled Value Factorization. In
+Proceedings of the International Joint Conference on Au-
+tonomous Agents and Multiagent Systems, AAMAS, volume
+2023-May, 2781–2783.
+Wong, A.; B¨ack, T.; Kononova, A. V.; and Plaat, A. 2022.
+Deep multiagent reinforcement learning: challenges and di-
+rections. Artificial Intelligence Review.
+Yang, Y.; Ma, X.; Li, C.; Zheng, Z.; Zhang, Q.; Huang, G.;
+Yang, J.; and Zhao, Q. 2021. Believe What You See: Im-
+plicit Constraint Approach for Offline Multi-Agent Rein-
+
+forcement Learning. In 35th Conference on Neural Infor-
+mation Processing Systems (NeurIPS 2021).
+Zhang, K.; Sun, T.; Tao, Y.; Genc, S.; Mallya, S.; and Basar,
+T. 2020.
+Robust multi-agent reinforcement learning with
+model uncertainty. In 34th Conference on Neural Informa-
+tion Processing Systems (NeurIPS 2020).
+Zhu, Z.; Liu, M.; Mao, L.; Kang, B.; Xu, M.; Yu, Y.; Ermon,
+S.; Zhang, W.; and Jiao Tong University, S. 2024. MAD-
+IFF: Offline Multi-agent Learning with Diffusion Models.
+In 38th Conference on Neural Information Processing Sys-
+tems (NeurIPS 2024).
+
+Proofs
+Notation recap
+For a policy ϕ let dϕ be its discounted occupancy measure and P ϕ the induced transition kernel. For two vectors v, w, ∥v∥1 =
+P
+x |v(x)|. We use the total variation convention TV(v, w) = 1
+2∥v −w∥1.
+For any subset S ⊆{1, . . . , n}, recall that π(S) :=
+ Q
+i∈S πi
+ Q
+j /∈S µj
+
+and d(S) denotes its discounted occupancy
+measure.
+Proof of Lemma 1
+Proof. We establish the notation P π(s′|s) = P
+a P(s′|s, a)π(a|s).
+Step 1: occupancy difference. For any policy ϕ, we have dϕ = (1−γ)d0 +γdϕP ϕ, where d0 is the initial-state distribution.
+Therefore:
+d(S) −d(∅) =
+
+(1 −γ)d0 + γd(S)P π(S)
+−
+
+(1 −γ)d0 + γd(∅)P µ
+(17)
+= γ
+
+d(S)P π(S) −d(∅)P µ
+(18)
+= γ
+
+(d(S) −d(∅))P µ
++ γd(S)(P π(S) −P µ)
+(19)
+Taking ℓ1 norms and using the fact that since every row of a Markov kernel P sums to 1 and P ≥0, Jensen’s inequality
+yields ∥vP∥1 ≤∥v∥1:
+∥d(S) −d(∅)∥1 ≤
+γ
+1 −γ
+d(S)(P π(S) −P µ)
+
+1
+(20)
+Step 2: kernel difference. Since d(S) is a probability distribution, for any kernel A:
+∥d(S)A∥1 =
+X
+s′
+
+X
+s
+d(S)(s)A(s′|s)
+ ≤
+X
+s
+d(S)(s) ∥A(·|s)∥1 ≤sup
+s ∥A(·|s)∥1
+(21)
+Using A = P π(S) −P µ:
+d(S)(P π(S) −P µ)
+
+1 ≤sup
+s ∥P π(S)(·|s) −P µ(·|s)∥1
+(22)
+Converting the kernel difference to a policy difference:
+P π(S)(·|s) −P µ(·|s) =
+X
+a
+P(·|s, a)
+
+π(S)(a|s) −µ(a|s)
+
+(23)
+Using the triangle inequality and the fact that each P(·|s, a) has ℓ1-norm 1:
+sup
+s ∥P π(S)(·|s) −P µ(·|s)∥1 ≤sup
+s
+X
+a
+π(S)(a|s) −µ(a|s)
+
+(24)
+Step 3: product–difference inequality. For factorized distributions p(a) = Q
+i pi(ai) and q(a) = Q
+i qi(ai), we prove by
+induction that:
+X
+a
+|p(a) −q(a)| ≤2
+X
+i
+TV(pi, qi)
+(25)
+Induction on n.
+Base case n = 1 is the definition of TV. Assume the claim holds for n−1 factors; take p(a) = p1(a1)˜p(a−1)
+and q(a) = q1(a1)˜q(a−1):
+X
+a
+|p −q| =
+X
+a1,a−1
+p1(a1)˜p(a−1) −q1(a1)˜q(a−1)
+
+(26)
+≤
+X
+a1,a−1
+|p1(a1)| |˜p(a−1) −˜q(a−1)| +
+X
+a1,a−1
+|˜q(a−1)| |p1(a1) −q1(a1)|
+(27)
+=
+X
+a−1
+|˜p(a−1) −˜q(a−1)| + 2 TV(p1, q1)
+(28)
+By the induction hypothesis, the first term is ≤2 Pn
+i=2 TV(pi, qi), completing the proof.
+Step 4: combine and translate to W1. Applying Step 3 to π(S) and µ (which differ only for agents in S):
+sup
+s
+X
+a
+|π(S)(a|s) −µ(a|s)| ≤2
+X
+i∈S
+TV(πi(·|s), µi(·|s))
+(29)
+
+Combining Steps 1-3:
+∥d(S) −d(∅)∥1 ≤
+2γ
+1 −γ
+X
+i∈S
+TV(πi, µi)
+(30)
+Finally, since TV(p, q) = 1
+2∥p −q∥1 and W1 = TV under the 0-1 metric (because the transport cost of moving mass between
+distinct points is 1):
+W1(d(S), d(∅)) = 1
+2∥d(S) −d(∅)∥1 ≤
+γ
+1 −γ
+X
+i∈S
+TV(πi, µi)
+(31)
+Proof of Theorem 1
+Proof. We assume that ˆQ is
+2
+1−γ -Lipschitz under the 0-1 metric, which holds when ˆQ is obtained through contractive updates
+that preserve the Lipschitz constant of Q⋆.
+Let f := Q⋆−ˆQ. By the triangle inequality:
+|V π −ˆV π| =
+Edπ,π[Qπ] −Edπ,π[ ˆQ]
+
+(32)
+=
+Edπ,π[Qπ −ˆQ]
+
+(33)
+=
+Edπ,π[Qπ −Q⋆+ Q⋆−ˆQ]
+
+(34)
+≤
+Edπ,π[Qπ −Q⋆]
+ +
+Edπ,π[Q⋆−ˆQ]
+
+(35)
+=
+Edπ,π[Qπ −Q⋆]
+
+|
+{z
+}
+(I)
++
+Edπ,π[f]
+
+|
+{z
+}
+(II)
+(36)
+Term (I).
+(I) ≤∥Qπ −Q⋆∥∞= εSubopt
+(37)
+Term (II).
+(II) =
+Edπ,π[f]
+
+(38)
+=
+Edπ,π[f] −Edµ,µ[f] + Edµ,µ[f]
+
+(39)
+≤
+Edπ,π[f] −Edµ,µ[f]
+ +
+Edµ,µ[f]
+
+(40)
+For the second term:
+Edµ,µ[f]
+ =
+Edµ,µ[Q⋆−ˆQ]
+ ≤∥Q⋆−ˆQ∥∞= εFQI
+(41)
+For the first term, using the Lipschitz properties of both Q⋆and ˆQ:
+Edπ,π[f] −Edµ,µ[f]
+ =
+Edπ,π[Q⋆−ˆQ] −Edµ,µ[Q⋆−ˆQ]
+
+(42)
+≤
+Edπ,π[Q⋆] −Edµ,µ[Q⋆]
+ +
+Edπ,π[ ˆQ] −Edµ,µ[ ˆQ]
+
+(43)
+≤
+2
+1 −γ W1(dπ, dµ) +
+2
+1 −γ W1(dπ, dµ)
+(44)
+=
+4
+1 −γ W1(dπ, dµ)
+(45)
+Define the telescoping sequence:
+d(0) := dµ
+(46)
+d(k) := dπ({1,...,k}) for k = 1, . . . , n
+(47)
+d(n) := dπ
+(48)
+By the triangle inequality and Lemma 1:
+W1(dπ, dµ) ≤
+n
+X
+k=1
+W1(d(k), d(k−1))
+(49)
+≤
+n
+X
+k=1
+γ
+1 −γ TV(πk, µk)
+(50)
+=
+γ
+1 −γ
+n
+X
+i=1
+TV(πi, µi)
+(51)
+
+Therefore:
+(II) ≤εFQI +
+4γ
+(1 −γ)2
+n
+X
+i=1
+TV(πi, µi)
+(52)
+Combining terms (I) and (II):
+|V π −ˆV π| ≤εSubopt + εFQI +
+4γ
+(1 −γ)2
+n
+X
+i=1
+TV(πi, µi)
+(53)
+Proof of Proposition 1
+Proof. Let Ji(θ) = 1
+2ED
+
+(Qθ −T ind
+i
+Qθ)2
+be the TD loss for agent i.
+Using the chain rule for the squared loss:
+∇θJi(θ) = ∇θ
+1
+2ED
+
+(Qθ −T ind
+i
+Qθ)2
+(54)
+= 1
+2ED
+
+∇θ(Qθ −T ind
+i
+Qθ)2
+(55)
+= 1
+2ED
+
+2(Qθ −T ind
+i
+Qθ)∇θ(Qθ −T ind
+i
+Qθ)
+
+(56)
+= ED
+
+(Qθ −T ind
+i
+Qθ)∇θ(Qθ −T ind
+i
+Qθ)
+
+(57)
+Since T ind
+i
+Qθ is treated as a constant target with respect to the current parameters θ:
+∇θ(Qθ −T ind
+i
+Qθ) = ∇θQθ
+(58)
+Therefore:
+∇θJi(θ) = ED
+
+(Qθ −T ind
+i
+Qθ)∇θQθ
+
+(59)
+Define the averaged-individual operator:
+T aiQθ = 1
+n
+n
+X
+i=1
+T ind
+i
+Qθ
+(60)
+The averaged objective is:
+Jai(θ) = 1
+n
+n
+X
+i=1
+Ji(θ)
+(61)
+Taking the gradient:
+∇θJai(θ) = ∇θ
+"
+1
+n
+n
+X
+i=1
+Ji(θ)
+#
+(62)
+= 1
+n
+n
+X
+i=1
+∇θJi(θ)
+(63)
+= 1
+n
+n
+X
+i=1
+ED[(Qθ −T ind
+i
+Qθ)∇θQθ]
+(64)
+By linearity of expectation:
+∇θJai(θ) = ED
+"
+1
+n
+n
+X
+i=1
+(Qθ −T ind
+i
+Qθ)∇θQθ
+#
+(65)
+= ED
+" 
+1
+n
+n
+X
+i=1
+Qθ −1
+n
+n
+X
+i=1
+T ind
+i
+Qθ
+!
+∇θQθ
+#
+(66)
+= ED
+" 
+Qθ −1
+n
+n
+X
+i=1
+T ind
+i
+Qθ
+!
+∇θQθ
+#
+(67)
+= ED[(Qθ −T aiQθ)∇θQθ]
+(68)
+
+This expression is precisely the gradient of the centralized TD loss:
+Jcentralized(θ) = 1
+2ED
+
+(Qθ −T aiQθ)2
+(69)
+To verify, the gradient of this centralized loss is:
+∇θJcentralized(θ) = ED
+
+(Qθ −T aiQθ)∇θQθ
+
+(70)
+which matches our derived expression.
+Note: This gradient equivalence holds for the temporal difference component only. The CQL regularizer is applied uniformly
+to the shared Q-function and does not affect this equivalence.
+Lipschitz constant derivation
+We show that under the 0-1 metric, Q⋆is
+2
+1−γ -Lipschitz.
+Under the 0-1 metric, the distance between any two distinct points is:
+d((s, a), (s′, a′)) =
+0
+if (s, a) = (s′, a′)
+1
+if (s, a) ̸= (s′, a′)
+(71)
+For Q⋆to be L-Lipschitz, we need:
+|Q⋆(s, a) −Q⋆(s′, a′)| ≤L · d((s, a), (s′, a′))
+(72)
+When (s, a) = (s′, a′), the inequality holds trivially. When (s, a) ̸= (s′, a′), we have d = 1, so we need:
+|Q⋆(s, a) −Q⋆(s′, a′)| ≤L
+(73)
+Since rewards are bounded by |R(s, a)| ≤1, the optimal Q-function satisfies:
+Q⋆(s, a) = E
+" ∞
+X
+t=0
+γtR(st, at)
+ s0 = s, a0 = a
+#
+(74)
+|Q⋆(s, a)| ≤E
+" ∞
+X
+t=0
+γt|R(st, at)|
+#
+(75)
+≤
+∞
+X
+t=0
+γt · 1 =
+1
+1 −γ
+(76)
+Therefore, for any two state-action pairs:
+|Q⋆(s, a) −Q⋆(s′, a′)| ≤|Q⋆(s, a)| + |Q⋆(s′, a′)|
+(77)
+≤
+1
+1 −γ +
+1
+1 −γ =
+2
+1 −γ
+(78)
+Hence, Q⋆is
+2
+1−γ -Lipschitz under the 0-1 metric.

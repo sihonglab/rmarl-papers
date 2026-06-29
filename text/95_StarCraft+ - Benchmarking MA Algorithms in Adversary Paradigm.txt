@@ -1,0 +1,2192 @@
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+1
+StarCraft+: Benchmarking Multi-agent Algorithms in
+Adversary Paradigm
+Yadong Li, Tong Zhang, Bo Huang, Zhen Cui
+Abstract—Deep multi-agent reinforcement learning (MARL)
+algorithms are booming in the field of collaborative intelligence,
+and StarCraft multi-agent challenge (SMAC) is widely-used
+as the benchmark therein. However, imaginary opponents of
+MARL algorithms are practically configured and controlled
+in a fixed built-in AI mode, which causes less diversity and
+versatility in algorithm evaluation. To address this issue, in
+this work, we establish a multi-agent algorithm-vs-algorithm
+environment, named StarCraft II battle arena (SC2BA), to
+refresh the benchmarking of MARL algorithms in an adver-
+sary paradigm. Taking StarCraft as infrastructure, the SC2BA
+environment is specifically created for inter-algorithm adversary
+with the consideration of fairness, usability and customizability,
+and meantime an adversarial PyMARL (APyMARL) library
+is developed with easy-to-use interfaces/modules. Grounding in
+SC2BA, we benchmark those classic MARL algorithms in two
+types of adversarial modes: dual-algorithm paired adversary and
+multi-algorithm mixed adversary, where the former conducts the
+adversary of pairwise algorithms while the latter focuses on the
+adversary to multiple behaviors from a group of algorithms.
+The extensive benchmark experiments exhibit some thought-
+provoking observations/problems in the effectivity, sensibility and
+scalability of these completed algorithms. The SC2BA environ-
+ment as well as reproduced experiments are released in Github,
+and we believe that this work could mark a new step for the
+MARL field in the coming years.
+Index Terms—Multi-Agent Reinforcement Learning, evolvable
+opponents, dual-algorithm paired adversary, multi-algorithm
+mixed adversary, StarCraft Multi-Agent Challenge
+I. INTRODUCTION
+D
+EEP reinforcement learning (RL) has shown great poten-
+tial to solve arbitrary sequential decision-making prob-
+lems and has been successfully applied in many domains,
+such as traffic control [1]–[3], electric game [4], [5], re-
+sources allocation [6], [7], robot path planning [8], [9], image
+classification [10] and stock market [11], [12]. Training RL
+agents requires a substantial amount of data, which consists
+of abundant action sequences and rewards, while acquiring
+such data in the real world can be time-consuming and costly.
+Hereby, the simulated multi-agent systems (MAS) [13] are ur-
+gently required to provide sufficient synthetic data in different
+application scenarios for reinforcement learning research.
+Y.Li, T.Zhang, B.Huang and Z.Cui are with School of Computer Science
+and Engineering, Nanjing University of Science and Technology, Nanjing,
+China.
+E-mail: liyadong, zhen.cui@njust.edu.cn
+Y.Li are with School of Information Science and Engineering, Zaozhuang
+University, Zaozhuang, China.
+Manuscript received January xxx, 2024; revised xxx.xx, xxx.
+Corresponding author: Zhen Cui.
+https://github.com/dooliu/SC2BA
+Various research efforts have been devoted to the de-
+velopment of effective MAS, where simulating multi-agent
+interaction among agents plays a crucial role. Specifically, the
+representative interaction relationships between agents are co-
+operation and competition in MAS. In the early works, multi-
+agent simulation environments mainly focus on cooperative
+tasks, such as Bi-DexHands [14], Multi-Agents Mojoco [15],
+RWARE [16], PressurePlate [17], and Flatland [18]. These
+simulation environments are specifically designed to address
+real-world production tasks, such as two-arm collaboration,
+robot movement control, and cargo loading. Thus, they greatly
+propel the application of robotics in this domain. More sim-
+ulation environments encompass both cooperation and com-
+petition, such as LBF [19], MALMO [20], MPE [21], MA-
+gent [22], DM Lab [23], PommerMan [24], Google Research
+Football [25], Go Bigger [26], MA Particle environment [27],
+Neural MMO [28], and SMAC [29]. Within these environ-
+ments, apart from collaborative tasks, adversarial settings are
+also integrated. Agents must acquire the skills to comprehend
+cooperation within their camp and competition between camps
+to accomplish targeted tasks and attain higher rewards. This
+task augmentation increases the complexity of multi-agent
+environments, enabling intricate modeling of dynamic game
+scenarios and fostering advancements in multi-agent research.
+Although considerable success has been achieved by ex-
+isting MAS, a prominent issue arises in most benchmark
+simulation environments that opponent units are designed
+to be controlled by built-in AI bots. These pre-set rules of
+AI bots may result in insufficient diversity for multi-agent
+training. Commonly, the agents may be trained with biases
+toward exploiting certain weaknesses of the pre-set strategies
+of opponents. However, when facing other opponents using
+different combat rules, these trained agents usually obtain
+poor performance. Moreover, due to the monotony of the
+enemy’s strategy, it may greatly limit the strategy diversity
+of MARL models if most policy explorations do not yield
+additional combat benefits. Hence, to construct an MAS that
+better supports the evaluation/learning on MARL models, the
+following issues should be well addressed.
+- Opponent non-monotonicity. As the design of built-in AI
+bots is primarily influenced by the subjective cognition of
+designers, some latent fatal rules/limitations may be ex-
+ploited during agent training, which would cause the biases
+of learned policies. Further, due to monotonic opponent,
+trained agents tends to fall in a limited behavior distribution,
+not well catering to scene diversity [30].
+- Opponent evolvability. For static strategies/rules of oppo-
+0000–0000/00$00.00 © 2021 IEEE
+arXiv:2512.16444v1  [cs.AI]  18 Dec 2025
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+2
+nents, the agents often quickly acquire winning techniques,
+even for well-designed built-in AI bots. It means that the
+agents might learn an optima of simplex opponent, but diffi-
+cult to generalize to more diverse cases. An essential reason
+should be the lack of opponent dynamic variations. In fact,
+for many real-world adversarial environments, the opponents
+have the evolutive ability during adversary process, which
+is just ignored by most MAS.
+- Adversarial fairness. When both game parties (i.e., multi-
+agent teams) are evolvable, their adversarial fairness evalu-
+ation becomes a key issue. There exist many factors, such
+as initial states, model sizes, parameter settings and force
+layouts, that affect the final game results. Hence, to ensure
+the evaluation as fair as possible, it is important to bypass
+the influence of those external factors and reveal the inherent
+ability of multi-agent algorithms.
+- System Usability. The MAS system should be user-friendly
+and easy to operate, offer convenient invocation and sup-
+port researchers in customizing scenarios. It also allows
+researchers to easily implant the proposed algorithms for
+comparison and analysis.
+To address these issues aforementioned, we build an
+algorithm-vs-algorithm environment, named StarCraft II Battle
+Arena (SC2BA), as a benchmark to facilitate the MARL
+research. To enrich the diversity of environment, we attempt
+to endow enemy units with more abundant behaviors. To
+encourage agents to explore more complex winning strate-
+gies, we enhance dynamic adversary to the opponent. More
+straightforwardly, the opponent (a.k.a blue team) is no longer
+controlled by fixed built-in AI bots but rather various MARL
+algorithms which could boost the adversarial ability of blue
+team. To this end, we configure two types of game modes:
+dual-algorithm paired adversary mode and multi-algorithm
+mixed adversary mode. The former conducts the adversary
+of pairwise algorithms while the latter focuses on the ad-
+versary to multiple behaviors from a group of algorithms.
+Both of them are used to better support the evaluation of
+the generalization, diversity and adversarial ability of multi-
+agent learning algorithms. Further, by using these modes, the
+MARL models (w.r.t not only red team but blue team) can
+be trained to possess better adaptability to unseen opponents
+in contrast to the constant built-in AI opponent. In order to
+evaluate multi-agent algorithms on scenario changes, we also
+provide a series of meticulously designed combat scenarios,
+incorporating both symmetric and asymmetric setups. These
+scenarios pose challenges for algorithms dealing with high
+dimensional inputs, partial observability, rich dynamics, and
+the coordination of independent agents in joint battles.
+Building upon the popular real-time strategy (RTS) game
+StarCraft II, SC2BA aims to provide a comprehensive evalua-
+tion platform for MARL algorithms and foster advancements
+in the field of multi-agent reinforcement learning. By provid-
+ing a robust and scalable battle platform, along with algorithm-
+vs-algorithm adversary modes, diverse combat scenarios and
+evaluation metrics, SC2BA aims to facilitate the exploration
+and improvement of MARL algorithms. It is our hope that
+SC2BA will serve as a catalyst for further advancements in
+the field, fostering innovation and pushing the boundaries of
+Deep MARL research. To summarize, the contribution of this
+work is four folds:
+i) We develop the SC2BA which is a convenient, scalable, and
+unrestricted combat platform. Unlike the previous environ-
+ments where the opponents are controlled by embedded AI
+bots, this environment allows both multi-agent teams to be
+controlled by designed MARL algorithms in a continuous
+adversarial paradigm. Compared to the built-in AI mode,
+SC2BA enables a more comprehensive evaluation of algo-
+rithm performance and facilitates the training of agents with
+diverse and complex strategies.
+ii) We introduce diverse adversary modes and meticulously
+design a series of challenging battle scenarios. These modes
+enhance diversity, adversary and complexity of the environ-
+ment, encouraging agents to explore more robust policies.
+Moreover, these not only enrich the evaluation ways but also
+provide the verification on the generalization, diversity and
+adversarial ability for different multi-agent algorithms.
+iii) We develop and open-source APyMARL framework with
+easy-to-use interfaces/configurations and flexible modules,
+so as to serve SC2BA. APyMARL is modular, scalable, built
+on PyTorch, and serves as a research platform for studying
+some interesting challenges of MARL.
+iv) We conduct extensive experiments by dissecting every ad-
+versary mode as well as comparing those advanced methods.
+The experiments validate the effectiveness of our proposed
+adversary modes and meantime report results of several
+cutting-edge algorithms, serving as benchmarks for evalua-
+tion. More importantly, by running algorithm-vs-algorithm
+adversary modes, we obtain some extraordinary observa-
+tions on the existing multi-agent algorithms as well as battle
+scenarios, which could benefit future MARL research.
+II. RELATED WORK
+MARL simulation environments are typically classified into
+cooperative, competitive, and mixing settings based on specific
+requirements [31]. Cooperative MARL constitutes a great
+portion of MARL environments, where all agents collaborate
+with each other to achieve some shared goal. MA cooperative
+tasks primarily revolve around domains such as robot team
+navigation [32]–[34], smart grid operation [35], control of mo-
+bile sensor networks [36], and other related areas. These tasks
+are specifically designed to address real-world application
+problems. Therefore, many scholars designed excellent sim-
+ulation environments for MARL cooperative research, making
+profound contributions to the advancement of the MARL
+domain. To advance the capabilities of robots in achieving
+human-level sophistication of hand dexterity and bimanual
+coordination, Yang et al. proposed Bi-DexHands [14]. It offers
+a series of intricate tasks involving dexterous hands control,
+which demand agents to acquire refined operational skills.
+To advance research in the field of cooperative control of
+unmanned devices, researchers have introduced several excep-
+tional simulation environments. AirSim [37] is an open-source
+simulation platform developed by Microsoft for research and
+development in autonomous systems. It provides a realistic
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+3
+virtual environment that enables researchers and developers
+to test, validate, and refine their algorithms and models be-
+fore deploying them on real-world autonomous vehicles or
+robots. Additionally, Pedra [38] is a programmable engine
+for reinforcement learning in the domain of unmanned aerial
+vehicles (UAVs). It constructs a collection of indoor and
+outdoor 3D simulation scenarios for studying UAV control
+and decision-making problems.
+Competitive MARL settings are typically modeled as zero-
+sum games. MA competitive tasks primarily focus on clas-
+sic games, including board games and poker games. At
+present, there are two notable competitive MARL environ-
+ments: Go and Texas Hold’em Poker, which are archety-
+pal instances of multiplayer perfect-information and partial-
+information extensive-form games, respectively. Go [39] is
+an ancient and intellectually captivating strategy board game,
+often regarded as one of the oldest, most complex, and highly
+challenging games in existence. Texas Hold’em Poker [40]
+usually entails the participation of two or more players, with
+each player initially receiving two face-down private cards.
+This is followed by three rounds of community cards being
+placed face-up on the table, resulting in a total of five shared
+cards. Agents participating in this game must make strategic
+decisions, considering the limited information available, and
+choose from possible actions: check, call, raise, and fold.
+In comparison to the former two settings, mixed-setting
+environments are more challenging. After achieving remark-
+able advancements in RL within board game environments,
+researchers turned their attention to electronic games and
+have developed excellent MARL simulation environments,
+such as Atari [41], Super Mario [42], Gran Turismo racing
+games [43], Doom [44], GRF [25], Dota2 [45], Honor of
+Kings [46], StarCraft [5]. Among them, Real-Time Strategy
+(RTS) games have garnered considerable attention. After Al-
+phaZero [39] emerged as the strongest general-purpose AI in
+chess, DeepMind shifted its focus to the RTS game StarCraft
+II. Vinyals et al. [47] introduced the StarCraft II Learning En-
+vironment (SC2LE), which focuses on tackling the full game
+of StarCraft II by centralized controlling hundreds of agents to
+defeat competitors. Shortly thereafter, Vinyals et al. [5] trained
+AlphaStar using SC2LE, showcasing master-level proficiency
+and achieving the milestone of defeating professional human
+players for the first time. However, SC2LE focused on the 1v1
+mode, where agents act the role of player and have centralized
+control over all combat units. This setup is fundamentally
+unrealistic in the real world. Therefore, Samvelyan et al. [29]
+proposed SMAC based on SC2LE, focusing on decentralized
+micromanagement challenges instead of centralized control
+over the entire game. The design of the SMAC environment
+simplifies the validation of MARL algorithms and reduces the
+demand for high computational resources. This accessibility
+has encouraged greater participation from researchers, signif-
+icantly fostering the development of MARL research.
+However, in the aforementioned works, the enemy units
+were controlled by the built-in AI bots and the agents engaged
+in training and testing against adversaries with identical be-
+havioral patterns. This setting prevents the enemy forces from
+exerting pressure on the agents, keeping them in a constant
+disadvantaged position. Instead, it allows the agents to easily
+find ways to defeat their opponents and achieve victory. Taking
+SMAC as an example, Ellis et al. [48] discovered that retained
+only agent ID and timestep information in the observations,
+QMIX [49] and MAPPO [50] algorithms achieved perfor-
+mance comparable to using all available information. This is
+highly disadvantageous for agents to learn robust strategies.
+Contrarily, Emergent tools [51] demonstrate the potential for
+simultaneous online learning by both factions. The hiders and
+seekers exhibit extraordinary strategy and counter-strategy in
+their game against each other. Inspired by this, we develop a
+new adversarial environment named SC2BA. Different from
+previous works, our work propose an online game platform
+with two competing teams, where agents from both sides could
+optimize themselves to struggle for victory. Accordingly, the
+algorithm-vs-algorithm adversary could be run directly and
+their performance could be validated more comprehensively.
+III. SC2BA SYSTEM OVERVIEW
+The SC2BA system schema, as shown in Fig. 1, is designed
+with modularity to facilitate the adversary between algorithm
+and algorithm. It redefines the configuration of battle scenarios
+and interactions between agents and environment. In SC2BA,
+users can easily customize the desired battle scenarios through
+the configuration module. In each episode, the agents of red
+and blue teams are individually controlled by two separate
+models driven by MARL algorithms. Through the interaction
+module, both teams can access their respective observation
+information in the environment. Tactical actions on both teams
+are made through their employed algorithms, according to
+their observation information. The action commands will be
+fed back to agents and executed for the next step. During
+each battle episode, the control algorithms of both teams only
+interact with the interaction module, allowing the system to
+concentrate on battle policies and further reveal the capabilities
+of multi-agent algorithms. In the following subsections, we
+will elaborate on the details of each module.
+A. Configuration Module
+The configuration module redefines the creation of scenarios
+based on SMAC, allowing users to adjust the scene in a user-
+friendly manner. The settings of interactive algorithms, battle
+force, multi-agent attributes as well as scene elements are
+completely formatted with text prompts, thus the operability of
+scene configuration could be greatly enhanced and the burden
+of algorithm developers is reduced.
+Unified map file. We integrate all combat units into one
+map, allowing any battle scenarios to be implemented within
+this unified map, while the previous paradigm employs an
+individual map file for each scene, which makes scene def-
+inition/modification tedious and error-prone.
+Controllable scenario. To facilitate the setup of various
+aspects in a battle scene, our system allows for effortless
+creation and modification of these scenes. The system supports
+adjustable parameters for battle scenarios, including the count
+of agents, team composition, start position, movable areas, and
+other relevant factors.
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+4
+Fig. 1. The details of SC2BA platform, shown with its sub-module: config-
+uration module, interaction module, bottom-level control module. Please see
+details in Section III
+Adversarial Algorithms. We can assign distinct multi-
+agent algorithm models to control the agents on both teams
+using commands. The starting point of algorithm models is set
+to random sampling or individual well-trained models (e.g.,
+trained with built-in AI bots). During the training stage, we
+can set both teams to be controlled by algorithms capable
+of continuous evolution for injecting dynamic variations. Ad-
+ditionally, we can configure multiple well-trained models to
+alternately control the enemy troops, which could enrich the
+behavioral diversity to some extent.
+B. Interaction Module
+The interaction module is responsible for handling all inter-
+action operations between both control algorithms and the en-
+vironment, including transmitting observations, states, action
+instructions and reward values. Additionally, SC2BA follows
+the design principles of gym [52] and develops easy-to-use
+operation settings to simplify the interaction. The interaction
+mainly lies in three-fold:
+Observation exchange. For a more convenient exchange,
+the observations/states of agents are structured in a vectorized
+format. Hereby, the interaction module only needs to trans-
+mit those vector signals. Accordingly, multi-agent algorithms
+can easily access structured signals, which makes MARL
+researchers focus on solving cooperative and adversarial tasks.
+Action interaction. For the action interaction between
+algorithms and environment, we simplify the vast and complex
+instruction set in StarCraft II, convert these discrete actions
+into executable instructions, and then pass them to the game
+control module.
+Rewards feedback. The interaction module receives the
+reward information from the control terminate based on the
+current battle situation, and then feeds back to multi-agent
+algorithms. In the adversarial mode, the feedback consists of
+the evaluation scores of both parties, i.e., damaging/massacring
+enemies as well as penalties for self-inflicted harm and death.
+C. Bottom-Level Control Module
+The bottom-level control module is responsible for man-
+aging the dynamic evolution of the system and offers an API
+that the interaction module can leverage. Through instructions,
+the interaction module can feed action commands to the
+game engine and access information from the environment,
+including the positions, health, shield status, and other relevant
+data of the agents. In addition, it has the capability to generate
+appropriate battle scenarios based on configuration informa-
+tion while maintaining complete transparency with respect to
+the team control algorithms.
+Linux SC2 binary1. The Linux version binary package
+of SC2 provides a game engine specifically designed for
+Linux operating systems. This game engine empowers us to
+seamlessly implement all our ideas. Furthermore, the Linux
+version engine does not require rendering graphics during
+gameplay, greatly improving sampling speed.
+SC2 API2. The SC2 API is an interface that offers complete
+external control of SC2 game. It is designed to connect with
+the above interaction module to exchange information that
+algorithms require.
+PySC23. PySC2 is a Python toolkit that provides a wrapper
+for the SC2 API, enabling direct utilization of SC2 interface
+through Python code. This simplifies the development of
+reinforcement learning environments based on SC2, as it
+allows developers to concentrate on how to learn algorithmic
+strategies without expending additional effort on studying
+game engine manuals.
+Procedural control. To streamline the training/testing pro-
+cess, we automatically control the game stages through some
+code commands. This allows us to easily generate battle
+episodes with diverse unit compositions and environmental
+conditions based on specific configuration information. Fur-
+thermore, it automatically restarts a new episode upon the
+current one is terminated.
+IV. THE SC2BA ENVIRONMENT
+SC2BA provides an algorithm-vs-algorithm adversary eval-
+uation platform by offering a powerful and scalable battle
+environment, along with two adversary modes, various combat
+scenarios, and other designs. Below, we introduce the details
+of each part of SC2BA.
+A. Adversary Modes
+To better verify the diversified and adversarial ability of
+MARL algorithms, we design two adversary modes: dual-
+algorithm paired adversary mode and multi-algorithm mixed
+adversary mode.
+1StarCraft II version: SC2.4.6.2.6923
+2SC2API: https://github.com/Blizzard/s2client-proto
+3PySC2: https://github.com/google-deepmind/pysc2
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+5
+TABLE I
+THE CURRENT SC2BA SCENARIOS. THE SYSTEM MAY BE EXTENDED TO OTHER SCENARIOS.
+Name
+Red Units
+Blue Units
+3m
+3 Marines
+3 Marines
+8m
+8 Marines
+8 Marines
+25m
+25 Marines
+25 Marines
+MMM
+1 Medivac, 2 Marauders & 7 Marines
+1 Medivac, 2 Marauders & 7 Marines
+2s3z
+2 Stalkers & 3 Zealots
+2 Stalkers & 3 Zealots
+3s5z
+3 Stalkers & 5 Zealots
+3 Stalkers & 5 Zealots
+1c3s5z
+1 Colossus, 3 Stalkers & 5 Zealots
+1 Colossus, 3 Stalkers & 5 Zealots
+5m_vs_6m
+5 Marines
+6 Marines
+10m_vs_11m
+10 Marines
+11 Marines
+MMM2
+1 Medivac, 2 Marauders & 7 Marines
+1 Medivac, 3 Marauders & 8 Marines
+TABLE II
+THE AGENT PARAMETERS USED IN SC2BA .
+Name
+health
+shield
+Race
+Attack range
+Attack damage
+Attack speed
+Move speed
+Armor
+Marine
+45
+-
+T
+6
+6
+0.86
+2.25
+Light
+Marauder
+125
+-
+T
+6
+10 | vs Armored 20
+1.5
+2.25
+Armored
+Medivac
+150
+-
+T
+6
+-
+-
+-
+Armored
+Zealot
+100
+50
+P
+6
+16
+1.2
+2.25
+Light
+Stalker
+80
+80
+P
+6
+13 | vs Armored 18
+1.87
+2.25
+Armored
+Colossus
+200
+150
+P
+6
+20 | vs Light 30
+1.5
+2.25
+Armored
+Dual-algorithm paired adversary mode. It introduces
+algorithm-vs-algorithm combat to enhance dynamic adver-
+sarial interactions, thus encouraging multi-agent to explore
+more robust winning strategies. In each scenario, agents are
+divided into two teams, each of which is controlled by a
+MARL algorithm. The two teams can continuously learn
+action policies and adapt to dynamic changes of the opponent.
+This requires MARL algorithms to possess robust adaptive
+and learning capabilities to gain an upper hand against ever-
+evolving opponents. Thus, this mode can evaluate the adver-
+sarial capability between two MARL algorithms.
+Multi-algorithm mixed adversary mode. This mode is
+used to further evaluate the ability of a multi-agent algorithm
+when confronted with more diverse opponent actions. To
+implement this, we integrate multiple well-trained MARL
+models into SC2BA to alternately control the enemy troops.
+The opponent model is randomly selected from specified
+MARL algorithms for each episode, making the opponent’s
+actions completely transparent and unpredictable. Thus, the
+agent algorithm should adapt to different opponents, which
+boosts them to master a wider range of tactical approaches.
+B. Scenario
+In a regular full game of SC2, the players of two camps
+compete for resources, construct buildings, train armies, and
+eliminate all enemy buildings to achieve ultimate victory.
+Differ from the full game of SC2, we design a flexible team-
+adversarial game with the following specifications: each player
+controls a single combat unit instead of managing a complex
+macro-level strategy with an entire army; each team consists
+of multiple units that collaborate to fight against the opposing
+team to achieve final victory.
+To evaluate MA algorithms on scenario changes, we provide
+a series of meticulously designed combat scenarios, incorpo-
+rating symmetric and asymmetric setups. The currently defined
+scenarios are listed in Table I. They can be used to evaluate the
+ability of MARL algorithms when suffering diverse behaviors,
+rich dynamics, unequal troops and difficult collaboration.
+Symmetric scenarios. In symmetric scenarios, our goal is
+to create a balanced competitive platform. The composition
+and quantity of units for both teams are equal, ensuring a
+relatively balanced starting point. Symmetric scenarios are
+devoted to revealing MARL algorithms’ inherent ability in
+learning coordination strategy and execution skills.
+Asymmetric scenarios. Asymmetric scenarios are more
+challenging due to non-equilibrium forces/layouts. For ex-
+ample, the enemy team possesses a quantity advantage in
+terms of troop strength, thereby intensifying the challenge of
+achieving victory. This setup necessitates MARL algorithms
+to demonstrate superior-level cooperation and remarkable op-
+eration skills to overcome asymmetric challenges.
+C. State and Observation
+In each time step of battle episode, agents can obtain
+observation information within their perception field from the
+environment. As used in SMAC, the sight range of all agents
+is also set to 9. It means that agents are partially observable
+in this setting. According to the sight range, we have the
+observation attributes of each agent as follows:
+1
+observation_data = {
+2
+’movements’: [north, south, east, west],
+3
+’enemies’: [[enemy_id, distance, relative_x,
+relative_y, health, shield, unit_type],
+...],
+4
+’allies’: [[distance, relative_x, relative_y,
+health, shield, unit_type], ...],
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+6
+5
+’personal’: [health, shield, unit_type]
+6
+}
+The adversary states record the information of all agents
+from both teams at one-time slice, including the position of all
+units relative to the central point and other relevant features of
+agents. Please note that the adversary states are only available
+during the training phase. The details of the adversary state
+are outlined below.
+1
+state_data = {
+2
+’enemies’: [[health, weapon_cd, relative_x,
+relative_y, shield, unit_type], ...],
+3
+’allies’: [[health, relative_x, relative_y,
+shield, unit_type], ...],
+4
+}
+D. Action
+To simplify the vast and complex instruction set in SC2, we
+utilize a discrete set of actions that are automatically converted
+into executable instructions within the game engine. The action
+space is divided into three categories: move, attack, stop/no-op.
+The move action further contains four directions: north, south,
+east and west. The living agents can perform attack actions
+(when hostile agents are viewed and within attack range), or
+moving operations, or even stop operation (when choosing to
+maintain their current state). Dead agents can only perform
+no-op action.
+In the simulated environment, the attack ranges for all units
+are set to a fixed value of 6, same to SMAC. If an agent
+executes the attack action out of actual attack range, it can
+not directly open fire. Instead, it triggers a built-in attack-move
+macro-actions on the target unit. When the enemies reach the
+attack radius, The agent will automatically go close to the
+specified enemy and start firing.
+Battle units possess a diverse range of attributes and exhibit
+mutual counters. First, units possess different armor types:
+light and armored(heavy armor). Second, the arsenal encom-
+passes a variety of weapons, with certain weapons bearing
+special effects. For instance, the marauder’s punisher grenades
+inflict double damage against units with heavy armor, while
+the colossus is equipped with dual thermal lances that inflict
+area damage and extra damage against light-armored units.
+E. Reward
+To promote adversarial dynamics among algorithms, we
+redefine the reward function within SMAC. The reward func-
+tion comprises two primary elements: immediate rewards and
+cumulative rewards. Firstly, for immediate rewards, we adhere
+to the design principles established in SMAC, where agents
+receive response rewards based on the current battle situation
+in each time step. These rewards consist of damaging/killing
+enemies as well as penalties for self-inflicted harm and death.
+Furthermore, with regard to the episodic rewards, we introduce
+penalties for failures and draws. For example, if neither
+of teams manages to eliminate all enemies within the pre-
+specified time limit, both teams receive a penalty reward. This
+setting carries meaning as it inspires an active participation
+mindset in both teams, encouraging them to intensely pursue
+victory rather than avoiding conflict out of fear of failure.
+F. Layout
+In SC2BA, our primary goal is to construct a fair competi-
+tion platform that allows two distinct algorithms to effectively
+demonstrate their adversarial capabilities. When engaging in
+battles between these paired MA algorithms, it is vital to
+maintain consistent and reliable results by employing identical
+layouts. To create a reliable assessment platform, we uphold
+several guiding principles, such as matching combat forces,
+symmetrical spatial stations and identical observation views.
+Matched battle forces. It is widely recognized that achiev-
+ing an equal layout primarily requires ensuring equivalent or
+nearly equal combat forces for both teams. The discrepancy in
+combat forces significantly influences the outcome of battles.
+For example, in SC2, it is impossible to gain victory when
+nine marines combat with ten marines. Furthermore, the side
+with fewer soldiers can only eliminate a limited number of
+opposing units, rather than an equivalent number of nine.
+Symmetric space stations. In battles, the positioning of
+each individual agent within a team significantly influences the
+result and has a direct impact on subsequent formations and
+combats. For instance, based on an analysis of massive battle
+videos, we have discovered that a vertical arrangement of
+three soldiers, all facing the opponent, is more likely to secure
+victory compared to a horizontal arrangement. Therefore, we
+create multi agents of both teams in a central symmetric
+fashion, guaranteeing equality in the positions and formations.
+Identical observation views. To mitigate the impact of
+team positioning on observational perspectives and subsequent
+decision-making processes of the models, we adopt an iden-
+tical observation view for both teams. Drawing inspiration
+from games such as "Honor of Kings" (also known as "King
+of Glory"), where a mirrored map is employed, the red and
+blue teams share identical perspectives. This design choice
+eliminates positional bias, allowing players on both sides to
+operate under fair and unbiased conditions.
+V. ADVERSARIAL PYMARL
+Currently, most MARL learning frameworks [53]–[57] fo-
+cus on single-team multi-agent training, i.e., utilizing built-in
+AI bots to control opponent units. For instance, PyMARL [49],
+the most popular MARL algorithm library, only supports the
+SMAC environment and trains multi-agent by fighting against
+the built-in AI bots. Extended from the PyMARL frame-
+work, the EPyMARL [58] supports four different learning
+environments, but it still focuses solely on single-team multi-
+agent collaboration tasks and cannot manipulate dual-team
+adversarial agents. This setting limits their ability to support
+the paradigm of dual-team multi-agent adversarial learning.
+Accordingly, these learning frameworks do not provide those
+interfaces for algorithm-to-algorithm adversarial training/test-
+ing. As a result, the limitation hinders the development of
+dual-team multi-agent adversary research and impedes com-
+prehensive assessments of MARL algorithms.
+In this regard, we attempt to develop an algorithm-to-
+algorithm adversarial framework, called Adversarial PyMARL
+(APyMARL), in order to support dual-team agents combat
+tasks, disentangle the environment and the algorithm, and
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+7
+Fig. 2. Overview of APyMARL framework. More details can be found in Section V.
+provide a standardized testing suite for MARL. APyMARL
+incorporates several new features, while leveraging the key
+advantages of PyMARL. These new features mainly include
+a standardized multi-agent environment interaction wrapper,
+dual-team multi-agent adversarial training/testing controllers,
+as well as a flexible configurator.
+Multi-agent environment interaction wrapper. A stan-
+dardized agent-environment interaction style, such as single-
+agent Gym [52], can effectively separate the environment
+from the algorithm, allowing the policy learner to remain
+oblivious to the details of the environment. To better favor the
+environment separation as well as facilitate future extension,
+we design a standardized multi-agent environment interaction
+wrapper. This wrapper establishes a consistent data style for
+multi-agent environments, so as to mitigate the operation
+inconvenience on different environments. Specifically, we en-
+capsulate non-universal data, such as global state and action
+masks, into the obs. The data within obs is organized from the
+perspective of individual agents. The rewards are structured
+as a set that includes rewards for two teams of agents. These
+rewards can be duplicated or allocated based on team rewards
+to each agent to ensure equity. In addition, the commands
+interface allows the policy decisions to be executed within the
+environment. By employing the standardized interaction wrap-
+per, APyMARL empowers algorithms to effectively utilize
+the data provided by various environments, thereby promoting
+flexibility and extensibility in the development/evaluation of
+MARL algorithms.
+Dual-team adversarial training/testing controller. APy-
+MARL supports dual-team multi-agent combat in one sce-
+nario, where two teams of agents can learn policies themself
+through online competing interactions. Through the environ-
+ment interaction wrapper, agents can independently access
+their own obs and rewards. According to the observation
+states, each team of agents could make joint policy decisions.
+Through using the commands interface, the policy decisions
+are transmitted to the controller for updating the environ-
+ment states. APyMARL can simultaneously load two different
+pre-trained algorithm-controlled models for real-time combat
+demonstrations. This can facilitate the development of dual-
+team multi-agent adversary research and expand the diversity
+of evaluation methods.
+Parameter configurator. A flexible and powerful con-
+figurator could make the library user-friendly. In the APy-
+MARL library, one user can easily configure task and sce-
+nario parameters, algorithm hyperparameters, and adversar-
+ial paradigms (supporting both single-team and dual-team
+paradigms) through the configurator.
+In addition to the above features, APyMARL adopts a
+modular programming methodology and encapsulates many
+classic MARL techniques as modules for reusing or devel-
+oping new algorithms. Moreover, it offers implementations of
+cutting-edge deep MARL algorithms that serve as benchmarks.
+Built upon the PyTorch framework, APyMARL facilitates
+rapid execution and training of deep neural networks while
+leveraging its extensive ecosystem.
+VI. EXPERIMENTS
+A. Experiment Settings
+We perform several independent experiments (five runs)
+for each case and report their median/average performance
+by following the SMAC protocol. The primary evaluation
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+8
+metric is the median win percentage of evaluation episodes
+with different environment steps observed. Such metric can
+be estimated by periodically running a fixed number of testing
+episodes (32 as default) without any exploratory behaviors.
+To reduce the effect of model initialization, we employ
+two methods for setting model parameters, random way as
+used in [59] and well-trained way (trained with built-in
+AI paradigm). As the adversary between those state-of-the-
+art algorithms is often well-matched in strength, the dual-
+algorithm paired adversary mode needs a long-term process.
+Accordingly, we increase the number of training steps (10
+million steps) to better discover the real ability of MARL
+algorithms. In the mixed adversary mode, opponent units
+exhibit a wider range of behaviors. We aim for algorithms
+to learn winning strategies through higher sampling efficiency
+rather than increasing the number of steps. Therefore, it is
+recommended to maintain the same number of training steps
+(2 million steps, same as SMAC) when evaluating subsequent
+algorithms. This ensures consistency in the evaluation process
+and allows for a fair comparison between different algorithms.
+Based on our developed APyMARL, we conduct algorithm-
+vs-algorithm adversary tests, which refer to the eight represen-
+tative algorithms: QMIX [49], VDN [60], FOP [61], DOP [62],
+QPLEX [63], QTRAN [64], COMA [65] and IQL [66]. In
+the dual-algorithm paired adversary mode, we aim to evaluate
+the algorithm’s dynamic adversarial capabilities. This requires
+the combat scenarios to be identical layouts for both teams.
+Therefore, we conducted experiments mainly in symmetric
+scenarios. On the other hand, in the mixed adversary mode,
+we conducted experiments in all scenarios(both symmetric and
+asymmetric) for more comprehensive evaluation.
+B. Dual-algorithm Paired Adversary Experiments
+We compare the performance results of eight algorithms
+in the dual-algorithm paired adversary mode. To effectively
+evaluate the MARL algorithms’ dynamic adversarial abilities,
+each algorithm is paired up against the others. The results are
+plotted in Fig. 3-Fig. 5. The pairwise adversary of any two
+algorithms are deferred to the supplementary material. Below
+we illustrate the detailed analysis.
+QMIX
+VDN
+DOP
+FOP
+QPLEX
+COMA
+IQL
+QTRAN
+0
+2
+4
+6
+8
+10
+T(mil)
+0
+20
+40
+60
+80
+100
+Averaged Median Test Win %
+All Maps
+0
+2
+4
+6
+8
+10
+T(mil)
+0
+1
+2
+3
+4
+5
+6
+7
+8
+Maps Best(out of 7)
+All Maps
+Fig. 3.
+The overall result of eight algorithms pairwise combat in seven
+symmetric scenarios under dual-algorithm adversary mode. Left: The median
+test win rates, averaged across all 7 scenarios. Right: The number of scenarios
+in which the algorithm outperform other algorithms (median test win rate is
+highest by at least 1/32 and smoothed).
+Overall performance. The overall performance is measured
+based on two aspects: the average median win rate of all
+adversary cases, and the number of advantageous scenarios, as
+shown in Fig. 3. For the former, it reports the average value
+of the median win rates of the algorithm against all other
+algorithms (including itself) in all scenarios. For the latter,
+it represents the number of scenarios in which the algorithm
+dominates. We can obtain some observations:
+• Dual-algorithm adversarial fluctuations. In Fig. 3 (Left),
+the performances of all paired adversaries exhibit fluctu-
+ations. But in the popular SMAC environment controlled
+by AI bots, many algorithms can easily achieve nearly
+100% win rates [50], [67]–[69]. The reason should be
+that each algorithm endeavors to adjust for the opponent
+algorithm during the evolving game. In other words, one-
+team agents controlled by one algorithm need to continu-
+ously learn and adapt to dynamically changing opponents
+controlled by another algorithm. It also indicates that no
+fixed strategy can guarantee a consistent victory in the
+paired adversary mode.
+• Performance difference in policy-/value-based methods.
+The performance of policy-based methods seems less sta-
+ble. Their performance tends to decline with the increase
+of steps, although they may gain certain advantages at the
+initial phase. Moreover, there are obvious performance
+discrepancies among these policy-based methods (DOP,
+FOP, and COMA), where DOP achieves the best perfor-
+mance. This can be attributed to its unique combination
+off-policy tree backup updates with the on-policy TD(λ)
+technique, effectively addressing the challenge of lower
+training efficiency. In contrast, the value-based methods
+exhibit more stability. All algorithms basically show a
+consistent upward trend, indicating a gradually increasing
+ability adapting to dynamically changing opponents. For
+example, QMIX, VDN, and QPLEX make rapid improve-
+ments and eventually achieve performance close to DOP,
+although DOP initially gains an advantage. Additionally,
+these value-based methods perform at the same level,
+except for QTRAN. This can be attributed to the addi-
+tional constraint, i.e., affine transformations, which makes
+it challenging for QTRAN to handle complex tasks [49].
+• No algorithms dominate over all scenarios. As shown
+in Fig. 3 (Right), both DOP and QMIX exhibit good
+performance, dominating in four and two scenarios re-
+spectively for the majority of phase. The other algorithms
+only occasionally achieve optimal performance in one
+scenario. No one (include best DOP) dominates all sce-
+narios, which indicates the significant impact of scenario
+variations on algorithm performance. More discussion
+about the scenario influence is given below.
+Performance of different (symmetric) scenarios. In these
+scenarios, each team consists of several agents ranging from 3
+to 25. According to the types of units, these scenarios can be
+further classified into homogeneous and heterogeneous types.
+Homogeneous scenarios involve teams with agents of the
+same type, whilst heterogeneous scenarios feature teams with
+diverse types of units. The presence of multiple types of units
+introduces a rich variety of tactics in combat. Thus, algorithms
+need to effectively utilize different types of units, leveraging
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+9
+QMIX
+VDN
+DOP
+FOP
+QPLEX
+COMA
+IQL
+QTRAN
+0
+2
+4
+6
+8
+10
+T(mil)
+0
+20
+40
+60
+80
+100
+Averaged Median Test Win %
+3m
+0
+2
+4
+6
+8
+10
+T(mil)
+0
+20
+40
+60
+80
+100
+Averaged Median Test Win %
+2s3z
+0
+2
+4
+6
+8
+10
+T(mil)
+0
+20
+40
+60
+80
+100
+Averaged Median Test Win %
+8m
+0
+2
+4
+6
+8
+10
+T(mil)
+0
+20
+40
+60
+80
+100
+Averaged Median Test Win %
+MMM
+0
+2
+4
+6
+8
+10
+T(mil)
+0
+20
+40
+60
+80
+100
+Averaged Median Test Win %
+3s5z
+0
+2
+4
+6
+8
+10
+T(mil)
+0
+20
+40
+60
+80
+100
+Averaged Median Test Win %
+1c3s5z
+0
+2
+4
+6
+8
+10
+T(mil)
+0
+20
+40
+60
+80
+100
+Averaged Median Test Win %
+25m
+Fig. 4. Win rates for eight algorithms pairwise combat in seven symmetric scenarios(3m, 8m, 2s3z, 3s5z, MMM, 1c3s5z, and 25m) under dual-algorithm
+adversary mode. In one scenario, one algorithm(such as QMIX) will pairwise combat eight algorithms(include itself), then average eight win rates as the
+adversarial performance. Easy scenarios include 3m, 8m, and 2s3z, and hard scenarios consist of 3s5z, MMM, 1c3s5z, and 25m.
+their strengths and avoiding weaknesses, to hold the upper
+hand. According to the number of agents and the diversity of
+agent types, we group the scenarios into easy (3m, 8m and
+2s3z) and hard (MMM, 3s5z, 1c3s5z and 25m) categories. As
+shown in Fig. 4, we can obtain some observations:
+• Comparable for best value-based and policy-based meth-
+ods in easy scenarios. According to the former three
+scenarios (3m, 8m, and 2s3z), the best ones of value-
+based and policy-based methods tend to be comparable in
+performance. For example, in the 8m and 2s3z scenarios,
+DOP (best for policy way) and QMIX (best for value
+way) reach an almost consistent performance at the
+terminate step. This can be attributed to the simplicity of
+the scenarios, where the cooperation policy is relatively
+straightforward, and the algorithm can learn effective
+policies more easily.
+• More effective for policy-based way in hard scenarios.
+As the quantity and variety of agents further increase, it
+poses challenges not only in terms of cooperative combat
+but also significantly expands the action space, leading
+to greater complexity in collaborative adversarial strate-
+gies. However, these policy-based methods are shown
+more effective and achieve promising results in hard
+scenarios, where DOP achieves best. Additionally, FOP
+performs well in the 3s5z and 1c3s5z scenarios, although
+it struggled in the 25m scenario, which might be mainly
+because of the optimal joint policy of entropy-regularized
+Dec-POMDP [70] rather than the original MDP, i.e., the
+converged policy may be biased [71]. These policy-based
+methods, including DOP as well as FOP, are mostly
+superior to those value-based methods. It demonstrates
+that hard scenarios need be more driven by complicated
+policy learning compared to value-based learning.
+• More performance discrepancy in hard scenarios. As the
+complexity of scenarios increases, there are significant
+gaps in the performance of algorithms. In MMM and
+25m scenarios, DOP outperforms other algorithms and es-
+tablishes a substantial lead. In contrast, some algorithms
+perform poorly in all hard scenarios, as the learning
+of cooperative and competitive strategies becomes more
+complicated. Thus, the difficulty of scenarios will am-
+plify the performance differences of algorithms. In other
+words, the increase of scenario complexity could be better
+used to evaluate the capability of various algorithms.
+• More challenging in heterogeneous scenarios. In mul-
+tiple types of unit scenarios, algorithms need to con-
+sider collaboration among various types of agents that
+possess distinct attributes/actions. When comparing the
+8m (homogeneous) and 3s5z (heterogeneous) scenarios,
+both featuring 8 agents in one team, there is a greater
+disparity in algorithm performance, which has two forks
+with either most success or most failure. It shows that
+the cooperation tactics of different types of agents pose
+challenges for algorithms. For this, some works [67], [68]
+employed some specific collaborative strategies for this
+heterogeneous case.
+• The effect of the quantity of agents. In the 3m scenario,
+all algorithms demonstrate strong adversarial capabilities,
+with most algorithms achieving an average win rate
+distributed in a narrow range. In contrast, in the 8m
+and 25m scenarios where only the number of agents is
+increased, there are significant differences in algorithm
+performance. The results indicate that the increased quan-
+tity of agents presents challenges for algorithms to learn
+effective strategies, leading to significant performance
+gaps among some algorithms.
+Asymmetric scenarios. We also conduct experiments on
+asymmetric scenarios. The asymmetry with slight troop dif-
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+10
+QMIX
+VDN
+DOP
+FOP
+QPLEX
+COMA
+IQL
+QTRAN
+0
+2
+4
+6
+8
+10
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+5m_vs_6m
+all vs coma
+0
+2
+4
+6
+8
+10
+T(mil)
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Median Test Return
+5m_vs_6m
+all vs coma
+Fig. 5. The troop difference influence in dual-algorithm adversary mode. The
+results of all algorithms compete against the COMA in 5m_vs_6m are plotted
+here, including median win rate as well as median returns. The median returns
+are normalized to a range of 0-1.
+ference might easily overwhelm an advantage algorithm. To
+verify this point, we select the 5m_vs_6m scenario and let all
+algorithms compete against the COMA performing the poorest
+in experiments. The win rates and episode returns are depicted
+in Fig. 5, from which we can obtain some observations:
+MARL Algorithms are extremely sensible to (even slight)
+troop changes. Only less an agent (five agents vs six agents), as
+shown in Fig. 5 (Left), all algorithms (including the best DOP)
+almost failed when competing with the algorithm COMA (the
+poorest in the above symmetric experiments). For the episode
+rewards in Fig. 5 (Right), all algorithms do not exceed 0.6, and
+only QMIX occasionally makes slightly progress in the final
+stages. It demonstrates that the asymmetric setting increases
+the dual-algorithm adversary difficulty, and the current MRAL
+algorithms at least lack scalability in the troop layout. Conse-
+quently, it indicates some new strategies, such as rescheduling
+reward function, are required to encourage MARL algorithms
+to overcome the bottleneck incurred by troop layout.
+In summary, for the algorithm-paired adversary mode, we
+have some conclusions:
+• The dual-algorithm adversary provides another measure-
+ment mode of evaluating MARL algorithms. Different
+from the Built-in AI Bots mode that evaluates algorithm
+performance through battles against fixed strategy bots,
+this mode offers an online adversarial setting to compete
+with another MARL algorithm. In this new mode, the
+policy of opponents is dynamic and evolvable under
+the control of MARL algorithm. Consequently, no fixed
+strategy can guarantee consistent victory, and agents need
+more powerful adaptation to evolving opponents.
+• The complicated scenarios are more challenging to learn
+cooperation strategies. As the number of agents and the
+diversity of agent types increase, learning cooperative
+strategies becomes more complex. This would lead to am-
+plified performance differences among algorithms, while
+imposing higher demands on them. A specific example is
+the significant gap in algorithm performance observed in
+hard scenarios. It indicates that the increase of scenario
+difficulty can benefit for evaluating the adversarial capa-
+bility of algorithms, allowing outstanding algorithms to
+well demonstrate their strengths.
+• The slight difference of troops easily results in the failing
+of an advantage algorithm. When dual-algorithm combat
+in one scenario, even a little disadvantage can lead to
+a complete failure. In unequal troops combat scenarios,
+even excellent algorithms may struggle to overcome
+an enemy with both troop advantages and evolutionary
+capabilities. For example, in the 5m_vs_6m scenario,
+the best algorithm DOP can not yet defeat the poorest
+algorithm COMA when COMA only adds an agent
+unit. It indicates that to overcome this bottleneck, new
+algorithms/techniques need to be developed, including
+rescheduling reward mechanisms, enriching evaluation
+metrics, etc.
+C. Multi-algorithm Mixed Adversary Experiments
+We compare the performance results of eight algorithms in
+the mixed adversary mode. In these scenarios, one algorithm
+competes with the nine pre-trained and then fixed models (i.e.,
+eight algorithm models and one built-in AI bot). Enemy units
+are controlled alternately through the nine models to increase
+the diversity of policies. Please note that these models have
+been pre-trained to master various combat techniques, such as
+focus fire, but they are not updated during the adversary phase
+due to the optimization complexity, which is also an open issue
+beyond this work. The results are reported in Fig. 6-Fig. 8.
+Below we illustrate more details analysis.
+QMIX
+VDN
+DOP
+FOP
+QPLEX
+COMA
+IQL
+QTRAN
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Averaged Median Test Win %
+All Maps
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+2
+4
+6
+8
+10
+# Maps Best(out of 10)
+All Maps
+Fig. 6.
+The overall result of eight algorithms in multi-algorithm mixed
+adversary mode. Left: The median test win rates, averaged across all 10
+scenarios. Right: The number of scenarios in which the algorithm outperforms
+other algorithms (median test win rate is highest by at least 1/32 and
+smoothed).
+Overall performance. The average values of the median
+win rates of one algorithm against in all scenarios (both
+symmetric and asymmetric) are shown in Fig. 6, we can have
+some observations:
+• Ascending trends in win rates with smaller fluctuations
+(vs dual-algorithm adversary). In Fig. 6 (Left), all al-
+gorithms generally exhibit consistent ascending trends
+in performance. When compared to dual-algorithm ad-
+versaries, the mixed adversaries perform more stable
+(i.e., less fluctuations). The reason might be that, the
+opponent is diverse (alternate eight algorithms), but not be
+dynamically updated due to the difficulty of optimization
+(also an open issue beyond this work). In other words,
+the mixed adversary mode offers a more stable adversary
+environment, allowing algorithms to continuously accu-
+mulate their experience to adapt to the opponents. For
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+11
+QMIX
+VDN
+DOP
+FOP
+QPLEX
+COMA
+IQL
+QTRAN
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+3m
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+8m
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+2s3z
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+3s5z
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+MMM
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+1c3s5z
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+25m
+Fig. 7. Win rates for eight algorithms combat multi pre-trained models in seven symmetric scenarios(3m, 8m, 2s3z, 3s5z, MMM, 1c3s5z, and 25m) under
+multi-algorithm mixed adversary mode.
+QMIX
+VDN
+DOP
+FOP
+QPLEX
+COMA
+IQL
+QTRAN
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+5m_vs_6m
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+10m_vs_11m
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+MMM2
+Fig. 8. Win rates for eight algorithms combat multi pre-trained models in three asymmetric scenarios(5m_vs_6m, 10m_vs_11m, and MMM2) under multi-
+algorithm mixed adversary mode.
+instance, as the number of training steps increases, DOP’s
+performance continues to improve and eventually reaches
+a win rate of 80%.
+• Better consistency in performance for different value-
+based algorithms. The value-based algorithms almost
+have more consistency improvement compared to the
+policy-based methods. For instance, while QTRAN ini-
+tially performs lower than FOP at the early stage, it
+consistently improves over time and eventually surpasses
+FOP. Furthermore, the value-based algorithms have better
+performance than those policy-based algorithms except
+for DOP. This indicates the stableness of value-based
+methods, which can be attributed to their higher com-
+putational efficiency, as the estimation and updating of
+value functions can be performed iteratively.
+Symmetric scenarios. These scenarios consist of seven
+unique cases in which two camps share an identical layout.
+The combat results are shown in Fig. 7, from which we can
+observe that one-vs-multiple adversary is a challenging task
+even in some simple scenarios. This indicates that increas-
+ing the diversity of opponents can prevent algorithms from
+exploiting some simple policies for victory. But we can find
+that such mixed opponents could boost the generalization of
+one algorithm as discussed in Section VI-D1. Furthermore,
+in some scenarios that require more complex policies, such as
+MMM and 25m, some algorithms such as COMA and IQL, do
+not reach the win rate of 40%. It demonstrates the challenges
+posed by the mixed adversary mode, where diverse opponents
+require algorithms to have higher sampling efficiency.
+Asymmetric scenarios. We conduct experiments from two
+folds: i) different troop strengths but with homogeneous
+agent units, 5m_vs_6m (plus 20% troop) and 10m_vs_11m
+(plus 10% troop); ii) heterogeneous agent units, the MMM2
+scenario. In these scenarios, the red-team agents are placed
+in unfavorable conditions. Agents not only have to confront
+opponents with diverse policy actions but also need to over-
+come disadvantages in terms of troop strength. The combat
+results are shown in Fig. 8, from which we can obtain some
+observations. Firstly, this setting poses a significant challenge
+for MARL algorithms, none of the algorithms can achieve
+the same level of performance as in symmetric scenarios.
+Secondly, the slight variation of troop strength has a significant
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+12
+Built-in AI bots
+Multi-algorithm mixed adversary
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+8m
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+10m_vs_11m
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+5m_vs_6m
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+MMM2
+(a) The DOP
+Built-in AI bots
+Multi-algorithm mixed adversary
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+8m
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+10m_vs_11m
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+5m_vs_6m
+0.0
+0.25
+0.5
+0.75
+1.0
+1.25
+1.5
+1.75
+2.0
+T(mil)
+0
+20
+40
+60
+80
+100
+Median Test Win %
+MMM2
+(b) The QMIX
+Fig. 9. The performance adversarial to built-in AI bots of algorithms under two training mode(built-in AI bots mode and multi-algorithm mixed adversary
+mode) in four scenarios(8m, 10m_vs_11m, 5m_vs_5m and MMM2). DOP and QMIX are trained in two mode respectively, and the win rate plotted here are
+obtained from battles against built-in AI bots. Please see the detail in Section VI-D1
+impact on the algorithm adversary. Comparing the scenarios
+of 5m_vs_6m (plus 20% troop) and 10m_vs_11m (plus 10%
+troop), the larger disparity in troops makes the 5m_vs_6m sce-
+nario more difficult to overcome, with none of the algorithms
+achieving a win rate higher than 50%. Thirdly, in the scenario
+MMM2 of heterogeneous agent units, we observe substantial
+differences in algorithm adversary from 5m_vs_6m. Despite
+facing the same troop strength disadvantage of 20%, DOP
+and VDN outperform other algorithms in MMM2. That might
+be attributed to diverse types and larger quantities of units
+introducing greater pool capacity of available tactical actions.
+Consequently, this presents an opportunity to develop more
+complex policies to effectively overcome unfavorable settings.
+In summary, for multi-algorithms mixed adversary mode,
+we have the conclusions:
+• The mixed adversary mode offers a powerful way to
+boost MARL performance. In this mode, we incorporated
+multiple well-trained enemy control models to diversify
+the behavior patterns of opponents. The increasing oppo-
+nents diversity would force agents to adapt to different
+opponents, which boosts the red-team agents to master a
+wider range of tactical policies. Please see the discussion
+in Section VI-D1.
+• Asymmetric scenarios are still challenging for the cur-
+rent algorithms. In the mixed algorithm adversary, the
+algorithm is still sensible to the slight equality of troops,
+as also observed in the above dual-algorithm adversary
+experiments mentioned earlier. In the real world, it is
+unrealistic to expect equal troop strength. Hence, some
+new algorithms/techniques need to be developed urgently
+to address the case.
+• Dynamic mixed adversary is more complicated as the
+future work. In the above mixed adversary experiments,
+we fix the multiple blue-team models after well pre-
+trained, and then alternately choose one model as an
+opponent for each episode. Although the experiment
+demonstrates its effectiveness, there is still space to
+improve the fixed mode by jointly optimizing the multiple
+blue-team models, as used in the dynamic update of the
+dual-algorithm adversary mode. However, the joint multi-
+model optimization is destined to be complicated, and
+will be studied as a future work.
+D. Boost Multi-agent Learning
+As discussed above, our developing SC2BA platform can
+be used as a benchmark to evaluate/foster new MARL algo-
+rithms. At the same time, one argued question is whether the
+models trained in the algorithm adversary mode have a better
+generalization, e.g., adapting to an unknown opponent or built-
+in AI bot. In this section, we attempt to answer this question
+from two aspects: increasing opponent diversity and enhancing
+adversary learning. The experiment results are reported in
+Fig. 9-Fig. 11, whose itemized details are deferred to the
+supplementary file.
+1) Opponents Diversity: We conduct experiments to vali-
+date whether increasing opponent diversity can enhance the
+algorithm performance adversarial to built-in AI bot. We use
+the algorithms, DOP and QMIX, as the red team respectively,
+where DOP and QMIX are the most excellent policy-based
+and value-based algorithms in SC2BA. There are two training
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+13
+Paired Adversary mode
+Mixed Adversary mode(non-dynamic)
+Built-in AI Bots mode
+8m
+25m
+0
+20
+40
+60
+80
+100
+Win Rate %
+MMM
+2s3z
+0
+20
+40
+60
+80
+100
+Win Rate %
+3s5z
+1c3s5z
+0
+20
+40
+60
+80
+100
+Win Rate %
+Fig. 10.
+The adversary ability of algorithms under three training modes (paired adversary mode, mixed adversary mode and built-in AI bots). The eight
+MARL algorithms are trained based on the three modes respectively, and reach 24 models for each scenario. Each model from the former two modes is
+competed to everyone from built-in AI bots, i.e., cross-adversarial tests in the one-to-one manner. The average results of all adversarial tests are plotted here.
+In each box, the center/bottom/top lines represent the median, first quartile and third quartile, respectively; the horizontal lines along the top and bottom edges
+represent the maximum and minimum values; and the white triangle denotes the average value. Please see the details in Section VI-D2.
+20
+10
+0
+10
+20
+15
+10
+5
+0
+5
+10
+15
+20
+(a) Built-in AI bits
+20
+10
+0
+10
+20
+15
+10
+5
+0
+5
+10
+15
+20
+(b) Mixed adversary mode
+20
+10
+0
+10
+20
+15
+10
+5
+0
+5
+10
+15
+20
+(c) Paired adversary mode
+Fig. 11. The visualization of joint action distributions in three modes. Different clusters are with different colors. Please see details in Section VI-D2.
+modes: built-in AI bots and multi-algorithm mixed adversary.
+In the first mode, the algorithm are trained by engaging in
+battles against built-in AI bots, same to the SMAC setting. In
+the second mode, the opponents consist of a combination of
+fixed well-trained models as used in Section VI-C. The test
+is to compete with built-in AI bots, i.e., validating the gener-
+alization ability to built-in AI bots. The results are illustrated
+in Fig. 9, from which we can observe increasing opponent
+diversity can boost the performance in most cases. In the 8m,
+5m_vs_6m, and 10m_vs_11m scenarios, the mixed adversary
+mode facilitates faster discovery of winning strategies than
+built-in AI mode. For the 8m scenario, the model trained in
+built-in AI mode achieves 100% win rates, and the model
+trained by the mixed adversary mode has a little degradation at
+the terminate step, which might be attributed to the diversity of
+training opponents and the singularity of test opponent. These
+results indicate that increasing opponent diversity can indeed
+boost MARL algorithm performances.
+2) Adversary Competing: In this section, our purpose is
+to validate what training mode is more effective for MARL
+model. we test the adversary capability of one model (w.r.t
+one algorithm) when trained by three different modes: dual-
+algorithm adversary, mixed algorithm adversary and built-in
+AI bots, where the former two modes come from our SC2BA
+and the last one is from SMAC. Taking {QMix, DOP} as
+an example, we first train three models based on these three
+modes, denoted as three groups: {QMix_dual, DOP_dual},
+{QMix_mixed, DOP_mixed} and {QMix_AI, DOP_AI}, then
+let every model of the former two groups compete with every-
+one of the last one group, such as QMix_dual vs QMix_AI,
+QMix_dual vs DOP_AI, etc. We accumulate all experimental
+results of eight MRAL algorithms to report in Fig. 10 (each
+itemized results are given in the supplemental file). The blue
+box and the green box respectively represent the challenger
+results of agents training by two modes of SC2BA, i.e.,
+dual-algorithm and mixed-algorithm adversaries. We observe
+that the agents trained by paired and mixed adversary mode
+have a higher win rate than the challenger that trained only
+built-in AI bots. Further, the agents trained in paired mode
+perform slightly better, compared to the mixed adversary
+mode. This can be attributed to the use of evolvable adver-
+saries, i.e., dynamic opponent. As two competitive models
+need to adapt to each other, the struggle of strategy and
+counter-strategy implicitly increases the diversity/complexity
+of policy learning, which could improve the learned model to
+some extent. The experiments provide some evidence that the
+dual-algorithm adversary mode can boost the generalization
+capability, making agents possess strong adversarial ability
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+14
+even in the face of unseen opponents.
+To further study why agents trained in the two modes of
+SC2BA perform well, we exhibit the behaviors of agents
+trained in these two modes (vs built-in AI bots), as shown
+in Fig. 11. Concretely, we collect a joint action list of multi-
+agent from 100 episodes and execute principle component
+analysis (PCA) for a 2D space followed by the MeanShift [72]
+clustering for convenient visual exhibition. In contrast to built-
+in AI mode, the actions learnt in the mixed and paired
+modes have more diversity. And, the paired adversary mode
+has a little higher diversity than the mixed mode. All these
+phenomena match the above observation in Fig. 10. It indicates
+that the the adversarial modes in SC2BA can benefit the policy
+diversity and be used to improve the learning of multi-agent.
+VII. CONCLUSION AND FUTURE WORK
+In this work, we created the SC2BA environment and
+APyMARL library to benchmark MARL algorithms in an
+adversary paradigm. The APyMARL was developed as an
+open-source library with easy-to-use interfaces/configurations
+and flexible modules, so as to serve SC2BA. Built on the
+popular RTS game StarCraft II, SC2BA is equipped with two
+types of algorithm-adversary modes: dual-algorithm paired
+adversary mode and multi-algorithm mixed adversary mode. In
+the former mode, both teams of the battle may be manipulated
+with different MARL algorithms, not that one team is fixed as
+built-in AI bots as in SMAC. That is, one algorithm needs to
+be competed with another algorithm. Hence, their learnability
+as well as dynamicity would cause not only the difficulty of
+optimization but also the diversity of policy actions. Hereby,
+it would result into an interesting and diversified evaluation
+on MARL algorithms. In the latter mode, we attempted to
+endow enemy units with multiple opponents modeled by
+multiple algorithms, which further enriches the competitive
+policy space. Based on the two adversarial modes, we provided
+extensive benchmarking tests for those representative MARL
+algorithms as well as symmetric/asymmetric scenarios. In
+our experience, we found that the algorithm-adversary could
+increase the diversity of policy, improve the robustness of
+model, and enhance the generalization ability of model.
+Further, we found some thought-provoking problems in
+algorithm adversaries, such as the sensibility to scenario layout
+(e.g., troops), the difficulty of heterogeneous scenarios, the
+fluctuation of algorithm adversary, the joint evolution of multi-
+opponents, etc. These issues seem to have a few focuses or
+studies in the field of MARL, their solutions need not only new
+proposals of MARL algorithms but also rethink some internal
+rules (e.g., reward function, motion law of agents, situation
+law, etc) related to game mechanism.
+In summary, this SC2BA platform would facilitate the
+evaluation of MARL algorithms from the new different view
+of algorithm-adversary, and meantime provide support for
+cultivating new MARL algorithms. In the future, we will
+attempt to explore dynamic multi-algorithm mixed adversary,
+and design more asymmetric scenarios to further optimize the
+SC2BA platform.
+REFERENCES
+[1] J. Shang, S. Meng, J. Hou, and et al., “Graph-based cooperation multi-
+agent reinforcement learning for intelligent traffic signal control,” IEEE
+Internet of Things Journal, 2025.
+[2] S. Wang, Z. Wang, R. Jiang, and et al., “A multi-agent reinforcement
+learning-based longitudinal and lateral control of cavs to improve
+traffic efficiency in a mandatory lane change scenario,” Transportation
+Research Part C: Emerging Technologies, vol. 158, p. 104445, 2024.
+[3] H. Zhang, S. Feng, C. Liu, and et al., “Cityflow: A multi-agent
+reinforcement learning environment for large scale city traffic scenario,”
+in The world wide web conference, 2019, pp. 3620–3624.
+[4] V. Mnih, K. Kavukcuoglu, D. Silver, and et al., “Human-level control
+through deep reinforcement learning,” nature, vol. 518, no. 7540, pp.
+529–533, 2015.
+[5] O. Vinyals, I. Babuschkin, W. M. Czarnecki, and et al., “Grandmaster
+level in starcraft ii using multi-agent reinforcement learning,” Nature,
+vol. 575, no. 7782, pp. 350–354, 2019.
+[6] J. Zheng, Z.-T. Liang, Y. Li, and et al., “Multi-agent reinforcement
+learning with privacy preservation for continuous double auction-based
+p2p energy trading,” IEEE Transactions on Industrial Informatics,
+vol. 20, no. 4, pp. 6582–6590, 2024.
+[7] H. Wu, D. Qiu, L. Zhang, and et al., “Adaptive multi-agent reinforcement
+learning for flexible resource management in a virtual power plant with
+dynamic participating multi-energy buildings,” Applied Energy, vol. 374,
+p. 123998, 2024.
+[8] B. Wang, Z. Liu, Q. Li, and et al., “Mobile robot path planning in
+dynamic environments through globally guided reinforcement learning,”
+IEEE Robotics and Automation Letters, vol. 5, no. 4, pp. 6932–6939,
+2020.
+[9] J. Chung, J. Fayyad, Y. A. Younes, and et al., “Learning team-based
+navigation: a review of deep reinforcement learning techniques for multi-
+agent pathfinding,” Artificial Intelligence Review, vol. 57, no. 2, p. 41,
+2024.
+[10] H. K. Mousavi, M. Nazari, M. Takáˇc, and et al., “Multi-agent image
+classification via reinforcement learning,” in 2019 IEEE/RSJ Interna-
+tional Conference on Intelligent Robots and Systems (IROS).
+IEEE,
+2019, pp. 5020–5027.
+[11] J. Zou, J. Lou, B. Wang, and et al., “A novel deep reinforcement learning
+based automated stock trading system using cascaded lstm networks,”
+Expert Systems with Applications, vol. 242, p. 122801, 2024.
+[12] Y. Huang, C. Zhou, K. Cui, and et al., “A multi-agent reinforcement
+learning framework for optimizing financial trading strategies based on
+timesnet,” Expert Systems with Applications, vol. 237, p. 121502, 2024.
+[13] P. Stone and M. Veloso, “Multiagent systems: A survey from a machine
+learning perspective,” Autonomous Robots, vol. 8, pp. 345–383, 2000.
+[14] Y.
+Chen,
+Y.
+Yang,
+T.
+Wu,
+and
+et
+al.,
+“Towards
+human-level
+bimanual dexterous manipulation with reinforcement learning,” in
+Thirty-sixth Conference on Neural Information Processing Systems
+Datasets and Benchmarks Track, 2022. [Online]. Available: https:
+//openreview.net/forum?id=D29JbExncTP
+[15] B. Peng, T. Rashid, C. Schroeder de Witt, and et al., “Facmac: Factored
+multi-agent centralised policy gradients,” Advances in Neural Informa-
+tion Processing Systems, vol. 34, pp. 12 208–12 221, 2021.
+[16] G. Papoudakis, F. Christianos, L. Schäfer, and et al., “Benchmark-
+ing multi-agent deep reinforcement learning algorithms in cooperative
+tasks,” arXiv preprint arXiv:2006.07869, 2020.
+[17] T. McInroe, “Repo for the multi-agent pressureplate environment.” https:
+//github.com/uoe-agents/pressureplate, 2022.
+[18] S. Mohanty, E. Nygren, F. Laurent, M. Schneider, and et al., “Flatland-
+rl: Multi-agent reinforcement learning on trains,” arXiv preprint
+arXiv:2012.05893, 2020.
+[19] G. Papoudakis, F. Christianos, L. Schäfer, and et al., “Comparative
+evaluation of cooperative multi-agent deep reinforcement learning al-
+gorithms,” arXiv: 2006.07869, 2020.
+[20] M. Johnson, K. Hofmann, T. Hutton, and et al., “The malmo platform for
+artificial intelligence experimentation.” in Ijcai, 2016, pp. 4246–4247.
+[21] R. Lowe, Y. I. Wu, A. Tamar, and et al., “Multi-agent actor-critic
+for mixed cooperative-competitive environments,” Advances in neural
+information processing systems, vol. 30, 2017.
+[22] L. Zheng, J. Yang, H. Cai, and et al., “Magent: A many-agent re-
+inforcement learning platform for artificial collective intelligence,” in
+Proceedings of the AAAI conference on artificial intelligence, vol. 32,
+no. 1, 2018.
+[23] C. Beattie, J. Z. Leibo, D. Teplyashin, and et al., “Deepmind lab,” arXiv
+preprint arXiv:1612.03801, 2016.
+
+JOURNAL OF LATEX CLASS FILES, VOL. 14, NO. 8, MAR 2025
+15
+[24] C. Resnick, W. Eldridge, D. Ha, and et al., “Pommerman: A multi-agent
+playground,” arXiv preprint arXiv:1809.07124, 2018.
+[25] K. Kurach, A. Raichuk, P. Sta´nczyk, and et al., “Google research
+football: A novel reinforcement learning environment,” in Proceedings
+of the AAAI Conference on Artificial Intelligence, vol. 34, no. 04, 2020,
+pp. 4501–4510.
+[26] M. Zhang, S. Zhang, Z. Yang, and et al., “Gobigger: A scalable platform
+for cooperative-competitive multi-agent interactive simulation,” in The
+Eleventh International Conference on Learning Representations, 2023.
+[27] I. Mordatch and P. Abbeel, “Emergence of grounded compositional
+language in multi-agent populations,” in Proceedings of the AAAI
+conference on artificial intelligence, vol. 32, no. 1, 2018.
+[28] J. Suarez, Y. Du, C. Zhu, and et al., “The neural mmo platform for
+massively multiagent research,” arXiv preprint arXiv:2110.07594, 2021.
+[29] M. Samvelyan, T. Rashid, C. S. De Witt, and et al., “The starcraft multi-
+agent challenge,” arXiv preprint arXiv:1902.04043, 2019.
+[30] M. Lanctot, V. Zambaldi, A. Gruslys, and et al., “A unified game-
+theoretic approach to multiagent reinforcement learning,” Advances in
+neural information processing systems, vol. 30, 2017.
+[31] K. Zhang, Z. Yang, and T. Ba¸sar, “Multi-agent reinforcement learning:
+A selective overview of theories and algorithms,” Handbook of rein-
+forcement learning and control, pp. 321–384, 2021.
+[32] B. Yang and M. Liu, “Keeping in touch with collaborative uavs: A deep
+reinforcement learning approach.” in IJCAI, 2018, pp. 562–568.
+[33] A. Shamsoshoara, M. Khaledi, F. Afghah, and et al., “Distributed cooper-
+ative spectrum sharing in uav networks using multi-agent reinforcement
+learning,” in 2019 16th IEEE Annual Consumer Communications &
+Networking Conference (CCNC).
+IEEE, 2019, pp. 1–6.
+[34] J. Tožiˇcka, B. Szulyovszky, G. de Chambrier, and et al., “Application
+of deep reinforcement learning to uav fleet control,” in Intelligent
+Systems and Applications: Proceedings of the 2018 Intelligent Systems
+Conference (IntelliSys) Volume 2.
+Springer, 2019, pp. 1169–1177.
+[35] E. Dall’Anese, H. Zhu, and G. B. Giannakis, “Distributed optimal power
+flow for smart microgrids,” IEEE Transactions on Smart Grid, vol. 4,
+no. 3, pp. 1464–1475, 2013.
+[36] J. Cortes, S. Martinez, T. Karatas, and et al., “Coverage control for mo-
+bile sensing networks,” IEEE Transactions on robotics and Automation,
+vol. 20, no. 2, pp. 243–255, 2004.
+[37] S. Shah, D. Dey, C. Lovett, and et al., “Airsim: High-fidelity visual
+and physical simulation for autonomous vehicles,” in Field and Service
+Robotics: Results of the 11th International Conference. Springer, 2018,
+pp. 621–635.
+[38] A. Anwar and A. Raychowdhury, “Autonomous navigation via deep
+reinforcement learning for resource constraint edge nodes using transfer
+learning,” IEEE Access, vol. 8, pp. 26 549–26 560, 2020.
+[39] D. Silver, J. Schrittwieser, K. Simonyan, and et al., “Mastering the game
+of go without human knowledge,” nature, vol. 550, no. 7676, pp. 354–
+359, 2017.
+[40] M. Bowling, N. Burch, M. Johanson, and et al., “Heads-up limit hold’em
+poker is solved,” Science, vol. 347, no. 6218, pp. 145–149, 2015.
+[41] V. Mnih, K. Kavukcuoglu, D. Silver, and et al., “Playing atari with deep
+reinforcement learning,” arXiv preprint arXiv:1312.5602, 2013.
+[42] S. Kühn, T. Gleich, R. C. Lorenz, and et al., “Playing super mario
+induces structural brain plasticity: gray matter changes resulting from
+training with a commercial video game,” Molecular psychiatry, vol. 19,
+no. 2, pp. 265–271, 2014.
+[43] P. R. Wurman, S. Barrett, K. Kawamoto, and et al., “Outracing champion
+gran turismo drivers with deep reinforcement learning,” Nature, vol. 602,
+no. 7896, pp. 223–228, 2022.
+[44] M. Kempka, M. Wydmuch, G. Runc, and et al., “ViZDoom: A Doom-
+based AI research platform for visual reinforcement learning,” in IEEE
+Conference on Computational Intelligence and Games.
+Santorini,
+Greece: IEEE, Sep 2016, pp. 341–348, the Best Paper Award.
+[45] C. Berner, G. Brockman, B. Chan, and et al., “Dota 2 with large scale
+deep reinforcement learning,” arXiv preprint arXiv:1912.06680, 2019.
+[46] D. Ye, Z. Liu, M. Sun, and et al., “Mastering complex control in moba
+games with deep reinforcement learning,” in Proceedings of the AAAI
+Conference on Artificial Intelligence, vol. 34, no. 04, 2020, pp. 6672–
+6679.
+[47] O. Vinyals, T. Ewalds, S. Bartunov, and et al., “Starcraft ii: A new
+challenge for reinforcement learning,” arXiv preprint arXiv:1708.04782,
+2017.
+[48] B. Ellis, S. Moalla, M. Samvelyan, and et al., “Smacv2: An improved
+benchmark for cooperative multi-agent reinforcement learning,” arXiv
+preprint arXiv:2212.07489, 2022.
+[49] T. Rashid, M. Samvelyan, C. S. De Witt, and et al., “Monotonic value
+function factorisation for deep multi-agent reinforcement learning,” The
+Journal of Machine Learning Research, vol. 21, no. 1, pp. 7234–7284,
+2020.
+[50] C. Yu, A. Velu, E. Vinitsky, and et al., “The surprising effectiveness of
+ppo in cooperative multi-agent games,” Advances in Neural Information
+Processing Systems, vol. 35, pp. 24 611–24 624, 2022.
+[51] B. Baker, I. Kanitscheider, T. Markov, and et al., “Emergent tool use
+from multi-agent autocurricula,” arXiv preprint arXiv:1909.07528, 2019.
+[52] G. Brockman, V. Cheung, L. Pettersson, and et al., “Openai gym,” arXiv
+preprint arXiv:1606.01540, 2016.
+[53] J. Hu, S. Jiang, S. A. Harding, and et al., “Rethinking the implementation
+tricks and monotonicity constraint in cooperative multi-agent reinforce-
+ment learning,” arXiv preprint arXiv:2102.03479, 2021.
+[54] A. Raffin, A. Hill, A. Gleave, and et al., “Stable-baselines3: Reli-
+able reinforcement learning implementations,” The Journal of Machine
+Learning Research, vol. 22, no. 1, pp. 12 348–12 355, 2021.
+[55] M. W. Hoffman, B. Shahriari, J. Aslanides, and et al., “Acme: A re-
+search framework for distributed reinforcement learning,” arXiv preprint
+arXiv:2006.00979, 2020.
+[56] A. Pretorius, K.-a. Tessera, A. P. Smit, and et al., “Mava: A research
+framework for distributed multi-agent reinforcement learning,” arXiv
+preprint arXiv:2107.01460, 2021.
+[57] S. Hu, Y. Zhong, M. Gao, and et al., “Marllib: A scalable and
+efficient multi-agent reinforcement learning library,” Journal of Machine
+Learning Research, vol. 24, no. 315, pp. 1–23, 2023.
+[58] G. Papoudakis, F. Christianos, L. Schäfer, and et al., “Benchmark-
+ing multi-agent deep reinforcement learning algorithms in cooperative
+tasks,” arXiv preprint arXiv:2006.07869, 2020.
+[59] K. He, X. Zhang, S. Ren, and et al., “Delving deep into rectifiers:
+Surpassing human-level performance on imagenet classification,” in
+Proceedings of the IEEE international conference on computer vision,
+2015, pp. 1026–1034.
+[60] P. Sunehag, G. Lever, A. Gruslys, and et al., “Value-decomposition
+networks
+for
+cooperative
+multi-agent
+learning,”
+arXiv
+preprint
+arXiv:1706.05296, 2017.
+[61] T. Zhang, Y. Li, C. Wang, and et al., “Fop: Factorizing optimal joint
+policy of maximum-entropy multi-agent reinforcement learning,” in
+International Conference on Machine Learning.
+PMLR, 2021, pp.
+12 491–12 500.
+[62] Y. Wang, B. Han, T. Wang, and et al., “Off-policy multi-agent decom-
+posed policy gradients,” arXiv preprint arXiv:2007.12322, 2020.
+[63] J. Wang, Z. Ren, T. Liu, and et al., “Qplex: Duplex dueling multi-agent
+q-learning,” arXiv preprint arXiv:2008.01062, 2020.
+[64] K. Son, D. Kim, W. J. Kang, and et al., “Qtran: Learning to factorize
+with transformation for cooperative multi-agent reinforcement learning,”
+in International conference on machine learning.
+PMLR, 2019, pp.
+5887–5896.
+[65] J. Foerster, G. Farquhar, T. Afouras, and et al., “Counterfactual multi-
+agent policy gradients,” in Proceedings of the AAAI conference on
+artificial intelligence, vol. 32, no. 1, 2018.
+[66] M. Tan, “Multi-agent reinforcement learning: Independent vs. cooper-
+ative agents,” in Proceedings of the tenth international conference on
+machine learning, 1993, pp. 330–337.
+[67] T. Wang, T. Gupta, A. Mahajan, and et al., “Rode: Learning roles to
+decompose multi-agent tasks,” arXiv preprint arXiv:2010.01523, 2020.
+[68] T. Wang, H. Dong, V. Lesser, and et al., “Roma: Multi-agent reinforce-
+ment learning with emergent roles,” arXiv preprint arXiv:2003.08039,
+2020.
+[69] X. Hu, P. Guo, Y. Li, and et al., “Tvdo: Tchebycheff value-
+decomposition optimization for multiagent reinforcement learning,”
+IEEE Transactions on Neural Networks and Learning Systems, 2024.
+[70] F. A. Oliehoek, C. Amato et al., A concise introduction to decentralized
+POMDPs.
+Springer, 2016, vol. 1.
+[71] B. Eysenbach and S. Levine, “If maxent rl is the answer, what is the
+question?” 2019.
+[72] Y. Cheng, “Mean shift, mode seeking, and clustering,” IEEE transactions
+on pattern analysis and machine intelligence, vol. 17, no. 8, pp. 790–
+799, 1995.

@@ -1,0 +1,2905 @@
+Robust Mean-Field Games with Risk Aversion and Bounded
+Rationality
+Bhavini Jeloka∗
+Yue Guan†
+Panagiotis Tsiotras‡
+ABSTRACT
+Recent advances in mean-field game literature enable the reduction of large-scale multi-agent prob-
+lems to tractable interactions between a representative agent and a population distribution. However,
+existing approaches typically assume a fixed initial population distribution and fully rational agents,
+limiting robustness under distributional uncertainty and cognitive constraints. We address these
+limitations by introducing risk aversion with respect to the initial population distribution and by
+incorporating bounded rationality to model deviations from fully rational decision-making agents.
+The combination of these two elements yields a new and more general equilibrium concept, which
+we term the mean-field risk-averse quantal response equilibrium (MF-RQE). We establish exis-
+tence results and prove convergence of fixed-point iteration and fictitious play to MF-RQE. Building
+on these insights, we develop a scalable reinforcement learning algorithm for scenarios with large
+state–action spaces. Numerical experiments demonstrate that MF-RQE policies achieve improved
+robustness relative to classical mean-field approaches that optimize expected cumulative rewards
+under a fixed initial distribution and are restricted to entropy-based regularizers.
+1
+Introduction
+Multi-agent decision-making is central to many real-world applications, including traffic control, swarm systems, and
+multi-robot coordination [Yu et al., 2023; Yang et al., 2023; Rizk et al., 2018; Berman et al., 2009]. As the number
+of agents grows, decision-making complexity increases exponentially, leading to the well-known curse of dimen-
+sionality, making scalability a fundamental challenge in multi-agent systems. Mean-field theory offers a principled
+approach to address this challenge by approximating large-population interactions in the infinite-agent limit [Huang
+et al., 2006]. This framework gives rise to mean-field games (MFGs) for non-cooperative settings [Huang et al.,
+2006; Cui and Koeppl, 2022; Guan et al., 2022], mean-field control (MFC) for cooperative problems [Saldi et al.,
+2023; Sen and Caines, 2019], and more recently mean-field team games (MFTGs) for mixed cooperative–competitive
+scenarios [Guan et al., 2024; Shao et al., 2024; Jeloka et al., 2025].
+In MFGs, a multi-agent interaction is approximated by a game between a representative agent and the population
+distribution (mean-field), yielding a mean-field equilibrium (MFE) that approximates Nash equilibria in large but finite
+populations. The appeal of MFE lies in its decentralized structure: agents deploy identical open-loop policies with
+respect to the mean field, avoiding costly or unreliable real-time population feedback. However, classical MFGs rely on
+strong assumptions, including a fixed initial population distribution, perfect rationality, and risk neutrality. In practice,
+agents operate across varying initial distributions. Due to the iterative nature of solving MFE, recomputing policies
+for each such condition is typically computationally infeasible. These challenges introduce uncertainty in population-
+level statistics and naturally give rise to risk preferences over a set of possible initial distributions–a behavior that is not
+captured by expected-reward maximization under a single initial condition. Furthermore, perfect rationality is rarely
+realistic in practice, as agents exhibit errors, biases, and systematic deviations from optimal behavior [McKelvey and
+Palfrey, 1995; Erev and Roth, 1998]. To address these limitations, both risk aversion and bounded rationality must be
+incorporated into the mean-field framework.
+∗Bhavini Jeloka is a PhD student with the School of Aerospace Engineering, Georgia Institute of Technology, Atlanta, GA,
+USA. Email: bjeloka3@gatech.edu
+†Yue Guan is a PhD student with the School of Aerospace Engineering, Georgia Institute of Technology, Atlanta, GA, USA.
+Email: yguan44@gatech.edu
+‡Panagiotis Tsiotras is the David & Andrew Lewis Chair Professor with the School of Aerospace Engineering, Georgia Institute
+of Technology, Atlanta, GA, USA. Email: tsiotras@gatech.edu
+arXiv:2602.13353v1  [cs.MA]  13 Feb 2026
+
+The recent work of Mazumdar et al. [2025] introduced the risk-averse quantal response equilibrium (RQE) for finite-
+agent Markov games, but suffers from the curse of dimensionality. To address the shortcomings associated with large
+population regimes, in this work we introduce a risk-averse MFG framework that explicitly accounts for uncertainty
+in initial population distributions and deviations from perfect rationality. We formulate the problem as a convex
+risk-averse optimization problem and introduce a new solution concept, the mean-field risk-averse quantal response
+equilibrium (MF-RQE).
+Our main contributions are summarized as follows: 1) a novel MFG formulation incorporating both risk aversion over
+initial distributions and bounded rationality, leading to the MF-RQE; 2) fixed-point iteration and fictitious play algo-
+rithms to compute MF-RQE, including function-approximation variants for large state–action spaces; 3) existence and
+convergence guarantees; 4) extensive experiments demonstrating that MF-RQE policies exhibit substantially improved
+robustness compared to risk-neutral policies optimized for a single initial distribution.
+2
+Related Work
+Risk aversion and bounded rationality have largely been studied in isolation—through risk-averse and quantal re-
+sponse equilibria, respectively—with growing adoption in MARL and learning theory; see Mazumdar et al. [2025]
+and references therein for Markov games. We focus on related work that examines their integration with MFGs.
+Risk Analysis in MFGs. Risk-sensitive mean-field games have been studied in both continuous and discrete-time
+settings. Continuous-time analyses [Moon and Bas¸ar, 2014; Tembine et al., 2013; Tembine, 2015; Perrin et al., 2020]
+typically rely on common-noise formulations and differ fundamentally from the finite-horizon, discrete-time frame-
+work considered here. In discrete time, prior work [Saldi et al., 2020; Cheng and Jaimungal, 2023; Bonnans et al.,
+2021] often assumes Polish state–action spaces or linear feedback control, whereas our finite state–action formulation
+admits a standard MDP structure with explicit dynamics and does not require real-time mean-field feedback, enabling
+scalability with large state-action spaces. While our approach is related to exponential utility-based risk-sensitive for-
+mulations [Saldi et al., 2020], our framework—unlike theirs—accounts for uncertainty in the mean-field flow itself,
+induced by uncertainty in the initial distribution, yielding a log-sum-exp aggregation over multiple initial distributions.
+Finally, all existing risk-sensitive MFG frameworks predominantly rely on Nash equilibrium as the solution concept
+and do not account for deviations from perfect rationality.
+Bounded Rationality in MFGs. In MFGs, bounded rationality has primarily appeared through entropy regularization
+to compute approximate Nash equilibria [Cui and Koeppl, 2022; Guan et al., 2022], and was explicitly interpreted
+as bounded rationality in Eich et al. [2025], where the authors analyzed a stochastically perturbed mean-field game
+and computed the resulting mean-field quantal response equilibria (QRE). Under suitable assumptions, Eich et al.
+[2025] show that bounded rationality yields both more realistic agent behavior and computational advantages, as the
+resulting QRE can be computed via fixed-point iteration and, under specific noise assumptions, reduces to an entropy-
+regularized MFG. Building on these insights, we model bounded rationality in MFGs using a general class of convex
+regularizers, enabling richer behavioral representations beyond entropy regularization while retaining computational
+tractability. Moreover, unlike Eich et al. [2025], we explicitly incorporate risk aversion into the boundedly rational
+mean-field framework, thereby capturing agents’ preferences for the initial population distribution.
+Impact of Initial Distributions. Mean-field games under uncertainty in the initial distribution remain relatively un-
+derexplored, with limited theory and few design methodologies offering performance guarantees under risk aversion
+or modeling error. Jin et al. [2025] propose an initial-error-tolerant distributed mean-field control (IET-DMFC) frame-
+work, but it is limited to linear–quadratic models and does not incorporate risk preferences. Cui et al. [2023] empir-
+ically study sensitivity to initial conditions in the MFC regime using open-loop policies learned via Dec-POMFPPO,
+but do not provide theoretical robustness guarantees.
+3
+Notation
+We use uppercase letters to denote random variables (e.g., X and M) and lowercase letters to denote their realizations
+(e.g., x and µ). We use [N] to denote the discrete set of the natural numbers {1, 2, . . . , N}. The indicator function
+is denoted as 1·
+ ·
+
+, such that 1a
+ b
+
+= 1 if a = b and 0 otherwise. Bold letters denote vectors (e.g., x). We denote
+the space of probability measures over a finite set E as P(E). For a finite set E, the total variation between two
+probability measures µ, µ′ ∈P(E) is given by dTV
+ µ, µ′
+= 1
+2
+P
+e∈E |µ(e) −µ′(e)| = 1
+2 ∥µ −µ′∥1.
+
+4
+Problem Formulation
+4.1
+Mean-Field Games
+Consider a discrete-time system with N homogeneous agents that operates over a finite horizon T. Let XN
+i,t ∈X
+and U N
+i,t ∈U denote the random variables representing the state and action taken by an agent i ∈[N] at time t.
+Here, X and U are the finite individual state and action spaces for each agent, independent of i and t. The joint
+state and action of the population is denoted as (XN
+t , UN
+t ). The operator MN
+t = Empµ(XN
+t ) denotes the operation
+MN
+t (x) = 1
+N
+PN1
+i=1 1x(XN
+i,t) for all x ∈X that relates joint states to the corresponding ED. Notice that MN
+t (x) gives
+the fraction of agents at state x at time t. Thus, the Emp operator removes agent index information and one cannot
+tell the state of a specific agent i given only the ED. We consider weakly-coupled dynamics, where the dynamics of
+each individual agent is coupled with other agents through the ED. For agent i, its stochastic transition is governed by
+the transition kernel ft(xN
+i,t+1|xN
+i,t, uN
+i,t, µN
+t ) where µN
+t
+= Empµ(xN
+t ). Moreover, each agent receives at each time
+instant t a reward determined by the reward function rt : X × U × P(X) →[−Rmax, Rmax].
+Assumption 1. For all x ∈X, u ∈U, µ, µ′ ∈P(X), ν, ν′ ∈P(Y) and all t ∈{0, . . . , T −1}, there
+exist constants Lf, Lr > 0 such that such that P
+x′∈X |ft(x′|x, u, µ) −ft(x′|x, u, µ′)| ≤LfdTV
+ µ, µ′
+and
+|rt(x, u, µ) −rt(x, u, µ′)| ≤LrdTV
+ µ, µ′
+.
+The above regularity assumptions are standard in the mean-field literature [Cui and Koeppl, 2022; Huang et al., 2006],
+and ensure that shared identical policies scale well with population size. Without such an assumption, enforcing
+identical policies can lead to arbitrarily poor performance; see the counterexamples in Guan et al. [2024].
+For each agent i ∈[N] consider the following (time-varying) Markov policy πi,t : U ×X →[0, 1], where πi,t(u|XN
+i,t)
+is the probability that an agent i selects action u given its state XN
+i,t. Note that the policy is open-loop with respect to
+the ED of the agents. An individual policy is defined as a time sequence πi = {πi,t}T −1
+t=0 . Let Πt and Π to denote,
+respectively, the set of individual policies at time t and across all t available to each agent, i.e., πi,t ∈Πt and πi ∈Π
+for all i ∈[N]. The performance of each agent i is to maximize its expected cumulative reward given by the following
+finite-horizon objective function:
+JN
+i
+ π1, . . . , πN
+
+= E
+h T −1
+X
+t=0
+rt(XN
+i,t, U N
+i,t, MN
+t )
+i
+,
+(1)
+where MN
+t = Empµ(XN
+t ), and the expectation is with respect to the distribution of all system variables induced by
+the joint policy (π1, . . . , πN) and the initial state of each agents is drawn according to xi,0 ∼µ0.
+Definition 1. For ϵ ≥0, an ϵ-Nash equilibrium is a tuple (π∗
+1, . . . , π∗
+N) such that, for all i = 1, . . . , N,
+Ji,N(πi, π∗
+−i) ≤Ji,N(π∗
+i , π∗
+−i) + ϵ, for all πi ∈Π. When ϵ = 0, we have the standard Nash equilibrium.
+The optimization problem in (1) is intractable for large populations, as the joint policy space ×N
+i=1Π grows expo-
+nentially with the number of agents. To address this scalability challenge, we consider the infinite-population limit
+and assume that agents deploy identical policies—a standard approximation in large-population systems that ensures
+tractability and robustness, albeit with some performance loss [Shi et al., 2012; Arabneydi and Mahajan, 2014]. We
+first introduce the class of identical policies.
+Definition 2 (Identical Policy). The joint policy π = {π1, . . . , πN} is an identical policy, if πi1,t = πi2,t for all
+i1, i2 ∈[N] and t ∈{0, 1, . . . , T −1}.
+We slightly abuse notation and use π to denote the identical joint policy, where all agents apply the same policy π.
+Assumption 2. All agents follow an identical policy π.
+Consequently, we can model the behavior of the entire population as the distribution of the representative agent, i.e.,
+the mean-field. We define the mean-field (MF) as the state distribution of a typical agent in an infinite-population limit.
+Definition 3 (Mean-Field). Given an identical policy π ∈Π, the mean-field is defined as the sequence of vectors with
+initial condition µ0 that follow deterministic dynamics:
+µt+1(x′)=
+X
+x∈X
+h X
+u∈U
+ft(x′|x, u, µt)πt(u|x)
+i
+µt(x).
+(2)
+
+We refer to the time sequence µ = {µt}T
+t=0 ∈M ≜QT
+t=0 Mt induced by some fixed policy π for a given initial
+distribution µ0 as the mean-field flow. At this infinite-population limit, the optimization problem (1) follows:
+Jµ
+ π
+
+= E
+h T −1
+X
+t=0
+rt(xt, ut, µt)
+i
+,
+(3)
+where the expectation is with respect to the distribution of all system variables induced by the identical policy π and
+the initial state follows x0 ∼µ0. Thus, for a fixed MF flow µ, we obtain an induced inhomogeneous MDP with
+transitions ft(x, u, µt) and rewards rt(x, u, µt) with the objective (3). The standard Q-function associated with this
+induced MDP with fixed MF flow µ under the policy π at time-step t can be computed as:
+Qπ
+µ,t(x, u) = rt(x, u, µt) +
+X
+x′∈X
+ft(x′|x, u, µt)V π
+µ,t+1(x′),
+(4)
+where Qπ
+µ,T −1(x, u) ≜rT −1(x, u, µT −1). The value function of the induced MDP at time t is given by V π
+µ,t(x) =
+Eπ
+hPT −1
+t′=t rt′(xt′, ut′, µt′) | xt = x
+i
+or alternatively,
+V π
+µ,t(x) = Eu∼πt
+
+Qπ
+µ,t(x, u)
+
+.
+(5)
+Consequently, the optimal policy computed in (3) depends on the MF flow µ. We use the operator Bopt : M →Π
+to denote the mapping from the fixed MF flow to an optimal policy of the induced MDP in (3), i.e., π∗∈Bopt (µ) ≜
+arg maxπ∈Π Jµ
+ π
+
+. When all agents employ the policy π of the representative agent, a new MF flow µ is induced and
+can be propagated via (2) starting from µ0. We use the operator Bprop : Π →M to denote this propagation, that is,
+µ = Bprop (π). Using these operators, we define the mean-field equilibrium (MFE).
+Definition 4 (MFE [Huang et al., 2006]). The MFE is defined as a consistent pair (π∗, µ∗) ∈Π × M such that
+π∗∈Bopt
+ µ∗
+and µ∗= Bprop(π∗).
+Under Assumption 1, the existence of such consistent pair can be established through Kakutani’s fixed point argu-
+ment [Cui and Koeppl, 2022]. Furthermore, the optimal identical policy π∗applied by all agents in the N-player game
+preserves ϵ-optimality in the finite-population system [Guan et al., 2022].
+4.2
+Risk due to Uncertainty in Initial Distributions
+Once determined, the optimal policy π∗is open-loop and operates independently of the realized mean-field informa-
+tion. Consequently, a policy optimized for a specific initial distribution may perform poorly when deployed under a
+different initial condition. To improve robustness, alternatively, one may na¨ıvely recompute policies for each initial
+condition. However, this would require real-time access to MF information to know which initial condition has been
+realized, which is often costly or infeasible due to communication, sensing, or privacy constraints. Thus, we seek
+robustness in the class of policies that are open-loop with respect to the MF. These considerations highlight the need
+to explicitly account for uncertainty in the initial distribution as illustrated by the example below.
+Motivating Example 1: Consider a population-level report estimating the proportion of individuals infected by a
+contagious disease. Based on this estimate, individuals choose whether to quarantine or continue normal activities, in-
+curring costs from treatment if infected or from lost income and social isolation if quarantined. If the report incorrectly
+indicates zero initial infection due to biased or incomplete data, individuals rationally avoid quarantine, even though
+the true infection rate is non-zero. Recomputing the consensus estimate may be prohibitively expensive in terms of
+operational effort and human resources. Consequently, individuals who choose not to quarantine are exposed to an
+unanticipated risk of infection.
+This example highlights the critical importance of accounting for uncertainty in the initial population distribution. A
+risk-averse decision-making approach, in which individuals hedge against potential inaccuracies in the reported initial
+distribution, would have resulted in more robust behavior and mitigated exposure to adverse and unforeseen outcomes.
+Formally, consider a finite set M of initial distributions 4. Let the underlying probability distribution over the set of
+initial mean-field distributions M be denoted by Γ∗
+M ∈P(M). For a given initial distribution µ0 ∈M, let the pair
+(µ∗, π∗) constitute an MFE, where µ∗denotes the optimal mean-field flow induced by the policy π∗under the initial
+condition µ0. If the system is initialized with a different ¯µ0 ∈M, there is no guarantee that the pair (¯µ, π∗) constitutes
+4Restricting to a finite set of initial distributions simplifies both analysis and computation by reducing expectations to finite
+sums rather than integrals. Extending the framework to continuous and compact sets M is left for future work.
+
+an MFE, where ¯µ = Bprop(π∗). Under the “unexpected” or erroneous initial condition ¯µ0, following the old π∗often
+leads to suboptimal performance.
+A natural response is to optimize expected performance by averaging over initial conditions induced by Γ∗
+M but such
+objectives fail to capture population-level risk preferences. For example, in the epidemiological setting of Example 1,
+consider the disease-free distribution µa
+0 occurring with probability 0.99 while µb
+0 representing a small but persistent
+infected population, occurs with probability 0.01. Optimizing expected performance effectively ignores µb
+0, despite its
+potential for severe public-health consequences. This highlights the inadequacy of expectation-based objectives in the
+presence of rare but high-impact events and motivates the incorporation of risk aversion.
+Risk Averse Design. Introducing risk aversion entails a trade-off between maximizing average performance and
+achieving reliable outcomes under uncertainty. In settings with sensor noise, incomplete information, or adversarial
+perturbations of the initial distribution, such robustness considerations are essential, and agents may prefer conserva-
+tive policies over purely reward-maximizing ones. Accordingly, we seek policies that explicitly minimize risk with
+respect to uncertainty in the initial MF distribution.
+There are several risk metrics that arise in game theory, especially from operations research and finance. Follow-
+ing Mazumdar et al. [2025], we focus on convex measures of risk whose formal definition is given below:
+Definition 5 (Convex Risk Measures). Let F be the set of functions mapping from a space of outcomes Ωto R.
+A convex measure of risk is a mapping ρ : F →R satisfying: (i) Monotonicity: If F ≤G almost surely, then
+ρ(F) ≥ρ(G), (ii) Translation Invariance: If m ∈R then ρ(F + m) = ρ(F) −m, and (iii) Convexity: For all
+λ ∈(0, 1), ρ(λF + (1 −λ)G) ≤λρ(F) + (1 −λ)ρ(G).
+As a result, we say that F(ω) is “riskier” than G(ω) under ρ when the associated evaluation of F(ω) ≤G(ω). Convex
+risk measures have well-posed, intuitive properties as seen in Definition 5. Furthermore, convex risk measures admit
+a dual representation as described in the following theorem.
+Theorem 1 (Dual Representation Theorem [F¨ollmer and Schied, 2002]). Let X be the set of functions mapping from
+a finite set Ωto R. Then a mapping ρ : X →R is a convex risk measure if and only if there exists a penalty
+function D : P(Ω) →(−∞, ∞] such that: ρ(X) = supp∈P(Ω) Ep[−X] −D(p), where P(Ω) is the set of all
+probability measures on Ω. Furthermore, the function D(p) can be taken to be convex, lower-semi-continuous, and
+satisfy D(p) > −ρ(0) for all p ∈P(Ω).
+Define the fixed set of mean-field flows SM = {µk}|M|
+k=1 where µk corresponds to the mean-field flow with the initial
+distribution µk
+0 ∈M. Uncertainties arising due to the stochasticity in the selection of the initial condition from the
+fixed set M result in the following risk-averse objective function at a given time step t for a given state x:
+cπ
+t (x; SM) = ρΓ∗
+M
+ V π
+µ,t(x)
+
+,
+(6)
+where V π
+µ,t(x) is computed based on (5) for each µ0 ∈M and ρΓ∗
+M is the convex risk measure for Γ∗
+M, i.e., the
+uncertainty in the initial distribution. Furthermore, the mean-field flow µ is treated as an exogenous signal and is
+propagated under the given policy π using the Bprop operator.
+Remark 1. As emphasized earlier, we focus on decentralized policies that depend only on local state information and
+do not require real-time MF feedback. Consequently, the risk-averse objective must be formulated and solved at each
+time step to ensure risk aversion over the entire horizon. This is necessary because the realized initial MF distribution
+is unknown (due to the absence of MF feedback), requiring robustness to consistently be maintained over time.
+Following Theorem 1, we can rewrite (6) for the fixed set of mean-field flow SM, with Ω= M as
+cπ
+t (x; SM) = ρΓ∗
+M(V π
+µ,t(x))
+≡
+sup
+ˆΓM∈P(M)
+−Eµ0∼ˆΓM
+
+πT
+t (·|x)Qπ
+µ,t(x, ·)
+
+−1
+τ D(ˆΓM, Γ∗
+M).
+(7)
+Agents now seek to compute a policy that minimizes the risk in (7). In this form, one can see that in a risk-averse
+setting, the population imagines that fictitious adversaries seek to maximize their cost cπ
+t (x) at each time-step t and
+state x but are penalized from deviating too far from the realized initial distribution Γ∗
+M. As τ →∞the population
+becomes increasingly risk-averse—and, in the extreme, the initial distribution selection can be treated as entirely
+adversarial. For simplicity, we use KL-divergence as the penalty function, since this choice admits the following
+closed form solution for the optimization problem in (7):
+cπ
+t (x; SM) = 1
+τ log
+ |M|
+X
+k=1
+Γ∗
+M(µk
+0) exp−τπT
+t (·|x)Qπ
+µk,t(x,·) 
+.
+
+Note that this is an explicit function of πt(·|x) for all states x ∈X and time-steps t ∈{0, . . . , T −1}.
+4.3
+Bounded Rationality in Mean-Field Games
+Definition 4 assumes perfect rationality, requiring agents to compute optimal policies with complete knowledge of
+the environment and other agents’ behavior. In practice, such assumptions are often violated due to information,
+computational, or time constraints, motivating the use of bounded rationality to model approximate decision-making.
+Indeed, Goeree et al. [2003] argue that human decision-making and strategic behavior are more accurately captured
+by a combination of risk aversion and bounded rationality than by either property in isolation.
+Broadly, two predominant approaches have emerged in the literature in terms of quanitfying bounded rationality. One
+approach to bounded rationality introduces stochastic perturbations into agents’ decision processes, yielding quan-
+tal response policies that can equivalently be obtained by augmenting the objective with a strictly convex regular-
+izer [Mazumdar et al., 2025; Goeree et al., 2016]. A second approach is based on cognitive hierarchy models [Shao
+et al., 2019], which construct a hierarchy of policies where each level best responds to lower-level strategies. We adopt
+the former approach, as it integrates naturally with our risk-averse formulation. Formally, the combined objective in
+our case of initial distribution-dependent risk takes the form:
+cπ,α
+t
+(x; SM) = ρΓ∗
+M(V π
+µ,t(x)) + αν(πt(·|x)),
+(8)
+for all x ∈X and t ∈{0, . . . , T −1}, where ν is a suitable (strict) convex regularizer with temperature parameter
+α > 0 capturing the degree of bounded rationality.
+In summary, a Risk-Averse Quantal Response Mean-Field Game (RQ-MFG) is specified by the game tuple:
+⟨X, U, T, f, r, ν, M, Γ∗
+M, D⟩. The additional elements (M, Γ∗
+M, D) capture the risk aversion with respect to the ini-
+tial MF distribution, while the convex regularizer ν is associated with bounded rationality. Thus, by integrating both
+risk-aversion and bounded rationality, our formulation yields a more realistic modeling framework that helps bridge
+the gap between theoretical abstractions and observed behavior.
+5
+MF-RQE
+Our focus shifts from reward maximization in (3) to minimizing the risk defined in (8).
+Define π−t
+=
+{π0,. . ., πt−1, πt+1,. . ., πT −1} as the set of policies for all times other than t. For a fixed set of mean field flows
+SM originating from the initial distributions µ0 ∈M, we seek to obtain a policy π∗∈Π such that, for all π ∈Π,
+t ∈{0, 1, . . . , T −1} and x ∈X.
+cπ∗,α
+t
+(x; SM) ≤c
+(π′
+t,π∗
+−t), α
+t
+(x; SM)
+⇒π∗
+t (·|x) = arg min
+πt∈Πt c
+(πt,π∗
+−t), α
+t
+(x; SM).
+(9)
+Define the set operators BRQE
+opt : 2M →Π to denote the mapping from the fixed set of mean-field flows SM ⊆M or
+equivalently, SM ∈2M, to optimal policies of (9). In other words, π∗= BRQE
+opt (SM). When all agents employ a policy
+π of the representative agent, a new set of mean field flows are induced and can be propagated via (2) starting from
+µ0 ∈M. We use the operator BRQE
+prop : Π →2M to denote this propagation. That is, SM ∈BRQE
+prop (π), corresponding
+to all µ0 ∈M. Using these operators, we define the notion of the mean-field risk-averse quantal response equilibrium
+(MF-RQE).
+Definition 6 (MF-RQE). For a fixed set of initial mean-field distributions M, the MF-RQE is defined as the consistent
+pair (π∗
+RQE, S∗
+M) such that π∗
+RQE = BRQE
+opt
+ S∗
+M
+
+and BRQE
+prop(π∗
+RQE) = S∗
+M, where S∗
+M is the set of mean-field flows
+corresponding to all the initial conditions µ0 ∈M.
+Proposition 1. Under Assumptions 1-2, there exists an MF-RQE (π∗
+RQE, S∗
+M).
+Having motivated and developed the risk-averse quantal response mean-field game (RQ-MFG), we now establish its
+connection to the corresponding finite-population game comprising N agents. In this finite-population setting, risk
+aversion is defined with respect to uncertainty in the initial state distribution, consistent with the MF formulation, i.e.,
+the joint state Xt=0 is sampled from µ0, where µ0 ∼M. For each agent i ∈[N], the interaction is modeled as a
+risk-averse Markov game at each time step t ∈0, . . . , T −1 and state x ∈X. Given a joint policy π = (π1, . . . , πN),
+the stage cost for agent i is defined as
+cα,i,N
+t
+(π1,. . ., πN; x)=ρΓ∗
+M
+ V π
+i,t(x)
+
++αν
+ πi,t(·|x)
+
+,
+
+where V π
+i,t(x) denotes the value function associated with the finite-population objective (1) for agent i under the joint
+policy π, and where ρΓ∗
+M and ν are consistent with (8), together defining a risk-averse and boundedly rational objective
+at each time step. The solution concept is defined below.
+Definition 7. For ϵ ≥0, an ϵ-RQE is a tuple (π∗
+1, . . . , π∗
+N) such that, for all x ∈X, all t ∈{0, . . . , T −1}, and all
+agents i ∈[N] and for all πi,t ∈Πt, it follows that cα,i,N
+t
+ π∗
+i , π∗
+−i; x
+
+−ϵ ≤cα,i,N
+t
+ (πi,t, π∗
+i,−t), π∗
+−i; x
+
+. For ϵ = 0,
+we have the standard risk-averse quantal-response equilibrium (RQE) [Mazumdar et al., 2025].
+The following theorem shows that solving the limiting RQ-MFG yields an approximate solution to the finite-population
+RQ-game when the number of agents N is large, thereby establishing a connection between the infinite-population RQ-
+MFG and the corresponding finite-population game. Consequently, this result overcomes the curse of dimensionality
+limitation identified in Mazumdar et al. [2025].
+Theorem 2. Under Assumptions 1-2, if (π∗
+RQE, S∗
+M) is an MF-RQE, then the policy (π∗
+RQE, π∗
+RQE, . . . , π∗
+RQE) is an
+ϵ-RQE in the finite N-agent game.
+6
+Learning MF-RQE
+Several algorithms have been proposed to compute Nash equilibria in MFGs, including fixed-point iteration (FPI), fic-
+titious play (FP), and online mirror descent (OMD) [Cui and Koeppl, 2022; Perolat et al., 2021; Lauriere et al., 2022].
+These methods typically rely on restrictive assumptions such as monotonicity, mean-field–independent dynamics, risk
+neutrality, or specific entropy-based regularization, which apply to a restricted class of mean-field dynamic models and
+do not consider population-level risk preference. In contrast, our framework combines bounded rationality—implicitly
+inducing convex regularization—with explicit risk modeling via convex risk measures, enabling richer dynamics and
+robustness to uncertainty in the initial mean-field distribution. The resulting solution concept, the MF-RQE, arises nat-
+urally from this formulation. In this section, we extend FPI and FP to compute MF-RQE under known dynamics and
+rewards. For large-scale or partially unknown environments, we propose a scalable actor–critic-based RL approach
+that learns MF-RQE policies from data samples.
+Fixed Point Iteration. We compute the MF-RQE for a prescribed degree of bounded rationality α and risk aversion
+τ as defined in (8). To this end, we employ a fixed-point iteration (FPI) scheme that computes the MF-RQE policy
+π⋆
+RQE as a fixed point of the composite operator BRQE
+opt ◦BRQE
+prop, given a set of initial MF distributions M and their
+associated probabilities Γ∗
+M. The algorithm is initialized with an arbitrary policy, typically uniform action selection,
+i.e., πt(u|x) = 1/|U|. At each iteration, the operator BRQE
+opt ◦BRQE
+prop is applied to update the policy, and this process is
+repeated until convergence to a fixed point is achieved. For a fixed MF flow, the operator BRQE
+opt (·) can be computed
+efficiently via dynamic programming.
+We impose the convexity assumption on the regularization function ν to facilitate the convergence analysis.
+Assumption 3. ν(π) is m-strongly convex.
+The standard entropy regularization satisfies Assumption 3 with m = 1. Although strong convexity is required for
+our theoretical guarantees, empirical evidence suggests that the proposed algorithms continue to perform well under
+weaker conditions, such as strict convexity of ν.
+Theorem 3. Under Assumptions 1-3, FPI converges to an MF-RQE for sufficiently large α.
+Fictitious Play. An alternative method for computing Nash equilibria is the fictitious play algorithm. It utilizes aver-
+aging of policies or distributions to achieve convergence [Cardaliaguet and Hadikhanloo, 2015]. Perrin et al. [2020]
+establish convergence of fictitious play under monotonicity and MF–independent transition dynamics. Eich et al.
+[2025] later proposed Generalized Fictitious Play, a discrete-time extension and empirically demonstrate convergence
+to a regularized equilibrium in the presence of MF-dependent transition dynamics. Motivated by these results, we
+extend fictitious play to the RQ-MFG setting and introduce Risk-Averse Quantal Fictitious Play (RQ-Fictitious Play),
+which computes an MF-RQE via policy averaging.
+Theorem 4. Under Assumptions 1-3, RQ-Fictitious Play converges to an MF-RQE for sufficiently large α.
+Deep Reinforcement Learning. We incorporate deep reinforcement learning to extend fixed-point iteration to model-
+free settings. Both RQ-FPI and RQ-Fictitious Play require full knowledge of the RQ-MFG game tuple and rely on
+tabulated value functions, making them impractical when the game model is unknown or too complex to reconstruct
+from empirical data. We therefore propose Deep Risk-Averse Quantal Fixed-Point Iteration (D-RQ-FPI), a model-free,
+function-approximation–based alternative.
+
+The proposed algorithm maintains |M| critics Q(·; θk), each corresponding to an initial distribution µk
+0 ∈M, and
+a time-dependent policy π(t, x; ζ) := πζ(t, x). Mean-field flows are computed analytically or via stochastic sim-
+ulation [Cui and Koeppl, 2022], and the goal is to learn a best-response policy to the induced flows. Trajecto-
+ries are collected by sampling µk
+0 ∼Γ∗
+M and rolling out the policy under the corresponding induced mean-field
+flow.
+Each critic is updated using a temporal-difference loss, L(θk) = Ex,u,x′,r[(Qπζ(x, u; θk) −yk)2] where
+yk = rk + (1 −d), Qπζ(x′, u′; θ′
+k), θ′
+k denotes target network parameters and d denotes the termination signal.
+Given the updated critics, the actor is optimized to solve the risk-averse quantal response objective in (8) for each
+state–time pair (x, t), thereby computing an approximate best response to the current set of MF flows. The updated
+policy induces a new collection of MF flows, and the procedure is repeated until convergence.
+7
+Numerical Experiments
+In this section, we evaluate the proposed algorithms on a collection of Risk-Averse Quantal Mean-Field Games (RQ-
+MFGs). Experiments are conducted on benchmark environments from MFGLib [Guo et al., 2023], which includes the
+epidemiological SIS game introduced in Section 4.2, as well as a newly proposed one-dimensional congestion game.
+Following Eich et al. [2025], convergence to an MF-RQE is assessed using an exploitability-like metric,
+∆c(π) ≜max
+t∈T
+πt −BRQE
+opt ◦BRQE
+prop(π)t
+ ,
+(10)
+which serves as our primary measure of efficacy of the proposed algorithms. Smaller values of ∆c(π) indicate re-
+duced sensitivity to adverse realizations of the initial mean-field distribution and the associated underlying probability
+distribution Γ∗
+M, and thus a lower degree of exploitability under distributional uncertainty. Conceptually, this metric
+assesses whether, for a given policy and its induced set of MF flows, there exists an alternative policy that is less risky
+and more robust with respect to uncertainty in those flows, where risk is quantified through the objective in (9).
+To highlight the benefits of the MF-RQE framework, we compare MF-RQE policies against: (i) entropy-regularized
+Nash equilibrium (NE) policies [Cui and Koeppl, 2022] computed under a single initial distribution and evaluated
+under the risk-averse objective over M, and (ii) a risk-neutral policy π∗
+avg that maximizes expected cumulative reward
+averaged over initial distributions. These baselines are evaluated under uncertainty in the realized initial distribution,
+thereby highlighting the limitations of risk-neutral policies when deployed in settings with distributional uncertainty.
+Our results show that incorporating risk aversion with respect to the initial mean-field distribution—together with
+bounded rationality via general convex regularizers—yields policies that are robust to distributional uncertainty and
+non-exploitable in the sense of (10). In contrast, risk-neutral policies exhibit higher exploitability when the real-
+ized initial distribution deviates from the nominal one. Policy performance is further evaluated via average returns
+over 10,000 episodes, aggregated across five random seeds under the optimal mean-field flows S∗
+M, illustrating the
+robustness–return trade-off. Furthermore, RQ-Fictitious Play recovers the same policies as RQ-FPI across all tested
+environments.
+In the deep RL setting, finite-sample stochasticity prevents exploitability from converging exactly to zero. Accord-
+ingly, following Lauriere et al. [2022], we additionally measure convergence via the distance dS(SRQ-FPI
+M
+, SD-RQ-FPI
+M
+)5
+between empirical and analytical mean-field flows obtained via RQ-FPI, which provides a complementary notion of
+convergence under sampling noise and function approximation.
+SIS Game. The SIS game environment in MFGLib builds on the discussion in Section 4.2. In order to reformulate this
+into an RQ-MFG, we set M = {µ1
+0, µ2
+0, µ3
+0, µ4
+0} where µ1
+0 = [1, 0], µ2
+0 = [0.5, 0.5], µ3
+0 = [0, 1], µ4
+0 = [0.8, 0.2] and the
+probability of these initial distributions as Γ∗
+M(µ1
+0) = Γ∗
+M(µ4
+0) = 0.3 and Γ∗
+M(µ2
+0) = Γ∗
+M(µ3
+0) = 0.2.
+Table 1 reports the exploitability metrics in (10) and expected returns of the MF-RQE policy computed using the
+RQ-FPI algorithm with KL-penalty and entropy-regularization, policies optimized with respect to the expected initial
+distribution and π∗
+avg. The optimal policy computed using the RQ-Fictitious Play coincides with the solutions obtained
+from RQ-FPI. The results demonstrate that the algorithm converges to an MF-RQE policy that is non-exploitable;
+together with the corresponding mean-field flows, it constitutes an MF-RQE pair (π∗
+RQE, S∗
+M). Although the policy π∗
+µ1
+0
+achieves higher expected returns, it is exploitable under uncertainty in the initial mean-field distribution. In particular,
+there exists an alternative policy that achieves a lower risk-averse cost (8) when evaluated against π∗
+µ1
+0 over the set of
+initial distributions M and the induced mean-field flows BRQE
+prop(π∗
+µ1
+0). This also highlights the fundamental trade-off
+between risk-averse policy design and pure expected cumulative reward maximization. Notably, despite this trade-off,
+the empirical differences in expected returns across policies remain relatively small.
+5dS(S1
+M, S2
+M)≜maxk,t dTV
+ µ1,k
+t
+, µ2,k
+t
+
+, where µi,k ∈Si
+M.
+
+The results from D-RQ-FPI are presented in Figure 2. The empirical exploitability decreases over training and falls
+below 10−2, while dS(SRQ-FPI
+M
+, SD-RQ-FPI
+M
+) ≈10−3. These values are consistent in magnitude with those reported in
+standard MFGs [Lauri`ere et al., 2022].
+Congestion Game. The game consists of 4 states aligned in a 1D grid and the actions U = {LEFT, RIGHT, STAY}
+for deterministically moving in the respective directions. The running reward is given by rt(x, u) = −2µ(x) −
+0.11u̸=STAY, discouraging agents concentrating at a single state. The four possible initial distributions are µ1
+0 =
+[0.25, 0.25, 0.25, 0.25], µ2
+0 = [1, 0, 0, 0], µ3
+0 = [0.1, 0.5, 0.2, 0.2], µ4
+0 = [0, 0.6, 0.4, 0], each with probability, 0.4, 0.1,
+0.3, and 0.2, respectively.
+Table 1: Computing ∆c(π) and Empirical Returns
+SIS
+Congestion
+Policy ∆c(π)
+Expected Returns
+∆c(π)
+Expected Returns
+π∗
+µ1
+0
+0.090
+−22.003 ± 0.061
+0.022
+−3.295 ± 0.008
+π∗
+µ2
+0
+0.013
+−22.189 ± 0.057
+0.145
+−3.290 ± 0.008
+π∗
+µ3
+0
+0.056
+−22.201 ± 0.059
+0.017
+−3.295 ± 0.008
+π∗
+µ4
+0
+0.049
+−22.171 ± 0.060
+0.036
+−3.295 ± 0.008
+π∗
+avg
+0.032
+−22.135 ± 0.058
+0.004
+−3.293 ± 0.008
+π∗
+RQE
+0.00
+−22.165 ± 0.059
+0.00
+−3.294 ± 0.008
+The results of the RQ-FPI algorithm are tabulated in Table 1. Consistent with the previous results, the MF-RQE
+policy computed using the RQ-Fictitious Play coincide with the solutions from RQ-FPI and remain non-exploitable
+under uncertainty over initial MF distributions. This robustness, however, comes at the cost of a modest reduction in
+expected returns compared to the other policies. The results of D-RQ-FPI shown in Figure 2 indicate that the empirical
+exploitability decreases to the order of 10−4 while dS(SRQ-FPI
+M
+, SD-RQ-FPI
+M
+) < 10−3. This demonstrates that D-RQ-FPI
+achieves performance comparable to the analytical solution, despite the presence of sampling noises.
+Other Environments. We further compute MF-RQE policies for several additional environments provided in MFGLib
+(Figure 1). The empirical trends observed in the SIS and congestion games persist across these environments, under-
+scoring the importance of explicitly accounting for risk aversion in mean-field games. We extend our analysis beyond
+entropy regularization by considering the log-barrier regularizer ν(π(·|x))=−P
+u∈U log(π(u|x)). Figure 1(c) illus-
+trates the corresponding convergence behavior of RQ-FPI. Overall, these results are consistent with those observed
+under entropy regularization, further demonstrating that the MF-RQE formulation naturally extends beyond entropy-
+based regularizers. In contrast, ablation studies conducted without convex regularization (Figure 1(d)) highlight the
+critical role of bounded rationality: without it, neither tractability nor convergence to an MF-RQE can be guaranteed.
+Details of problem setups and hyperparameters are presented in Appendix B.
+8
+Conclusions and Future Work
+In this work, we introduced a class of mean-field games that incorporates risk aversion with respect to a set of ini-
+tial mean-field distributions while relaxing the assumption of perfect rationality. This leads to a tractable solution
+concept—the MF-RQE—that more accurately reflects large-scale, decentralized decision-making. We established ex-
+istence results, related the infinite-population equilibrium to its finite-population counterpart, and developed efficient
+algorithms for computing MF-RQE under both model-based and sample-based settings. Numerical experiments show
+that MF-RQE policies are robust to initial distribution uncertainty, remain non-exploitable, and achieve comparable
+performance despite the trade-offs induced by risk aversion. An important direction for future work is extending
+this framework to heterogeneous and team-based mean-field settings, where risk aversion may arise with respect to
+adversarial populations, further strengthening the link between mean-field theory and observed decision-making in
+large-scale systems.
+References
+Arabneydi, J. and Mahajan, A. (2014). Team optimal control of coupled subsystems with mean-field sharing. In 53rd
+IEEE Conference on Decision and Control, pages 1669–1674. IEEE.
+Berman, S., Hal´asz, A., Hsieh, M. A., and Kumar, V. (2009). Optimized stochastic policies for task allocation in
+swarms of robots. IEEE transactions on robotics, 25(4):927–937.
+
+Figure 1: Performance of RQ-FPI and RQ-Fictitious Play across different environments and regularizers.
+Figure 2: Convergence results of D-RQ-FPI with entropy regularization in the SIS and the Congestion scenarios.
+Bonnans, J. F., Lavigne, P., and Pfeiffer, L. (2021). Discrete-time mean field games with risk-averse agents. ESAIM:
+Control, Optimisation and Calculus of Variations, 27:44.
+Cardaliaguet, P. and Hadikhanloo, S. (2015). Learning in mean field games: the fictitious play.
+Cheng, Z. and Jaimungal, S. (2023). Risk-averse mean field games: exploitability and non-asymptotic analysis. arXiv
+preprint arXiv:2301.06930.
+Cui, K., Hauck, S., Fabian, C., and Koeppl, H. (2023). Learning decentralized partially observable mean field control
+for artificial collective behavior. arXiv preprint arXiv:2307.06175.
+
+Cui, K. and Koeppl, H. (2022). Approximately solving mean field games via entropy-regularized deep reinforcement
+learning.
+Eich, Y., Fabian, C., Cui, K., and Koeppl, H. (2025). Bounded rationality equilibrium learning in mean field games.
+In Proceedings of the AAAI Conference on Artificial Intelligence, volume 39, pages 13796–13804.
+Erev, I. and Roth, A. (1998). Predicting how people play games: Reinforcement learning in experimental games with
+unique, mixed strategy equilibria. American Economic Review, 88(4):848–81.
+F¨ollmer, H. and Schied, A. (2002).
+Convex measures of risk and trading constraints.
+Finance and Stochastics,
+6(4):429–447.
+Goeree, J. K., Holt, C. A., and Palfrey, T. R. (2003). Risk averse behavior in generalized matching pennies games.
+Games and Economic Behavior, 45(1):97–113.
+Goeree, J. K., Holt, C. A., and Palfrey, T. R. (2016). Quantal Response Equilibrium: A Stochastic Theory of Games.
+Princeton University Press. 〈comprehensive overview〉.
+Guan, Y., Afshari, M., and Tsiotras, P. (2024).
+Zero-sum games between mean-field teams: Reachability-based
+analysis under mean-field sharing. In Proceedings of the AAAI Conference on Artificial Intelligence, volume 38,
+pages 9731–9739.
+Guan, Y., Zhou, M., Pakniyat, A., and Tsiotras, P. (2022). Shaping large population agent behaviors through entropy-
+regularized mean-field games. In 2022 American Control Conference (ACC), pages 4429–4435, Atlanta, USA, June
+08–10, 2022. IEEE, IEEE.
+Guo, X., Hu, A., Santamaria, M., Tajrobehkar, M., and Zhang, J. (2023). Mfglib: A library for mean-field games.
+arXiv preprint arXiv:2304.08630.
+Huang, M., Malham´e, R. P., and Caines, P. E. (2006). Large population stochastic dynamic games: closed-loop
+McKean-Vlasov systems and the Nash certainty equivalence principle. Communications in Information & Systems,
+6(3):221 – 252.
+Jeloka, B., Guan, Y., and Tsiotras, P. (2025). Learning large-scale competitive team behaviors with mean-field inter-
+actions and online opponent modeling.
+Jin, Y., Wang, H., Yao, W., and Zhang, X. (2025). Initial error tolerant distributed mean field control under partial and
+discrete information.
+Lauriere, M., Perrin, S., Girgin, S., Muller, P., Jain, A., Cabannes, T., Piliouras, G., P´erolat, J., Elie, R., Pietquin, O.,
+et al. (2022). Scalable deep reinforcement learning algorithms for mean field games. In International conference
+on machine learning, pages 12078–12095. PMLR.
+Lauri`ere, M., Perrin, S., Girgin, S., Muller, P., Jain, A., Cabannes, T., Piliouras, G., P´erolat, J., ´Elie, R., Pietquin, O.,
+and Geist, M. (2022). Scalable deep reinforcement learning algorithms for mean field games.
+Mazumdar, E., Panaganti, K., and Shi, L. (2025). Tractable multi-agent reinforcement learning through behavioral
+economics. In The Thirteenth International Conference on Learning Representations.
+McKelvey, R. D. and Palfrey, T. R. (1995). Quantal response equilibria for normal form games. Games and economic
+behavior, 10(1):6–38.
+Moon, J. and Bas¸ar, T. (2014). Linear-quadratic risk-sensitive mean field games. In 53rd IEEE Conference on Decision
+and Control, pages 2691–2696. IEEE.
+Perolat, J., Perrin, S., Elie, R., Lauri`ere, M., Piliouras, G., Geist, M., Tuyls, K., and Pietquin, O. (2021). Scaling up
+mean field games with online mirror descent.
+Perrin, S., P´erolat, J., Lauri`ere, M., Geist, M., Elie, R., and Pietquin, O. (2020). Fictitious play for mean field games:
+Continuous time analysis and applications. Advances in neural information processing systems, 33:13199–13213.
+Rizk, Y., Awad, M., and Tunstel, E. W. (2018). Decision making in multiagent systems: A survey. IEEE Transactions
+on Cognitive and Developmental Systems, 10(3):514–529.
+Saldi, N., Bas¸ar, T., and Raginsky, M. (2020). Approximate markov-nash equilibria for discrete-time risk-sensitive
+mean-field games. Mathematics of Operations Research, 45(4):1596–1620.
+Saldi, N., Bas¸ar, T., and Raginsky, M. (2023). Partially observed discrete-time risk-sensitive mean field games. Dy-
+namic Games and Applications, 13(3):929–960.
+Sen, N. and Caines, P. E. (2019). Mean field games with partial observation. SIAM Journal on Control and Optimiza-
+tion, 57(3):2064–2091.
+Shao, K., Shen, J., An, C., and Lauri`ere, M. (2024). Reinforcement learning for finite space mean-field type games.
+
+Shao, Q., Cheung, M. H., and Huang, J. (2019). Multimedia crowdsourcing with bounded rationality: A cognitive
+hierarchy perspective. IEEE Journal on Selected Areas in Communications, 37(7):1478–1488.
+Shi, Z., Tu, J., Zhang, Q., Liu, L., and Wei, J. (2012). A survey of swarm robotics system. In International Conference
+in Swarm Intelligence, pages 564–572. Springer.
+Tembine, H. (2015). Risk-sensitive mean-field-type games with lp-norm drifts. Automatica, 59:224–237.
+Tembine, H., Zhu, Q., and Bas¸ar, T. (2013). Risk-sensitive mean-field games. IEEE Transactions on Automatic
+Control, 59(4):835–850.
+Yang, M., Liu, G., Zhou, Z., and Wang, J. (2023). Partially observable mean field multi-agent reinforcement learning
+based on graph attention network for uav swarms. Drones, 7(7):476.
+Yu, J., Laharotte, P.-A., Han, Y., and Leclercq, L. (2023). Decentralized signal control for multi-modal traffic network:
+A deep reinforcement learning approach. Transportation Research Part C: Emerging Technologies, 154:104281.
+
+A
+Algorithm Pseudocodes
+Algorithm 1 Risk-Averse Quantal Fixed-Point Iteration (RQ-FPI)
+Input: RQ-MFG ⟨X, U, T, f, r, ν, M, Γ∗
+M, D⟩, α, τ
+Initialization: Policy πj=0,
+for j = 0, 1, . . . do
+Compute MF flows Sj
+M for µ0 ∈M generated by πj
+for t = T −1, . . . , 0 do
+Set Qπj+1
+µ,t (x, u) according to (4) for all x ∈X, u ∈U and flows µ ∈Sj
+M
+for x ∈X do
+Compute πj+1
+t
+(·|x) from (9)
+Set V πj+1
+µ,t
+(x) = P
+u∈U πj+1
+t
+(u|x)Qπj+1
+µ,t (x, u) for all flows µ ∈Sj
+M
+end for
+end for
+end for
+Return: π
+Algorithm 2 Risk-Averse Quantal Fictitious Play (RQ-Fictitious Play)
+Input: RQ-MFG ⟨X, U, T, f, r, ν, M, Γ∗
+M, D⟩, α, τ, β
+Initialization: Policy π, ¯π = 0
+for j = 0, 1, . . . do
+¯π = β¯π + (1 −β)π
+Normalize ¯π
+π ←BRQE
+opt ◦BRQE
+prop(¯π)
+end for
+Return: ¯π
+B
+Experiments
+B.1
+Computation of π∗
+avg
+We compute π∗
+avg using:
+π∗
+avg = arg max
+π∈Π
+|M|
+X
+k=1
+Γ∗
+M(µk
+0)Jµk
+ π
+
+−αν(π),
+(B.1)
+where µk
+0 ∈M and Jµk(π) is defined in (3). Due to the linearity of the expectation operator in (B.1), the corresponding
+dynamic programming equations admit a particularly simple structure. Specifically, the state–action value function
+satisfies
+Qπ
+µ,t(x, u) =
+|M|
+X
+k=1
+Γ∗
+M(µk
+0)
+
+rt(x, u, µk
+t ) +
+X
+x′∈X
+ft(x′|x, u, µk
+t )V π
+µk,t+1(x′)
+
+=
+|M|
+X
+k=1
+Γ∗
+M(µk
+0)Qπ
+µk,t(x, u),
+(B.2)
+
+where Qπ
+µ,T −1(x, u) ≜P|M|
+k=1 Γ∗
+M(µk
+0)(rT −1(x, u, µT −1)) and Qπ
+µk,t(x, u) and V π
+µk,t+1(x′)
+
+follow from (4) and (5)
+respectively. The corresponding value function inherits the same linear structure:
+V π
+µ,t(x) = Eu∼πt
+
+Qπ
+µ,t(x, u)
+
+= Eu∼πt
+
+
+|M|
+X
+k=1
+Γ∗
+M(µk
+0)Qπ
+µk,t(x, u)
+
+
+=
+|M|
+X
+k=1
+Γ∗
+M(µk
+0)Eu∼πt
+h
+Qπ
+µk,t(x, u)
+i
+=
+|M|
+X
+k=1
+Γ∗
+M(µk
+0)V π
+µk,t(x).
+B.2
+Experimental Details
+Beach Bar
+M =
+[0.3, 0.2, 0.1, 0.4], [0.3, 0.3, 0.1, 0.3], [0.2, 0.2, 0.1, 0.5],
+[0.25, 0.1, 0.25, 0.4], [0, 0, 0, 1]
+
+,
+Γ∗
+M = [0.25, 0.25, 0.2, 0.2, 0.1].
+Conservative Treasure Hunting
+M =
+
+
+
+
+
+
+
+[0.40, 0.35, 0.25], [0.41, 0.34, 0.25], [0.39, 0.36, 0.25],
+[0.41, 0.35, 0.24], [0.39, 0.35, 0.26], [0.40, 0.36, 0.24],
+[0.40, 0.34, 0.26], [0.405, 0.355, 0.24], [0.39, 0.355, 0.255],
+[0.405, 0.34, 0.255]
+
+
+
+
+
+
+
+,
+Γ∗
+M(µ0) = 0.1, ∀µ0 ∈M.
+Linear Quadratic
+M =
+[0.09, . . . , 0.10], [0.19, 0.09, . . . , 0.00],
+[0.09, 0.18, 0.09, . . . , 0.01, 0.09]
+
+,
+Γ∗
+M = [0.5, 0.3, 0.2].
+Random Linear
+M =
+
+
+
+
+
+
+
+[0.2, 0.2, 0.2, 0.2, 0.2], [0.8, 0.05, 0.05, 0.05, 0.05],
+[0.05, 0.8, 0.05, 0.05, 0.05], [0.5, 0.5, 0, 0, 0],
+[0.4, 0.3, 0.3, 0, 0], [0.1, 0.2, 0.3, 0.2, 0.2],
+[0.4, 0.25, 0.15, 0.1, 0.1], [0, 0.6, 0.2, 0.1, 0.1]
+
+
+
+
+
+
+
+,
+Γ∗
+M = [0.12, 0.08, 0.15, 0.10, 0.20, 0.05, 0.18, 0.12].
+Rock–Paper–Scissors
+M =
+[1, 0, 0, 0], [0.9, 0.1, 0, 0], [0.8, 0.1, 0.1, 0],
+[0.7, 0.1, 0.1, 0.1], [0.4, 0.3, 0.2, 0.1]
+
+,
+Γ∗
+M = [0.4, 0.25, 0.15, 0.1, 0.1].
+Table B.1: Tuning Parameters used for RQ-FPI with Entropy Regularization
+Game
+Horizon T
+α
+τ
+Number of fixed point iterations
+SIS
+50
+5
+0.2
+25
+Congestion
+5
+15
+0.0667
+30
+Beach Bar
+2
+2
+0.5
+15
+Conservative Treasure Hunting
+5
+1.5
+0.6667
+10
+Linear Quadratic
+3
+1
+1
+10
+Random Linear
+3
+28
+0.0357
+10
+Rock-Paper-Scissors
+7
+10
+0.1
+15
+
+Table B.2: Tuning Parameters used for RQ-FPI with Log-Barrier Regularization
+Game
+Horizon T
+α
+τ
+Number of fixed point iterations
+SIS
+50
+5
+0.2
+25
+Congestion
+5
+6
+0.1667
+30
+Beach Bar
+2
+2
+0.5
+15
+Conservative Treasure Hunting
+5
+4
+0.25
+10
+Linear Quadratic
+3
+1
+1
+10
+Random Linear
+3
+40
+0.025
+10
+Rock-Paper-Scissors
+7
+10
+0.1
+15
+B.3
+Additional Results
+Table B.1 reports the hyperparameters used for RQ-FPI across all environments, and Figure 1 from the main text
+illustrates the convergence behaviors of RQ-FPI and RQ-Fictitious Play under entropy regularization for each of these
+environments. Tables B.3–B.7 summarize the corresponding results, which are identical for RQ-FPI and RQ–Fictitious
+Play, from which we observe that the empirical trends identified in the SIS and congestion games persist across these
+settings.
+Notably, with the exception of the Conservative Treasure Hunting and Rock–Paper–Scissors environments, the pol-
+icy π∗
+avg is exploitable under uncertainty in the initial mean-field distribution, highlighting the necessity of explicitly
+modeling distributional risk. In the Rock–Paper–Scissors environment, the optimal policy is invariant to the choice of
+initial mean-field distribution; consequently, the MF-RQE policy π∗
+RQE coincides with the standard entropy-regularized
+Nash equilibrium policy [Cui and Koeppl, 2022], and all exploitability values are identically zero.
+As mentioned in the main text, we extended our analysis beyond entropy regularization by considering the log-barrier
+regularizer, defined as ν(π(·|x)) = −P
+u∈U log(π(u|x)). Since the framework of Cui and Koeppl [2022] is specifi-
+cally tailored to entropy-regularized policies, a direct comparison with entropy-regularized Nash equilibrium policies
+under a single initial mean-field distribution µ0 ∈M is not applicable in this setting. Consequently, we restrict our
+comparison to the risk-neutral policy π∗
+avg, which is computed using the same log-barrier regularization. The resulting
+exploitability and empirical return statistics are summarized in Table B.8 in Appendix B.
+Table B.3: Computing ∆c(π) and Empirical Returns for Beach Bar
+Policy
+∆c(π)
+Expected Returns
+π∗
+µ1
+0
+0.057
+0.063 ± 0.017
+π∗
+µ2
+0
+0.152
+0.059 ± 0.017
+π∗
+µ3
+0
+0.104
+0.060 ± 0.016
+π∗
+µ4
+0
+0.081
+0.059 ± 0.016
+π∗
+µ5
+0
+4.770
+−0.245 ± 0.013
+π∗
+avg
+1.4511
+−0.052 ± 0.015
+π∗
+RQE
+0.00
+0.065 ± 0.016
+Table B.4: Computing ∆c(π) and Empirical Returns for Conservative Treasure Hunting
+Policy
+∆c(π)
+Expected Returns
+π∗
+µ1
+0, π∗
+µ2
+0, . . . , π∗
+µ10
+0
+0.037
+0.759 ± 0.002
+π∗
+RQE = π∗
+avg
+0.00
+0.763 ± 0.001
+C
+Proof of Proposition 1
+Lemma 1. Consider a fixed set of mean-field flows SM. Let πa, πb ∈BRQE
+opt (SM). If there exists a t < T such that
+Qπa
+µk,t(x, u) = Qπb
+µk,t(x, u) ≜Qk,t(x, u) for all states x ∈X, u ∈U and mean-field flows µk ∈SM, then the following
+are true:
+
+Table B.5: Computing ∆c(π) and Empirical Returns for Linear Quadratic
+Policy
+∆c(π)
+Expected Returns
+π∗
+µ1
+0
+0.334
+−0.928 ± 0.004
+π∗
+µ2
+0
+0.317
+−0.929 ± 0.004
+π∗
+µ3
+0
+0.307
+−0.929 ± 0.004
+π∗
+avg
+0.066
+−0.929 ± 0.004
+π∗
+RQE
+0.00
+−0.928 ± 0.004
+Table B.6: Computing ∆c(π) and Empirical Returns for Random Linear
+Policy
+∆c(π)
+Expected Returns
+π∗
+µ1
+0
+0.098
+−0.601 ± 0.127
+π∗
+µ2
+0
+0.051
+−0.630 ± 0.123
+π∗
+µ3
+0
+0.105
+−0.602 ± 0.110
+π∗
+µ4
+0
+0.070
+−0.623 ± 0.113
+π∗
+µ5
+0
+0.059
+−0.599 ± 0.116
+π∗
+µ6
+0
+0.118
+−0.591 ± 0.143
+π∗
+µ7
+0
+0.049
+−0.608 ± 0.124
+π∗
+µ8
+0
+0.055
+−0.588 ± 0.116
+π∗
+avg
+0.001
+−0.613 ± 0.131
+π∗
+RQE
+0.00
+−0.612 ± 0.129
+i) πa
+t (·|x) = πb
+t(·|x)
+ii) Qπa
+µk,t−1(x, u) = Qπb
+µk,t−1(x, u),
+for all states x ∈X, u ∈U and mean-field flows µk ∈SM.
+Proof. Under operator BRQE
+opt it follows from (9) at each state x ∈X and time step t that,
+πa
+t (·|x) = arg min
+π′
+t∈Πt c
+(π′
+t,πa
+−t), α
+t
+(x; SM)
+and
+πb
+t(·|x) = arg min
+π′
+t∈Πt c
+(π′
+t,πb
+−t), α
+t
+(x; SM),
+where,
+c(π′
+t,π−t),α
+t
+(x; SM) = 1
+τ log
+ |M|
+X
+k=1
+Γ∗
+M(µk
+0) exp−τπ′
+tT(·|x)Qπ
+µk,t(x,·) 
++ αν(π′
+t(·|x)).
+(C.3)
+Note that the term π−t in (C.3) enters c(π′
+t,π−t),α
+t
+(x; SM) only through Qπ
+µk,t(x, ·). Since we have Qπa
+µk,t(x, u) =
+Qπb
+µk,t(x, u) ≜Qk,t(x, u) for all states x ∈X, u ∈U and mean-field flows µk ∈SM, it follows that,
+c
+(π′
+t,πa
+−t), α
+t
+(x; SM) = c
+(π′
+t,πb
+−t), α
+t
+(x; SM) = 1
+τ log
+ |M|
+X
+k=1
+Γ∗
+M(µk
+0) exp−τπ′
+tT(·|x)Qk,t(x,·) 
+|
+{z
+}
+Convex in π′
+t
++ αν(π′
+t(·|x))
+|
+{z
+}
+Strictly Convex in π′
+t
+.
+This implies that the objective function is strictly convex (sum of convex and strictly convex function) and must have
+a unique solution. It follows that πa
+t (·|x) = πb
+t(·|x) for all x ∈X.
+
+Table B.7: Computing ∆c(π) and Empirical Returns for Rock-Paper-Scissors
+Policy
+∆c(π)
+Expected Returns
+π∗
+µ1
+0, π∗
+µ2
+0, . . . , π∗
+µ5
+0
+5.2e −7 ≈0.00
+4.035 ± 0.002
+π∗
+RQE = π∗
+avg
+0.00
+4.035 ± 0.002
+Table B.8: Exploitability ∆c(π) and empirical returns under RQ-FPI with log-barrier regularization.
+Game
+π∗
+avg
+π∗
+RQE
+∆c(π)
+Return
+∆c(π)
+Return
+SIS
+0.016
+−22.218 ± 0.062
+0.00
+−22.232 ± 0.062
+Congestion
+0.003
+−3.295 ± 0.008
+0.00
+−3.294 ± 0.008
+Beach Bar
+0.497
+−0.037 ± 0.016
+0.00
+0.010 ± 0.017
+Conservative Treasure Hunting
+0.00
+0.614 ± 0.003
+0.00
+0.614 ± 0.003
+Linear Quadratic
+0.013
+−0.950 ± 0.004
+0.00
+−0.950 ± 0.004
+Random Linear
+0.00
+−4.318 ± 0.173
+0.00
+−4.318 ± 0.173
+Rock–Paper–Scissors
+0.00
+4.037 ± 0.002
+0.00
+4.037 ± 0.002
+Now, using (4), for all states x ∈X, u ∈U and mean-field flows µk ∈SM, we have that
+Qπa
+µk,t−1(x, u) = rt−1(x, u, µk
+t−1) +
+X
+x′∈X
+ft−1(x′|x, u, µk
+t−1)V πa
+µk,t(x′)
+(C.4)
+= rt−1(x, u, µk
+t−1) +
+X
+x′∈X
+ft−1(x′|x, u, µk
+t−1)
+X
+u∈U
+πa
+t (·|x)Qπa
+µk,t(x′, u)
+(C.5)
+= rt−1(x, u, µk
+t−1) +
+X
+x′∈X
+ft−1(x′|x, u, µk
+t−1)
+X
+u∈U
+πb
+t(·|x)Qπb
+µk,t(x′, u)
+(C.6)
+= Qπb
+µk,t−1(x, u).
+(C.7)
+Lemma 2. The Q-function Qπ
+µ,t(x, u) defined in (4) is continuous in both µ and π for all states x ∈X, u ∈U and
+t = 0, . . . , T −1, where dΠ(π, π′) ≜maxx∈X,t<T dTV
+ πt(·|x), π′
+t(·|x)
+
+and dM(µ, µ′) ≜maxt<T dTV
+ µt, µ′
+t
+
+.
+Proof. Continuity in µ follows directly from Assumption 1 and the fact that products and sums of Lipschitz and
+bounded functions are again Lipschitz and bounded [Cui and Koeppl, 2022]. Consider now a given mean-field flow µ
+and two policies πa, πb ∈Π. We prove continuity with respect to the policies via induction. At t = T −1, for all x ∈X
+and u ∈U, Qπa
+µ,T −1(x, u) = Qπb
+µ,T −1(x, u) = rT −1(x, u, µT −1) and continuity follows trivially. Assume that at time
+t + 1, |Qπa
+µ,t+1(x, u) −Qπb
+µ,t+1(x, u)| ≤Ct+1dΠ(πa, πb), where dΠ(πa, πb) ≜maxx∈X, t<T dTV
+ πa
+t (·|x), πb
+t(·|x)
+
+and Ct+1 > 0. Furthermore, under finite horizons and bounded rewards, we can uniformly bound |Qπ
+µ,t(x, u)| ≤
+TBr ≜BQ, where Br is the uniform bound for the bounded rewards. Then, at time t, it follows that:
+
+|Qπa
+µ,t(x, u) −Qπb
+µ,t(x, u)| = |
+X
+x′∈X
+ft(x′|x, u, µt)
+ V πa
+µ,t+1(x′) −V πb
+µ,t+1(x′)
+
+|
+= |
+X
+x′∈X
+ft(x′|x, u, µt)
+X
+u′∈U
+ πa
+t+1(u′|x′)Qπa
+µ,t+1(x′) −πb
+t+1(u′|x′)Qπb
+µ,t+1(x′)
+
+|
+≤
+X
+x′∈X
+X
+u′∈U
+ft(x′|x, u, µt)
+πa
+t+1(u′|x′) −πb
+t+1(u′|x′)||Qπa
+µ,t+1(x′)|
++ πb
+t+1(u′|x′)|Qπa
+µ,t+1(x′) −Qπb
+µ,t+1(x′)|
+
+≤
+X
+x′∈X
+ft(x′|x, u, µt)|Qπa
+µ,t+1(x′)|
+X
+u′∈U
+πa
+t+1(u′|x′) −πb
+t+1(u′|x′)| + Ct+1dΠ(πa, πb)
+≤
+X
+x′∈X
+ft(x′|x, u, µt)|Qπa
+µ,t+1(x′)|dΠ(πa, πb) + Ct+1dΠ(πa, πb)
+≤(BQ + Ct+1)dΠ(πa, πb) ≜CtdΠ(πa, πb).
+By defining C = maxt=0,...,T −1 Ct, we further obtain a uniform bound.
+Corollary 1. The regularized risk-averse cost (8) (expanded in (C.3)) is continuous in π′
+t, πt and SM, where
+dS(S1
+M, S2
+M) ≜maxk∈{1,...,|M|},t<T dTV
+ µ1,k
+t
+, µ2,k
+t
+
+where µ1,k ∈S1
+M and µ2,k ∈S2
+M.
+Proof. The log-sum-exp function is continuous, and the inputs to the exponents consist of terms linear (therefore
+continuous) in π′
+t and continuous in Qπ
+µk,t(x, ·) for all states x ∈X and mean-field flows µ ∈SM (from Lemma 2).
+Furthermore, the convex regularizer is also continuous. Thus, continuity follows directly from the fact that composi-
+tions and sums of continuous functions are continuous.
+Proof. We define the operator Φ = BRQE
+opt ◦BRQE
+prop : Π →Π and show that the requirements of Kakutani’s fixed point
+theorem hold for Φ.
+The space of policies Π can be identified as the Cartesian product of finite simplexes QT −1
+t=0
+Q
+x∈X P(U) where
+πt(·|x) ⊆P(U) for all x ∈X and t ∈{0, . . . , T −1}. The finite-dimensional simplices are non-empty, convex and
+compact subsets of the Euclidean space, and hence their finite Cartesian product Π have the same properties.
+Note that Φ maps to a non-empty set as the set of induced mean-field flows are uniquely determined and the entire
+domain Π of the operator BRQE
+opt forms the feasible set. For any π, Φ(π) is trivially convex, since the optimal policy
+is unique as shown in the following. Consider πa, πb ∈Φ(π). For t = T −1, from (4), we have Qπa
+µk,T −1(x, u) =
+Qπb
+µk,T −1(x, u) ≜rT −1(x, u, µk
+T −1) for all states x ∈X, u ∈U and mean-field flows µk ∈BRQE
+prop(π). From Lemma 1,
+it recursively follows that πa
+t (u|x) = πb
+t(u|x) for all x ∈X, u ∈U and t = {0, . . . , T −1}. Consequently, πa = πb
+and the optimal policy is unique.
+Lastly, we show that Φ has a closed graph. Let (πn, π′
+n) →(π, π′) be arbitrary sequences such that π′
+n ∈Φ(πn). It
+is sufficient to show that π′ ∈Φ(π) Cui and Koeppl [2022]. Let us assume that that π′ /∈Φ(π). This implies that for
+some x ∈X and t ∈{0, . . . , T −1}, there exists ¯πt(·|x) ∈Πt such that
+c
+(¯πt,π′
+−t), α
+t
+(x; BRQE
+prop(π)) < c
+(π′
+t,π′
+−t), α
+t
+(x; BRQE
+prop(π)).
+Define
+δ ≜c
+(π′
+t,π′
+−t), α
+t
+(x; BRQE
+prop(π)) −c
+(¯πt,π′
+−t), α
+t
+(x; BRQE
+prop(π)).
+(C.8)
+From Corollary 1, there exists N1, N2 ∈N such that,
+|c
+(¯πt,π′
+n,−t), α
+t
+(x; BRQE
+prop(πn)) −c
+(¯πt,π′
+−t), α
+t
+(x; BRQE
+prop(π))| < δ
+4
+∀n > N1,
+|c
+(π′
+t,π′
+n,−t), α
+t
+(x; BRQE
+prop(πn)) −c
+(π′
+t,π′
+−t), α
+t
+(x; BRQE
+prop(π))| < δ
+4
+∀n > N2.
+(C.9)
+
+Similarly, there exists M ∈N such that for all n > M,
+|c
+(π′
+n,t,π′
+n,−t), α
+t
+(x; BRQE
+prop(πn)) −c
+(π′
+t,π′
+n,−t), α
+t
+(x; BRQE
+prop(πn))| < δ
+4
+∀n > M.
+(C.10)
+It follows from (C.8)- (C.10) that for all n > max(N1, N2, M),
+c
+(¯πt,π′
+n,−t), α
+t
+(x; BRQE
+prop(πn)) < c
+(π′
+n,t,π′
+n,−t), α
+t
+(x; BRQE
+prop(πn)),
+thereby implying that π′
+n /∈Φ(πn), which is a contradiction. It follows that Φ has a closed graph. By Kakutani’s
+fixed point theorem, there exists a fixed point π∗
+RQE that generates the set of mean-field flows BRQE
+prop(π∗
+RQE). The pair
+(π∗
+RQE, BRQE
+prop(π∗
+RQE)) is an MF-RQE by definition.
+D
+Proof of Theorem 2
+Lemma 3. For all t ≥t′, the empirical distributions MN1
+t , ˆ
+MN
+t under the identical policy π obey
+Eπ
+h
+dTV
+ MN1
+t , ˆ
+MN
+t
+xN1
+t′
+= ˆxN1
+t′
+i
+≤O
+ 1
+√
+N
+
+.
+Proof. The proof follows a similar structure to Proposition 3 in Jeloka et al. [2025]. We begin by computing:
+Eπ
+h
+dTV
+ MN
+t+1, ˆ
+MN
+t+1
+xt, ˆxt
+i
+≤Eπ
+h
+dTV
+ MN
+t+1, Mt+1
+xt, ˆxt
+i
++ Eπ
+h
+dTV
+ Mt+1, ˆ
+Mt+1
+xt, ˆxt
+i
++ Eπ
+h
+dTV
+  ˆ
+MN
+t+1, ˆ
+Mt+1
+xt, ˆxt
+i
+,
+(D.11)
+where Mt+1 = MN
+t F(MN
+t , π) and ˆ
+Mt+1 =
+ˆ
+MN
+t F( ˆ
+MN
+t , π) are shorthand notations for the next induced mean-
+field from the infinite-population deterministic dynamics [Guan et al., 2024]. From Guan et al. [2024], we have
+Eπ
+h
+dTV
+ MN
+t+1, ˆ
+MN
+t+1
+xt, ˆxt
+i
+≤O
+ 1
+√
+N
+
+, and Eπ
+h
+dTV
+  ˆ
+MN
+t+1, ˆ
+Mt+1
+xt, ˆxt
+i
+≤O
+ 1
+√
+N
+
+.
+Thus, we are left to simplify Eπ
+h
+dTV
+ Mt+1, ˆ
+Mt+1
+xt, ˆxt
+i
+= dTV
+ MN
+t F(MN
+t , π), ˆ
+MN
+t F( ˆ
+MN
+t , π)
+
+, where the
+expectation vanishes due to deterministic transitions under identical policies π. It follows,
+2dTV
+ MN
+t F(MN
+t , π), ˆ
+MN
+t F( ˆ
+MN
+t , π)
+
+(D.12)
+=
+X
+x′∈X
+
+X
+x∈X
+X
+u∈U
+ft(x′|x, u, MN
+t )πt(u|x)MN
+t (x)
+−
+X
+x∈X
+X
+u∈U
+ft(x′|x, u, ˆ
+MN
+t )πt(u|x) ˆ
+MN
+t (x)
+
+≤
+X
+x′∈X
+X
+x∈X
+X
+u∈U
+ft(x′|x, u, MN
+t )πt(u|x)MN
+t (x) −ft(x′|x, u, ˆ
+MN
+t )πt(u|x) ˆ
+MN
+t (x)
+.
+We now individually bound the terms in using the definition of total variation distance, the identity
+|b(ac −a′c′)| ≤b(|a −a′|c + a′|c −c′|),
+a, b, c ≥0,
+and Assumption 1 as follows:
+2dTV
+ MN
+t F(MN
+t , π), ˆ
+MN
+t F( ˆ
+MN
+t , π)
+
+≤(2 + Lf)dTV
+ MN
+t , ˆ
+MN
+t
+
+.
+(D.13)
+Thus, we can rewrite (D.11) using the above computations to obtain
+Eπ
+h
+dTV
+ MN
+t+1, ˆ
+MN
+t+1
+xt, ˆxt
+i
+≤1
+2(2 + Lf)dTV
+ MN
+t , ˆ
+MN
+t
+
++ O
+ 1
+√
+N
+
+.
+(D.14)
+
+Define at ≜Eπ
+h
+dTV
+ MN1
+t , ˆ
+MN
+t
+xN1
+t′
+= ˆxN1
+t′
+i
+. At t = t′, MN1
+t′
+= ˆ
+MN1
+t′ . Thus, at′ = 0. We proceed to show that
+at+1 ≤κ1 + κ2at where κ1 = O
+
+1
+√
+N
+
+and κ2 = 1
+2(2 + Lf). From the law of iterated expectations,
+Eπ
+h
+dTV
+ MN1
+t+1, ˆ
+MN
+t+1
+xN1
+t′
+= ˆxN1
+t′
+i
+= Eπ
+h
+Eπ
+h
+dTV
+ MN
+t+1, ˆ
+MN
+t+1
+xt, ˆxt
+ixN
+t′ = ˆxN
+t′
+i
+≤Eπ
+h
+κ1 + κ2dTV
+ MN
+t , ˆ
+MN
+t
+
+|xN
+t′ = ˆxN
+t′
+i
+= κ1 + κ2at.
+We have at′ = 0, at′+1 < κ1, at′+2 < κ1 + κ2at′+1 or at′+2 < κ1(κ2 + 1), at′+3 < κ2at′+2 + κ1 or at′+3 <
+κ1(κ2
+2 + κ2 + 1) and so on. This can be written compactly for all t > t′ as (κ2 ̸= 1)
+at ≤κ1
+t−t′
+X
+s=1
+κs
+2 = κ1
+κt−t′
+2
+−1
+κ2 −1
+= O
+ 1
+√
+N
+
+.
+Lemma 4. Consider the sequence of empirical distributions MN = {MN
+0 , . . . , MN
+t−1, ¯
+MN
+t , ¯¯
+MN
+t+1, . . . ¯¯
+MN
+T } gen-
+erated by all agents following an identical policy π from time steps 0 to t−1, allowing one agent to deviate at time step
+t and t+1, and then following π again, where X0 ∼µ0 and M0 = Empµ(X0). Furthermore, define the deterministic
+mean-field flow induced by policy π as µ = {µ0, µ1, . . . , µT }. Then, Eπ
+
+dTV
+ MN, µ
+X0 ∼µ0
+
+≤O
+
+1
+√
+N
+
+.
+Proof. At time step 0, it follows from the law of large numbers that Eπ
+
+dTV
+ MN
+0 , µ0
+
+≤O
+
+1
+√
+N
+
+[Guan et al.,
+2024]. For all time steps 1 to t −1, starting from the identical initial distribution µ0 and following an identical policy
+π, from Guan et al. [2024], we have
+Eπ
+h
+dTV
+ MN
+t′+1, Mt′+1
+xt′
+i
+≤O
+ 1
+√
+N
+
+.
+Then, by the law of iterated expectations, it follows that
+Eπ
+
+dTV
+ MN
+t′+1, µt′+1
+X0 ∼µ0
+
+= Eπ
+h
+Eπ
+h
+dTV
+ MN
+t′+1, Mt′+1
+Xt′
+i X0 ∼µ0
+i
+≤O
+ 1
+√
+N
+
+.
+Without loss of generality, we can assume that the deviating agent i = 1. The deviated empirical distribution at time t
+is given by
+¯
+MN
+t = 1
+N
+N1
+X
+i=2
+1x(Xi,t) + 1
+N 1x( ¯X1,t).
+Consequently,
+dTV
+  ¯
+MN
+t , MN
+t
+
+=
+ 1
+N
+N1
+X
+i=2
+1x(Xi,t) + 1
+N 1x( ¯X1,t) −1
+N
+N1
+X
+i=1
+1x(Xi,t)
+
+=
+ 1
+N 1x( ¯X1,t)
+ ≤1
+N .
+(D.15)
+Eπ
+
+dTV
+  ¯
+MN
+t , µt
+X0 ∼µ0
+
+= Eπ
+h
+Eπ
+h
+dTV
+  ¯
+MN
+t , Mt
+XN
+t−1
+i X0 ∼µ0
+i
+≤Eπ
+h
+Eπ
+h
+dTV
+  ¯
+MN
+t , MN
+t
+
++ dTV
+ MN
+t , Mt
+XN
+t−1
+i X0 ∼µ0
+i
+≤O
+ 1
+√
+N
+
+,
+
+where the last inequality comes by combining the above two results. At each time step s ≥t + 1,
+Eπ
+h
+dTV
+  ¯¯
+MN
+s+1, µs+1
+X0 ∼µ0
+i
+≤Eπ
+h
+Eπ
+h
+dTV
+  ¯¯
+MN
+s , ¯
+MN
+s
+
++ dTV
+  ¯
+MN
+s , MN
+s
+
++ dTV
+ MN
+s , Ms
+i X0 ∼µ0
+i
+= Eπ
+h
+Eπ
+h
+Eπ
+h
+dTV
+  ¯¯
+MN
+s , ¯
+MN
+s
+¯¯X
+N
+t = ¯Xt
+i
++ dTV
+  ¯
+MN
+s , MN
+s
+XN
+t−1 = ¯XN
+t−1
+i
++ dTV
+ MN
+s , Ms
+X0 ∼µ0
+i
+≤O
+ 1
+√
+N
+
+,
+where the last inequality follows from Lemma 3. We have shown that dTV
+ MN
+t , µt
+
+≤O
+
+1
+√
+N
+
+for all t ∈
+{0, . . . , T −1}. Thus, Eπ
+
+dTV
+ MN, µ
+X0 ∼µ0
+
+≜maxt dTV
+ MN
+t , µt
+
+≤O
+
+1
+√
+N
+
+.
+Proof of Theorem 2. We can now proceed to proving Theorem 2 by computing a relation between the finite-
+population objective
+cα,i,N
+t
+(π1,. . ., πN; x)=ρΓ∗
+M
+ V π
+i,t(x)
+
++αν
+ πi,t(·|x)
+
+,
+(D.16)
+and the infinite-population objective (8) under an MF-RQE (π∗
+RQE, S∗
+M). In particular, we show that for all agents
+i ∈[N], for all states x ∈X and times t ∈{0, . . . , T −1},
+c
+π∗
+RQE,α
+t
+(x; S∗
+M) −cα,i,N
+t
+ π∗
+RQE,i, π∗
+RQE,−i; x
+ ≤O
+ 1
+√
+N
+
+,
+and for all πt ∈Πt,
+c
+(πt,π∗
+RQE,−t),α
+t
+(x; S∗
+M) −cα,i,N
+t
+ (πt, π∗
+RQE,i,−t), π∗
+RQE,−i; x
+ ≤O
+ 1
+√
+N
+
+.
+Using these two relations along with the fact that c
+π∗
+RQE,α
+t
+(x; S∗
+M) ≤c
+(πt,π∗
+RQE,−t),α
+t
+(x; S∗
+M) for all πt ∈Πt, we can
+directly obtain that the identical MF-RQE policy π∗
+RQE is an ϵ-RQE for the finite population game where ϵ = O
+
+1
+√
+N
+
+.
+We define the finite-population RQ-MFG value function for agent i ∈[N] at any given state x ∈X and at time t as
+follows:
+V π
+i,t(xi, x−i,t) = Eπ
+" T
+X
+t′=t
+rt(xi,t′, ui,t′, µN
+t′ )
+xi, x−i,t
+#
+,
+(D.17)
+where x−i,t = {xj,t}j̸=i is the joint state of all the agents except i. Note that the expectation is taken with respect to
+the joint policy π and the stochastic transition dynamics. Using (D.17) and Theorem 1 under the KL penalty function,
+we can expand (D.16) for all states x ∈X as follows:
+ρΓ∗
+M
+ V π
+i,t(x)
+
+≡
+sup
+ˆΓM∈P(M)
+−Eµ0∼ˆΓM
+
+V π
+i,t(x, x−i,t)
+
+−1
+τ D(ˆΓM, Γ∗
+M)
+= 1
+τ log
+ |M|
+X
+k=1
+Γ∗
+M(µk
+0) exp−τV π
+i,t(x,xk
+−i,t) 
+= 1
+τ LSE
+
+log wk−τ
+X
+u∈U
+πi,t(u|x)
+
+r(x, u, ¯µN,k
+t
+) + Eπ
+"
+T
+X
+t′=t+1
+rt(xi,t′, ui,t′, ¯µN,k
+t′
+)
+xi,t = x, ui,t = u, xk
+−i,t
+#
+,
+(D.18)
+where xk
+−i,t is obtained by following joint policy π starting at time t = 0 and xk
+−i,0 ∼µk
+0 ∈M, ¯µN,k
+t
+= Empµ(¯xt)
+where ¯xk
+t = (x, xk
+−i,t). For agent i at time t, we consider the arbitrary state x. We further define µN,k
+t
+= Empµ(xk
+t ),
+where all agents follow policy π starting at time t = 0 and xk
+0 ∼µk
+0 ∈M.
+
+For brevity, we have defined wk = Γ∗
+M(µk
+0) and denote the log-sum-exp operator by LSE. Intuitively, (D.18) formu-
+lates the risk-aversion for agent i at each state x for different trajectories of the joint state, arising due to the different
+realizations of the initial distribution.
+Using similar notation, we can re-write (7) as
+ρΓ∗
+M
+ V π
+µ,t(x)
+
+= 1
+τ LSE
+
+log wk−τ
+X
+u∈U
+πt(u|x)
+
+r(x, u, µk
+t ) + Eπ
+"
+T
+X
+t′=t+1
+rt(xt′, ut′, µk
+t′)
+xt = x, ut = u
+#
+,
+(D.19)
+where µk ∈S∗
+M constitute the MF-RQE set of flows. Notice that the term cα,i,N
+t
+ π∗
+RQE,i, π∗
+RQE,−i; x
+
+computes
+the mean-field flows under identical policy π∗
+RQE, with agent i is specifically considered to be at state x at time t,
+following which, π∗
+RQE is again followed. The term cα,i,N
+t
+ (πt, π∗
+RQE,i,−t), π∗
+RQE,−i; x
+
+follows the same suit, with
+an additional deviation by agent i from xt = x to xt+1 since it follows the deviated policy πt. Thus, we can use
+Lemma 4 for both these cases and show that the mean-field flows Eπ∗
+RQE
+
+dTV
+ MN,k, µkXk
+0 ∼µk
+0
+
+≤O
+
+1
+√
+N
+
+for
+all k = 1, . . . , |M|. Thus, Eπ∗
+RQE
+
+dTV
+ SN
+M , S∗
+M
+
+= maxk=1,...,|M| Eπ∗
+RQE
+
+dTV
+ MN,k, µkXk
+0 ∼µk
+0
+
+≤O
+
+1
+√
+N
+
+.
+Further, by Corollary 1, we have continuity of the cost function with respect to the mean-field flows. Consequently,
+c
+π∗
+RQE,α
+t
+(x; S∗
+M) −cα,i,N
+t
+ π∗
+RQE,i, π∗
+RQE,−i; x
+ ≤O
+ 1
+√
+N
+
+,
+and for all πt ∈Πt
+c
+(πt,π∗
+RQE,−t),α
+t
+(x; S∗
+M) −cα,i,N
+t
+ (πt, π∗
+RQE,i,−t), π∗
+RQE,−i; x
+ ≤O
+ 1
+√
+N
+
+,
+and the result follows.
+E
+Proof of Theorem 3
+Lemma 5. The operator BRQE
+prop(π) is Lipschitz with some constant Kprop.
+Proof. From Lemma B.7.4 in [Cui and Koeppl, 2022], for any single initial distribution, i.e., Bprop(π) is Lipschitz
+with constant Kprop. This implies,
+dM(Bprop(πa), Bprop(πb)) ≤KpropdΠ(πa, πb).
+(E.20)
+Consequently, given a set of initial distributions M,
+dS(BRQE
+prop(πa), BRQE
+prop(πb)) =
+max
+k∈{1,...,|M|} dTV
+ µa,k, µb,k
+=
+max
+k∈{1,...,|M|} dS(Bprop(πa), Bprop(πb))µ0=µk
+0
+≤KpropdΠ(πa, πb),
+as both µa,k, µb,k originate from the same initial distribution µk
+0 and we can apply the result from (E.20).
+Lemma 6. Consider a function f(π; θ) that is (αµ)-strongly convex in π, where π and θ are equipped with metrics
+dΠ and dθ respectively, such that it satisfies
+∥∇πf(π; θa) −∇πf(π; θb)∥≤¯Cdθ(θa, θb),
+¯C > 0.
+(E.21)
+Further, define the (unique) optimizers π∗
+a = arg min f(π; θa) and π∗
+b = arg min f(π; θb). It follows that,
+dTV
+ π∗
+a, π∗
+b
+
+≤C
+αµdθ(θa, θb),
+C > 0.
+Proof. Strong convexity implies that
+(π1 −π2)T ∇πf(π1; θ) −∇πf(π2; θ)
+
+≥αµ∥π1 −π2∥2
+2.
+(E.22)
+
+From the optimality of π∗
+a and π∗
+b we have ∇πf(π∗
+a; θa) = 0 and ∇πf(π∗
+b; θb) = 0, therefore ∇πf(π∗
+a; θa) −
+∇πf(π∗
+b; θb) = 0. Adding and subtracting ∇πf(π∗
+b; θa) gives
+∇πf(π∗
+a; θa) −∇πf(π∗
+b; θa)
+|
+{z
+}
+I1
++ ∇πf(π∗
+b; θa) −∇πf(π∗
+b; θb)
+|
+{z
+}
+I2
+= 0.
+It follows that,
+I1 = −I2
+(π∗
+a −π∗
+b)TI1 = −(π∗
+a −π∗
+b)TI2.
+Applying (E.22) on the LHS term gives (π∗
+a−π∗
+b)TI1 ≥αµdΠ(π∗
+a, π∗
+b)2. This implies (π∗
+a−π∗
+b)TI1 = |(π∗
+a−π∗
+b)TI1| =
+|(π∗
+a −π∗
+b)TI2|. Using Cauchy-Schwartz and (E.21) for |(π∗
+a −π∗
+b)TI2|, it follows:
+αµ∥π∗
+a −π∗
+b∥2
+2 ≤|(π∗
+a −π∗
+b)TI2| ≤∥∇πf(π∗
+b; θa) −∇πf(π∗
+b; θb)∥∥π1 −π2∥2
+≤Cdθ(θa, θb)∥π∗
+a −π∗
+b∥2,
+and, consequently, from the two extreme inequalities, we have, αµ∥π∗
+a −π∗
+b∥2
+2 ≤Cdθ(θa, θb). Using the relation
+dTV
+ π∗
+a, π∗
+b
+
+≤
+√n
+2 ∥π∗
+a −π∗
+b∥2, where n is the dimension of π (in order case, |U|) and defining C = ¯C√n/2, we
+have the result.
+Lemma 7. The operator BRQE
+opt (SM) is Lipschitz with constant ∝1/α.
+Proof. Consider two sets of mean-field flows Sa
+M and Sb
+M, with corresponding optimal policies π∗
+a and π∗
+b. At t = T−1,
+for any state x, we have
+c
+(πT −1,π∗
+a,−T −1), α
+T −1
+(x; Sa
+M) = 1
+τ LSE
+
+log wk −τ
+X
+u∈U
+πT −1(u|x)rT −1(x, u, µa,k
+T −1)
+
++ αν(πT −1(·|x)),
+where the notation follows from the proof of Theorem 2. Since the LSE term is convex in π and ν(πT −1(·|x)) is
+m-strongly convex, we have that c
+(πT −1,π∗
+a,−T −1), α
+T −1
+(x; Sa
+M) is (αm)-strongly convex. This implies, π∗
+a,T −1(·|x) is the
+unique optimizer of the cost function. Define βk =
+wk exp(−τπT
+t (·|x)Qπ
+µk,t(x,·))
+P
+j wj exp(−τπT
+t (·|x)Qπ
+µj ,t(x,·)). Then,
+∇πT −1c
+(πT −1,π∗
+a,−T −1), α
+T −1
+(x; Sa
+M) =
+X
+k
+βkrT −1(x, ·, µa,k
+T −1) + α∇πν(πT −1).
+From Assumption 1,
+∥∇πT −1c
+(πT −1,π∗
+a,−T −1), α
+T −1
+(x; Sa
+M) −∇πT −1c
+(πT −1,π∗
+b,−T −1), α
+T −1
+(x; Sb
+M)∥
+≤
+X
+k
+βk∥rT −1(x, ·, µa,k
+T −1) −rT −1(x, ·, µb,k
+T −1)∥
+≤
+X
+k
+βkLr|U|dTV
+ µa,k
+T −1, µb,k
+T −1
+
+≤CT −1dS(Sa
+M, Sb
+M),
+where P
+k βk = 1.
+Now using the above equation with Lemma 6, where θa = (Sa
+M, π∗
+a,−T −1) and θb =
+(Sb
+M, π∗
+b,−T −1),
+dTV
+ π∗
+a,T −1(·|x), π∗
+b,T −1(·|x)
+
+≤CT −1
+αm dS(Sa
+M, Sb
+M),
+for all states x ∈X. Consequently,
+dΠ(π∗
+a,T −1, π∗
+b,T −1) ≜max
+x∈X dTV
+ π∗
+a,T −1(·|x), π∗
+b,T −1(·|x)
+
+≤CT −1
+αµ dS(Sa
+M, Sb
+M).
+
+For t = T −2, we similarly have,
+∥∇πT −2c
+(πT −2,π∗
+a,−T −2), α
+T −1
+(x; Sa
+M) −∇πT −2c
+(πT −2,π∗
+b,−T −2), α
+T −2
+(x; Sb
+M)∥
+≤
+X
+k
+βk∥Qπ∗
+a
+µa,k,T −2(x, ·)) −Qπ∗
+b
+µb,k,T −2(x, ·))∥
+≤¯CT −1dS(Sa
+M, Sb
+M) + |Br|dΠ(π∗
+a,T −1, π∗
+b,T −1)
+≤¯CT −1dS(Sa
+M, Sb
+M) + CT −1
+αm dS(Sa
+M, Sb
+M)
+≜CT −2dS(Sa
+M, Sb
+M),
+where we have used continuity of the Q-function derived in Lemma 2. Once again, following Lemma 6, we can repeat
+the previous steps and show that
+dΠ(π∗
+a,T −2, π∗
+b,T −2) ≜max
+x∈X dTV
+ π∗
+a,T −2(·|x), π∗
+b,T −2(·|x)
+
+≤CT −2
+αm dS(Sa
+M, Sb
+M).
+One can iteratively follow these steps to show that the result holds for all t ∈{0, . . . , T −1} and by defining C =
+maxt<T Ct, we have,
+dΠ(π∗
+a,t, π∗
+b,t) ≤C
+αmdS(Sa
+M, Sb
+M).
+This implies dΠ(π∗
+a, π∗
+b) = dΠ(BRQE
+opt (Sa
+M), BRQE
+opt (Sb
+M)) = maxt<T dΠ(π∗
+a,t, π∗
+b,t) ≤
+C
+αmdS(Sa
+M, Sb
+M).
+Proof. We prove the statement by showing that Φ is a contraction mapping and then apply Banach’s fixed point
+theorem. Let π, π′ ∈Π be arbitrary, then
+dΠ(Φ(π), Φ(π′)) = dΠ
+
+BRQE
+opt ◦BRQE
+prop(π), BRQE
+opt ◦BRQE
+prop(π′)
+
+≤C
+αmdS(BRQE
+prop(π), BRQE
+prop(π′))
+≤CKprop
+αm
+dΠ(π, π′)
+= κdΠ(π, π′),
+where we use, in order, Lemmas 7 and 5. Thus for sufficiently large α, CKprop
+αm
+= κ < 1, and Φ is a contraction
+mapping. Moreover, the existence of a fixed point follows from Proposition 1. Then, by Banach’s fixed point theorem,
+FPI converges.
+F
+Proof of Theorem 4
+Proof. We view the problem as the evolution of a discrete time dynamical system. Specifically, define states Y1 and
+Y2 that follow,
+Y1(k + 1) = Φ(Y2(k)),
+Y2(k + 1) = βY2(k) + (1 −β)Y1(k).
+Solving for the equilibrium conditions, we get Y ∗
+1 = Y ∗
+2 , which is exactly the definition of the MF-RQE. Thus, all that
+is left to show is that the equilibrium is attained as k →∞. Define Y (k) = [Y1(k), Y2(k)] and the associated norm
+∥Y ∥≜max{∥Y1∥Π, ∥Y2∥Π}. Now consider Y (k) = [Y1(k), Y2(k)] and ¯Y (k) = [ ¯Y1(k), ¯Y2(k)]. Then ∥Y (k + 1) −
+¯Y (k + 1)∥= max{∥Y1(k + 1) −¯Y1(k + 1)∥Π, ∥Y2(k + 1) −¯Y2(k + 1)∥Π}. We have6 that
+∥Y1(k + 1) −¯Y1(k + 1)∥Π = ∥Φ(Y2(k)) −Φ( ¯Y2(k))∥Π
+< κ∥Y2(k) −¯Y2(k)∥Π
+≤κ∥Y (k) −¯Y (k)∥,
+6Recall that ∥Y1(k + 1) −¯Y1(k + 1)∥Π = dΠ(Y1(k + 1), ¯Y1(k + 1)).
+
+where the second inequality holds for large enough α, as shown in Theorem 3. We also have,
+∥Y2(k + 1) −¯Y2(k + 1)∥Π = ∥βY2(k) + (1 −β)Y1(k) −β ¯Y2(k) −(1 −β)¯Y1(k)∥Π
+≤β∥Y2(k) −¯Y2(k)∥Π + (1 −β)∥Y1(k) −¯Y1(k)∥Π
+≤max{∥Y2(k) −¯Y2(k)∥Π, ∥Y1(k) −¯Y1(k)∥Π}
+= ∥Y (k) −¯Y (k)∥.
+Thus, ∥Y (k + 1) −¯Y (k + 1)∥= max{∥Y1(k + 1) −¯Y1(k + 1)∥Π, ∥Y2(k + 1) −¯Y2(k + 1)∥Π} ≤∥Y (k) −¯Y (k)∥.
+Following the similar procedure for k + 2, we can show
+∥Y1(k + 2) −¯Y1(k + 2)∥Π = ∥Φ(Y2(k + 1)) −Φ( ¯Y2(k + 1))∥Π
+< κ∥Y2(k + 1) −¯Y2(k + 1)∥Π
+< κ2∥Y (k) −¯Y (k)∥,
+and
+∥Y2(k + 2) −¯Y2(k + 2)∥Π = ∥βY2(k + 1) + (1 −β)Y1(k + 1) −β ¯Y2(k + 1) −(1 −β) ¯Y1(k + 1)∥Π
+≤β∥Y2(k + 1) −¯Y2(k + 1)∥Π + (1 −β)∥Y1(k + 1) −¯Y1(k + 1)∥Π
+≤β∥Y (k) −¯Y (k)∥+ (1 −β)κ∥Y (k) −¯Y (k)∥
+< ∥Y (k) −¯Y (k)∥,
+since κ < 1. It follows that ∥Y (k + 2) −¯Y (k + 2)∥< ∥Y (k) −¯Y (k)∥. For ¯Y = [Y ∗
+1 , Y ∗
+2 ], we have established
+convergence the equilibrium as k →∞. Hence, for Y2 = ¯π and Y1 = π, and the result follows.

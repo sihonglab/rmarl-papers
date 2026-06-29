@@ -1,0 +1,1772 @@
+1
+Towards Fault Tolerance in Multi-Agent
+Reinforcement Learning
+Yuchen Shi, Huaxin Pei, Liang Feng, Yi Zhang, Senior Member, IEEE, Danya Yao, Member, IEEE
+Abstract—Agent faults pose a significant threat to the perfor-
+mance of multi-agent reinforcement learning (MARL) algorithms,
+introducing two key challenges. First, agents often struggle
+to extract critical information from the chaotic state space
+created by unexpected faults. Second, transitions recorded before
+and after faults in the replay buffer affect training unevenly,
+leading to a sample imbalance problem. To overcome these
+challenges, this paper enhances the fault tolerance of MARL by
+combining optimized model architecture with a tailored training
+data sampling strategy. Specifically, an attention mechanism is
+incorporated into the actor and critic networks to automatically
+detect faults and dynamically regulate the attention given to faulty
+agents. Additionally, a prioritization mechanism is introduced to
+selectively sample transitions critical to current training needs.
+To further support research in this area, we design and open-
+source a highly decoupled code platform for fault-tolerant MARL,
+aimed at improving the efficiency of studying related problems.
+Experimental results demonstrate the effectiveness of our method
+in handling various types of faults, faults occurring in any agent,
+and faults arising at random times.
+Note to Practitioners—Multi-agent systems based on MARL
+outperform those using traditional control methods in terms of
+performance but remain highly vulnerable to unexpected faults. To
+improve fault tolerance in such systems, we introduce an attention
+mechanism that enables the neural network to dynamically
+adjust its focus on fault-related information. Additionally, a
+prioritization sampling strategy is employed to select critical
+samples from collected experiences that are most relevant to
+current training needs. Experimental results across various fault
+types demonstrate significant improvements in fault tolerance,
+validating the robustness of our approach. These findings suggest
+that the proposed method has the potential to be applied to real-
+world scenarios, such as multi-robot systems and autonomous
+vehicle fleets.
+Index Terms—Multi-agent Reinforcement Learning, Fault
+Tolerance, Attention, Prioritized Experience Replay
+I. INTRODUCTION
+C
+OOPERATIVE multi-agent systems have been widely
+applied in various fields, such as autonomous driving
+[1]–[3], drone formation [4], [5], and multi-robot control
+[6]. However, the occurrence of individual faults within the
+system is inevitable, especially in the complex operational
+environment, and it poses a significant threat to the system’s
+This work was supported in part by the National Natural Science Foundation
+of China under Grant 62133002. (Corresponding author: Huaxin Pei.)
+Yuchen Shi is with the Department of Automation, Tsinghua University,
+Beijing 100084, China (e-mail: shiyuche21@mails.tsinghua.edu.cn).
+Huaxin Pei and Liang Feng are with QiYuan Lab, Beijing 100089, China
+(e-mail: peihuaxin@qiyuanlab.com; fengliang@qiyuanlab.com).
+Yi Zhang and Danya Yao are with the Department of Automation, Beijing
+National Research Center for Information Science and Technology (BNRist),
+Tsinghua University, Beijing 100084, China. (e-mail: zhyi@tsinghua.edu.cn;
+yaody@tsinghua.edu.cn).
+ability to continue executing its intended tasks [7], [8]. The
+existing studies demonstrate that there are numerous approaches
+to successfully enhance the fault tolerance of traditional
+cooperative control methods [9], [10], such as the leader-
+following method [11] and artificial potential field method [12]
+in formation control, thereby reducing the impact of individual
+faults on the system’s task execution.
+Benefiting from the strong exploration ability of reinforce-
+ment learning in complex environments, multi-agent reinforce-
+ment learning (MARL) algorithms, employing the actor-critic
+[13], [14] based centralized training with decentralized execu-
+tion (CTDE) framework [15], have emerged as the mainstream
+approaches for addressing cooperative problems in multi-
+agent systems. Notable examples include multi-agent deep
+deterministic policy gradient (MADDPG) [15], multi-agent
+proximal policy optimization (MAPPO) [16], etc. However,
+MARL faces unique challenges in dealing with unexpected
+agent faults within a system, as we discuss in this paper.
+Taking the predator-prey system as an example, we present
+the primary challenges when an agent within the system fails.
+As shown in Fig. 1(a), three agents with limited communication
+and perception ranges collaborate to pursue the prey, which
+employs a specific escape strategy. Due to the complex
+environment and challenging task, there is a distinct probability
+that an agent within the system may fail at any given time.
+When an agent fails, it becomes incapacitated, losing its
+ability to move, communicate, and perceive. This introduces
+several challenges, including disruptions in the communication
+structure and the need to reallocate tasks within the system.
+The impact of faults on MARL algorithms, both during
+training and execution, gives rise to two primary challenges.
+The first challenge is the chaotic inputs of networks, as
+illustrated in Fig. 1(b). The sudden reduction of valid agents can
+lead to a decrease in the valid dimensions within the original
+state space, and the invalid information stemming from the
+failed agent can have detrimental effects on both the training
+and execution processes, significantly impacting the overall
+performance of the system. The second challenge is sample
+imbalance. To capture the unpredictability of fault timing
+and the affected agents, faults must be randomly assigned
+to different agents at random time steps during simulations.
+This randomness can lead to significant variability among
+the transitions stored in the replay buffer. As illustrated in
+Fig. 1(c), in three episodes, different agents fail at different
+timesteps, resulting in the replay buffer storing many similar
+pre-fault transitions, while post-fault transitions can vary greatly.
+If uniform weights are assigned to transitions, inessential
+transitions may be repeated during training, thereby reducing
+arXiv:2412.00534v1  [cs.LG]  30 Nov 2024
+
+2
+Agent 1
+Agent 2
+Agent 3
+Prey
+Agent 2 (Faulty)
+Obstacle
+(a)
+(d)
+Replay Buffer before Fault
+Replay Buffer after Fault
+Before
+Fault
+Input for Actor 1 
+Input for Actor 2 
+Input for Actor 3 
+Input for Critic
+Action of Agent 2 
+After
+Fault
+(b)
+Input for Critic
+Observation of Agent 1 
+Observation of Agent 2 
+Observation of Agent 3 
+Observation of Agent 1 
+Observation of Agent 2 
+Observation of Agent 3 
+Input for Actor 1 
+Input for Actor 3 
+Action of Agent 1 
+Action of Agent 3 
+Action of Agent 2 
+Action of Agent 1 
+Action of Agent 3 
+Input for Actor 2 
+Networks 
+before Failure 
+Networks
+after Failure 
+Training Data
+Training Data
+Networks
+Replay 
+Buffer 
+Training Data
+Training Data
+Scenario before Fault
+Scenario after Fault
+(c)
+Replay 
+Buffer 
+Episode A
+Similar pre-fault transitions
+Episode B
+Episode C
+Various post-fault transitions
+Transition when agent 1 fails
+Training 
+Session
+Transition when agent 2 fails
+Transition when agent 3 fails
+Transition when no agent fails
+Fig. 1: (a) An illustration of a predator-prey system before and after the agent fault, where different shades of blue circles
+represent predators, and the green circle represents the prey. The large transparent circle around each agent represents its
+communication range. Following the fault of agent 2, which initially serves as a communication bridge, agent 1 and 3 suffer
+a loss of communication. (b) An illustration of the inputs for the actor and critic before and after fault. When agent 2 fails,
+its associated information becomes abnormal and is marked in red, leading to a disruption in the original input of the actor
+and critic networks. (c) An illustration of two natural ideas of handling faults. The left part illustrates the idea of manually
+distinguishing the training data and the networks before and after the agent fault, and the right part illustrates the idea of
+identifying the invalid information within the input automatically by the neural network. (d) An illustration of a replay buffer
+with transitions in 3 episodes. Blue circles represent similar pre-fault transitions and different imcomplete circles represent
+various post-fault transitions, reflecting imbalance of samples.
+training efficiency.
+To tackle the aforementioned challenges, we propose fault-
+tolerant MARL solutions that integrate optimized model
+architecture with training data sampling strategy. The main
+contributions of our method are outlined below.
+First, we introduce an attention-guided fault-tolerant method
+for MARL to tackle the chaotic state space, named Fault-
+Tolerant Model with Attention on Actor and Critic, AACFT
+for short. Before introducing AACFT, there are two natural
+remedial ideas to deal with faults. The first idea is to manually
+distinguish the training data and the networks before and after
+the agent fault (Fig. 1(d) left). In such a case, experiences before
+and after faults are stored in different replay buffers, and actors
+and critics are separately set and trained. The drawback of this
+method is that it requires multiple replay buffers and actor-
+critic networks, which can be quite cumbersome. The second
+idea is to identify the invalid information within the input
+automatically by the neural network (Fig. 1(d) right). In such a
+case, experiences before and after faults are stored in the only
+replay buffer, and a unique actor-critic network distinguishes
+whether a fault has occurred by the training data. Nevertheless,
+the presence of invalid information could lead to the learning of
+a suboptimal policy. Unlike the above two ideas, our proposed
+AACFT is capable of automatically identifying unexpected
+faults while appropriately tackling the special information
+
+3
+within the chaotic state space. Specifically, we have carefully
+devised a method for configuring the input of the critic and
+actor networks and have integrated an attention module into the
+networks, building upon the MADDPG framework. In the critic,
+the observation of the faulty agent is no longer meaningful,
+and the attention module can then prioritize shifting attention
+away from the observations of the faulty agent and focus on
+other relevant information within the input. Within the actor,
+the observation of each agent encompasses the states of other
+agents, enabling the recording of the state when a fault occurs.
+The attention module can then dynamically modulate the level
+of attention assigned to the fault information based on its
+impact on the system.
+Second, we employ a reweighting method that prioritizes the
+sampling of more challenging transitions for the current model,
+effectively mitigating the sample imbalance issue. Specifically,
+we extend the Prioritized Experience Replay (PER) method
+[17] by creating separate priority queues for each actor and
+critic, with priorities determined by their respective losses. This
+allows each module to focus on learning from the transitions
+that are most relevant to it at any given time. Typically, tasks
+become more complex and diverse after a fault, increasing
+the difficulty of training. After initial training, when agents
+have developed a basic pre-fault strategy, the importance of
+training on post-fault transitions becomes even greater. In this
+context, our method effectively mitigates sample imbalance by
+prioritizing critical transitions.
+Third, we conduct a comprehensive comparison of ex-
+perimental results across various baselines and scenarios,
+demonstrating the effectiveness of our method in addressing
+potential faults. We provide visualizations of the attention
+mechanism, highlighting the dynamic changes in attention
+allocation within the critic and actor before and after a fault
+occurs. Additionally, we validate the prioritization mechanism
+through comparative experiments and analyze shifts in the
+distribution of sampled transitions. Furthermore, we evaluate
+our method’s performance both under fault-free conditions and
+at different time points when faults occur, confirming its ability
+to seamlessly handle faults at any moment.
+To support researchers in studying fault tolerance in MARL,
+we design and open-source a new code platform, along with
+our proposed algorithm1. Beyond the general functionalities of
+typical MARL platforms, our platform specifically addresses
+the impact of faults on various components, including the
+environment and the algorithm. By decoupling faults from other
+modules, researchers can easily customize and experiment with
+faults, algorithms, environments, and more, facilitating modular
+comparative studies.
+The rest of the paper is organized as follows. In Section
+II, we introduce the related works, followed by background
+knowledge in Section III. Our approach is described in Section
+IV. In Section V, we introduce the framework and features
+of our open-sourced platform. In Section VI, we show the
+experimental results. We conclude finally in Section VII.
+1https://github.com/xbgit/FaultTolerance AACFT
+II. RELATED WORKS
+A. Fault tolerance
+In this paper, we focus on addressing highly critical system-
+level faults in agents, where the affected agent loses its
+ability to observe or act, as opposed to faults occurring in
+specific components of the agent [18]–[21]. In the existing
+studies, Pei et al. [22] construct a rule-based model to achieve
+fault tolerance in multi-vehicle cooperative driving at signal-
+free intersections. Kamel et al. [23] design task-reassignment
+algorithms taking use of Hungarian algorithm, to ensure
+the completion of robot teams task after a robot’s fault.
+Nevertheless, these works do not specifically aim to achieve
+fault tolerance in MARL algorithm. Some researchers focus
+on robust MARL [24], [25], emphasizing performance balance
+when agent actions deviate. However, our research concentrates
+on enhancing performance in the event of specific types of
+faults, which is not the strength of robust MARL.
+B. MARL
+CTDE framework for MARL, including QMIX [26], MAD-
+DPG [15], COMA [27], MAPPO [16], avoids the problem of
+non-stationarity when agents learn independently, and also
+avoids the problem of action space dimension explosion
+when a multi-agent system is modeled as a single agent.
+Recently, many studies have endeavored to enhance MARL
+algorithms, aiming to increase their adaptability to real-world
+MARL environments [28]–[33], such as R-MADDPG for
+partial observable environments [34], and MADDPG-M for
+environments with extremely noisy observations [35]. Similarly,
+we propose our model based on MADDPG, making it capable
+of fault tolerance problems in MARL.
+C. Attention
+Attention mechanism has become a popular technique
+due to its superior performance, interpretability, and ease of
+integration with basic models [36]. Attention mechanism is
+widely employed for a variety of deep learning models across
+many different domains and tasks, including natural language
+processing [37]–[39], computer vision [40], [41], reinforcement
+learning [42]–[45]. Iqbal & Sha [42] using centrally computed
+critics that share an attention mechanism, dynamically selecting
+which agents to attend to, enable more effective learning in
+MARL. In our approach, the attention mechanism plays a
+crucial role in enhancing fault tolerance.
+D. Transitions Reweighting
+Transitions reweighting is an effective method to improve
+utilization efficiency of transitions. There are typically two
+types: prioritizing easy transitions and prioritizing difficult
+transitions. The former is suitable for addressing issues with
+noisy labels in the dataset, as it tends to favor lower-loss
+examples which are more likely to be clean data [46]. It is also
+suitable for solving extremely difficult problems that require a
+step-by-step approach [47]. The latter prioritizes higher-loss
+samples that are more likely to belong to minority cases, thereby
+alleviating sample imbalance, such as Hard Example Mining
+
+4
+(HEM) [48] and Prioritized Experience Replay (PER) [17].
+Considering that data in RL problems is clean and there is
+sample imbalance in fault tolerance problems, we extend PER
+to fault tolerance problems based on MARL and adapt it to
+our proposed AACFT.
+III. BACKGROUND
+A. Markov Games
+A multi-agent system with N potentially faulty agents
+can be modeled as decentralized partially observable Markov
+decision processes (Dec-POMDPs) [49], [50], defined as
+< S, A, T, R, Y, O, γ, F
+>, where S is the set of states,
+A = {A1, ..., AN} is the set of joint actions, T is the transition
+function, O = {O1, ..., ON} is the set of observations, and
+Y = {Y1, ..., YN} is the set of observation functions. At
+each time step t, agent i receives a partial observation
+oi = Yi(s) : S →Oi, takes action ai according to policy
+πθi: ai = πθi(oi) : Oi →Ai, and receives a reward ri =
+R(s, a1, ..., aN) : S × A1 × ... × AN →R. Assume that
+fault occurs under a certain probability p, which is defined
+by state s and the current time t: p = F(s, t). Therefore,
+the environment at the next time step can be described as
+s′ = T(s, a1, ..., aN, p) : S×A1×...×AN →S. The objective
+for each agent is to maximize its expected discounted reward
+E[Ri] = E[PT
+t′=t γt′−tri,t′], where γ ∈[0, 1] is the discount
+factor, ri,t′ is the reward at time step t′ and T is the end time
+step of an episode.
+B. Multi-Agent Deep Deterministic Policy Gradient (MAD-
+DPG)
+MADDPG [15] is a variant of the deterministic policy gradi-
+ent algorithm [51] for multi-agent systems, with centralized Q-
+value function and decentralized policies. Considering N agents
+with continuous deterministic policies µ = {µθ1, ..., µθN },
+parameterized by θi, the policy gradient for agent i is:
+∇θiJ(θi) = EU(D)[∇θiµθi(ai|oi)∇aiQϕi
+i (x, a)|ai=µθi(oi)].
+(1)
+Qϕi
+i (x, a) is agent i’s Q-value function, parameterized by ϕi,
+that accepts all agents’ actions a = [a1, ..., aN] and state
+information x. In this paper, x is defined as the concatenation
+of all agents’ observations [o1, ..., oN]. U(D) denotes experi-
+ences sampled from the replay buffer D, which stores tuples
+(x, x′, a, r1, ..., rN), encapsulating all agents’ experiences. x′
+signifies the next state following the environment transition.
+ϕi is updated via:
+L(ϕi) = EU(D)[(Qϕi
+i (x, a) −yi)2],
+yi = ri + γQϕ′
+i
+i (x′, a′
+1, ..., a′
+N)|a′
+j=µθ′
+j (oj).
+(2)
+µ′ = {µθ′
+1, ..., µθ′
+N } is the set of target policies with delayed
+parameters θ′
+i.
+Notablely, Qϕi
+i (x, a) is referred to as a critic, taking in all
+agents’ observations and actions during centralized training.
+µθi(oi) is referred to as an actor, taking its local partial
+observation and output the action decentralizedly.
+C. Attention
+Suppose we have n embeddings {e1, ..., en} corresponding
+to n encoded pieces of information. The attention weight from
+ei to ej, presented as αij, is calculated based on the similarity
+between the query of ei and the key of ej. A normalization
+method follows, such as Softmax:
+αij =
+exp((Wqei)T (Wkej))
+Pn
+r=1 exp((Wqei)T (Wker)),
+(3)
+where Wq is query martix that transforms ei into a query, and
+Wk is key martix that transforms ej into a key. Then, the
+attention embedding bi for i-th piece of information is the
+weighted sum of the values for {e1, ..., en}:
+bi =
+n
+X
+j=1
+αijWvej,
+(4)
+where Wv is value martix that transforms ej into a value. The
+resulting bi, synthesized from e1, ..., en with respective weights,
+can then be utilized for the subsequent information extraction.
+IV. METHODS
+Our method builds upon the widely used MADDPG algo-
+rithm and can be described in three integral parts.
+First, we detail the configuration of inputs for the critic
+and actor to represent fault states and facilitate the use of
+attention mechanisms. In brief, the critic takes into account
+local observations and actions of all agents as input, and the
+actor only receives the current agent’s local observations as
+input. Detailed descriptions of input settings are provided in
+Section IV-A.
+Second, we design the AACFT model by incorporating
+attention mechanisms into the critic and actor networks,
+enabling it to automatically tackle the special information
+resulting from an unexpected agent fault, as depicted in Fig.
+2. It is worth noting that, in such a case, the information
+associated with the faulty agent affects the critic and actor
+differently. For the critic, the learning algorithm needs to
+prioritize shifting attention away from the observations of the
+faulty agent and focus on other relevant information within the
+input. For the actor, the learning algorithm should be designed
+to make flexible decisions regarding the importance of the
+faulty agent at different stages of task execution. The attention
+mechanisms in the critic and actor play different roles when
+addressing fault issues. Therefore, it is impertive to discuss
+fault tolerance in the critic and actor separately, which we
+address in Sections IV-B and IV-C.
+Finally, in Section IV-D, we extend Prioritized Experience
+Replay (PER) to AACFT to enhance the training efficiency
+of both the critic and the actor, and provide the complete
+algorithm.
+A. Input Configuration
+Similar to the basic MADDPG algorithm, in our method, the
+critic of agent i takes in all agents’ observations o = [o1, ..., oN]
+and actions a = [a1, ..., aN] and outputs Q-value Qϕ
+i (o, a). The
+actor of agent i takes in its observation oi and outputs action
+
+5
+𝑜1, 𝑎1
+…
+…
+𝑒1
+…
+𝛼1𝑁
+𝛼1𝑗𝛼𝑁𝑗
+𝛼𝑁1
+𝑏1
+Attention
+Encoder
+Inputs
+Outputs
+Decoder
+𝛼𝑖,0𝑁
+𝛼𝑖,0𝑖
+𝛼𝑖,01
+𝑜𝑖(𝑁+𝑀)
+…
+…
+𝑒𝑖(𝑁+𝑀)
+𝑜𝑖𝑗
+𝑒𝑖𝑗
+𝑜𝑖1
+𝑒𝑖1
+𝑒𝑖0
+Critic
+Actor
+…
+…
+…
+…
+…
+…
+…
+…
+…
+𝑜= [𝑜1, … , 𝑜𝑗, … , 𝑜𝑁]
+𝑜𝑖= [𝑜𝑖1, … , 𝑜𝑖𝑗, … , 𝑜𝑖𝑁+𝑀]
+𝑎= [𝑎1, … , 𝑎𝑗, … , 𝑎𝑁]
+𝑄1
+𝜙𝑜, 𝑎
+𝑒𝑁
+𝑒𝑗
+𝑓1
+𝑐
+𝑔1
+𝑐
+𝑜𝑗, 𝑎𝑗
+𝑓𝑗
+𝑐
+𝑜𝑁, 𝑎𝑁
+𝑏𝑁
+𝑓𝑁
+𝑐
+𝑔𝑁
+𝑐
+𝑄𝑁
+𝜙𝑜, 𝑎
+𝑏𝑖0
+𝑔𝑖
+𝑎
+𝜇𝜃𝑖𝑜𝑖
+𝑓𝑖1
+𝑎
+𝑓𝑖𝑗
+𝑎
+𝑓𝑖(𝑁+𝑀)
+𝑎
+Fig. 2: An illustration of the main components of our method. Actor of agent outputs action ai under the continuous policy µθi
+and critic i outputs Qϕ
+i (o, a). Information related to the faulty agent j is marked in red, and the red dashed lines represent the
+special attention weight for the embedding of the faulty agent.
+ai under the continuous policy µθi. The Boolean variable Fi
+represents the fault status of agent i, where 1 indicates normal
+and 0 indicates fault.
+In a multi-agent cooperation task, the observation of an agent
+typically encompasses the states of the following entities: the
+agent itself, other cooperating agents, the environment, and
+the task. Taking the task in Fig. 1 as an example, the state of
+an agent includes its position and velocity; the environment
+state includes the position of obstacles; the task state includes
+the position and velocity of the target agent. Therefore, the
+observation of agent i can be formally described as:
+oi = [oi1, ..., oi(N+M)],
+oij =
+
+
+
+
+
+si,
+j = i,
+[Yi(sj), cij],
+j ∈{1, ..., N}\i,
+Yi(sj),
+j ∈{N + 1, ..., N + M},
+(5)
+where Yi(sj) represents the agent i’s partial observation
+regarding agent j, and cij represents the communication state
+from agent i to agent j. Specifically, cij is a one-hot vector,
+where each bit represents a different communication state.
+For example, in this paper, there are 3 connection states, i.e.,
+“normal”, “out of communication range”, and “fault”. Notablely,
+oij with j ∈{N + 1, ..., N + M} denotes agent i’s partial
+observation of the environment or the task.
+Importantly, as shown in Fig. 2, the observation oj and action
+aj of agent j become invalid if there exists an unexpected
+fault on agent j, and should be specially configured when
+inputting them into the critic. In addition, the normal agent
+i’s observation oij regarding the faulty agent j should also be
+specially configured when inputting it into the actor. These
+operations aid the algorithm in identifying special information
+within the input, and more details can be found in the following
+subsections.
+B. Fault Tolerance in Critic
+Unexpected agent faults can directly impact the input of
+the critic, as the faulty agent j becomes unable to observe
+or move, rendering the original oj and aj values invalid. To
+enable the critic to distinguish whether an agent fails or not,
+we set oj = z ·1, aj = 0 when Fj = 0, i.e., agent j fails. Each
+bit of oj is a special flag z, the absolute value of which should
+be much larger than the normal values to make the anomalies
+more prominent in the input. While this setting benefits the
+critic in detecting the occurrence of faults, the excessive value
+of special flag z significantly disrupts critic network training,
+especially when the faults happen randomly.
+To tackle this issue, we introduce an attention module into the
+structure of the critic. This module helps in diverting attention
+from the observations of the faulty agent and instead focuses
+on other pertinent information within the input. As shown in
+Fig. 2, the encoder f c
+i transforms the observation and action
+of agent i into its embedding ei = f c
+i (oi, ai). The attention
+module calculates the attention weight αij to the embeddings
+ej according to Equ. (3), and the attention embedding bi used
+for evaluating the Q-value of agent i according to Equ. (4).
+Then, the decoder gc
+i extracts agent i’s Q-value Qϕ
+i (o, a) from
+bi:
+Qϕ
+i (o, a) = gc
+i (bi) = gc
+i (PN
+j=1 αijWvej),
+(6)
+where ϕ denotes the parameter set of critics, including the
+individual parameters of all agents’ encoders and decoders,
+and the public parameters of Wq, Wk, Wv in Equ. 3.
+All critics are updated together to minimize a joint regression
+loss function L(ϕ) due to parameter sharing:
+L(ϕ) = EU(D)[
+XN
+i=1 Fi · (Qϕ
+i (o, a) −yi)2],
+yi = ri + γQϕ′
+i (o′, a′
+1, ..., a′
+N)|a′
+j=µθ′
+j (oj),
+(7)
+where ϕ′ and θ′ denote the delayed parameters of the target
+critics and target policies, respectively. The actor of the faulty
+agent is disabled, so that its critic which guides the actor’s
+
+6
+Algorithm 1 AACFT with priority
+Input: batchsize k, replay buffer U(D), agents number N, exponents α and β, maximum training steps S, replay period K
+1: for s = 1 to S do
+2:
+Step the environment and store (x, x′, a, r, F) in U(D).
+3:
+Append priority for critic queue Qc ←[Qc, max Qc]
+4:
+for i = 1 to N do
+5:
+Append priority for actor queues Qa,i ←[Qa,i, max Qa,i] if Fi = 1
+6:
+end for
+7:
+if s ≡0 mod K then
+8:
+// Update the critics
+9:
+Sample k transitions from U(D) to form a batch u(D). Transition j ∼P(j) = pα
+j /P
+k pα
+k
+10:
+Compute importance-sampling weights for k transitions in u(D). ωj = (N · P(j))−β/maxi ωi
+11:
+Update the critics by loss L(ϕ) = E(o,a,r,o′,ω)∼u(D)[ ω · PN
+i=1 Fi · (Qϕ
+i (o, a) −yi)2]
+12:
+Update the priorty of k transitions in Qc
+13:
+// Update the actors
+14:
+for i = 1 to N do
+15:
+Sample k transitions from U(D) to form a batch u(D). Transition j ∼P(j) = pα
+j /P
+k pα
+k
+16:
+Compute importance-sampling weights for k transitions in u(D). ωj = (N · P(j))−β/maxi ωi
+17:
+Update the actor of agent i by loss L(θi) = −E(o,a,ω)∼u(D)[ ω · Qϕ
+i (o, (ai, a\i))]|ai=µθi(oi)
+18:
+Update the priorty of k transitions in Qa,i
+19:
+end for
+20:
+end if
+21: end for
+update also becomes meaningless. Therefore, the faulty agents
+are excluded using Fi when calculating the loss.
+C. Fault Tolerance in Actors
+Unexpected agent faults can also have a direct impact on the
+input of the actor, as the faulty agent j’s state could affect the
+observations of the remaining normal agents, i.e., oij, where
+i ∈{1, ..., N}\j. To enable the actor to distinguish the agent
+fault and selectively use the state information of the faulty
+agent, we set the value of oij according to the significance
+of the faulty agent j at different stages of task execution.
+Specifically, if the state of faulty agent j still makes sense to
+decisions of other agents after it fails, then oij = Yi(sj,t0),
+where t0 is the time step fault occurs. Otherwise, similar to
+the critic network, we set oij = z · 1 to make the anomalies
+more prominent and easier to identify.
+According to the above, the sudden occurrence of agent faults
+places high demands on the performance of the actor network,
+requiring it to possess the ability to dynamically determine
+whether to prioritize attention to the faulty agent at different
+stages of task execution. To reach this goal, in addition to the
+special design of the input state representation, we innovatively
+introduce an attention module in the actor to flexibly incorporate
+information about the faulty agent. As shown in Fig. 2, different
+from the structure of the critic network, an actor aims to output
+one action for the whole observation space. Therefore, referring
+to models with attention for classification [41], we add a token
+ei0 for agent i to help output the action. On such a basis, the
+encoder f a
+ij transforms oij into its embedding eij = f a
+ij(oij).
+The attention module calculates the attention weight αi,0j of
+the token ei0 to eij and its attention embedding bi0. Then, the
+decoder ga
+i outputs agent i’s action ai from bi0:
+µθi(oi) = ga
+i (bi0) = ga
+i (PN+M
+j=1
+αi,0jW i
+veij),
+(8)
+where θi is the parameter set of agent i’s actor, which includes
+the parameters of all encoders and the decoder, and the public
+parameters of W i
+q, W i
+k, W i
+v.
+To update agent i’s actor, ai is removed from the input of
+Qϕ
+i and replaced with µθi(oi), while other agents’ actions a\i
+are fixed. Each actor is updated to minimize its loss, i.e., the
+opposite of the value of the new action combination:
+L(θi) = −EU(D)[Fi · Qϕ
+i (o, (ai, a\i))]|ai=µθi(oi).
+(9)
+Similar to the situation with the critic, due to the disablement
+of the faulty agent’s actor, the corresponding transitions are
+excluded.
+D. Prioritized Experience Replay for AACFT
+Imbalanced transitions stored in the replay buffer are
+reweighted to improve training efficiency. As mentioned in
+Section IV-B and Section IV-C, N+1 modules conduct updates.
+To apply PER to AACFT, PER is employed across all modules.
+A transition exhibits different importance for each module, so
+different priorities should be assigned. In AACFT, the critics
+are updated simultaneously due to parameter sharing, so a
+single priority queue is set up for them, named as Qc. On the
+other hand, the actors of different agents are updated separately,
+so each actor is assigned its own priority queue, named as
+{Qa,1, ..., Qa,N}.
+When the transition (x, x′, a, r, F) is stored, it is assigned
+a corresponding priority in each queue, with the value being
+the highest priority currently in the queue. It is important to
+
+7
+Fault Controller
+Fault Injection; Fault Resetting; 
+Fault Observation; Fault Action; 
+Fault information
+Runner Module
+Train; Test
+Curriculum Controller
+Varying Fault Parameters;
+Varying Environment Difficulty
+Algorithm Controller
+Initialization; Replay Buffer; 
+Policy Update; Policy Execution;
+Models Saving
+Environment Controller
+Scenario Elements; Reward 
+Definition; Agent Property; 
+Rendering; 
+Configs Module
+Parameter Settings
+Logging Module
+Cloud/Local 
+Display and Record
+Core
+Support 
+Rendering
+Fig. 3: The overall framework of FTMAL.
+note that if the transition involves faulty agent i, the priority
+queue Qa,i does not add a new priority for this transition, to
+avoid affecting the priority ranking and prevent the transitions
+from being sampled when updating agent i’s actor.
+For Q ∈{Qc, Qa,1, ..., Qa,N}, denote pi as the priority of
+transition i. pi = 1/rank(i) is rank-based priority of transition
+i. The rank of a transition is sorted according to its loss L(ϕ) or
+L(θ). So the priority is monotonic with the loss. The probability
+of sampling transition i is
+P(i) =
+pα
+i
+P
+k pα
+k
+.
+(10)
+The exponent α determines how much prioritization is used,
+with α = 0 corresponding to the uniform case.
+To ensure the unbiased nature of the updates at the end of
+training, loss is weighted by importance-sampling weights
+ωj = (N · P(j))−β
+maxiωi
+,
+(11)
+where β is linearly annealed from its initial value to 1.
+The algorithm is described in Algorithm 1.
+V. A NEW PLATFORM FOR FAULT-TOLERANT MARL
+Current reinforcement learning platforms integrate multiple
+algorithms and environments [52], [53], facilitating the study of
+different algorithms’ performance across various environments.
+However, they present challenges when adapting to fault-
+tolerant MARL algorithms. Faults can affect multiple aspects
+of experiments, creating strong dependencies between different
+modules in the code. For instance, in the main program, when
+the environment advances to the next timestep, it must decide
+whether to inject faults. After faults are introduced, the scenario
+scripts need to simulate abnormal observations or actions
+caused by the faults, while the algorithm scripts may need to
+filter and process data from faulty agents. Existing platforms
+face low efficiency in training and testing fault-tolerant MARL
+models due to these complexities.
+We design and open-source a new platform for fault-tolerant
+MARL, with its framework shown in Fig. 3. The platform
+consists of a core structure and supporting modules, with a ren-
+dered environment diagram provided to clarify the functionality
+of each controller. To overcome the aforementioned limitations,
+our core approach is to centralize the management of faults in
+a dedicated controller, referred to as the Fault Controller. This
+design ensures that fault modifications do not interfere with
+the main components of the code.
+The roles of each component in the platform are as follows.
+The core structure revolves around the runner module, which
+handles the fundamental processes of MARL, including agent-
+environment interactions and the collection of transitions
+through the replay buffer.
+Multiple controllers manage different aspects of the experi-
+ment. The Algorithm Controller is responsible for initializing,
+updating, and executing agent policies, as well as handling fault-
+related tasks such as processing observations. The Environment
+Controller defines the environment, scenarios, and agents,
+and also handles the rendering of the environment. The
+Fault Controller provides functionalities for fault injection,
+modification of faulty agents’ observations and actions, fault
+resetting, and the collection of fault-related data. Finally, the
+Curriculum Controller offers interfaces for curriculum learning,
+enabling the setup of varying faults throughout the training
+process.
+The Configs Module and Logging Module provide essential
+support for the main experimental framework. The Configs
+Module supplies the relevant parameters for algorithms, envi-
+ronments, faults, and training or testing settings. It supports
+separate configuration files for algorithms and environments,
+making it easier to conduct comparative experiments. The
+Logging Module records data from the algorithm, environment,
+and fault controllers. It supports both WandB [54] integration
+and local options for printing and saving training logs.
+Users have the flexibility to customize fault types and
+corresponding parameters, such as fault timing, target, and
+probability. Fault types include restricting the actions of faulty
+agents or adding noise to their observations. Due to the
+decoupling of faults from the environment and algorithm code,
+users can inject the same type or multiple types of faults
+
+8
+across different scenarios, allowing them to investigate the
+performance of various algorithms in handling different fault
+conditions.
+VI. EXPERIMENTS
+A. Setup
+1) Experiments Overview: This section evaluates and val-
+idates our proposed methods from various perspectives. In
+Subsection VI-B1, we assess the performance of a multi-agent
+system trained without considering potential faults when a
+fault occurs, demonstrating the necessity of enhancing fault-
+tolerant capabilities of RL algorithms. In Subsection VI-B2,
+we compare the AACFT proposed in this paper with three
+baseline methods, illustrating that AACFT can improve the
+fault tolerance of MARL. In Subsection VI-B3, we visualize
+an episode of a scenario to show how the trained agents
+execute actions to mitigate the adverse effects of faults. In
+Subsection VI-B4, we visualize the attention distribution to
+validate the role of attention in AACFT. We analyze the changes
+in attention before and after faults to understand its impact,
+and we conduct ablation studies by removing attention in
+the critic and actor modules separately. In Subsection VI-B5,
+to verify the effectiveness of PER, we conduct comparative
+experiments and analyze the changes in the number of different
+types of transitions sampled in the training batches. Finally,
+in Subsection VI-B6, we test the performance of the trained
+model at different fault timesteps to demonstrate AACFT’s
+adaptability to temporal variations.
+2) Scenarios: To comprehensively validate the experimental
+objectives presented in the previous subsection, we design four
+scenarios modified from Multi-Agent Particle Environment
+(MPE) [15]. Schematic diagrams are shown in Fig. 4.
+Abandonment Scenario The abandonment scenario is a
+fault-tolerant variation of the basic predator-prey setup. At the
+start of each episode, we randomly generate two obstacles,
+three cooperative agents (“predators”) to be trained, and one
+target agent (“prey”) to be pursued. In this scenario, faults may
+disrupt the communication structure among agents, potentially
+reducing the number of functioning agents in the system. The
+remaining agents must maintain communication and continue
+pursuing the target, while disregarding and abandoning any
+faulty agents.
+Recovery Scenario In addition to potential communication
+breakdowns, faults may also introduce temporary tasks for the
+agents. To validate our method, we design a scenario called
+the Recovery Scenario. This scenario mirrors the abandonment
+scenario when agent 2 fails, but with a key difference: agent 3
+holds valuable resources that must be recovered by agent 2 in
+the event of a fault. In our experiments, a successful recovery
+is defined as agent 2 touching the faulty agent. We assume
+agent 2 can recover the resources from the faulty agent 3 and
+continue the pursuit. The distinct roles of agents 2 and 3 also
+test the system’s ability to handle asymmetric faults.
+Navigation Scenario
+In the navigation scenario, agents
+are required to dynamically reschedule between multiple task
+objectives, testing their ability to allocate resources or targets
+effectively. When no faults occur, three agents are tasked with
+covering two landmarks. The challenge in this scenario arises
+when a fault unexpectedly occurs, requiring the remaining
+agents to reassess their target landmarks and adjust based on
+the current states of the agents and the landmarks.
+Patrol Scenario
+In the patrol scenario, faults introduce
+entirely new targets and tasks for the agents, challenging the
+balance of training for tasks before and after a fault occurs.
+When no faults are present, three agents are tasked with
+efficiently patrolling the bottom half of the map. However,
+an enemy agent randomly attacks one of the patrolling agents,
+causing it to fail. The remaining two agents then detect the
+location of the faulty agent and initiate a pursuit.
+The reward r of each agent is composed of several parts:
+r = rcom + rout + rcol + rdis
+|
+{z
+}
+rindi
++ rgoal
+|{z}
+rteam
+,
+(12)
+where rcom, rout, rcol, rdis are rewards encouraging the agent to
+maintain the communication structure, stay within the boundary,
+avoid collisions with teammates, and approach the target,
+respectively. These four rewards are individual rewards and are
+received by each agent independently, whereas rgoal is a team
+reward, granted to all agents when any one of them completes
+the task.
+B. Results and Analysis
+1) Necessarity: We use vanilla MADDPG to train the
+multi-agent system in the basic predator-prey scenario without
+considering potential faults. Compared to the test in a no-
+fault environment, the task completion rate drops from 0.872
+to 0.382 in the test where agent 2 fails at time step 5.
+This demonstrates the necessity of a fault-tolerant model.
+Fig. 5 shows a comparison of the model’s performance in
+environments with and without faults. Without faults, the
+system completes the task at time step 23. When agent 2
+fails, agents 1 and 3 can still approach the prey, but they
+become stuck in a state of “helplessly wandering in place” in
+the upper left corner. This is because they lack the ability to
+identify faults and reassign tasks. As a result, the prey seizes
+the opportunity to escape downwards. Ultimately, the system
+fails to complete the task within the allotted 35 time steps.
+2) Comparative Experiments: Fig. 6 shows the training
+process among AACFT and three baseline methods: M3DDPG,
+MADDPG and MADDPG+MC (with multiple critics). Given
+that the patrol scenario poses a challenge for both vanilla
+AACFT and the baseline methods, we conduct comparative
+experiments in the first three scenarios.
+M3DDPG is a typical method of robust MARL. It is a
+MiniMax extension of MADDPG, preventing agents from
+learning the local optima of other agents’ current strategies,
+thereby enabling the trained agents to generalize effectively
+even when other agents’ strategies alter. MADDPG is the
+automatic identification method shown in Fig. 1(d) right. Each
+agent possesses a critic and an actor, which handle both pre-
+fault and post-fault scenarios. MADDPG+MC is the manual
+identification method shown in Fig. 1(d) left. Each agent
+possesses three critics, one for pre-fault scenarios, two for
+the faults of the other two agents respectively. Accordingly,
+
+9
+Agent 1
+Agent 2
+Agent 3
+Prey
+Agent 2 (Faulty)
+Obstacle
+(a)
+Scenario before Fault
+Scenario after Fault
+Agent 1
+Agent 2
+Agent 3
+Prey
+Agent 3 (Faulty)
+Obstacle
+(b)
+Scenario before Fault
+Scenario after Fault
+Agent 1
+Agent 2
+Agent 3
+Agent 2 (Faulty)
+Target
+Scenario before Fault
+Scenario after Fault
+Agent 1
+Agent 2
+Agent 3
+Prey
+Agent 3 (Faulty)
+Obstacle
+Scenario before Fault
+Scenario after Fault
+(c)
+(d)
+(hidden)
+Fig. 4: Schematic diagram of the scenarios before and after faults. (a) Abandonment scenario and recovery scenario if agent 2
+fails. (b) Recovery scenario if agent 3 fails. (c) Navigation scenario. (d) Patrol scenario.
+Agent 1
+Agent 2
+Agent 3
+Prey
+Agent failed
+Obstacle
+Fig. 5: Testing of the basic MADDPG without considering
+faults in the training process. (Left) No fault. (Right) Agent 2
+fails.
+transitions are collected into corresponding replay buffers, and
+critics are separately trained. To reduce the number of networks
+and facilitate comparison, we do not establish multiple actors
+before and after faults.
+As depicted in Fig. 6, all methods achieve similar results
+in no-fault scenarios. However, except for our AACFT, other
+methods show a decline in rewards in either the abandonment or
+recovery scenario. We construct boxplots using task completion
+rate as the metric shown in Fig. 7. M3DDPG underperforms
+compared to AACFT in all scenarios, indicating that methods
+aimed at increasing robustness do not directly address fault
+tolerance issues. MADDPG’s average performance is close
+to AACFT only in the navigation scenario, showing that
+the performance of MADDPG is affected by invalid fault
+information. MADDPG+MC only surpasses AACFT in the
+recovery scenario when agent 2 fails, but performs poorly
+otherwise. Additionally, MADDPG+MC requires significant
+space resources and is overly cumbersome. Notably, when
+agent 3 fails in the recovery scenario, AACFT shows the
+most significant performance improvement, demonstrating
+its effectiveness in handling complex issues such as task
+redistribution caused by faults. Overall, in different scenarios
+where faults have various impacts, AACFT effectively addresses
+handle the issues caused by the faults.
+3) Episode Visualization: Taking the recovery scenario as
+an example, we visualize the process during which the multi-
+agent system handles faults of agents 2 and 3, respectively, to
+demonstrate our method’s ability to manage communication
+maintenance and task allocation in an environment with
+potential agent faults.
+As presented in Fig. 8, three cooperative agents are set up
+in the lower left corner of the scene. Initially, all 3 agents
+run normally, maintaining formation and moving close to the
+prey. At time step 10, an agent breaks down. If agent 2 fails,
+since agent 3 does not have recovery capability, agents 1 and
+2 jointly pursue the prey. To maintain communication, agent
+1 does not continue to approach the prey quickly, but slows
+down and waits for agent 2 to enter the communication range,
+until time step 18. At this time, the prey chooses to escape to
+the left, and agents 1 and 2 predict the destination of escape
+in advance, successfully intercepting the prey at time step 26.
+If agent 3 fails, since agent 2 has recovery capability, agent 2
+first returns to the position of agent 3 to complete its recovery
+task,and agent 1 also turns back to maintain communication
+between them. Meanwhile, the prey chooses to stay slightly
+away from the boundary to ensure an open escape direction.
+At time step 24, agent 2 successfully completes the recovery
+task, and agents 2 and 3 continue the chase task.At time step
+36, since the positions of agents 1 and 2 are biased to the right,
+the prey chooses to escape to the left. At time step 50, agents
+1 and 2 complete the chase task.
+4) The Role of Attention:
+Attention Distribution To facilitate understanding of the
+attention distribution and its changes, we visualize the average
+attention distribution before and after the fault, as depicted in
+Fig. 9. Each row in the critic represents the attention allocation
+
+10
+0
+20000
+40000
+60000
+80000
+100000
+Episodes
+40
+30
+20
+10
+0
+10
+20
+30
+Episode Rewards
+AACFT
+M3DDPG
+MADDPG
+(a)
+0
+20000
+40000
+60000
+80000
+100000
+Episodes
+40
+30
+20
+10
+0
+10
+20
+Episode Rewards
+AACFT
+M3DDPG
+MADDPG
+MADDPG+MC
+(b)
+0
+20000
+40000
+60000
+80000
+100000
+Episodes
+50
+40
+30
+20
+10
+0
+10
+Episode Rewards
+AACFT
+M3DDPG
+MADDPG
+MADDPG+MC
+(c)
+0
+20000
+40000
+60000
+80000
+100000
+Episodes
+50
+40
+30
+20
+10
+0
+10
+Episode Rewards
+AACFT
+M3DDPG
+MADDPG
+MADDPG+MC
+(d)
+Fig. 6: Reward curves from 4 training sessions for each method in 4 scenarios. (a) No-fault predator-prey scenario; (b)
+Abandonment scenario; (c) Recovery scenario; (d) Navigation scenario.
+AACFT
+M3DDPG
+MADDPG
+MADDPG+MC
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Task Completion Rate
+Agent 2 fails
+Agent 3 fails
+Mean
+Median
+Mean
+Median
+(a)
+AACFT
+M3DDPG
+MADDPG
+MADDPG+MC
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Task Completion Rate
+Agent 2 fails
+Agent 3 fails
+Mean
+Median
+Mean
+Median
+(b)
+AACFT
+M3DDPG
+MADDPG
+MADDPG+MC
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Task Completion Rate
+Random agent fails
+Mean
+Median
+Mean
+Median
+(c)
+Fig. 7: Boxplots of evaluations results from 4 training sessions for each method in 3 scenarios. (a) Abandonment scenario; (b)
+Recovery scenario; (c) Navigation scenario.
+of an agent to three agents, detailedly row 1,2,3 for agent
+1, agent 2, and agent 3. Each row in the actor represents
+the attention allocation of an agent to different pieces of
+information in its observation, detailedly row 1 for the token
+ei0, row 2 for the agent itself, row 3 and row 4 for teammates,
+row 5 for the prey, and row 6 for obstacles.
+When the system runs normally, the attention in the critic
+is relatively balanced compared to after the fault. In the actor,
+attention to the token is almost zero, as it has no practical
+significance. Attention to the prey is relatively high, with other
+information receiving varying attention.
+In the branch where agent 2 fails, agents 1 and 3 shift their
+attention from agent 2 to agent 1. In the branch where agent
+3 fails, since agent 2 needs to recover it, both agents 1 and
+2’s critics pay more attention to the state of agent 2. Agent 2
+focuses entirely on the location of the failed agent 3, while
+agent 1 primarily focuses on the location of the failed agent,
+while also considering the prey and other information. After
+completing the recovery task, agents are required to chase the
+prey again,so the attention weight quickly adjusts, with the
+critic shifting from agent 2 to agent 1 and the actor shifting
+from agent 3 to the prey.
+As can be seen, the distribution of attention is highly
+consistent with the process shown in the episode example
+in Fig. 8, indicating that attention effectively guides the actor
+and critic in handling faults and other information.
+Ablation Study
+To better demonstrate the role of the
+attention module, we conducted ablation experiments. We
+
+11
+Agent 2 fails
+Agent 3 fails
+t=0
+t=10
+t=24
+t=36
+t=50
+t=18
+t=26
+Agent 1
+Agent 2
+Agent 3
+Prey
+Agent failed
+Obstacle
+Fig. 8: Illustration of an episode in the recovery scenario, where agent 2 and agent 3 fail respectively. In the figure, a series of
+circles with gradually decreasing transparency represents the motion trajectory of the agent from the previous time step to the
+current time step.
+Agent 2 fails
+Agent 3 fails
+Recovery
+1
+2
+3
+1
+2
+3
+Critic
+1
+2
+3
+4
+5
+6
+1
+2
+3
+Actor
+1
+2
+3
+1
+3
+1
+2
+3
+4
+5
+6
+1
+3
+1
+2
+3
+1
+2
+1
+2
+3
+4
+5
+6
+1
+2
+1
+2
+3
+1
+2
+1
+2
+3
+4
+5
+6
+1
+2
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Attention weight
+Fig. 9: Attention allocation on critic and actor before and after fault in the recovery scenario. The 3 × 3 or 2 × 3 matrix is
+the attention matrix for the critic, and the 3 × 6 or 2 × 6 matrix is the attention matrix for the actor. Each row in the critic
+represents the attention allocation of an agent to other agents, and each row in the actor represents the attention allocation of
+an agent to different information in its observation. After the fault, the corresponding agent row is removed.
+compare AACFT with the following two variant methods:
+AAFT (removing attention from the critic in AACFT) and
+ACFT (removing attention from the actor in AACFT). As shown
+in Fig. 10 and Fig. 11, AACFT performs better than AAFT
+and ACFT in most situations. The critic can guide the training
+of the actor, and the critic with attention is more accurate,
+as evidenced by ACFT’s good performance in the relatively
+simpler abandonment scenario. However, AAFT shows better
+performance in the recovery scenario than in the abandonment
+scenario, indicating that the attention module in the actor is
+beneficial in complex scenarios requiring task redistribution
+and similar demands. The ablation study indicates that attention
+modules in both the actor and the critic are necessary.
+5) The Role of Priorty: We select the more challenging
+patrol scenario to validate the role of PER in further enhancing
+fault tolerance performance.
+As shown in Fig. 12, in the patrol scenario, AACFT with
+PER performs significantly better than vanilla AACFT without
+PER. Vanilla AACFT struggles to learn any effective strategy,
+highlighting that the priority mechanism addresses the unique
+challenges posed by faults.
+During training, the batch contains transitions of different
+types, with their quantities being a certain ratio. PER might bias
+towards particular types of transitions, causing a difference in
+the ratio compared to not using PER. To measure the magnitude
+of the difference introduced by PER, we define a new metric:
+Additional Sampling Rate. This metric indicates how much
+more a particular class of transitions is sampled with PER
+compared to without PER, given the same total number of
+transitions.
+
+12
+0
+20000
+40000
+60000
+80000
+100000
+Episodes
+40
+30
+20
+10
+0
+10
+20
+Episode Rewards
+AACFT
+AAFT
+ACFT
+(a)
+0
+20000
+40000
+60000
+80000
+100000
+Episodes
+50
+40
+30
+20
+10
+0
+10
+Episode Rewards
+AACFT
+AAFT
+ACFT
+(b)
+Fig. 10: Reward curves from 4 training sessions for each method in 2 scenarios. (a) Abandonment scenario; (b) Recovery
+scenario;
+AACFT
+AAFT
+ACFT
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Task Completion Rate
+Agent 2 fails
+Agent 3 fails
+Mean
+Median
+Mean
+Median
+(a)
+AACFT
+AAFT
+ACFT
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Task Completion Rate
+Agent 2 fails
+Agent 3 fails
+Mean
+Median
+Mean
+Median
+(b)
+Fig. 11: Boxplots of evaluations results from 4 training sessions for each method in 2 scenarios. (a) Abandonment scenario; (b)
+Recovery scenario;
+0
+20000
+40000
+60000
+80000
+100000
+Episodes
+40
+30
+20
+10
+0
+10
+20
+Episode Rewards
+AACFT w/ PER
+AACFT w/o PER
+Fig. 12: Reward curves from 4 training sessions for AACFT
+with and without PER in patrol scenario.
+Additional Sampling Rate = NPER −NUNIF
+NUNIF
+× 100%,
+(13)
+where NPER represents the number of a certain type’s transitions
+using PER, while NUNIF denotes the number of this type’s
+transitions under uniform sampling not using PER.
+In Fig. 13(a), we demonstrate the degree of PER’s preference
+for post-fault transitions. It can be observed that during the
+first 40000 episodes, the Additional Sampling Rate fluctuates
+around 0, indicating no significant bias towards pre-fault or
+post-fault transitions. However, as the training progresses, its
+value increases to nearly 30%, suggesting a tendency to train
+post-fault transitions once the pre-fault transitions have achieved
+satisfactory training results.
+Fig. 13(b) illustrates which timesteps PER is more inclined
+to select from among all pre-fault transitions. It can be observed
+that transitions from later time steps are significantly more
+likely to be sampled. This is because earlier transitions are
+often repeated, and once sufficiently trained, their training
+frequency can be reduced. The higher the time step, the closer
+the transitions are to the occurrence of the fault, indicating
+that PER better prepares AACFT for fault occurrences.
+Through the above experiments, we demonstrate how PER
+improves training effectiveness on fault issues by preferentially
+selecting specific transitions.
+6) Adaptability to Time: The adaptability of algorithms to
+fault time is of concern due to the fact that the fault time
+of agents is often unpredictable in practice. We evaluate our
+AACFT model on different time steps of fault, each for 2000
+episodes. As exhibited in Table I, AACFT exhibits a high
+task completion rate, which increases with the delay of fault
+time, consistent with the intuitive expectation of a fault-tolerant
+system.
+
+13
+0
+20000
+40000
+60000
+80000
+100000
+Timestep
+-10%
+0%
+10%
+20%
+30%
+Additional Sampling Rate
+(a)
+0
+5
+10
+15
+20
+25
+30
+Timestep
+-25%
+0%
+25%
+50%
+75%
+100%
+125%
+150%
+175%
+Additional Sampling Rate
+(b)
+Fig. 13: Additional sampling rate in batches for training the critic for AACFT with PER in patrol scenario. (a) Additional
+sampling rate of post-fault transitions during training; (b) Additional sampling rate of pre-fault transitions at different time steps.
+TABLE I: Performance on different time steps of fault.
+FAULT TIME
+COMPLETION RATE
+5
+0.789
+10
+0.770
+15
+0.798
+20
+0.808
+25
+0.846
+NO FAULT
+0.841
+VII. CONCLUSION
+In this paper, we propose a method that combines optimized
+model architecture with training data sampling strategy to
+address potential faults in MARL. Our algorithm leverages
+an attention mechanism to automatically identify faults and
+dynamically adjust the level of attention given to fault-related
+information. Simultaneously, a prioritization mechanism is
+employed to adjust the tendency of sample selection. These
+features allow the algorithm to automatically and efficiently
+utilize valuable data, effectively addressing the critical issues
+of fault tolerance.
+Moreover, we have developed and open-sourced a new
+platform to support researchers in studying fault tolerance in
+MARL. Experimental results demonstrate that our method not
+only addresses the unique problems specific to MARL but also
+effectively deals with common issues such as communication
+maintenance and task allocation brought about by faults.
+Looking ahead, we plan to design more types of faults
+within our platform to examine whether our method can adapt
+to the effects of different fault information and enhance its
+generalizability. Concurrently, we will explore the performance
+of the proposed method in more complex environments to
+further validate and enhance the method’s effectiveness and
+practicality.
+REFERENCES
+[1] B. R. Kiran, I. Sobh, V. Talpaert, P. Mannion, A. A. A. Sallab,
+S. Yogamani, and P. P´erez, “Deep reinforcement learning for autonomous
+driving: A survey,” IEEE Transactions on Intelligent Transportation
+Systems, vol. 23, no. 6, pp. 4909–4926, 2022.
+[2] G. Xu, X. Kang, H. Yang, Y. Wu, W. Liu, J. Cao, and Y. Liu,
+“Distributed multi-vehicle task assignment and motion planning in
+dense environments,” IEEE Transactions on Automation Science and
+Engineering, vol. 21, no. 4, pp. 7027–7039, 2024.
+[3] E. M. Mianji, M. Fardad, G.-M. Muntean, and I. Tal, “A survey on multi-
+agent reinforcement learning applications in the internet of vehicles,” in
+2024 IEEE 99th Vehicular Technology Conference (VTC2024-Spring),
+2024, pp. 1–7.
+[4] X. Dong, Y. Hua, Y. Zhou, Z. Ren, and Y. Zhong, “Theory and experiment
+on formation-containment control of multiple multirotor unmanned
+aerial vehicle systems,” IEEE Transactions on Automation Science and
+Engineering, vol. 16, no. 1, pp. 229–240, 2019.
+[5] J. Hu, H. Zhang, L. Song, R. Schober, and H. V. Poor, “Cooperative
+internet of uavs: Distributed trajectory design by multi-agent deep
+reinforcement learning,” IEEE Transactions on Communications, vol. 68,
+no. 11, pp. 6807–6821, 2020.
+[6] M. Bettini, A. Shankar, and A. Prorok, “Heterogeneous multi-robot
+reinforcement learning,” in Proceedings of the 2023 International
+Conference on Autonomous Agents and Multiagent Systems, 2023, pp.
+1485–1494.
+[7] M. E. Valcher and G. Parlangeli, “On the effects of communication
+failures in a multi-agent consensus network,” in 2019 23rd International
+Conference on System Theory, Control and Computing (ICSTCC), 2019,
+pp. 709–720.
+[8] J. J. Chung, D. Mikli´c, L. Sabattini, K. Tumer, and R. Siegwart, “The
+impact of agent definitions and interactions on multiagent learning for
+coordination in traffic management domains,” Autonomous Agents and
+Multi-Agent Systems, vol. 34, pp. 1–27, 2020.
+[9] H. Yang, Q.-L. Han, X. Ge, L. Ding, Y. Xu, B. Jiang, and D. Zhou,
+“Fault-tolerant cooperative control of multiagent systems: A survey of
+trends and methodologies,” IEEE Transactions on Industrial Informatics,
+vol. 16, no. 1, pp. 4–17, 2020.
+[10] ——, “Fault-tolerant cooperative control of multiagent systems: A
+survey of trends and methodologies,” IEEE Transactions on Industrial
+Informatics, vol. 16, no. 1, pp. 4–17, 2020.
+[11] Y. Li, F. Wang, M. Sader, Z. Liu, and Z. Chen, “Fault-tolerant
+consensus of leader–following multi-agent systems with jointly connected
+topologies,” Transactions of the Institute of Measurement and Control,
+vol. 45, no. 9, pp. 1747–1754, 2023.
+[12] W. Liu, W. Liu, X. Lv, Z. Mao, and B. Jiang, “Fault-tolerant formation
+for multi-uav via improved artificial potential field method,” in 2021 CAA
+Symposium on Fault Detection, Supervision, and Safety for Technical
+Processes (SAFEPROCESS), 2021, pp. 1–6.
+[13] R. S. Sutton, D. McAllester, S. Singh, and Y. Mansour, “Policy
+gradient methods for reinforcement learning with function approximation,”
+Advances in neural information processing systems, vol. 12, 1999.
+[14] K. Li and Q.-S. Jia, “Multi-agent reinforcement learning with decentral-
+ized distribution correction,” IEEE Transactions on Automation Science
+and Engineering, pp. 1–13, 2024.
+
+14
+[15] R. Lowe, Y. I. Wu, A. Tamar, J. Harb, O. Pieter Abbeel, and I. Mordatch,
+“Multi-agent actor-critic for mixed cooperative-competitive environments,”
+Advances in neural information processing systems, vol. 30, 2017.
+[16] C. Yu, A. Velu, E. Vinitsky, J. Gao, Y. Wang, A. Bayen, and Y. WU,
+“The surprising effectiveness of ppo in cooperative multi-agent games,”
+in Advances in Neural Information Processing Systems, vol. 35, 2022,
+pp. 24 611–24 624.
+[17] T. Schaul, “Prioritized experience replay,” 4rd International Conference
+on Learning Representations, ICLR 2016, 2016.
+[18] S. Kumar and P. R. Cohen, “Towards a fault-tolerant multi-agent system
+architecture,” in Proceedings of the fourth international conference on
+Autonomous agents, 2000, pp. 459–466.
+[19] Y. Arfat and F. E. Eassa, “A survey on fault tolerant multi agent system,”
+IJ Inf. Technol. Comput. Sci, vol. 9, pp. 39–48, 2016.
+[20] Z. Liu, Z. Han, and W. He, “Adaptive fault-tolerant boundary control of
+an autonomous aerial refueling hose system with prescribed constraints,”
+IEEE Transactions on Automation Science and Engineering, vol. 19,
+no. 4, pp. 2678–2688, 2022.
+[21] D. Zhu, L. Wang, H. Zhang, and S. X. Yang, “A goa-based fault-tolerant
+trajectory tracking control for an underwater vehicle of multi-thruster
+system without actuator saturation,” IEEE Transactions on Automation
+Science and Engineering, vol. 21, no. 1, pp. 771–782, 2024.
+[22] H. Pei, J. Zhang, Y. Zhang, X. Pei, S. Feng, and L. Li, “Fault-tolerant
+cooperative driving at signal-free intersections,” IEEE Transactions on
+Intelligent Vehicles, vol. 8, no. 1, pp. 121–134, 2022.
+[23] M. A. Kamel, X. Yu, and Y. Zhang, “Fault-tolerant cooperative control
+design of multiple wheeled mobile robots,” IEEE Transactions on Control
+Systems Technology, vol. 26, no. 2, pp. 756–764, 2018.
+[24] S. Li, Y. Wu, X. Cui, H. Dong, F. Fang, and S. Russell, “Robust multi-
+agent reinforcement learning via minimax deep deterministic policy
+gradient,” in Proceedings of the AAAI conference on artificial intelligence,
+vol. 33, no. 01, 2019, pp. 4213–4220.
+[25] S. Li, J. Guo, J. Xiu, R. Xu, X. Yu, J. Wang, A. Liu, Y. Yang, and
+X. Liu, “Byzantine robust cooperative multi-agent reinforcement learning
+as a bayesian game,” arXiv preprint arXiv:2305.12872, 2023.
+[26] T. Rashid, M. Samvelyan, C. Schroeder, G. Farquhar, J. Foerster,
+and S. Whiteson, “QMIX: Monotonic value function factorisation for
+deep multi-agent reinforcement learning,” in Proceedings of the 35th
+International Conference on Machine Learning, ser. Proceedings of
+Machine Learning Research, J. Dy and A. Krause, Eds., vol. 80, 10–15
+Jul 2018, pp. 4295–4304.
+[27] J. Foerster, G. Farquhar, T. Afouras, N. Nardelli, and S. Whiteson,
+“Counterfactual multi-agent policy gradients,” in Proceedings of the AAAI
+conference on artificial intelligence, vol. 32, no. 1, 2018.
+[28] Q. Long, Z. Zhou, A. Gupta, F. Fang, Y. Wu, and X. Wang, “Evolutionary
+population curriculum for scaling multi-agent reinforcement learning,”
+in International Conference on Learning Representations, 2019.
+[29] M. Brittain and P. Wei, “Scalable autonomous separation assurance with
+heterogeneous multi-agent reinforcement learning,” IEEE Transactions
+on Automation Science and Engineering, vol. 19, no. 4, pp. 2837–2848,
+2022.
+[30] C. Yu, X. Yang, J. Gao, J. Chen, Y. Li, J. Liu, Y. Xiang, R. Huang,
+H. Yang, Y. Wu et al., “Asynchronous multi-agent reinforcement learning
+for efficient real-time multi-robot cooperative exploration,” in Proceedings
+of the 2023 International Conference on Autonomous Agents and
+Multiagent Systems, 2023, pp. 1107–1115.
+[31] P. Li, J. Hao, H. Tang, Y. Zheng, and X. Fu, “Race: improve multi-agent
+reinforcement learning with representation asymmetry and collaborative
+evolution,” in International Conference on Machine Learning, 2023, pp.
+19 490–19 503.
+[32] C. Miao, Y. Cui, H. Li, and X. Wu, “Effective multi-agent deep
+reinforcement learning control with relative entropy regularization,” IEEE
+Transactions on Automation Science and Engineering, pp. 1–15, 2024.
+[33] Y. Zhu, S. Huang, B. Zuo, D. Zhao, and C. Sun, “Multi-task multi-
+agent reinforcement learning with task-entity transformers and value
+decomposition training,” IEEE Transactions on Automation Science and
+Engineering, pp. 1–14, 2024.
+[34] R. E. Wang, M. Everett, and J. P. How, “R-maddpg for partially
+observable environments and limited communication,” arXiv preprint
+arXiv:2002.06684, 2020.
+[35] O. Kilinc and G. Montana, “Multi-agent deep reinforcement learning
+with extremely noisy observations,” arXiv preprint arXiv:1812.00922,
+2018.
+[36] G. Brauwers and F. Frasincar, “A general survey on attention mechanisms
+in deep learning,” IEEE Transactions on Knowledge & Data Engineering,
+no. 01, pp. 1–1, 2021.
+[37] D. Bahdanau, K. H. Cho, and Y. Bengio, “Neural machine translation by
+jointly learning to align and translate,” in 3rd International Conference
+on Learning Representations, ICLR 2015, 2015.
+[38] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez,
+Ł. Kaiser, and I. Polosukhin, “Attention is all you need,” Advances in
+neural information processing systems, vol. 30, 2017.
+[39] S. Minaee, T. Mikolov, N. Nikzad, M. Chenaghlu, R. Socher, X. Ama-
+triain, and J. Gao, “Large language models: A survey,” arXiv preprint
+arXiv:2402.06196, 2024.
+[40] V. Mnih, N. Heess, A. Graves et al., “Recurrent models of visual attention,”
+Advances in neural information processing systems, vol. 27, 2014.
+[41] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai,
+T. Unterthiner, M. Dehghani, M. Minderer, G. Heigold, S. Gelly et al.,
+“An image is worth 16x16 words: Transformers for image recognition at
+scale,” in International Conference on Learning Representations, 2020.
+[42] S. Iqbal and F. Sha, “Actor-attention-critic for multi-agent reinforcement
+learning,” in International conference on machine learning, 2019, pp.
+2961–2970.
+[43] T. Phan, F. Ritz, P. Altmann, M. Zorn, J. N¨ußlein, M. K¨olle, T. Gabor,
+and C. Linnhoff-Popien, “Attention-based recurrence for multi-agent rein-
+forcement learning under stochastic partial observability,” in International
+Conference on Machine Learning, 2023, pp. 27 840–27 853.
+[44] Z. Hu, Z. Zhang, H. Li, C. Chen, H. Ding, and Z. Wang, “Attention-
+guided contrastive role representations for multi-agent reinforcement
+learning,” arXiv preprint arXiv:2312.04819, 2023.
+[45] Y. He, X. Li, Y. Xu, Q. Zhu, and S. Lu, “Novel distributed grus based
+on hybrid self-attention mechanism for dynamic soft sensing,” IEEE
+Transactions on Automation Science and Engineering, vol. 21, no. 4, pp.
+5161–5172, 2024.
+[46] Y. Li, J. Yang, Y. Song, L. Cao, J. Luo, and L.-J. Li, “Learning from
+noisy labels with distillation,” in Proceedings of the IEEE international
+conference on computer vision, 2017, pp. 1910–1918.
+[47] H.-C. Wang, S.-C. Huang, P.-J. Huang, K.-L. Wang, Y.-C. Teng, Y.-T.
+Ko, D. Jeon, and I.-C. Wu, “Curriculum reinforcement learning from
+avoiding collisions to navigating among movable obstacles in diverse
+environments,” IEEE Robotics and Automation Letters, vol. 8, no. 5, pp.
+2740–2747, 2023.
+[48] A. Shrivastava, A. Gupta, and R. Girshick, “Training region-based object
+detectors with online hard example mining,” in Proceedings of the IEEE
+conference on computer vision and pattern recognition, 2016, pp. 761–
+769.
+[49] M. L. Littman, “Markov games as a framework for multi-agent rein-
+forcement learning,” in Machine learning proceedings 1994, 1994, pp.
+157–163.
+[50] L. P. Kaelbling, M. L. Littman, and A. R. Cassandra, “Planning and
+acting in partially observable stochastic domains,” Artificial intelligence,
+vol. 101, no. 1-2, pp. 99–134, 1998.
+[51] T. Lilicrap, J. Hunt, A. Pritzel, N. Hess, T. Erez, D. Silver, Y. Tassa, and
+D. Wiestra, “Continuous control with deep reinforcement learning,” in
+International Conference on Learning Representations, 2016.
+[52] E. Liang, R. Liaw, R. Nishihara, P. Moritz, R. Fox, J. Gonzalez,
+K. Goldberg, and I. Stoica, “Ray rllib: A composable and scalable
+reinforcement learning library,” arXiv preprint arXiv:1712.09381, vol. 85,
+p. 245, 2017.
+[53] A. Stooke and P. Abbeel, “rlpyt: A research code base for deep
+reinforcement learning in pytorch,” arXiv preprint arXiv:1909.01500,
+2019.
+[54] L. Biewald, “Experiment tracking with weights and biases,” 2020,
+software
+available
+from
+wandb.com.
+[Online].
+Available:
+https:
+//www.wandb.com/

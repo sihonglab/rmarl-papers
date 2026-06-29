@@ -1,0 +1,802 @@
+2022 IEEE INTERNATIONAL WORKSHOP ON MACHINE LEARNING FOR SIGNAL PROCESSING, AUG. 22–25, 2022, XI’AN, CHINA
+DATA-DRIVEN ROBUST MULTI-AGENT REINFORCEMENT LEARNING
+Yudan Wang†
+Yue Wang†
+Yi Zhou⋆
+Alvaro Velasquez‡
+Shaofeng Zou†
+†Department of Electrical Engineering, University at Buffalo
+⋆Department of Electrical and Computer Engineering, University of Utah
+‡ Information Directorate, Air Force Research Laboratory
+†{yudanwan, ywang294, szou3}@buffalo.edu, ⋆yi.zhou@utah.edu, ‡alvaro.velasquez.1@us.af.mil
+ABSTRACT
+Multi-agent reinforcement learning (MARL) in the collabo-
+rative setting aims to find a joint policy that maximizes the
+accumulated reward averaged over all the agents. In this pa-
+per, we focus on MARL under model uncertainty, where the
+transition kernel is assumed to be in an uncertainty set, and
+the goal is to optimize the worst-case performance over the
+uncertainty set. We investigate the model-free setting, where
+the uncertain set centers around an unknown Markov deci-
+sion process from which a single sample trajectory can be
+obtained sequentially. We develop a robust multi-agent Q-
+learning algorithm, which is model-free and fully decentral-
+ized. We theoretically prove that the proposed algorithm con-
+verges to the minimax robust policy, and further character-
+ize its sample complexity. Our algorithm, comparing to the
+vanilla multi-agent Q-learning, offers provable robustness un-
+der model uncertainty without incurring additional computa-
+tional and memory cost.
+Index Terms— Distributionally robust, model-free, sam-
+ple complexity, finite-time analysis, robust MDP
+1. INTRODUCTION
+Multi-agent reinforcement learning (MARL) [1] finds a wide
+range of applications in modern artificial intelligence applica-
+tions, where multiple autonomous agents interact with a com-
+mon stochastic environment [2, 3, 4]. Multi-agent systems are
+usually distributed, and agents communicate through wireless
+channel, and therefore, they are vulnerable to external pertur-
+bations and adversarial attacks, which may result in a model
+deviation, and further lead to a significant performance degra-
+dation. However, existing results typically assume that the
+policy will be deployed in the same environment as the one
+where training samples are taken [5], and thus may not per-
+form well when there is model deviation between the train-
+ing and test environments. In this paper, we develop a robust
+MARL approach, where the Markov decision process (MDP)
+model is not fixed but lies in an uncertainty set, and the goal is
+to optimize the worst-case performance over the uncertainty
+set.
+The framework of robust MDP was developed in [6, 7, 8]
+for the single-agent setting. A robust dynamic programming
+approach was developed, and was shown to be minimax opti-
+mal. This approach, however, requires full knowledge of the
+uncertainty set, and does not scale well to large or continuous
+problems. Following this framework, model-free approaches
+with function approximation are developed, e.g., [9, 10], but
+the convergence results require a stringent condition on the
+discount factor. There are also heuristic approaches on robust
+RL, e.g., [11, 12, 13, 14, 15], but they lack in provable per-
+formance guarantee. More importantly, the above studies are
+mostly focused on the single-agent case. Recently, the work
+[16] studied reward uncertainty in MARL, but did not take
+into consideration the Markov transition kernel uncertainty.
+There are also studies on MARL, e.g., [17, 18, 19, 20, 1], but
+they are limited to the non-robust case.
+In this paper, we investigate the problem of robust MARL
+in the collaborative setting with uncertainty in the Markov
+transition kernel, where the agents aim to maximize the accu-
+mulative average reward over all the agents under the worst-
+case Markov transition kernel in the uncertainty set. We gen-
+eralize the single-agent robust Q-learning algorithm in [21]
+to the decentralized multi-agent setting, where there is no fu-
+sion center, each agent’s reward information is only locally
+observable, and each agent may only communicate with its
+neighbors in the network.
+Our contributions in this paper
+can be summarized in three-fold. First, we design an on-
+line model-free multi-agent robust Q-learning (MARQ) algo-
+rithm. Our MARQ algorithm can be updated in an online and
+incremental fashion, and at each time, the agent only needs
+to communicate with its neighbors. Moreover, its compu-
+tational and memory complexity are the same as the vanilla
+Q-learning algorithm (within a constant factor). Second, we
+theoretically prove the convergence of MARQ, and derive its
+sample complexity in the tabular case, which matches with
+one of the centralized tabular Q-learning algorithm (within a
+constant factor). Our analysis is based on a novel combina-
+tion of distributed optimization [22] and robust reinforcement
+978-1-6654-8547-0/22//$31.00 ©2022 IEEE
+2022 IEEE 32nd International Workshop on Machine Learning for Signal Processing (MLSP) | 978-1-6654-8547-0/22/$31.00 ©2022 IEEE | DOI: 10.1109/MLSP55214.2022.9943500
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:08:55 UTC from IEEE Xplore.  Restrictions apply. 
+
+learning, which requires an explicit characterization of the
+distributed optimization error and the stochastic error in ro-
+bust Q-learning. Third, we numerically demonstrate the con-
+vergence and robustness of our algorithm. Our approach can
+be easily combined with the deep Q-learning algorithm [23]
+and the double Q-learning approach [24], and design robust
+deep Q-learning for large or continuous problems.
+2. PROBLEM MODEL
+A decentralized multi-agent MDP can be represented by
+a tuple ⟨S, A, P, N, G, r, γ⟩, where S denotes the state
+space and |S| is the number of the states; A denotes the
+joint action space which can be factorized as ⊗N
+i=1A(i)
+and A(i) is the action space of agent i; N is the set of all
+agents and |N| = N denotes the number of all agents;
+P = {ps,a ∈∆(S)|s, a ∈S × A} is the transition kernel;
+G is an undirected graph with node set N and edge set E;
+r = {r(i)}i∈N is the set of reward functions and r(i) is the
+reward function for agent i; and γ is the discount factor. The
+weight matrix is denoted by G, specifically, the weight for
+the edge connecting nodes i and j is denoted by Gi,j, and is
+non-negative. For agent i, denote by N(i) = {j|Gi,j ̸= 0}
+the neighbors of i.
+Let r(i)
+t
+denote the reward received by agent i at time t,
+and ¯rt =
+1
+N
+PN
+i=1 r(i)
+t
+denote the average reward over all the
+agents at time t. At each time t, each agent i chooses its
+action a(i)
+t
+given st according to a local policy π(i)(a(i)
+t |st),
+which is a distribution over A(i). Denote by at = {a(i)
+t }i∈N
+the joint action. We define the joint policy of all agents as
+π(at|st) = Q
+i∈N π(i)(a(i)
+t |st). Here, we focus on the decen-
+tralized setting where there is no fusion center, and two agents
+communicate with each other only if there is an edge connect-
+ing them. We follow the standard multi-agent RL model, e.g.,
+[17], and assume that the state and the joint action are fully
+observable to each agent, but the reward can only be observed
+locally, i.e., r(i)
+t
+is only observable to agent i.
+In this paper, we focus on robust MARL with uncertain
+transition kernel. Specifically, the transition kernel P is not
+fixed, but lies in an uncertainty set P, i.e., P ∈P. Denote
+the transition kernel at time t by Pt ∈P. Let τ = {Pt}t≥0,
+which is referred to as the nature’s policy (as in [8]). The
+collection of all possible τ is denoted by T . We focus on the
+(s, a)-rectangular uncertainty set [7, 8], i.e., P = N
+s,a Ps,a,
+where Ps,a ⊆∆(S).
+We define the robust value function for a given joint policy
+π as:
+Vπ(s) = min
+τ∈T Eτ
+" ∞
+X
+t=0
+γt¯rt(st, at)
+s0 = s, π
+#
+,
+(1)
+where Eτ denotes the expectation when the state transition
+is according to τ. Similarly, we can define robust Q-value
+function of the policy π as:
+Qπ(s, a) = min
+τ∈T Eτ
+" ∞
+X
+t=0
+γt¯rt(st, at)
+s0 = s, a0 = a, π
+#
+,
+(2)
+The goal is to maximize Qπ(s, a) for any s ∈S and any
+a ∈A:
+max
+π
+Qπ(s, a), ∀s ∈S and a ∈A.
+(3)
+We denote the solution to (3) by π∗, Vπ∗by V ∗, and Qπ∗by
+Q∗. We also have that V ∗(s) = maxa∈A Q∗(s, a).
+We then present the following strong duality results and
+robust analog of the Bellman recursion in [25].
+Theorem 1. [25, Thm 1 (Robust Dynamic Programming)]
+The following strong duality condition holds for all s ∈S:
+max
+π
+min
+τ
+Eτ
+" n
+X
+t=0
+γt¯rt(st, at)
+s0 = s, π
+#
+= min
+τ
+max
+π
+Eτ
+" n
+X
+t=0
+γt¯rt(st, at)
+s0 = s, π
+#
+.
+(4)
+The optimal robust value function satisfies the following
+Bellman equation: V ∗(s) = maxa{¯r(s, a) + γσPs,a(V ∗)},
+where σPs,a(V ∗)
+=
+minp(·|s,a)∈Ps,a Es′∼p(·|s,a)[V ∗(s′)].
+The optimal robust action-value function satisfies Q∗(s, a) =
+¯r(s, a) + γσPs,a(V ∗).
+In this paper, we focus on the R-contamination uncer-
+tainty set. Specifically, for any s ∈S and a ∈A, define
+the uncertainty set Ps,a:
+Ps,a := {(1 −R)ˆps,a + Rq|q ∈∆(S)},
+(5)
+where ˆps,a denotes the centroid of the uncertainty set. In this
+paper, ˆps,a is unknown, but samples from ˆps,a can be obtained
+sequentially.
+The R-contamination model was firstly introduced in
+[26] (named as ϵ-contamination), and has been widely used
+to model distributional uncertainty.
+The R-contamination
+set models the scenario where the state transition could be
+arbitrarily perturbed with a small probability R, hence is
+more suitable for systems suffering from random pertur-
+bations, adversarial attacks, and outliers in sampling. The
+R-contamination set can also be connected to uncertainty
+sets defined by total variation, KL-divergence and Hellinger
+distance via inequalities, e.g., Pinsker’s inequality.
+3. MULTI-AGENT ROBUST Q-LEARNING
+In this section, we present the design and finite-sample analy-
+sis for our multi-agent robust Q-learning (MARQ) algorithm.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:08:55 UTC from IEEE Xplore.  Restrictions apply. 
+
+From the robust Bellman equation (Theorem 1), we have
+Q∗(s, a) = ¯r(s, a) + γσPs,a(V ∗(s)),
+(6)
+Consider the R-contamination set in (5), the support function
+in (6) can be further written as
+σPs,a(V ∗)
+(7)
+=
+min
+ps,a∈Ps,a Es′∼ps,a[V ∗(s′)]
+= (1 −R)Es′∼ˆps,a[V ∗(s′)] + R min
+s′∈S V ∗(s′)
+= (1 −R)Es′∼ˆps,a[V ∗(s′)] + R min
+s′∈S max
+a′∈A Q∗(s′, a′).
+We will then develop a stochastic and decentralized algorithm
+based on the robust Bellman equation.
+Note that in the decentralized setting, the reward is ob-
+servable only locally, and each agent can only communicate
+with its neighbors since there is no fusion center. Moreover, in
+practice, agents may also want to keep their reward informa-
+tion private. To address this challenge, we generalize the idea
+of distributed optimization, and design our MARQ algorithm
+in Algorithm 1. Specifically, at each time t, agent i keeps
+its local copy of the Q-table Q(i)
+t
+for i ∈N. The Q-table is
+firstly updated according to a stochastic version of the robust
+Bellman equation in (6) using only local reward information.
+Then, each agent collects local estimates of the Q-table from
+its neighbors, and compute the average, which is referred to
+as “average consensus”.
+Algorithm 1 Multi-Agent Robust Q-learning (MARQ)
+Initialization:
+T, Q0
+=
+{Q(i)
+0 }N
+i=1, πb, s0, t
+=
+0,
+αt
+1: for t ≤T do
+2:
+Each agent i takes action a(i)
+t
+∼π(i)
+b (·|st), and re-
+ceives reward r(i)
+t
+for i ∈N
+3:
+Each agent observes st+1 and at,
+4:
+for i = 1, .., N do
+5:
+V (i)
+t
+(s) = maxa∈A Q(i)
+t (s, a), for every s ∈S
+6:
+¯Q(i)
+t+1(st, at) = (1 −αt)Q(i)
+t (st, at) + αt(r(i)
+t
++
+γR mins∈S V (i)
+t
+(s) + γ(1 −R)V (i)
+t
+(st+1))
+7:
+end for
+8:
+Each agent i sent Q(i)
+t
+to its neighbors
+9:
+Q(i)
+t+1 = P
+j∈N(i) Gi,j ¯Q(i)
+t+1, for all i ∈N
+10: end for
+Output: QT
+In the algorithm, Qt is the collection of the Q-table esti-
+mates at all the agents, and thus is of the dimension |S||A| ×
+N, and πb denotes the behavior policy.
+In the following, we show that the estimate at each agent
+i converges almost surely to the optimal Q∗, i.e., Q(i)
+T →Q∗
+as T →∞. We will further characterize the finite-time error
+bound for the MARQ algorithm.
+We first make three standard assumptions.
+Assumption 1. [17] The non-negative matrix G satisfies:
+a. G is a double stochastic matrix, i.e., G1 = 1 and 1⊤G =
+1⊤, where 1 denotes an all-one vector with dimension N.
+Moreover, there exists constant η ∈(0, 1) such that for any
+Gi,j > 0, Gi,j ≥η.
+b. The weight Gi,j of edge connecting nodes i, j is non-zero
+if and only if (i, j) ∈E.
+c. Let J = [ 1
+N ]N×N. The largest eigenvalue of matrix G −J,
+denoted by λmax, is strictly less than 1.
+Under Assumption 1, limt→∞Gt = J [22].
+Assumption 2. The learning rate αt satisfies that:
+a. P
+t αt = ∞, P
+t α2
+t < ∞.
+b.
+αt−t′
+αt
+≤Kc + Kat′, for any t′ < t, where Ka and Kc are
+constants.
+Assumption 3. [27] [Bounded Reward] The reward r(i)(s, a)
+is bounded, r(i)(s, a) ≤Rmax, ∀s ∈S, a ∈A, i ∈N.
+We first show that our MARQ algorithm converges almost
+surely in the following theorem.
+Theorem 2 (Asymptotic Convergence). Under Assumptions
+1-3, Q(i)
+T →Q∗as T →∞for any i ∈N almost surely.
+The proof of this theorem follows from a novel general-
+ization of the stochastic approximation convergence analysis
+to the decentralized setting.
+In the following, we further characterize the finite-time
+error bound and sample complexity of our MARQ algorithm.
+We make the following assumption that is commonly used in
+reinforcement learning analysis [27, 28].
+Assumption 4. The Markov chain induced by the behavior
+policy πb and transition kernel ˆp is uniformly ergodic.
+Denote by µπb the stationary distribution induced by the
+behavior policy πb and the transition kernel ˆP s,a. Then define
+µmin :=
+min
+s∈S,a∈A µπb(s, a),
+tmix := min
+
+t
+
+max
+s0∈S,a0∈A dT V (P t(·|s0, a0), µπb) ≤1
+4
+
+where P t(·|s0, a0) denotes the distribution of (st, at) condi-
+tioned on the initial state and action (s0, a0), and dT V (µ, ν)
+denotes the total variation distance between two probability
+measures µ and ν. Based the definition of tmix, for any t >
+tmix, the distribution of (st, at) is close to the stationary dis-
+tribution µπb with total variation distance less than 1
+4.
+Theorem 3 (Finite-time Error Bound). Under Assumptions
+1- 4, consider the MARQ algorithm in Algorithm 1. For any
+0 < ϵ < min
+
+1
+1−γ ,
+(1−R)2(1−λmax)γ log(
+|S||A|
+δ
+)
+4c1
+√
+NRmax(1−γ)2
+
+,
+||QT −Q∗||∞< 5ϵ
+(8)
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:08:55 UTC from IEEE Xplore.  Restrictions apply. 
+
+with probability at least 1 −6δ, when
+T ≥
+c0
+µmin
+
+1
+(1 −γ)5ϵ2 + tmix
+1 −γ
+
+log
+|S||A|T
+δ
+
+· log
+
+1
+(1 −γ)2ϵ
+
++
+1
+log(λmax) log
+ ϵ(1 −γ)2
+4
+√
+NRmaxγ
+
+,
+(9)
+αt =
+c1
+log( |S||A|T
+δ
+)
+min
+ (1 −γ)4ϵ2
+(1 −R)2γ2 , 1
+tmix
+
+,
+(10)
+where c0 and c1 are some positive constants.
+On the right hand side of (8), 2ϵ is from the error of aver-
+age consensus, and 3ϵ is from the error of Q-learning. Note
+that there are two terms in (9), where the first term is due to
+the stochastic error, and the second term is due to the aver-
+age consensus error in the decentralized setting. The overall
+sample size of our MARQ algorithm is O(
+1
+(1−γ)5ϵ2 + tmix
+1−γ +
+log
+√
+N
+ϵ(1−γ)), which matches with the single agent and central-
+ized settings in [21] and [27] (within a constant factor and
+for a large range of N). It can also be observed that as N
+increases, more samples will be needed in order to make the
+average consensus error small.
+Here we provide a proof sketch of Theorem 3 that high-
+lights the major technical steps.
+Proof Sketch. Recall that Qt = {Q(i)
+t }i∈N is |S||A| × N di-
+mensional matrix, and Q∗is an |S||A|×1 dimensional vector
+defined in (3). Let ⟨Qt⟩= QtJ.
+For any |S||A| × N dimensional matrix Q, let Q(s, a)
+denote its (s, a)-th row. We then define the D-norm of Q
+as ||Q||D = maxa∈A, s∈S ||Q(s, a)||2. It can be shown that
+|| · ||D is a norm, and is upper bounded by the infinity norm.
+We will show that Qt →Q∗1⊤, i.e., Q(i)
+t
+→Q∗for any
+i ∈N as t →∞. By the triangle inequality,
+||Qt −Q∗1⊤||D ≤||Qt −⟨Qt⟩||D
+|
+{z
+}
+part I
++ ||⟨Qt⟩−⟨Q∗1⊤⟩||D
+|
+{z
+}
+part II
+,
+where part II follows from the fact that ⟨Q∗1⊤⟩= Q∗1⊤J =
+Q∗1⊤. Note that part I in (11) is the error of one-step average
+consensus, and part II in (11) is the error in Q-learning.
+It can be shown that
+part I ≤λt
+max||Q⊥,0||D +
+2λmaxαt
+√
+N Rmax
+1−γ
+1 −λmax
+.
+(11)
+Note that αt ∼O(ϵ2), and thus the second term in
+(11) will is than
+ϵ(1−γ)
+2γ
+when ϵ is small.
+To guarantee
+that first term in (11) is less than
+ϵ(1−γ)
+2γ
+, we need t ≥
+1
+log(λmax) log
+
+ϵ(1−γ)2
+4
+√
+NRmaxγ
+
+≜tI.
+We then bound part II. Let ∆t+1 := ⟨Qt+1⟩−Q∗1⊤, then
+part II= ||∆t+1||D. Let Λt ∈R|S||A|×|S||A| be a diagonal
+matrix:
+Λt((s, a), (s, a)) =
+(
+αt,
+if (s, a) = (st, at),
+0,
+otherwise.
+(12)
+Denote by λMAX(Λ) the largest eigenvalue of any matrix
+Λ. Set Pt ∈{0, 1}|S||A|×|S| such that Pt(st, at, st+1) = 1,
+and otherwise Pt(s, a, s′) = 0. Then, we can show that
+||∆t+1||D ≤λMAX(Πt
+j=tI(I −Λj))||∆tI||D
++ γλMAX
+ 
+t
+X
+i=tI
+||∆i||DΠt
+j=i+1(I −ΛJ)Λi
+!
++ γ(1 −R)
+
+t
+X
+i=tI
+Πt
+j=i+1(I −Λj)Λi(Pi −ˆp)V ∗
+
+D
++ γϵλMAX
+ 
+t
+X
+i=tI
+Πt
+j=i+1(I −Λj)Λi
+!
+,
+(13)
+where the first three terms are from the Q-learning stochastic
+error, and the last term is due to the error of average consen-
+sus. If we choose
+t −tI ≥c0
+µmin
+
+1
+(1 −γ)5ϵ2 + tmix
+1 −γ
+
+log
+|S||A|T
+δ
+
+· log
+
+1
+(1 −γ)2ϵ
+
+,
+(14)
+then (13) can be bounded by 4ϵ.
+4. NUMERICAL RESULT
+In this section, we compare our robust multi-agent Q-learning
+algorithm with the non-robust (vanilla) multi-agent Q-learning
+algorithm.
+We consider a multi-agent MDP with N = 5
+agents and |S| = 24 states. The action space for each agent
+is A(i) = {0, 1}, and thus the size of the joint action space
+is |A| = 32. We simulate our algorithm under a 23-point
+game, where the state space is S = {0, 1, 2, . . . , 23}. Then,
+we design an action mapping matrix, which maps each joint
+action a to a number n(a). Then, given the current state s, the
+transition kernel ˆp(·|s, a) is that the next state is s′ = s + a if
+s + n(a) ≤23 and s′ = 0 if s + n(a) > 23. When the next
+state is 23, agents 2, 3, 4 will get rewards 1, 4, 5, respectively.
+When the next state is larger than 15, and n(a) is larger than
+1, then agent 1 will get reward 0.8. At each step, each agent
+receives reward -0.2.
+We compare our MARQ with the vanilla non-robust
+multi-agent Q-learning. Here, the vanilla non-robust multi-
+agent Q-learning algorithm is Algorithm 1 with R = 0. We
+train our MARQ and non-robust multi-agent Q-learning al-
+gorithm in the training environment specified above, and then
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:08:55 UTC from IEEE Xplore.  Restrictions apply. 
+
+(a) R=0.2 p=0.2
+(b) R=0.3 p=0.2
+(c) R=0.3 p=0.3
+Fig. 1: MARQ v.s. Non-robust Decentralized Multi-agent Q-learning.
+evaluate the obtained policies in a perturbed environment.
+Here the perturbed environment is designed as follows. At
+state s if a joint action a is taken, then the system transits
+according to the transition kernel ˆp(·|s, a) with probability
+1−p, and transits to the worst-case state arg mins V ∗(s) with
+probability p. The behavior policy πb is a uniform distribu-
+tion over the joint action space A. Once the algorithm stops,
+each agent obtains its own policy by taking the greedy action
+with respect to its local estimate of the Q-function.
+We evaluate the performance every 40 steps. In Figure 1,
+we plot the average over 100 test episodes per evaluation step.
+Moreover, we plot the upper and lower envelops of the shaded
+which correspond to 10 and 90 percentiles of the 100 test
+episodes. It can be seen that our MARQ algorithm achieves
+a higher reward than the vanilla one on the perturbed envi-
+ronment, and hence is robust to distributional uncertainty and
+adversarial perturbations. It can also be seen that when the
+perturbation parameters R, p are small(i.e., the model mis-
+match is small), our algorithm performs similarly to the non-
+robust one; and when the parameters are larger, our MARQ
+algorithm performs much better.
+5. CONCLUSION
+In this paper, we design an efficient MARQ algorithm for
+robust multi-agent decentralized RL with uncertainty tran-
+sition kernel. We theoretically proved its convergence and
+provided its finite-time error bound. Our approach can be
+extended to make SARSA and other RL algorithms robust.
+Our future interest is to generalize our idea, and combine
+with the deep Q-learning approach and double Q-learning ap-
+proach to solve robust RL problems with large or continu-
+ous state/action spaces.
+It is also of interest to generalize
+the robust policy gradient approach [29] to the decentralized
+multi-agents setting. Other type of uncertainty sets, e.g., KL-
+divergence and Wasserstein distance, are also of interest.
+6. ACKNOWLEDGEMENT
+The work of Yudan Wang, Yue Wang and Shaofeng Zou was
+supported in part by the National Science Foundation under
+Grants CCF-2106560 and CCF- 2007783. Yi Zhou’s work
+was supported in part by U.S. National Science Foundation
+under the grants CCF-2106216 and DMS-2134223.
+7. REFERENCES
+[1] Kaiqing Zhang, Zhuoran Yang, and Tamer Bas¸ar,
+“Multi-agent reinforcement learning:
+A selective
+overview of theories and algorithms,” Handbook of Re-
+inforcement Learning and Control, pp. 321–384, 2021.
+[2] Shai Shalev-Shwartz, Shaked Shammah, and Amnon
+Shashua, “Safe, multi-agent, reinforcement learning for
+autonomous driving,” arXiv preprint arXiv:1610.03295,
+2016.
+[3] Joel Z Leibo, Vinicius Zambaldi, Marc Lanctot, Janusz
+Marecki, and Thore Graepel,
+“Multi-agent reinforce-
+ment learning in sequential social dilemmas,” in Pro-
+ceedings of the 16th Conference on Autonomous Agents
+and MultiAgent Systems, 2017, pp. 464–473.
+[4] Shiyong Wang, Jiafu Wan, Daqiang Zhang, Di Li, and
+Chunhua Zhang, “Towards smart factory for industry
+4.0: a self-organized multi-agent system with big data
+based feedback and coordination,” Computer Networks,
+vol. 101, pp. 158–168, 2016.
+[5] Richard S. Sutton and Andrew G. Barto, Reinforcement
+Learning: An Introduction, The MIT Press, Cambridge,
+Massachusetts, 2018.
+[6] J Andrew Bagnell, Andrew Y Ng, and Jeff G Schnei-
+der, “Solving uncertain Markov decision processes,” 09
+2001.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:08:55 UTC from IEEE Xplore.  Restrictions apply. 
+
+[7] Arnab Nilim and Laurent El Ghaoui,
+“Robustness in
+Markov decision problems with uncertain transition ma-
+trices,” in Proc. Advances in Neural Information Pro-
+cessing Systems (NIPS), 2004, pp. 839–846.
+[8] Garud N Iyengar,
+“Robust dynamic programming,”
+Mathematics of Operations Research, vol. 30, no. 2, pp.
+257–280, 2005.
+[9] Aurko Roy, Huan Xu, and Sebastian Pokutta, “Rein-
+forcement learning under model mismatch,”
+in Proc.
+Advances in Neural Information Processing Systems
+(NIPS), 2017, pp. 3046–3055.
+[10] Kishan Panaganti Badrinath and Dileep Kalathil, “Ro-
+bust reinforcement learning using least squares policy it-
+eration with provable performance guarantees,” in Proc.
+International Conference on Machine Learning (ICML).
+PMLR, 2021, pp. 511–520.
+[11] Eugene Vinitsky, Yuqing Du, Kanaad Parvate, Kathy
+Jang, Pieter Abbeel, and Alexandre Bayen,
+“Robust
+reinforcement learning using adversarial populations,”
+arXiv preprint arXiv:2008.01825, 2020.
+[12] Lerrel Pinto, James Davidson, Rahul Sukthankar, and
+Abhinav Gupta,
+“Robust adversarial reinforcement
+learning,”
+in Proc. International Conference on Ma-
+chine Learning (ICML). PMLR, 2017, pp. 2817–2826.
+[13] Linfang Hou, Liang Pang, Xin Hong, Yanyan Lan,
+Zhiming Ma, and Dawei Yin, “Robust reinforcement
+learning with wasserstein constraint,”
+arXiv preprint
+arXiv:2006.00945, 2020.
+[14] Yen-Chen Lin, Zhang-Wei Hong, Yuan-Hong Liao,
+Meng-Li Shih, Ming-Yu Liu, and Min Sun,
+“Tactics
+of adversarial attack on deep reinforcement learning
+agents,” in Proc. International Joint Conferences on Ar-
+tificial Intelligence (IJCAI), 2017, pp. 3756–3762.
+[15] Anay Pattanaik, Zhenyi Tang, Shuijing Liu, Gautham
+Bommannan, and Girish Chowdhary, “Robust deep re-
+inforcement learning with adversarial attacks,” in Proc.
+International Conference on Autonomous Agents and
+MultiAgent Systems, 2018, pp. 2040–2042.
+[16] Kaiqing Zhang, Tao Sun, Yunzhe Tao, Sahika Genc,
+Sunil Mallya, and Tamer Basar,
+“Robust multi-agent
+reinforcement learning with model uncertainty,”
+in
+Proc. Advances in Neural Information Processing Sys-
+tems (NeurIPS), 2020, vol. 33.
+[17] Kaiqing Zhang, Zhuoran Yang, Han Liu, Tong Zhang,
+and Tamer Basar, “Fully decentralized multi-agent re-
+inforcement learning with networked agents,” in Proc.
+International Conference on Machine Learning (ICML).
+PMLR, 2018, pp. 5872–5881.
+[18] Qinghua Liu, Yuanhao Wang, and Chi Jin,
+“Learn-
+ing markov games with adversarial opponents: Effi-
+cient algorithms and fundamental limits,” arXiv preprint
+arXiv:2203.06803, 2022.
+[19] Ziyi Chen, Yi Zhou, Rongrong Chen, and Shaofeng
+Zou, “Sample and communication-efficient decentral-
+ized actor-critic algorithms with finite-time analysis,”
+arXiv preprint arXiv:2109.03699, 2021.
+[20] Michael L Littman, “Markov games as a framework for
+multi-agent reinforcement learning,” in Machine learn-
+ing proceedings 1994, pp. 157–163. Elsevier, 1994.
+[21] Yue Wang and Shaofeng Zou,
+“Online robust rein-
+forcement learning with model uncertainty,”
+in Proc.
+Advances in Neural Information Processing Systems
+(NeurIPS), 2021.
+[22] Lin Xiao, Stephen Boyd, and Seung-Jean Kim, “Dis-
+tributed average consensus with least-mean-square devi-
+ation,” Journal of Parallel and Distributed Computing,
+vol. 67, no. 1, pp. 33–46, 2007.
+[23] V. Mnih, K. Kavukcuoglu, D. Silver, A. A. Rusu, J. Ve-
+ness, M. G. Bellemare, A. Graves, M. Riedmiller, A. K.
+Fidjeland, and G. Ostrovski,
+“Human-level control
+through deep reinforcement learning,” Nature, vol. 518,
+pp. 529–533, 2015.
+[24] Hado Van Hasselt, Arthur Guez, and David Silver,
+“Deep reinforcement learning with double Q-learning,”
+in Proc. the AAAI conference on artificial intelligence,
+2016, vol. 30.
+[25] Arnab Nilim and Laurent Ghaoui,
+“Robustness in
+markov decision problems with uncertain transition ma-
+trices,” Advances in Neural Information Processing Sys-
+tems (NIPS), vol. 16, 2003.
+[26] P. J. Huber, “A robust version of the probability ratio
+test,” Ann. Math. Statist., vol. 36, pp. 1753–1758, 1965.
+[27] Gen Li, Yuting Wei, Yuejie Chi, Yuantao Gu, and
+Yuxin Chen, “Sample complexity of asynchronous Q-
+learning: Sharper analysis and variance reduction,” in
+Proc. Advances in Neural Information Processing Sys-
+tems (NeurIPS), 2020.
+[28] Shaofeng Zou, Tengyu Xu, and Yingbin Liang, “Finite-
+sample analysis for SARSA with linear function approx-
+imation,” in Proc. Advances in Neural Information Pro-
+cessing Systems (NeurIPS), 2019, pp. 8665–8675.
+[29] Yue Wang and Shaofeng Zou, “Policy gradient method
+for robust reinforcement learning,”
+arXiv preprint
+arXiv:2205.07344, 2022.
+Authorized licensed use limited to: University of Texas at Arlington. Downloaded on June 27,2026 at 06:08:55 UTC from IEEE Xplore.  Restrictions apply. 

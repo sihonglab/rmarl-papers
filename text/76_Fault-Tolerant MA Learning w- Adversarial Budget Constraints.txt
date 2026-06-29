@@ -1,0 +1,3206 @@
+Learning Robust Multi-Agent Policies via Selective Adversarial Fault Induction
+David Mguni 1 Yaqi Sun 1 Haojun Chen 2 Wanrong Yang 3 Amir Darabi 4 Larry Olanrewaju Orimoloye 4
+Yaodong Yang 2
+Abstract
+We study robustness to agent malfunctions in
+cooperative multi-agent reinforcement learning
+(MARL), a failure mode that is critical in prac-
+tice yet underexplored in existing theory. We
+introduce MARTA, a plug-and-play robustness
+layer that augments standard MARL algorithms
+with a Switcher–Adversary mechanism which se-
+lectively induces malfunctions in performance-
+critical states. This formulation defines a fault-
+switching (N + 2)-player Markov game in which
+the Switcher chooses when and which agent fails,
+and the Adversary controls the resulting faulty be-
+haviour via random or worst-case policies. We
+develop a Q-learning-type scheme and show that
+the associated Bellman operator is a contraction,
+yielding existence and uniqueness of the minimax
+value, convergence to a Markov perfect equilib-
+rium. MARTA integrates seamlessly with MARL
+algorithms without architectural modification and
+consistently improves robustness across Traffic
+Junction (TJ), Level-Based Foraging (LBF), MPE
+SimpleTag, and SMAC (v2). In these domains,
+MARTA achieves large gains in final performance
+of up to 116.7% in SMAC, 21.4% in MPE Sim-
+pleTag, and 44.6% in LBF, while significantly re-
+ducing failure rates under train–test mismatched
+fault regimes. These results establish MARTA as
+a theoretically grounded and practically deploy-
+able mechanism for fault-tolerant MARL.
+1. Introduction
+In multi-agent systems (MAS), agents must anticipate one
+another’s actions and coordinate effectively in order to solve
+tasks (Albrecht et al., 2024). A fundamental assumption un-
+derlying most successful multi-agent reinforcement learning
+(MARL) methods is that agents reliably execute the actions
+1Queen
+Mary
+University
+London
+2Peking
+University
+3University of Liverpool 4Snowflake Inc. Correspondence to:
+David Mguni <d.mguni@qmul.ac.uk>.
+Preprint. February 20, 2026.
+prescribed by their learned policies. This assumption en-
+ables agents to coordinate with others whose actions may
+not be directly observable. To support such coordination,
+many MARL algorithms adopt centralised training with de-
+centralised execution (Rashid et al., 2018; Oliehoek et al.,
+2016). During training, agents have access to global infor-
+mation, while during execution they act using only local
+observations. This allows agents to form expectations about
+the behaviour of others under partial observability.
+Despite its effectiveness, this training paradigm renders
+MARL systems highly vulnerable to agent malfunctions.
+When an agent deviates from its intended behaviour due to
+faults or failures, the assumptions underpinning coordina-
+tion can break down, leading to severe performance degra-
+dation. Such malfunctions are commonplace in real-world
+systems (Cristian, 1991). For example, in industrial settings,
+robots are often required to coordinate closely with other
+agents, and failures to anticipate correct actions can prevent
+task completion or lead to dangerous outcomes. Similar
+challenges arise in settings where control of a single system
+is factorised across multiple agents, as in multi-agent Mu-
+JoCo or dexterous manipulation benchmarks, where each
+agent controls a distinct subcomponent of the overall system.
+These considerations motivate the need for MARL methods
+that remain effective in the presence of agent malfunctions.
+In single-agent reinforcement learning (RL), a substantial
+body of work has studied fault-tolerant (FT) policies that
+maintain performance under failures (Mguni, 2019; Fan
+et al., 2021). A common approach, inspired by control the-
+ory, introduces an adversarial agent that selects actions to
+minimise the learner’s expected return (Pinto et al., 2017).
+By exposing the agent to worst-case outcomes, such meth-
+ods aim to induce robust policies. This formulation leads to
+a zero-sum game between the controller and the adversary,
+which is amenable to theoretical analysis due to its structural
+properties (Osborne & Rubinstein, 1994). However, adver-
+saries that act in exact opposition to the agent’s objective
+often induce overly pessimistic behaviour, causing agents to
+proceed with excessive caution and degrading performance
+at higher levels of fault tolerance (Grau-Moya et al., 2018).
+To address these challenges, we introduce MARTA, a FT
+MARL framework designed to train agents that can robustly
+1
+arXiv:2508.08800v2  [cs.MA]  19 Feb 2026
+
+Learning Robust Multi-Agent Policies
+respond to agent malfunctions. We focus on cooperative,
+team-reward settings in which agents may suffer failures
+and cease to follow the policies they had learned to perform
+the task. MARTA augments the MARL system with an
+adaptive agent, termed the Switcher, which observes joint
+agent behaviour during training and learns when and which
+agent should malfunction so as to maximally disrupt coordi-
+nation. Malfunctions are executed by a dedicated Adversary,
+while the cooperative agents learn policies that best respond
+to these selectively induced failures.
+To enable selective and state-dependent fault induction,
+MARTA equips the Switcher with switching controls
+(Øksendal & Sulem, 2007). At each state, the Switcher
+decides whether to activate a malfunction and, if so, which
+agent should be affected. Each activation incurs a cost or
+is constrained by a fixed budget, encouraging malfunctions
+only in states where they cause a substantial reduction in
+expected system performance. This design allows MARTA
+to calibrate the trade-off between robustness and nominal
+performance, avoiding the conservatism associated with
+always-on adversarial training. By exploiting information
+about the joint behaviour of agents, MARTA identifies mal-
+functions that are most detrimental to coordination and fo-
+cuses training pressure on these critical situations.
+(a) Traffic Junction Map
+Grid Column
+Grid Row
+Switcher Intervention Heatmap
+0
+5
+10
+15
+20
+25
+Intervention Frequency
+(b) Switcher activation heatmap
+Figure 1b shows that the Switcher concentrates interven-
+tions at intersections and entry or exit points.
+Introducing the Switcher and Adversary yields a nonzero-
+sum Markov game (MG) with N + 2 agents (Fudenberg &
+Tirole, 1991). Convergence in general MGs is rare (Yang &
+Wang, 2020). Under standard assumptions, which we make
+explicit in Sec. E.1, the switching control mechanism under-
+lying MARTA admits a well-defined optimisation structure
+with contraction properties. We show the resulting game
+admits a unique minimax value and the induced learning
+dynamics converge under standard assumptions.
+Contributions.
+1. We introduce MARTA, a framework for FT MARL based
+on a Switcher–Adversary mechanism that selectively in-
+duces agent malfunctions in coordination-critical states.
+2. We formulate a fault-switching MG with state-dependent,
+adversarially selected malfunctions, and prove existence and
+uniqueness of the minimax value together with convergence
+of Q-learning procedures under tabular and linear function
+approximation and malfunction budgets.
+3. We show MARTA can be implemented as a plug-and-play
+robustness layer on top of standard MARL algorithms such
+as QMIX and VDN, without modifying their architectures.
+4. We evaluate MARTA on Traffic Junction, Level-Based
+Foraging, and MPE SimpleTag, demonstrating consistent
+robustness gains and reduced failure rates across discrete
+and continuous control tasks, and across both Uniform and
+Worst-case malfunction regimes.
+These results establish MARTA as a principled and prac-
+tical approach to training MARL policies that are robust
+to realistic agent malfunctions. Unlike classical zero-sum
+MGs, MARTA incorporates budgeted, state-dependent fault
+switching, enabling robustness without excessive conser-
+vatism.
+2. The MARTA Framework
+We consider a decentralised Markov decision process (Dec-
+MDP) with agent set N = {1, . . . , N}, global state space
+S, and agent-specific action spaces Ai. At each timestep,
+agents simultaneously select actions a = (a1, . . . , aN) and
+receive a shared team reward. Formally, the Dec-MDP is
+defined as the tuple M = ⟨N, S, (Ai)i∈N , P, R, γ⟩, where
+S is a finite set of states, Ai denotes the action space of agent
+i ∈N, and A := ×N
+i=1Ai is the joint action space. The
+transition kernel P : S×A×S →[0, 1] governs the system
+dynamics, and γ ∈[0, 1) is the discount factor. The reward
+function R : S × A →P(D) maps state–action pairs to
+a distribution over rewards, where D ⊂R is compact, and
+is shared by all agents. We consider a partially observable
+setting. Given the system state st ∈S, each agent i ∈
+N receives a local observation τ t
+i = O(st, i), where O :
+S × N →Zi and Zi denotes the observation space of
+agent i. Each agent samples actions according to a Markov
+policy πi,θi : Zi × Ai →[0, 1], parameterised by θi ∈Rd,
+with πi ∈Πi, where Πi is a compact policy space. For
+brevity, we write πi := πi,θi and denote the joint policy
+by π = (π1, . . . , πN) ∈Π := ×i∈N Πi. At time t, the
+system is in state st ∈S and each agent selects an action
+ai
+t ∈Ai, forming the joint action at ∈A. The system
+then transitions to the next state according to P, and each
+agent receives a reward ri ∼R(st, at). Each agent seeks to
+maximise the expected discounted return or value function
+v(s | π) = Eπ
+" ∞
+X
+t=0
+γtR(st, at)
+ s0 = s
+#
+.
+(1)
+MARTA includes an adaptive RL agent, termed the
+Switcher, which observes the joint behaviour of agents and
+learns when and which agent should malfunction in order
+to maximally disrupt coordination. Specifically, Switcher
+selects an agent to malfunction at which point, the agent’s
+actions are decided by an Adversary agent’s policy while
+2
+
+Learning Robust Multi-Agent Policies
+the other agents execute their intended policy. In response,
+during training, the remaining agents learn how to respond
+to the behaviour of the malfunctioning agent and in so do-
+ing, learn how to respond to agent malfunctions within the
+collective. A key feature is that Switcher and Adversary
+are equipped with their own objective that aims to produce
+malfunctions that inflict the greatest possible harm to the
+system (during training) including faults that undermine
+coordination required to solve the task.
+We consider two malfunction regimes: a random fault pol-
+icy modelling stochastic actuator or sensor failures, and a
+worst-case policy trained to maximally degrade collective
+performance. The Switcher learns when and which agent
+should be affected, enabling the base agents to learn best
+responses to both mild and catastrophic failures.
+In MARTA, the nominal joint action a ∈A is proposed by
+the agents’ policies π, while a faulty joint action f ∈A is
+proposed by the adversarial policies σ. These joint actions
+are then observed by the policy g. Switcher samples a dis-
+crete decision gt ∈N from its policy g. If gt = i ∈N,
+then agent i is selected to malfunction whereby its action
+is overridden by an Adversary policy σi ∈Πi while the
+agents −i sample their actions from their intended policy
+π−i i.e. the joint action at = (f i
+t, a−i
+t ) ∼(σi, π−i) is exe-
+cuted in the environment. During training in MARTA, the
+N agents seek to jointly maximise the following objective:
+v(s|π, g, σ) = Eπ,g,σ [P∞
+t=0 γtR(st, at)|s = s0].
+The
+Adversary and Switcher’s objectives are −v which captures
+their goal to find malfunctions that have the potential to
+induce the greatest harm to the system. Therefore, by learn-
+ing an optimal g, Switcher acquires the optimal policy for
+activating Adversary. We later show in Theorem D.1 that
+in response, the MARL agents in turn learn how to best-
+respond to such failures. As remarked earlier, we consider
+two scenarios for a malfunctioning agent i. The first sce-
+nario is when the Adversary action is sampled from a purely
+random policy and secondly, a worst-case action scenario.
+Switching Control Mechanism. MARTA allows Switcher
+to choose, at any state, both which agent malfunctions
+and whether to activate a malfunction at all. To this end,
+Switcher is equipped with switching controls: at state s,
+using its policy g, the Switcher selects an action from the
+discrete set AS = {0} ∪N, where action 0 corresponds
+to no malfunction and action i ∈N triggers a malfunc-
+tion of agent i. If a malfunction is induced for agent i the
+agent is forced to execute an action using its adversarial
+policy σi. To encourage selectivity, each activation incurs a
+positive cost c > 0, ensuring that malfunctions are only trig-
+gered when they cause a substantial reduction in expected
+performance. The task of Switcher is therefore to learn a
+policy g that activates adversarial malfunctions solely at
+states where they most degrade performance. For a given
+π ∈Π, Switcher’s objective is to find g that maximises:1
+vS(s|π, g, σ) = −Eπ,g,σ
+" ∞
+X
+t=0
+γt [R(st, at) + c1N (g(st))]
+#
+,
+where 1N (g) = 1 if g ∈N and 1N (g) = 0 otherwise.
+Switcher’s action-value function is QS(s, g|π, g)
+=
+−Eπ,g [P∞
+t=0 γt(R(st, at) + c · 1N (g))|s0 = s, g0 = g].
+Adding the Switcher with an objective distinct from the N
+agents results in a non-cooperative MG. Having multiple
+learners with a payoff structure that is neither zero-sum nor
+a team game can occasion convergence issues (Shoham &
+Leyton-Brown, 2008). Moreover, unlike standard MARL,
+MARTA incorporates switching controls. Nevertheless, we
+prove MARTA converges under standard assumptions.
+The parameter c plays an important role in calibrating the
+fault-tolerance of the system of MARL agents. Larger val-
+ues of c incur higher costs for each malfunction making
+Switcher more selective about inflicting malfunctions i.e.
+limiting interventions to the states where the harm is great-
+est. This behaviour is consistent with the switching-cost
+objective and the equilibrium properties established in Theo-
+rem 3.1. In turn, the agents learn how to best-respond to only
+the most harmful malfunctions. When c →0, we return to
+a classic robust framework where Switcher can profitably
+choose to inflict malfunctions at all states, leading to highly
+cautious joint policies which may harm performance for a
+given higher fault-tolerance. In Sec. 4, as an alternative to
+using the cost c, we study a setup with a budget constraint
+on the number of malfunctions Switcher can inflict.
+Details on Architecture. We now describe a concrete real-
+isation of MARTA’s core components which consist of N
+MARL agents, a MARL agent Adversary and a switching
+control RL algorithm as Switcher. Each (MA)RL compo-
+nent can be replaced by various other (MA)RL algorithms.
+MARTA consists of N MARL agents, an Adversary, and
+a Switcher. Each agent maintains an action policy πi and
+an adversarial policy σi, both implemented using the same
+backbone (QMIX or VDN). The Switcher is trained using
+soft actor–critic with an action space of size N + 1, cor-
+responding to no malfunction or activating a malfunction
+for agent i. Training proceeds jointly using a shared replay
+buffer. Further details are in the Appendix.
+3. Analysis of MARTA
+We establish the existence of a stable equilibrium in which
+each agent follows a policy that best responds to the system
+1We have employed the shorthand at
+∼
+(π, σ) to
+denote at
+=
+(aj
+t, a−j
+t )
+∼
+π when gt
+=
+0 and at
+=
+(f j
+t , a−j
+t ) ∼(σj, π−j) when gt = j ∈N i.e. vS(s|π, g, σ) =
+−Eπ,g,σ[P∞
+t=0
+P
+j∈N γt[
+ R(st, (f j
+t , a−j
+t )) + c
+
+1(g(st)=j)
++
+R(st, at)(1 −1(g(st)=j))]].
+For convenience we drop the
+dependence of vS on σ.
+3
+
+Learning Robust Multi-Agent Policies
+under worst-case malfunctions induced by the Switcher.2
+We further show that the MARTA learning algorithm con-
+verges to this equilibrium, which jointly maximises the
+Switcher’s value function and the agents’ collective objec-
+tive. All results in this section are proved in the Appendix
+and are derived under Assumptions 1–3 (Appendix E.1),
+which are standard in RL (Bertsekas, 2012).
+Although MARTA is formulated as an MG, its structure
+departs fundamentally from classical zero-sum formula-
+tions (Littman, 1994). The induced fault-switching game
+features: (i) state-dependent fault activation, (ii) persistent
+mode-switching dynamics, (iii) explicit malfunction bud-
+gets, and (iv) a switching-augmented Bellman operator that
+incorporates activation penalties. The contraction property
+established in Lemmas E.9–E.12 applies specifically to this
+operator and does not follow from standard MG results,
+yielding convergence guarantees not captured by existing
+adversarial learning frameworks.
+The theoretical analysis considers an idealised formulation
+of MARTA under standard assumptions from stochastic
+approximation and MG theory, including tabular or linear
+function approximation. While these guarantees do not
+extend directly to deep neural network parameterisations,
+they formally characterise the optimisation problem solved
+by MARTA and justify the design of the Switcher as a
+selective fault-induction mechanism. The empirical results
+in Section 5 evaluate the effectiveness of this mechanism
+when instantiated with modern deep MARL algorithms.
+The learning problem induced by MARTA can be viewed as
+a nonzero-sum MG G involving three components: the N
+cooperative agents, the Switcher, and the Adversary. In the
+analysis that follows, the Adversary’s best response is incor-
+porated into the Switcher’s objective, yielding an equivalent
+reduced game between the agents and the Switcher.
+We first observe that an optimal robust policy is one in
+which the N agents play a best-response joint policy against
+Switcher who in turn executes a best-response policy. The
+following result establishes the existence and uniqueness of
+such a solution in which each agent enacts a best-response
+i.e. responds optimally to actions of other agents in G.
+Throughout the analysis, we assume that the Adversary
+plays a best response to the current policies of the agents
+and the Switcher. For notational clarity, explicit dependence
+on the Adversary policy is suppressed.
+Theorem 3.1. The minimax value of G exists and is unique,
+i.e. there exists a function v∗: S →R such that v∗(s) :=
+min
+ˆg max
+ˆπ∈Π v(s|ˆπ, ˆg) = max
+ˆπ∈Π min
+ˆg v(s|ˆπ, ˆg),
+∀s ∈S.
+2Since the Adversary uses a stochastic policy, the limiting
+variance case covers scenarios in which a malfunctioning agent
+executes random actions.
+Sketch. The minimax equality and existence of v∗follow
+from the contraction property of the induced Bellman opera-
+tor. Lemma 7 establishes monotonicity and Lemma 8 proves
+strict contraction under Assumptions 1–3 (Appendix D.1),
+implying a unique fixed point by the Banach fixed-point the-
+orem. This fixed point coincides with the unique minimax
+value of the game.
+Proposition 3.2. Let ˆπ ∈Π be an equilibrium policy as
+defined in Theorem 3.1, then ˆπ is a Markov perfect equi-
+librium3 policy, that is to say, no agent can improve the
+team reward by responding to the malfunctions executed by
+Adversary with a change in their policy.
+This follows from the fact that all players optimise station-
+ary objectives under Markovian dynamics, so no history-
+dependent deviation can improve the equilibrium outcome.
+Having established the existence of a solution to the game,
+we now turn to the question of how a set of MARL agents
+can learn such a solution. Theorem D.1 (see Sec. E in Ap-
+pendix) proves the convergence of a dynamic programming
+procedure to the solution. It therefore lays the foundation for
+our MARL algorithm, MARTA which learns robust MARL
+policies in this setting. In particular, the following theorem
+proves the convergence of a MARTA to the solution v∗by
+repeated application of a Bellman operator. A direct conse-
+quence of the equilibrium structure and the switching-cost
+objective is that optimal switching policies activate malfunc-
+tions only when the expected degradation in performance
+outweighs the associated cost.
+Theorem 3.3. Consider the following Q-learning variant:
+Qt+1(st, at, g) = Qt(st, at, g)
++αt(st, at)
+
+min
+ ˆ
+MQt(st, at, g), RS(s, a, g)
++γ max
+a′∈A Qt(st+1, a′, g)
+	
+−Qt(st, at, g)
+
+,
+then Qt converges to Q⋆with probability 1, where
+st, st+1 ∈S and at ∈A.
+Theorem 3.3 proves the convergence of MARTA to the solu-
+tion to the game G in which each agent optimally responds
+to the policies of other agents in the system.
+In Prop. E.8, we fully characterise the points where Switcher
+should activate Adversary and which agent in terms of an
+obstacle condition which can be determined at each state.
+We now describe a Q-learning procedure that computes the
+value of the game. The update extends standard Q-learning
+by incorporating the Switcher’s action into the state–action
+value function, resulting in a joint Bellman operator that
+captures both agent actions and switching decisions.
+3(πi, π−i) = π ∈Π is a Markov perfect equilibrium if no
+agent can improve the expected return by changing their policy i.e.
+∀i ∈N, ∀π′i ∈Πi, we have v(s|π, g) −v(s|(π′i, π−i), g) ≤0.
+4
+
+Learning Robust Multi-Agent Policies
+Function approximators enable parameterisation of key esti-
+mators in RL. We extend the convergence results to linear
+function approximation, a standard convex setting and a
+foundation for more expressive parameterisations.
+Theorem 3.4. MARTA converges to the stable point of G,
+moreover, given a set of linearly independent basis functions
+Φ = {ϕ1, . . . , ϕp} with ϕk ∈L2, ∀k. Define a projection
+Π on a function Λ by: ΠΛ :=
+arg min
+¯Λ∈{Ψr|r∈Rp}
+¯Λ −Λ
+. Then
+MARTA converges to a limit point r⋆∈Rp which is the
+unique solution to ΠF(Φr⋆) = Φr⋆where for any Λ ∈L2,
+FΛ := R+γP min{ ˆ
+MΛ, Λ} and r⋆satisfies the following:
+∥Φr⋆−Q⋆∥≤(1 −γ2)−1/2 ∥ΠQ⋆−Q⋆∥.
+Theorem 3.4 shows that, under linear function approxima-
+tion, the projected Bellman operator associated with the
+switching control mechanism remains a contraction. The
+projection step ensures stability of the update within the
+feature space, while the contraction guarantees convergence
+to a unique fixed point in parameter space.
+4. MARTA with a Malfunction Budget
+The fault-activation cost plays a critical role in ensuring
+that the Adversary induces malfunctions which cause a sig-
+nificant reduction in the system performance. Despite the
+intuitive interpretation, in some applications, the choice of
+c is not obvious. We now consider an alternative view and
+introduce a variant of MARTA, namely MARTA-B that im-
+poses a budgetary constraint of the number of malfunctions
+that can be induced by Adversary during training. We show
+that by tracking its remaining budget, MARTA-B is able
+to learn a Switcher policy that makes optimal usage of its
+budget while respecting the budget constraint almost surely.
+The Switcher now has the following constrained problem:
+min
+ˆg max
+ˆπ∈Π vS(s|ˆπ, ˆg) s. t. n −
+X
+k<∞
+X
+tk≥0
+1(g(·|stk)) ≥0,
+where n ≥0 is a fixed value that represents the budget
+for the number of malfunctions and the index k = 1, . . .
+represents the training episode count. As in (Sootla et al.,
+2022; Mguni et al., 2023), we introduce a new variable
+yt that tracks the remaining number of activations: yt :=
+n −P
+t≥0 1(g(st)) where the variable yt is now treated
+as the new state variable which is a component in an aug-
+mented state space X := S × N. In Theorem D.2, we prove
+the convergence of MARTA-B i.e., MARTA with a fixed
+Switcher budget to the optimal joint value function.
+5. Experiments
+We conduct a series of experiments to verify: (1) Plug-and-
+play effectiveness. MARTA can be attached to standard
+MARL backbones without architectural changes and consis-
+tently improves robustness under injected malfunctions; (2)
+Mechanism validity and calibration. the learned Switcher
+meaningfully decides when and whom to intervene on.
+Environments
+(1) Traffic Junction (TJ) (Koul, 2019). A discrete grid-
+world in which agents must navigate through intersections
+without collisions.
+This environment emphasises high-
+density spatial conflict resolution and tests the agents’ ability
+to handle localised, time-critical disruptions.
+(2) Level-Based Foraging (LBF) (Christianos et al., 2020).
+Agents control units of a certain level, food items of varying
+levels are scattered across the map, and each agent aims to
+collect as much as possible. An agent can only collect food
+if the cumulative level of the adjacent agents performing the
+‘collectqaction is greater than or equal to the food’s level. It
+captures the spectrum between independent behaviour and
+tightly coupled cooperation under partial observability.
+(3) Multi-Agent Particle Environment (MPE): Simple-
+Tag (Lowe et al., 2017). A continuous control domain where
+multiple pursuers must coordinate to capture the evader. It
+emphasises coordination under non-stationarity. Individual
+agents not coordinating can severely reduce rewards.
+(4) StarCraft Multi-Agent Challenge v2 (SMACv2). To
+evaluate MARTA at larger scale and under more challeng-
+ing partial observability, we additionally benchmark on
+SMACv2. We evaluate MARTA using QMIX as the base
+learner and report win rate and episode return. Faults are in-
+jected using the same mechanisms as in earlier experiments,
+including Uniform and Worst-case fault policies, fixed and
+resampled faulty agents, and aligned versus shifted train-test
+fault distributions. We additionally report fault-conditioned
+win rate, defined as the win rate conditioned on at least one
+malfunction occurring during the episode. This setting tests
+whether MARTA improves robustness to agent malfunctions
+without degrading nominal task performance.
+Experiment Configurations. To make the robustness set-
+ting transparent, we factor our design into a few orthogonal
+axes. Each run is determined by: who malfunctions (agent
+selection), how the malfunction behaves (fault policy), the
+per-step trigger rate p, the switch cost c that calibrates in-
+terventions, and whether the train–test fault processes are
+aligned or shifted. Table 1 summarises the factors and levels.
+At each timestep t, with probability p, one agent is selected
+to malfunction and execute a corrupted policy σi at t.
+To facilitate analysis, we categorise our experiments into
+three difficulty bands. Easy (Level 1) settings correspond
+to aligned train–test distributions where a single fixed agent
+may malfunction with probability p. These include our core
+plug-and-play evaluations in TJ, LBF (5×5–4p–1f), and
+MPE (SimpleTag). Medium (Level 2) settings also use
+5
+
+Learning Robust Multi-Agent Policies
+aligned distributions but at each step the identity of the fault-
+able agent is resampled, so the fault location varies across
+time while only one (or less) agent may fail per step. Hard
+(Level 3) settings involve train–test shifts, either in the fault
+distribution, malfunction probability, or fault policy. Each
+agent may malfunction, and the training and testing phases
+will have different malfunction distributions. Together these
+bands provide a structured view of robustness, ranging from
+predictable aligned malfunctions to adversarial distribution
+shifts with multiple concurrent faults.
+Evaluation Protocol. Every 10, 000 steps, agents are evalu-
+ated for more than 100 episodes using the same configura-
+tion of the malfunction. The best-performing checkpoint is
+reported based on average return. Unless otherwise speci-
+fied, all hyperparameters and architecture configurations are
+identical across MARTA and its baseline counterpart. In all
+plots dark lines represent averages over 3 seeds and the
+shaded regions represent 95% confidence intervals. We
+summarise where key experimental details are located: Envi-
+ronment configurations, agent counts and fault parameters
+are in Table 2 in the Appendix. Train–test fault protocols
+(aligned, shifted and resampled) are summarised in Table 1.
+Agent counts are: TJ (4–6 agents), LBF (4 agents), and
+MPE SimpleTag (4 agents). Detailed descriptions of how
+faults are generated and controlled are in Table 1.
+Can MARTA improve MARL algorithm performance
+and reduce failure modes?
+To validate our claim that MARTA enhances robustness and
+improves performance, we evaluate MARTA on TJ, LBF
+(5x5-4p-1f), and MPE (SimpleTag) under injected malfunc-
+tions. In each environment, we compare a base MARL algo-
+rithm with its MARTA-augmented counterpart. As shown in
+Fig. 2, MARTA-QMIX achieves final return gains of 11.1%
+in TJ, 21.4% in MPE, 44.6% in LBF and 114.9% and 9.3%
+in SMACv2, 3m and 8m respectively. Complete results are
+reported in Table 3 in Sec. B. Robustness is particularly dif-
+ficult in smaller-agent settings, where the failure of a single
+agent has a disproportionate impact on coordination. This
+effect is evident in TJ and LBF, where limited redundancy
+magnifies the influence of faults. Despite this, MARTA de-
+livers consistent improvements, including in MPE, where
+continuous control and adversarial dynamics further in-
+crease task complexity. Hence, MARTA enhances fault
+tolerance across a diverse range of tasks without changes
+to the base learner’s architecture. In addition, MARTA en-
+ables the baseline algorithm to avoid the dangers of agent
+collisions in the TJ environment. In TJ we define the failure
+rate as the episode-level collision rate: TJ collision rate =
+1
+M
+PM
+e=1 1{episode e contains any collision} where M is
+the total number of episodes. We plotted the failure rates
+of each algorithm in Fig. 3a, which shows that MARTA
+significantly reduces failure rates.
+The importance of Switching Controls.
+A key compo-
+nent of MARTA is the switching control mechanism. This
+enables the Switcher to choose to activate malfunctions at
+high-risk states where learning robust behaviour is critical.
+To evaluate the impact of switching controls, we compared
+MARTA with a variant of MARTA in which the Switcher’s
+policy is replaced with a Bernoulli random trigger: for some
+p ∈(0, 1], at each state, a malfunction for each agent occurs
+with probability p/|N|, and with probability 1 −p no mal-
+function is activated. Fig. 3b shows incorporating the ability
+to learn an optimal switching control yields much better
+performance compared to activating malfunctions randomly
+(“random policy”).
+Experiment parameters. In Sec. A, we also perform abla-
+tions on the switch cost c which reveals that adjusting this
+parameter increases the system’s preference for FT in the
+fault–performance trade-off as c ↓0. We further ablate the
+malfunction probability p and the agent count N, demon-
+strating the robustness of MARTA to these parameters.
+MARTA is a plug-and-play enhancement framework.
+To validate our claim that MARTA easily adopts MARL
+algorithms, we tested the improvements MARTA delivers
+with an alternative base MARL algorithm. Specifically,
+we replaced QMIX in MARTA with VDN (Sunehag et al.,
+2017). Fig. 4 shows learning curves. In the TJ environment,
+MARTA-VDN yields a 37.8% gain over its VDN baseline
+and in SMACv2 3m, MARTA-VDN yields a 116.7% gain
+over its VDN baseline. In all maps, MARTA-VDN signifi-
+cantly outperforms the base VDN algorithm.
+Comparison with robust adversarial MARL baselines.
+We compare against M3DDPG (Lowe et al., 2017) and
+EIR (Li et al., 2023) as representative robust and adver-
+sarial MARL baselines applicable under explicit agent-
+malfunction processes; other robust MARL methods assume
+different threat models and are therefore not directly com-
+parable. We adapt M3DDPG as a robust baseline on the
+MPE SIMPLETAG environment and construct a MARTA-
+enhanced variant, MARTA-MADDPG, by applying our
+switching framework to the MADDPG backbone.
+Fig-
+ure 5 reports learning curves for MADDPG, M3DDPG,
+and MARTA-MADDPG under the same malfunction pro-
+cess. MARTA-MADDPG consistently outperforms both
+MADDPG and M3DDPG, demonstrating that MARTA pro-
+vides additional robustness gains even when applied on top
+of an established adversarial MARL method.
+Robustness under dynamic fault distributions. Figure 6
+compares MARTA against EIR and reports performance
+under two qualitatively different fault regimes. In Case 1,
+malfunctions affect a fixed agent with constant probability,
+yielding a stable and predictable fault distribution shared
+between training and testing. In Case 2, faults occur dy-
+namically: at each timestep, any agent may malfunction
+6
+
+Learning Robust Multi-Agent Policies
+0.0
+0.5
+1.0
+Step
+1e6
+200
+150
+100
+50
+0
+Test Return Mean
+QMIX
+MARTA-QMIX
+(a) Traffic Junction
+0
+1
+2
+3
+Step
+1e6
+0.0
+0.5
+1.0
+1.5
+Test Return Mean
+QMIX
+MARTA-QMIX
+(b) LBF-5x5-4p-1f
+0.0
+0.5
+1.0
+1.5
+2.0
+Step
+1e6
+0
+200
+400
+600
+Test Return Mean
+QMIX
+MARTA-QMIX
+(c) MPE-SimpleTag
+0
+1
+2
+3
+Step
+1e6
+0
+2
+4
+Test Return Mean
+QMIX
+MARTA-QMIX
+(d) SMAC-3m
+0.0
+0.5
+1.0
+1.5
+2.0
+Step
+1e6
+0
+2
+4
+6
+8
+Test Return Mean
+MARTA-QMIX
+QMIX
+(e) SMAC-8m
+0
+1
+2
+3
+Step
+1e6
+0
+2
+4
+6
+8
+Test Return Mean
+MARTA-QMIX
+QMIX
+(f) SMAC-2s3z
+Figure 2. Robustness against malfunctions. Each plot compares a base MARL algorithm with and without MARTA in faulty agent
+settings. In all scenarios, MARTA improves robustness.
+VDN
+MARTA-VDN
+0
+5
+10
+15
+20
+Faliure Rate(%)
+17.5
+5.0
+(a) Failure rates
+0.0
+0.2
+0.4
+0.6
+0.8
+Step
+1e6
+0
+200
+400
+test_return_mean
+MARTA
+MARTA (Random)
+VDN
+(b) Switcher policy ablation
+Figure 3. Ablation results in MPE.
+with fixed probability, causing the location of the fault to
+switch across agents and time and introducing a pronounced
+train–test distribution mismatch. The first row (TJ and LBF)
+reports risk metrics, collision rate and failure rate, where
+lower values indicate safer and more reliable behaviour. The
+second row (MPE and SMAC-3m) reports success and coor-
+dination metrics, namely capture rate and focused fire rate,
+where higher values indicate stronger coordination under
+malfunction. While MARTA performs comparably to EIR
+under the aligned Case 1 regime, it consistently outperforms
+EIR under the dynamic Case 2 regime across all environ-
+ments, indicating stronger robustness and generalisation to
+multi-location, time-varying faults.
+Further experimental results, ablations, and diagnostic anal-
+yses are provided in the Appendix, including extended eval-
+uations under alternative fault models, additional visualisa-
+tions of switching behaviour, and supplementary quantita-
+tive results. These studies reinforce the empirical robustness
+of MARTA across settings and help disentangle the contri-
+butions of its individual components.
+Computational overhead. In all experiments, we reuse the
+same architectures and hyperparameters as the underlying
+MARL baselines and train the Switcher with a lightweight
+actor–critic learner. This introduces only a modest training-
+time overhead. At execution time there is no auxiliary
+safety filter or online optimisation so the wall-clock cost of
+MARTA is close to that of the base learner alone.
+6. Related Work
+Fault tolerance and safety in MARL. Safety and robust-
+ness in MARL have been studied through shielding, backup
+policies and constrained optimisation. Shielding approaches
+(Zhang et al., 2019; ElSayed-Aly et al., 2021) use additional
+safety layers or backup policies to override unsafe actions.
+Qin et al. (Qin et al., 2021) employ control barrier functions
+to enforce safety constraints, but without formal guarantees.
+These methods often require per-timestep safety checks or
+dedicated certificates, and their cost grows with the number
+of agents. In contrast, MARTA embeds robustness directly
+into the training dynamics avoiding runtime safety layers
+and preserving the architecture of the underlying MARL
+learner. Constrained MARL formulations (Gu et al., 2021;
+Lu et al., 2021) treat safety as a constrained optimisation
+problem. These methods often face convergence and scala-
+bility challenges. By contrast, the MG underlying MARTA
+has a unique solution to which MARTA has convergence
+guarantees for tabular and linearly approximated settings.
+Robust and adversarial MARL. Adversarial training meth-
+ods for RL and MARL (Pinto et al., 2017; Li et al., 2019;
+Zhang et al., 2020) typically introduce an opponent that per-
+turbs actions, observations or dynamics to construct worst-
+7
+
+Learning Robust Multi-Agent Policies
+0.0
+0.5
+1.0
+Step
+1e6
+200
+150
+100
+50
+0
+Test Return Mean
+MARTA-VDN
+VDN
+(a) Traffic Junction
+0
+1
+2
+3
+Step
+1e6
+0.25
+0.00
+0.25
+0.50
+0.75
+1.00
+Test Return Mean
+VDN
+MARTA-VDN
+(b) LBF-5x5-4p-1f
+0.0
+0.5
+1.0
+1.5
+2.0
+Step
+1e6
+0
+200
+400
+Test Return Mean
+VDN
+MARTA-VDN
+(c) MPE-SimpleTag
+0
+1
+2
+3
+Step
+1e6
+5
+0
+5
+10
+Test Return Mean
+MARTA-VDN
+VDN
+(d) SMAC-3m
+0.0
+0.5
+1.0
+1.5
+2.0
+Step
+1e6
+0
+5
+10
+Test Return Mean
+MARTA-VDN
+VDN
+(e) SMAC-8m
+0
+1
+2
+3
+Step
+1e6
+0.0
+2.5
+5.0
+7.5
+10.0
+Test Return Mean
+MARTA-VDN
+VDN
+(f) SMAC-2s3z
+Figure 4. Performance of MARTA+VDN. MARTA improves performance in all scenarios.
+0.0
+0.5
+1.0
+1.5
+2.0
+Step
+1e6
+0
+100
+200
+300
+Test Return Mean
+MADDPG
+MARTA-MADDPG
+M3DDPG
+Figure 5.
+Comparison between MADDPG with
+M3DDPG and MARTA-MADDPG in MPE.
+case trajectories. These methods improve robustness but
+often induce overly conservative behaviour, since the agent
+is trained under an adversary that is active at every step.
+Moreover, most such work focuses on perturbations in a
+single-agent MDP or on model uncertainty, rather than on
+explicit agent malfunctions in cooperative teams. MARTA
+differs in three ways. First, it targets actuator-level failures
+in which an entire agent temporarily loses control to a fault
+policy, rather than small perturbations around nominal ac-
+tions or states. Second, it models the timing and location
+of faults through a Switcher that explicitly reasons over
+state-dependent costs or budgets, rather than assuming an
+always-on adversary. Third, it provides convergence guar-
+antees for this switching-augmented game, including under
+linear function approximation and budget constraints.
+Diagnostics and poisoning attacks in MARL. Recent work
+has examined the vulnerability of MARL systems to targeted
+perturbations or poisoning attacks. RTCA (Zhou & Liu,
+2023) proposes a resilience testing framework that perturbs
+the states of critical agents to expose weaknesses. Zheng
+et al. study training-time poisoning in which a single manip-
+ulated agent can poison policies. These works are primarily
+diagnostic or attack-oriented: they evaluate the weakness
+of existing MARL policies or design efficient attacks, rather
+case1
+case2
+0.000
+0.005
+0.010
+0.015
+0.020
+0.025
+Collision Rate
+EIR
+MARTA
+EIR
+MARTA
+TrafficJunction
+(a) Traffic Junction
+case1
+case2
+0.00
+0.05
+0.10
+0.15
+0.20
+Failure Rate
+EIR
+MARTA
+EIR
+MARTA
+LBF
+(b) LBF-5x5-4p-1f
+case1
+case2
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Capture Rate
+EIR
+MARTA
+EIR
+MARTA
+MPE_SimpleTag
+(c) MPE-SimpleTag
+case1
+case2
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+Focused Fire Rate
+EIR
+MARTA
+EIR
+MARTA
+SMAC-3m
+(d) SMAC-3m
+Figure 6. Evaluation of MARTA and EIR across four environ-
+ments under two fault regimes. Case 1 (fixed fault): a single
+agent fails with fixed probability, with aligned train–test distri-
+butions. Case 2 (dynamic random fault): at test time, any agent
+may malfunction at any timestep, inducing a train–test distribution
+mismatch. Top row reports risk metrics (lower is better); bottom
+row reports success and coordination metrics (higher is better).
+than providing a defence scheme that yields robust policies.
+MARTA is complementary. It is a training-time defence
+mechanism that induces controlled, state-dependent mal-
+functions then trains agents to jointly best respond.
+Byzantine-robust MARL and adversarial teammates. Li
+et al. (Li et al., 2023) study Byzantine-robust cooperative
+MARL through a Bayesian game formulation, in which
+some teammates may behave adversarially. Their focus is
+on strategic deviations modelled through adversarial types
+and on robust reasoning about such behaviour. MARTA
+instead models non-strategic actuator malfunctions, such
+as stuck actuators, corrupted control modules and state-
+dependent controller failures. These represent different ro-
+bustness regimes. Strategic adversaries may deliberately
+coordinate to mislead, whereas actuator faults in physical
+8
+
+Learning Robust Multi-Agent Policies
+systems are often non-strategic yet catastrophic for coordi-
+nation. MARTA introduces a specific fault-switching MG
+(with budgets), and proves existence and uniqueness of a
+minimax value and convergence under both tabular and lin-
+early approximated settings. This yields a different set of
+theoretical guarantees tailored to the malfunction setting.
+Shielding, backup policies and scalability. Shielding and
+backup-policy methods (Zhang et al., 2019; ElSayed-Aly
+et al., 2021; Qin et al., 2021) provide valuable tools for en-
+forcing safety constraints by modifying actions at execution
+time. However, their reliance on online constraint check-
+ing and per-agent safety mechanisms can create scalability
+challenges as the number of agents grows. MARTA takes
+a complementary approach which avoids runtime safety
+layers and allows robustness to scale with the underlying
+MARL learner without redesigning its architecture. Finally,
+MARTA is intentionally plug-and-play. It attaches to stan-
+dard value-based and actor–critic MARL algorithms without
+altering their internal networks, and can also be combined
+with more sophisticated robust architectures. In this sense,
+MARTA acts as a general robustness layer that complements
+rather than replaces existing robust MARL techniques.
+Conclusion
+We introduced MARTA, a fault-tolerant framework for coop-
+erative MARL that selectively induces agent malfunctions
+during training to improve robustness. By formulating fault
+tolerance as a switching-augmented MG, we established
+theoretical guarantees for equilibrium existence and conver-
+gence under standard assumptions. Empirical results across
+diverse benchmarks demonstrate that MARTA improves
+robustness to dynamic and adversarial malfunctions while
+remaining plug-and-play with existing MARL algorithms.
+Together, these results position MARTA as a principled and
+practical approach to fault-tolerant MARL.
+Broader Impact
+This paper presents work whose goal is to advance the ro-
+bustness and reliability of multi-agent reinforcement learn-
+ing. The proposed methods are intended to improve fault
+tolerance and safety in multi-agent systems, which may ben-
+efit applications such as robotics and distributed control. We
+do not foresee significant negative societal consequences
+specific to this work beyond those commonly associated
+with the deployment of machine learning systems.
+References
+Stefano V. Albrecht, Filippos Christianos, and Lukas
+Sch¨afer. Multi-Agent Reinforcement Learning: Foun-
+dations and Modern Approaches. MIT Press, 2024. URL
+https://www.marl-book.com.
+Albert Benveniste, Michel M´etivier, and Pierre Priouret.
+Adaptive algorithms and stochastic approximations, vol-
+ume 22. Springer Science & Business Media, 2012.
+Dimitri P Bertsekas. Approximate dynamic programming.
+Athena scientific Belmont, 2012.
+Filippos Christianos, Lukas Sch¨afer, and Stefano V Albrecht.
+Shared experience actor-critic for multi-agent reinforce-
+ment learning. In Advances in Neural Information Pro-
+cessing Systems (NeurIPS), 2020.
+Flavin Cristian. Understanding fault-tolerant distributed sys-
+tems. Communications of the ACM, 34(2):56–78, 1991.
+Ingy ElSayed-Aly, Suda Bharadwaj, Christopher Amato,
+R¨udiger Ehlers, Ufuk Topcu, and Lu Feng. Safe multi-
+agent reinforcement learning via shielding. arXiv preprint
+arXiv:2101.11196, 2021.
+Xiaofeng Fan, Yining Ma, Zhongxiang Dai, Wei Jing, Che-
+ston Tan, and Bryan Kian Hsiang Low. Fault-tolerant
+federated reinforcement learning with theoretical guaran-
+tee. Advances in Neural Information Processing Systems,
+34:1007–1021, 2021.
+Drew Fudenberg and Jean Tirole. Tirole: Game theory. MIT
+Press, 726:764, 1991.
+Jordi Grau-Moya, Felix Leibfried, and Haitham Bou-
+Ammar. Balancing two-player stochastic games with
+soft q-learning. In Proceedings of the 27th International
+Joint Conference on Artificial Intelligence, IJCAI’18, pp.
+268–274. AAAI Press, 2018. ISBN 9780999241127.
+Shangding Gu, Jakub Grudzien Kuba, Munning Wen,
+Ruiqing Chen, Ziyan Wang, Zheng Tian, Jun Wang, Alois
+Knoll, and Yaodong Yang. Multi-agent constrained policy
+optimisation. arXiv preprint arXiv:2110.02793, 2021.
+Tommi Jaakkola, Michael I Jordan, and Satinder P Singh.
+Convergence of stochastic iterative dynamic program-
+ming algorithms. In Advances in neural information
+processing systems, pp. 703–710, 1994.
+Anurag Koul. ma-gym: Collection of multi-agent environ-
+ments based on openai gym. https://github.com/
+koulanurag/ma-gym, 2019.
+Shihui Li, Yi Wu, Xinyue Cui, Honghua Dong, Fei Fang,
+and Stuart Russell. Robust multi-agent reinforcement
+learning via minimax deep deterministic policy gradi-
+ent. In Proceedings of the AAAI conference on artificial
+intelligence, volume 33, pp. 4213–4220, 2019.
+Simin Li, Jun Guo, Jingqiao Xiu, Ruixiao Xu, Xin Yu,
+Jiakai Wang, Aishan Liu, Yaodong Yang, and Xiang-
+long Liu. Byzantine robust cooperative multi-agent rein-
+forcement learning as a bayesian game. arXiv preprint
+arXiv:2305.12872, 2023.
+9
+
+Learning Robust Multi-Agent Policies
+Michael L Littman. Markov games as a framework for
+multi-agent reinforcement learning. In Machine learning
+proceedings 1994, pp. 157–163. Elsevier, 1994.
+Ryan Lowe, Yi Wu, Aviv Tamar, Jean Harb, Pieter Abbeel,
+and Igor Mordatch. Multi-agent actor-critic for mixed
+cooperative-competitive environments. Neural Informa-
+tion Processing Systems (NIPS), 2017.
+Songtao Lu, Kaiqing Zhang, Tianyi Chen, Tamer Bas¸ar, and
+Lior Horesh. Decentralized policy gradient descent ascent
+for safe multi-agent reinforcement learning. In Proceed-
+ings of the AAAI Conference on Artificial Intelligence,
+volume 35, pp. 8767–8775, 2021.
+David Mguni. Cutting your losses: Learning fault-tolerant
+control and optimal stopping under adverse risk. arXiv
+preprint arXiv:1902.05045, 2019.
+David Mguni, Aivar Sootla, Juliusz Ziomek, Oliver Slum-
+bers, Zipeng Dai, Kun Shao, and Jun Wang. Timing
+is Everything: Learning to act selectively with costly
+actions and budgetary constraints. In In International
+Conference on Learning Representations, 2023.
+Bernt Øksendal and Agnes Sulem. Applied stochastic con-
+trol of jump diffusions, volume 3. Springer, 2007.
+Frans A Oliehoek, Christopher Amato, et al. A concise intro-
+duction to decentralized POMDPs, volume 1. Springer,
+2016.
+Martin J Osborne and Ariel Rubinstein. A course in game
+theory. MIT press, 1994.
+Lerrel Pinto, James Davidson, Rahul Sukthankar, and Ab-
+hinav Gupta. Robust adversarial reinforcement learning.
+In International Conference on Machine Learning, pp.
+2817–2826. PMLR, 2017.
+Zengyi Qin, Kaiqing Zhang, Yuxiao Chen, Jingkai Chen,
+and Chuchu Fan. Learning safe multi-agent control with
+decentralized neural barrier certificates. arXiv preprint
+arXiv:2101.05436, 2021.
+Tabish Rashid, Mikayel Samvelyan, Christian Schroeder,
+Gregory Farquhar, Jakob Foerster, and Shimon Whiteson.
+Qmix: Monotonic value function factorisation for deep
+multi-agent reinforcement learning. In International Con-
+ference on Machine Learning, pp. 4295–4304. PMLR,
+2018.
+Lloyd S Shapley. Stochastic games. Proceedings of the
+national academy of sciences, 39(10):1095–1100, 1953.
+Yoav Shoham and Kevin Leyton-Brown. Multiagent sys-
+tems: Algorithmic, game-theoretic, and logical founda-
+tions. Cambridge University Press, 2008.
+Aivar Sootla, Alexander I. Cowen-Rivers, Taher Jafferjee,
+Ziyan Wang, David Mguni, Jun Wang, and Haitham Bou-
+Ammar. SAUTE RL: Almost surely safe reinforcement
+learning using state augmentation, 2022.
+Peter Sunehag, Guy Lever, Audrunas Gruslys, Woj-
+ciech Marian Czarnecki, Vinicius Zambaldi, Max Jader-
+berg, Marc Lanctot, Nicolas Sonnerat, Joel Z Leibo,
+Karl Tuyls, et al.
+Value-decomposition networks
+for cooperative multi-agent learning.
+arXiv preprint
+arXiv:1706.05296, 2017.
+John N Tsitsiklis and Benjamin Van Roy. Optimal stop-
+ping of markov processes: Hilbert space theory, approx-
+imation algorithms, and an application to pricing high-
+dimensional financial derivatives. IEEE Transactions on
+Automatic Control, 44(10):1840–1851, 1999.
+Yaodong Yang and Jun Wang. An overview of multi-agent
+reinforcement learning from game theoretical perspective.
+arXiv preprint arXiv:2011.00583, 2020.
+Kaiqing Zhang, Tao Sun, Yunzhe Tao, Sahika Genc, Sunil
+Mallya, and Tamer Basar. Robust multi-agent reinforce-
+ment learning with model uncertainty. Advances in neural
+information processing systems, 33:10571–10583, 2020.
+Wenbo Zhang, Osbert Bastani, and Vijay Kumar. Mamps:
+Safe multi-agent reinforcement learning via model predic-
+tive shielding. arXiv preprint arXiv:1910.12639, 2019.
+Haibin Zheng, Xiaohao Li, Jinyin Chen, Jianfeng Dong,
+Yan Zhang, and Changting Lin. One4all: Manipulate one
+agent to poison the cooperative multi-agent reinforcement
+learning. Computers & Security, 124:103005, 2023.
+Ziyuan Zhou and Guanjun Liu. Robustness testing for multi-
+agent reinforcement learning: State perturbations on criti-
+cal agents. arXiv preprint arXiv:2306.06136, 2023.
+10
+
+Learning Robust Multi-Agent Policies
+Supplementary Material
+A. Ablation Studies
+Switcher Effectiveness and Calibration. We evaluate the effectiveness of MARTA’s Switcher mechanism in two aspects:
+(1) Its ability to calibrate the frequency of adversarial malfunctions via the parameter c; (2) Its performance in Level 2
+(training/test malfunction distribution shift):
+Varying Switching Cost c (Fig. 7a and Fig. 7c). We train MARTA under different switching costs c in the TJ environment.
+Larger values of c make Switcher more conservative in triggering malfunctions, resulting in fewer fault activations. This
+reflects a trade-off: high c limits unnecessary disruptions but may reduce robustness; low c encourages aggressive adversarial
+training. The monotonic trend validates that Switcher adaptively regulates the fault difficulty during training.
+Is MARTA robust under malfunction distributional shifts? (Fig. 7b). We compare MARTA under Case 1 (aligned
+malfunction distributions in training and testing) and Case 2 (mismatched distributions), across different switching costs c
+in the TJ environment. The performance gap between the cases highlights the generalisation difficulty under distributional
+shift.
+0
+0.1
+0.2
+0.5
+Switch Cost
+20
+10
+0
+Final Test Return Mean
+(a) Effect of switch cost
+case1
+case2
+35
+30
+25
+20
+15
+Max Test Return Mean
+vdn
+marta_vdn
+(b) Uniform & worst-case malfunction
+377 378 379 380 381 382 383 384
+Final Test Return Mean
+18.6
+18.8
+19.0
+19.2
+19.4
+Final Capture Count per Episode
+sc5
+sc10
+sc20
+sc40
+Final Return vs Final Capture Count
+(c) Trade-off between return and Collision rate
+Figure 7. Switcher ablation experiments. (a) shows final evaluation returns under different switching costs c. (b) compares MARTA in
+Case 1 and Case 2.
+Is MARTA robust under Varying Malfunction Probability? We evaluate the fault-tolerance of MARTA across different
+levels of malfunction probability p. Specifically, p denotes the per-timestep probability that a malfunction is introduced
+i.e., at each timestep, with probability p, an agent becomes faulty and executes the malfunction policy. Larger p values
+indicate more frequent and unpredictable failures, thereby increasing the difficulty of the task. We conduct this experiment
+in the Traffic Junction environment, using QMIX as the base learner. As shown in Fig. 8, we vary p and compare the
+final returns of MARTA-QMIX with QMIX. The results show a clear performance gap: while the baseline QMIX degrades
+rapidly under higher malfunction frequencies, MARTA-QMIX does not suffer performance loss even at higher p. This
+suggests the Switcher mechanism in MARTA enables more effective adaptation to dynamic and persistent failure conditions.
+In summary, MARTA significantly extends the robustness envelope of its underlying MARL algorithm, showing consistent
+advantage across a wide range of disturbance intensities.
+11
+
+Learning Robust Multi-Agent Policies
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+Step
+1e6
+200
+180
+160
+140
+120
+100
+80
+60
+Test Return Mean
+qmix-p=0.6
+marta-p=0.8
+qmix-p=0.4
+qmix-p=0.8
+marta-p=0.6
+marta-p=0.4
+(a) Learning curves: varying p
+p=0.4
+p=0.6
+p=0.8
+0
+10
+20
+30
+40
+50
+60
+70
+80
+Max Test Return Gap
+950k
+700k
+700k
+(b) Fault-Tolerance: varying p
+Figure 8. Robustness under varying malfunction probability p in the TJ environment.
+12
+
+Learning Robust Multi-Agent Policies
+B. Further Analysis of Experimental Results
+Table 1. Experimental factors, levels, and rationale
+Factor
+Levels
+Rationale & Motivation
+Agent selection
+(who) F
+{Simple, Mid,
+Hard}
+Simple: same fixed agent i⋆fails with per-step prob. p in train/test; persistent, predictable single-point
+failure. Mid: per step, sample one agent it ∼F; train/test share F, unpredictable yet aligned. Hard:
+all agents faultable (concurrent allowed) and train/test fault processes mismatched (Ftest ̸= Ftrain,
+ptest ̸=ptrain); strongest generalisation stress.
+Fault
+policy
+(how) σi
+{Uniform,
+Worst-case}
+Uniform: uniformly random action; noise baseline. Worst-case: adversarial via softmax(−Q∗);
+targets high-impact disruption without altering environment dynamics.
+Trigger probabil-
+ity p
+grid P
+Controls fault frequency (difficulty). Sweeps over p ∈P quantify degradation and intervention–return
+trade-offs.
+Switch cost c
+grid C
+Calibrates Switcher activation; larger c discourages frequent interventions. Sweeps test robust-
+ness–efficiency trade-off.
+Train–test proto-
+col
+{Aligned,
+Shifted}
+Aligned (Case 1): test uses same F, σi as training; ID robustness. Shifted (Case 2): test alters F
+and/or σi; OOD generalisation.
+Switcher
+type
+(ablation)
+{Learned, Ran-
+dom}
+Random: fixed Bernoulli triggers with all else fixed; isolates the benefit of state-dependent, learned
+switching (Learned).
+Table 2. Settings for Fig. 2 and Fig. 4.
+Env
+Base Algo (Agents)
+Malfunction
+p
+Fig
+TJ
+VDN (4)
+Level2
+0.1
+a
+QMIX (6)
+Level1
+0.1
+a
+LBF
+VDN (4)
+Level2
+0.4
+b
+QMIX (4)
+Level2
+0.2
+b
+MPE
+QMIX (4)
+Level1
+0.1
+c
+MADDPG (4)
+Level2
+0.4
+c
+SMAC-3m
+VDN (3)
+Level1
+0.4
+d
+QMIX (3)
+Level2
+0.2
+d
+SMAC-8m
+VDN (8)
+Level1
+0.2
+d
+QMIX (8)
+Level2
+0.2
+d
+SMAC-2s3z
+VDN (5)
+Level1
+0.6
+d
+QMIX (5)
+Level2
+0.2
+d
+To provide a quantitative summary, we evaluate each method using two metrics:
+Final Test Return: We average the test return from the last 5 evaluation checkpoints for each seed, and report the mean ±
+standard deviation across seeds. As shown in Table 3, MARTA exhibits clear performance gains in all three scenarios. The
+column ”Gain (%)” indicates the relative improvement of MARTA over its baseline, computed as the percentage change
+with respect to the baseline’s absolute value, i.e., (MARTA −Baseline)/|Baseline| × 100.
+Area Under the Learning Curve (AUC): To jointly evaluate sample efficiency and final return, we compute the AUC
+over the test return curve for each seed in Fig 9. MARTA consistently achieves higher AUC scores than its baselines,
+indicating both faster and more stable learning. The AUC ”Gain (%)” reflects the relative increase in cumulative performance
+throughout training. Note that in TRAFFIC JUNCTION, MARTA-QMIX exhibits a lower AUC than QMIX because it
+converges more slowly in the early phase; however, it ultimately attains a higher final return.
+13
+
+Learning Robust Multi-Agent Policies
+QMIX
+VDN
+1.0
+0.5
+0.0
+AUC
+1e8
+Traffic Junction
+QMIX
+VDN
+0
+2
+4 1e6
+LBF
+QMIX
+VDN
+0
+2
+4
+6
+1e8
+MPE-SimpleTag
+QMIX
+MARTA-QMIX
+VDN
+MARTA-VDN
+Figure 9. AUC comparisons across environments.
+QMIX
+VDN
+0.0
+0.5
+1.0
+1.5
+AUC
+1e7
+SMAC-3m
+QMIX
+VDN
+0.0
+0.5
+1.0
+1.5
+1e7
+SMAC-8m
+QMIX
+VDN
+0
+1
+2
+1e7
+SMAC-2s3z
+QMIX
+MARTA-QMIX
+VDN
+MARTA-VDN
+Figure 10. AUC comparisons across smac environments.
+Table 3. The improvements of final return and AUC (± std) over baselines across 3 seeds.
+Env
+Method
+Final Return (µ ± σ)
+Gain (%)
+AUC (µ ± σ)
+Gain (%)
+Traffic Junction
+QMIX
+−54.2 ± 1.1
+−6.08e7 ± 2.19e6
+MARTA-QMIX
+−48.2 ± 4.7
++11.1
+−8.64e7 ± 11.6e6
+-42.1
+VDN
+−40.1 ± 2.2
+−6.62e7 ± 6.31e6
+MARTA-VDN
+−24.9 ± 0.8
++37.8
+−4.05e7 ± 0.79e6
++38.8
+LBF
+QMIX
+0.65 ± 0.279
+1.97e6 ± 18.9e5
+MARTA-QMIX
+0.94 ± 0.043
++44.6
+2.44e6 ± 7.65e5
++23.9
+VDN
+0.94 ± 0.002
+2.55e6 ± 0.92e5
+MARTA-VDN
+0.97 ± 0.021
++3.2
+2.61e6 ± 1.33e5
++2.4
+MPE-SimpleTag
+QMIX
+395.28 ± 14.78
+5.01e8 ± 6.26e7
+MARTA-QMIX
+479.79 ± 26.19
++21.4
+6.08e8 ± 8.94e7
++21.4
+VDN
+346.80 ± 19.01
+6.14e8 ± 1.58e7
+MARTA-VDN
+420.26 ± 5.789
++21.2
+7.49e8 ± 0.92e7
++22.0
+SMAC-3m
+QMIX
+1.14 ± 0.53
+3.34e6 ± 8.24e5
+MARTA-QMIX
+2.45 ± 0.46
++114.9
+5.61e6 ± 1.70e5
++68.0
+VDN
+2.57 ± 3.14
+0.62e7 ± 1.06e6
+MARTA-VDN
+5.57 ± 1.74
++116.7
+1.70e7 ± 1.11e6
++22.0
+SMAC-8m
+QMIX
+4.18 ± 0.36
+9.56e6 ± 2.16e5
+MARTA-QMIX
+4.57 ± 0.45
++9.3
+9.78e6 ± 1.78e5
++2.3
+VDN
+5.08 ± 0.38
+1.33e7 ± 2.88e6
+MARTA-VDN
+5.58 ± 0.54
++9.8
+1.51e7 ± 1.77e6
++13.5
+SMAC-2s3z
+QMIX
+4.87 ± 0.032
+1.39e7 ± 7.03e6
+MARTA-QMIX
+6.08 ± 0.638
++24.8
+1.59e7 ± 6.27e6
++2.3
+VDN
+6.05 ± 0.35
+1.76e7 ± 6.36e6
+MARTA-VDN
+7.31 ± 0.57
++20.8
+1.82e7 ± 9.22e6
++3.4
+14
+
+Learning Robust Multi-Agent Policies
+C. Algorithms
+In this section, we provide the pseudocode for 3 variants of MARTA, namely an actor-critic variant of MARTA called
+MARTA-AC (Algorithm 1) a Q learning variant called MARTA-Q (Algorithm 2) and, lastly a version of MARTA-AC that
+accommodates budget constraints called MARTA-Budget (Algorithm 3).
+Algorithm 1 Multi-Agent Robust Training Algorithm (MARTA)-AC
+1: Input: Stepsize α, batch size B, episodes K, steps per episode T, mini-epochs e, malfunction cost c, Termination
+probability parameter p (Bernoulli distributed).
+2: Initialise: Policy network (acting) π, Policy network (switching) g,
+Policy network (adversary) (σ1, . . . , σN) = σ, Critic network (acting )Vπ, Critic network (switching )Vg, Critic
+network (adversary )Vσ, for any t < 0 set termination probability pt ≡1.
+3: Given reward objective function, R, initialise Rollout Buffers Bπ, Bg (use Replay Buffer for SAC), Bσ.
+4: for Nepisodes do
+5:
+Reset state s0, Reset Rollout Buffers Bπ, Bg, Bσ
+6:
+for t = 0, 1, . . . do
+7:
+Sample (f 1
+t , . . . , f N
+t ) = ft ∼σ(·|st), at ∼π(·|st), gt ∼g(·|st), pt ∼Bern(p)
+8:
+if (1 −pt−1)gt−1 > 0 (hence (1 −pt−1)gt−1 = i ∈N) then
+9:
+Set gt ≡gt−1. Apply f i
+t and a−i
+t
+where i ≡gt−1 so st+1 ∼P(·|(f i
+t, a−i
+t ), st),
+10:
+Receive rewards rS,t = −c −rt and rt where rt ∼R(st, (f i
+t, a−i
+t ))
+11:
+Store (st, (f i
+t, a−i
+t ), st+1, rt), (st, (f i
+t, a−i
+t ), st+1, −rt) and (st, gt, st+1, rS,t) in Bπ, Bσ and Bg respectively.
+12:
+else
+13:
+if gt = i ∈{1, . . . , N} then
+14:
+Apply f i
+t and a−i
+t
+so st+1 ∼P(·|(f i
+t, a−i
+t ), st),
+15:
+Receive rewards rS,t = −c −rt and rt where rt ∼R(st, (f i
+t, a−i
+t ))
+16:
+Store (st, (f i
+t, a−i
+t ), st+1, rt), (st, (f i
+t, a−i
+t ), st+1, −rt) and (st, gt, st+1, rS,t) in Bπ, Bσ and Bg respec-
+tively.
+17:
+else
+18:
+Apply the actions at ∼π(·|st) so st+1 ∼P(·|at, st),
+19:
+Receive rewards rS,t = −rt and rt where rt ∼R(st, at).
+20:
+end if
+21:
+end if
+22:
+Store (st, at, st+1, rt) and (st, gt, st+1, rS,t) in Bπ and Bg respectively.
+23:
+end for
+24:
+// Learn the individual policies
+25:
+Update policy π and critic Vπ networks using Bπ
+26:
+Update policy g and critic Vg networks using Bg
+27:
+Update policy σ and critic Vσ networks using Bσ
+28: end for
+15
+
+Learning Robust Multi-Agent Policies
+Algorithm 2 Multi-Agent Robust Training Algorithm (MARTA)- Q
+1: Input: Constant ϵ ≥0,
+2: Initialise: Q-function, Q0, set termination probability pt ≡1 for any t < 0
+3: n ←0
+4: for t = 0, 1, . . . do
+5:
+Estimate at ∈arg max Qn(st, at)
+6:
+Estimate f i
+t ∈arg min
+i∈N,ai
+t∈Ai
+max
+a−i
+t
+∈A−i QS(s, (ai
+t, a−i
+t ), g)
+7:
+if (1 −pt−1)gt−1 > 0 (i.e. (1 −pt−1)gt−1 ∈N) then
+8:
+Set gt ≡gt−1. Apply f i
+t and a−i
+t
+where i ≡gt−1 so st+1 ∼P(·|(f i
+t, a−i
+t ), st),
+9:
+else
+10:
+if ˆ
+MQn ≥Qn then
+11:
+Apply f i
+t and a−i
+t
+so st+1 ∼P(·|(f i
+t, a−i
+t ), st)
+12:
+Receive rewards rS,t = −c −rt and rt where rt ∼R(st, (f i
+t, a−i
+t ))
+13:
+else
+14:
+Apply the actions at so st+1 ∼P(·|at, st),
+15:
+Receive rewards rS,t = −rt and rt where rt ∼R(st, at).
+16:
+end if
+17:
+end if
+18: end for
+19: // Learn ˆQ
+20: Update Qn function according to the update rule equation 2
+Algorithm 3 Multi-Agent Robust Training Algorithm (MARTA)-Budget
+1: Input: Stepsize α, batch size B, episodes K, steps per episode T, mini-epochs e, malfunction cost c.
+2: Initialise: Policy network (acting) π, Policy network (switching) g,
+Policy network (adversary) (σ1, . . . , σN) = σ, Critic network (acting )Vπ, Critic network (switching )Vg, Critic
+network (adversary )Vσ.
+3: Given reward objective function, R, initialise Rollout Buffers Bπ, Bg (use Replay Buffer for SAC), Bσ.
+4: for Nepisodes do
+5:
+Reset state s0, Reset Rollout Buffers Bπ, Bg, Bσ
+6:
+for t = 0, 1, . . . do
+7:
+Sample (f 1
+t , . . . , f N
+t ) = ft ∼σ(·|st), at ∼π(·|st), gt ∼g(·|st, ft, at) st = (st, yt)
+8:
+if gt = i ∈{1, . . . , N} then
+9:
+Apply f i
+t and a−i
+t
+so st+1 ∼eP(·|(f i
+t, a−i
+t ), st)
+10:
+Receive rewards erS,t = −c −rt and ert where ert ∼eR(st, (f i
+t, a−i
+t )),
+11:
+Store (zt, f i
+t, a−i
+t , st+1, rS,t, rt) in Bπ, Bσ, Bg where zt := (st, gt), st = (st, yt).
+12:
+else
+13:
+Apply the actions at ∼π(·|st) so st+1 ∼P(·|at, st),
+14:
+Receive rewards erS,t = −ert and ert where ert ∼eR(st, at).
+15:
+end if
+16:
+Store (zt, at, st+1, rS,t, rt) in Bπ, Bσ, Bg.
+17:
+end for
+18:
+// Learn the individual policies
+19:
+Update policy π and critic Vπ networks using Bπ
+20:
+Update policy g and critic Vg networks using Bg
+21:
+Update policy σ and critic Vσ networks using Bσ
+22: end for
+16
+
+Learning Robust Multi-Agent Policies
+C.1. Computational Requirements
+All experiments presented in this work were executed purely on CPUs. The experiments were executed in compute clusters
+that consist of several nodes. The main types of CPU models that were used for this work are GHz Quad-Core Intel Core i5
+processor, Intel Iris Plus graphics. All experiments were executed using a single CPU core. The total number of CPU hours
+that were spent for executing the experiments in this work (excluding the hyper-parameter search) are 80,900.
+C.2. Hyperparameter Settings
+In the table below we report all hyperparameters used in our experiments. Hyperparameter values in square brackets indicate
+ranges of values that were used for performance tuning.
+Clip Gradient Norm
+1
+γE
+0.99
+λ
+0.95
+Learning rate
+1x10−4
+Number of minibatches
+4
+Number of optimisation epochs
+4
+Number of parallel actors
+16
+Optimisation algorithm
+Adam
+Rollout length
+128
+Sticky action probability
+0.25
+Use Generalised Advantage Estimation
+True
+Coefficient of extrinsic reward
+[1, 5]
+Coefficient of intrinsic reward
+[1, 2, 5, 10, 20, 50]
+Switcher discount factor
+0.99
+Probability of terminating option
+[0.5, 0.75, 0.8, 0.9, 0.95]
+L function output size
+[2, 4, 8, 16, 32, 64, 128, 256]
+17
+
+Learning Robust Multi-Agent Policies
+D. Additional Theoretical Results
+Theorem D.1. Let v : S →R then the sequence of Bellman operators acting on v converges to the solution of the game,
+that is to say for any s ∈S the following holds:
+lim
+k→∞T kv(s|π, g) = v∗(s),
+(2)
+where v∗(s)
+=
+min
+ˆg max
+ˆπ∈Π v(s|ˆπ, ˆg)
+=
+max
+ˆπ∈Π min
+ˆg v(s|ˆπ, ˆg),
+the operator T
+is given by Tv(s|π, g)
+=
+min
+n
+ˆ
+MQS, max
+a∈A
+
+R(s, a) + γ P
+s′∈S
+P(s′; a, s)v(s′|π, g)
+ o
+where
+ˆ
+MQS(s, a, g|π, g)
+:=
+c
++
+min
+i∈N ,ai∈Ai
+max
+a−i∈A−i QS(s, (ai, a−i), g|π, g).
+We introduce the associated reward functions eR : X × A →P(D) and eRS : X × A × N × {0} →P(D) and the
+probability transition function eP : X × A × X →[0, 1] whose state space input is now replaced by X and Switcher value
+function for the budgeted game eG. We now prove MARTA-B generates best-response FT policies with a fault-activation
+budget.
+Theorem D.2. Consider the budgeted problem eG, then for any ev : X →R, the solution of eG is given by
+lim
+k→∞
+˜T k
+GevS = min
+ˆg
+max
+ˆπ
+evS(·|ˆπ, ˆg) = max
+ˆπ
+min
+ˆg
+evS(·|ˆπ, ˆg),
+where Switcher’s optimal policy takes the Markovian form eg(·|x) for any y ≡(y, s) ∈X.
+Theorem D.2 proves, under standard assumptions, MARTA converges to the solution of Switcher’s problem and the
+dec-POMDP under a Switcher fault-activation budget constraint.
+18
+
+Learning Robust Multi-Agent Policies
+E. Proof of Technical Results
+E.1. Notation & Assumptions
+We assume that S is defined on a probability space (Ω, F, P) and any s ∈S is measurable with respect to the Borel
+σ-algebra associated with Rp. We denote the σ-algebra of events generated by {st}t≥0 by Ft ⊂F. In what follows, we
+denote by (Y, ∥∥) any finite normed vector space and by H the set of all measurable functions. The results of the paper are
+built under the following assumptions which are standard within RL and stochastic approximation methods:
+Assumption 1. The stochastic process governing the system dynamics is ergodic, that is the process is stationary and every
+invariant random variable of {st}t≥0 is equal to a constant with probability 1.
+Assumption 2. The agents’ reward function R is in L2.
+Assumption 3. For any Switcher policy g, the total number of interventions is K < ∞.
+We begin the analysis with some preliminary results and definitions required for proving our main results.
+Definition E.1. A.1 Given a norm ∥· ∥, an operator T : Y →Y is a contraction if there exists some constant c ∈[0, 1[ for
+which for any J1, J2 ∈Y the following bound holds: ∥TJ1 −TJ2∥≤c∥J1 −J2∥.
+Definition E.2. A.2 An operator T : Y →Y is non-expansive if ∀J1, J2 ∈Y the following bound holds: ∥TJ1 −TJ2∥≤
+∥J1 −J2∥.
+Lemma E.3. (Mguni, 2019) For any f : Y →R : Y →R, we have that the following inequality holds:
+max
+a∈Y f(a) −max
+a∈Y g(a)
+ ≤max
+a∈Y ∥f(a) −g(a)∥.
+(3)
+Lemma E.4. A.4(Tsitsiklis & Van Roy, 1999) The probability transition kernel P is non-expansive so that if ∀J1, J2 ∈Y
+the following holds: ∥PJ1 −PJ2∥≤∥J1 −J2∥.
+Lemma E.5. A.1 Define val+[f] := minb∈B maxa∈A f(a, b) and define
+val−[f] := maxa∈A minb∈B f(a, b), then for any b ∈B we have that for any f, g ∈L and for any k ∈R>0:
+max
+a∈A f(a, b) −max
+a∈A g(a, b)
+ ≤k =⇒
+val−[f] −val−[g]
+ ≤k.
+Lemma E.6. A.2 For any f, g, h ∈L and for any k ∈R>0 we have that:
+∥f −g∥≤k =⇒∥min{f, h} −min{g, h}∥≤k.
+Lemma E.7. A.3 Let the functions f, g, h ∈L then
+∥max{f, h} −max{g, h}∥≤∥f −g∥.
+(4)
+Proof of Lemma E.5. We begin by noting the following inequality for any f : V × V →R, g : V × V →R s.th. f, g ∈L
+we have by Lemma 5, that for all b ∈V:
+max
+a∈V f(a, b) −max
+a∈V g(a, b)
+ ≤max
+a∈V |f(a, b) −g(a, b)| .
+(5)
+From (5) we can straightforwardly derive the fact that for any b ∈V:
+min
+a∈V f(a, b) −min
+a∈V g(a, b)
+ ≤max
+a∈V |f(a, b) −g(a, b)| ,
+(6)
+(this can be seen by negating each of the functions in (5) and using the properties of the max operator).
+Assume that for any b ∈V the following inequality holds:
+max
+a∈V |f(a, b) −g(a, b)| ≤k
+(7)
+19
+
+Learning Robust Multi-Agent Policies
+Since (6) holds for any b ∈V and, by (5), we have in particular that
+max
+b∈V min
+a∈V f(a, b) −max
+b∈V min
+a∈V g(a, b)
+
+≤max
+b∈V
+min
+a∈V f(a, b) −min
+a∈V g(a, b)
+
+≤max
+b∈V max
+a∈V |f(a, b) −g(a, b)| ≤k,
+(8)
+whenever (7) holds which gives the required result.
+The following result fully characterises Switcher’s policy g in terms of an obstacle condition which can be determined at
+each state:
+Proposition E.8. Denote by a
+≡
+(ai, a−i)
+∈
+A, the optimal Switcher policy g∗is given by g∗(·|s)
+=
+arg min
+i∈N
+
+min
+ai∈Ai max
+a−i∈A−iQS(s, a, g|·)
+
+1
+
+max
+a∈A QS(s, a, g|·) −ˆ
+MQS(s, a, g|·)
+
+for any s ∈S where 1R+(x) = 1 if
+x > 0 and 0 otherwise.
+Prop. E.8 provides characterisation of where Switcher should activate Adversary and which agent i ∈N should be activated.
+The condition allows for the characterisation to be evaluated online during the learning phase.
+Proof of Theorem D.1
+Proof. We begin by recalling the definition of the intervention operator ˆ
+M for any s ∈S:
+ˆ
+MQS(s, a, g|·) := c +
+min
+i∈N ,ai∈Ai
+max
+a−i∈A−i QS(s, (ai, a−i), g|·)
+(9)
+Secondly, recall that the Bellman operator for the game G acting on a function vS : S →R is:
+TvS(s) := min
+(
+ˆ
+MQS, max
+a∈A
+"
+RS + γ
+X
+s′∈S
+P(s′; ·)vS(s′)
+#)
+(10)
+It suffices to prove that T is a contraction operator. Thereafter, we use both results to prove the existence of a fixed point for
+G as a limit point of a sequence generated by successively applying the Bellman operator to a test value function. Therefore
+our next result shows that the following bounds holds:
+Lemma E.9. The Bellman operator T is a contraction so that for any real-valued maps vS, v′
+S, the following bound holds:
+∥TvS −Tv′
+S∥≤γ ∥vS −v′
+S∥.
+In the following proofs, we use the shorthand notation: Pa
+ss′ =: P
+s′∈S P(s′; a, s) and Pπ
+ss′ =: P
+a∈A π(a|s)Pa
+ss′. To
+prove that T is a contraction, we consider the three cases produced by equation 10, that is to say we prove the following
+statements:
+i)
+max
+a∈A
+ RS(st, a, g) + γPa
+s′stvS(s′)
+
+−max
+a∈A
+ RS(st, a, g) + γPa
+s′stv′
+S(s′)
+ ≤γ ∥vS −v′
+S∥
+ii)
+ ˆ
+MQS −ˆ
+MQ′
+S
+ ≤γ ∥vS −v′
+S∥,
+.
+iii)
+ ˆ
+MQS −max
+a∈A [RS(st, a, g) + γPa
+s′sv′
+S]
+ ≤γ ∥vS −v′
+S∥.
+We begin by proving i).
+20
+
+Learning Robust Multi-Agent Policies
+Indeed, for any a ∈A and ∀st ∈S, ∀s′ ∈S we have that
+max
+a∈A
+ RS(st, a, g) + γPπ
+s′stvS(s′)
+
+−max
+a∈A
+ RS(st, a, g) + γPa
+s′stv′
+S(s′)
+
+≤max
+a∈A
+γPa
+s′stvS(s′) −γPa
+s′stv′
+S(s′)
+
+≤γ ∥PvS −Pv′
+S∥
+≤γ ∥vS −v′
+S∥,
+using the non-expansiveness of the operator P and Lemma E.3.
+We now prove ii). Using the definition of M we have that for any s ∈S
+( ˆ
+MQS −ˆ
+MQ′
+S)(s, a)
+
+=
+
+min
+i∈N,ai∈Ai
+max
+a−i∈A−i (RS(s, a, g) + c + γPa
+s′svS(s)) −
+min
+i∈N ,ai∈Ai
+max
+a−i∈A−i (RS(s, a, g) + c + γPa
+s′sv′
+S(s))
+
+≤γ
+max
+i∈N,ai∈Ai
+max
+a−i∈A−i
+γPaiPa−ivS(s) −PaiPa−iv′
+S(s)
+
+≤γmax
+a∈A
+PaiPa−ivS(s) −PaiPa−iv′
+S(s)
+
+≤γ ∥PvS −Pv′
+S∥
+≤γ ∥vS −v′
+S∥,
+using equation 6 in the second step and the fact that P is non-expansive.
+We now prove iii). In the proof of iii), we use the following equivalent representation of Switcher objective which is to find
+(ˆπ, ˆg) such that
+(ˆπ, ˆg) ∈arg
+π,g max vS(s|π, g)
+vS(s|π, g) = Eg∼g
+" ∞
+X
+t=0
+γt (−R(st, at) −c · 1N (g(st)))
+s0 = s; a ∼π
+#
+.
+Now the intervention operator transforms as ˆ
+M:
+ˆ
+MQS(s, a, g|·) := −c +
+max
+i∈N ,ai∈Ai
+min
+a−i∈A−i QS(s, (ai, a−i), g|·),
+(11)
+for any s ∈S and any a ∈A. Similarly, the Bellman operator acting on a function vS : S →R becomes:
+T vS(s) := min
+n
+ˆ
+MQS, min
+a∈A
+"
+−RS + γ
+X
+s′∈S
+P(s′; ·)vS(s′)
+# o
+, ∀s ∈S.
+(12)
+Therefore, to prove (iii), we must show that:
+ ˆ
+MQS −min
+a∈A [−RS(s, a, g) + γPa
+s′sv′
+S]
+ ≤γ ∥vS −v′
+S∥.
+(13)
+We split the proof of the statement into two cases:
+Case 1: First, assume that for any s ∈S and ∀a ∈A the following inequality holds:
+ˆ
+MQS(s, a, g|·) −min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′)) < 0.
+(14)
+21
+
+Learning Robust Multi-Agent Policies
+We now observe the following:
+ˆ
+MQS(s, a, g|·) −min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′))
+≤max
+
+min
+a∈A (−RS(s, a, g) + γPa
+s′svS(s′)) , ˆ
+MQS(s, a, g|·)
+
+−min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′))
+≤
+ max
+
+min
+a∈A (−RS(s, a, g) + γPa
+s′svS(s′)) , ˆ
+MQS(s, a, g|·)
+
+−max
+
+min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′)) , ˆ
+MQS(s, a, g|·)
+
++ max
+
+min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′)) , ˆ
+MQS(s, a, g|·)
+
+−min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′))
+
+≤
+ max
+
+min
+a∈A (−RS(s, a, g) + γPa
+s′svS(s′)) , ˆ
+MQS(s, a, g|·)
+
+−max
+
+min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′)) , ˆ
+MQS(s, a, g|·)
+ 
++
+ max
+
+min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′)) , ˆ
+MQS(s, a, g|·)
+
+−min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′))
+
+≤γmax
+a∈A |Pa
+s′svS(s′) −Pa
+s′sv′
+S(s′)| +
+max
+
+0, ˆ
+MQS(s, a, g|·) −min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′))
+
+≤γ ∥PvS −Pv′
+S∥
+≤γ∥vS −v′
+S∥,
+where we have used the fact that for any scalars a, b, c we have that |max{a, b} −max{b, c}| ≤|a −c|, the non-
+expansiveness of P and Lemma 5.
+Case 2: Let us now consider the case:
+ˆ
+MQS(s, a, g|·) −min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′)) ≥0.
+For this case, first recall that c > 0, hence
+ˆ
+MQS(s, a, g|·) −min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′))
+≤ˆ
+MQS(s, a, g|·) −min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′) −c)
+=
+max
+i∈N,ai∈Ai
+min
+a−i∈A−i
+
+−RS(s, a, g) −c + γPai
+s′sPa−i
+s′s vS(s′)
+
+−min
+a∈A (−RS(s, a, g) −c + γPa
+s′sv′
+S(s′))
+≤
+max
+i∈N,ai∈Ai
+max
+a−i∈A−i
+
+−RS(s, a, g) + γPai
+s′sPa−i
+s′s vS(s′)
+
+−min
+a∈A (−RS(s, a, g) + γPa
+s′sv′
+S(s′))
+=
+max
+i∈N,ai∈Ai
+max
+a−i∈A−i
+
+−RS(s, a, g) + γPai
+s′sPa−i
+s′s vS(s′)
+
++ max
+a∈A (RS(s, a, g) −γPa
+s′sv′
+S(s′))
+≤max
+a∈A (−RS(s, a, g) + γPa
+s′svS(s′)) + max
+a∈A (RS(s, a, g) −γPa
+s′sv′
+S(s′))
+≤γmax
+a∈A |Pa
+s′s (vS(s′) −v′
+S(s′))|
+≤γ |vS(s′) −v′
+S(s′)|
+≤γ ∥vS −v′
+S∥,
+using the non-expansiveness of the operator P and Lemma 5. Hence we have that
+ ˆ
+MQS −min
+a∈A [−RS(·, a) + γPa
+s′sv′
+S]
+ ≤γ ∥vS −v′
+S∥.
+(15)
+22
+
+Learning Robust Multi-Agent Policies
+Gathering the results of the three cases completes the proof of Theorem D.1.
+Proof of Theorem 3.1
+The proposition is proven by proving three auxilary results:
+Lemma E.10. For any vS : S →R, the solution of the game G is a limit point of the convergent sequence T 1vS, T 2vS, . . ..
+Proof of Lemma E.10. By Lemma E.9, we have that
+∥T k+1vS −T kvS∥≤γ∥T kvS −T k−1vS∥≤· · · ≤γk∥TvS −vS∥.
+(16)
+The result follows after considering the limit as k →∞and using the boundedness of ∥TvS −vS∥, we deduce that
+T kvS, T k+1vS, . . . , is a Cauchy sequence which concludes the proof.
+Proposition E.11. Denote by the finite game Gk in which Switcher, Adversary and N MARL agents seek to maximise the
+following finite-horizon objectives:
+vk
+S(s|π, g) = −Eg,σ
+
+
+X
+0≤t≤k<∞
+γt (R(st, at) + c · 1N (g(st)))
+s0 = s; at ∼(π, σ)
+
+, ∀s ∈S,
+vk
+A(s|π, g) = −Eg,σ
+
+
+X
+0≤t≤k<∞
+γtR(st, at)
+s0 = s; at ∼(π, σ)
+
+, ∀s ∈S,
+vk(s|π, g) = Eg,σ
+
+
+X
+0≤t≤k<∞
+γtR(st, at)
+s0 = s; at ∼(π, σ)
+
+, ∀s ∈S,
+Let ˆg and ˆσ, ˆπ ∈Π be the Markov policies generated by the process T 1vS, T 2vS, . . ., then ˆg and ˆσ, ˆπ ∈Π are optimal
+policies for Gk.
+Proof. The proof is achieved using similar arguments as those presented in Theorem 2 of (Shapley, 1953) with
+some modifications.
+Denote by the finite game Gk of k < ∞steps in which adversary (the N agents) max-
+imises (minimise) the following objective vk(s|π, g) = −E
+hPk
+t=0 γt {R(st, at, bt)}
+s0 = s
+i
+and Switcher maximises
+vk
+C(s|π, g) = −E
+hPk
+t=0 γt (R(st, at) + c · 1N (g(st)))
+s0 = s
+i
+. Suppose in the game Gk, Switcher is given a payoff
+of −R(s, a) + Pa
+s′svS(s′|π, g) given Switcher policy g and for any given s ∈S and a ∼π, σ. Now the Markov policy
+g guarantees Switcher a payoff of vk(s|π, g). Now in the game Gk, after n < ∞steps and using the policy g gives
+Switcher an expected payoff of at least vk(s|π, g) −γn−1 max
+a∈A Pa
+s′svk(s′|π, g) ≤vk(s|π, g) −γn−1 max
+s′∈S vk(s′|π, g).
+Therefore, accounting for the n steps, the total payoff for Switcher is at least vk(s|π, g) −γn−1 max
+s′∈S v(s′|π, g) −
+Pn−1
+t=0 γtvn−t(s′|π, g) = vk(s|π, g) −γn−1 max
+s′∈S v(s′|π, g) −γn 1−γn
+1−γ ∥v∥:= ˜vk,n(s|π, g). This expression holds
+for arbitrarily large values of n in particular lim
+n→∞˜vk,n(s|π, g) = vk(s|π, g) from which it follows that the policy g
+is optimal for Switcher. Now by Assumption 3 it is easy to see for any fixed K < ∞, any policy which is opti-
+mal for Switcher in the game G is optimal for Switcher in a game ˜G in which Switcher’s objective is vk
+S(s|π, g) =
+−Eg,σ
+hP
+0≤t≤k<∞γt (R(st, at) + c · 1N (g(st)))
+s0 = s; at ∼(π, σ)
+i
+with the game being otherwise identical. After
+using analogous arguments for Switcher and adversary, we deduce the result.
+Lemma E.12. The value of the game G is unique.
+Proof. Suppose there exists two values the game G, v′
+S and vS. Then, since each is a solution, we have by Lemma E.9 that
+each is a fixed point of the Bellman operator and hence TvS = vS and Tv′
+S = v′
+S. Hence, we have the following:
+∥vS −v′
+S∥= ∥TvS −Tv′
+S| ≤γ∥vS −v′
+S∥,
+(17)
+whereafter, we immediately deduce that vS = v′
+S.
+23
+
+Learning Robust Multi-Agent Policies
+Summing up the above results we have succeeded in proving Theorem 3.1, moreover Proposition 3.2 follows as an immediate
+consequence.
+To prove the Theorem 3.3, we make use of the following result:
+Theorem E.13 (Theorem 1, pg 4 in (Jaakkola et al., 1994)). Let Ξt(s) be a random process that takes values in Rn and
+given by the following:
+Ξt+1(s) = (1 −αt(s)) Ξt(s)αt(s)Lt(s),
+(18)
+then Ξt(s) converges to 0 with probability 1 under the following conditions:
+i) 0 ≤αt ≤1, P
+t αt = ∞and P
+t αt < ∞
+ii) ∥E[Lt|Ft]∥≤γ∥Ξt∥, with γ < 1;
+iii) Var [Lt|Ft] ≤c(1 + ∥Ξt∥2) for some c > 0.
+Proof. To prove the result, we show (i) - (iii) hold. Condition (i) holds by choice of learning rate. It therefore remains to
+prove (ii) - (iii). We first prove (ii). For this, we consider our variant of the Q-learning update rule:
+QS,t+1(st, at, g|·) = QS,t(st, at, g|·)
++αt(st, at)
+h
+max
+
+ˆ
+MQS(sτk, a, g|·), R(sτk, a, g) + γ max
+a′∈A QS(st+1, a′, g|·)
+
+−Qt(st, at, g|·)
+i
+.
+After subtracting Q∗
+S(st, at, g|·) from both sides and some manipulation we obtain that:
+Ξt+1(st, at)
+= (1 −αt(st, at))Ξt(st, at)
++ αt(st, at))
+
+max
+
+ˆ
+MQS(sτk, a, g|·), RS(sτk, a, g) + γ max
+a′∈A QS(s′, a′, g|·)
+
+−Q∗
+S(st, at, g|·)
+
+,
+where Ξt(st, at, g) := QS,t(st, at, g|·) −Q⋆
+S(st, at, g|·).
+Let us now define by
+Lt(sτk, a, g) := max
+
+ˆ
+MQS(sτk, a, g|·), RS(sτk, a, g) + γ max
+a′∈A QS(s′, a′, g|·)
+
+−Q∗
+S(st, a, g|·).
+Then
+Ξt+1(st, at, g) = (1 −αt(st, at))Ξt(st, at, g) + αt(st, at)) [Lt(sτk, a, g)] .
+(19)
+We now observe that
+E [Lt(sτk, a, g)|Ft]
+=
+X
+s′∈S
+P(s′; a, sτk) max
+
+ˆ
+MQS(sτk, a, g|·), RS(sτk, a, g) + γ max
+a′∈A QS(s′, a′, g|·)
+
+−Q∗
+S(sτk, a, g|·)
+= TQS,t(s, a, g|·) −Q∗
+S(s, a, g).
+(20)
+Now, using the fixed point property that implies Q∗= TQ∗, we find that
+E [Lt(sτk, a, g)|Ft] = TQS,t(s, a, g|·) −TQ∗
+S(s, a, g|·)
+≤∥TQS,t −TQ∗∥
+≤γ ∥QS,t −Q∗∥∞= γ ∥Ξt∥∞.
+(21)
+24
+
+Learning Robust Multi-Agent Policies
+using the contraction property of T established in Lemma E.9. This proves (ii).
+We now prove iii), that is
+Var [Lt|Ft] ≤c(1 + ∥Ξt∥2).
+(22)
+Now by equation 20 we have that
+Var [Lt|Ft] = Var
+
+max
+
+ˆ
+MQS(sτk, a, g|·), RS(sτk, a, g) + γ max
+a′∈A QS(s′, a′, g|·)
+
+−Q∗
+S(st, a, g|·)
+
+= E
+" 
+max
+
+ˆ
+MQS(sτk, a, g|·), RS(sτk, a, g) + γ max
+a′∈A QS(s′, a′, g|·)
+
+−Q∗
+S(st, a, g|·) −(TQS,t(s, a, g|·) −Q∗
+S(s, a, g|·))
+!2#
+= E
+"
+max
+
+ˆ
+MQS(sτk, a, g|·), RS(sτk, a, g) + γ max
+a′∈A QS(s′, a′, g|·)
+
+−TQS,t(s, a, g|·)
+2#
+= Var
+
+max
+
+ˆ
+MQS(sτk, a, g|·), RS(sτk, a, g) + γ max
+a′∈A QS(s′, a′, g|·)
+
+−TQS,t(s, a, g|·))
+
+≤c(1 + ∥Ξt∥2),
+for some c > 0 where the last line follows due to the boundedness of Q (which follows from Assumptions 2 and 4). This
+concludes the proof of the Theorem.
+Theorem 3.3 proves the convergence of MARTA to the solution to the game G (and that such a solution exists). In particular,
+the following result follows a consequence of Theorem 3.3 and the uniqueness of the value function solution of G:
+F. Convergence of MARTA with Linear Function Approximators
+In RL, an important consideration is the use of function approximators for the functions being learned during the learning
+process. We now extend the convergence results established in the previous section to linear function approximators. Linear
+function approximators are an important class due to their simplicity and convexity properties that do not suffer from issues
+such as convergence to suboptimal stationary points. Moreover, the following analysis is an important stepping stone for
+proving analogous results with other function approximator classes.
+In addition to Assumptions 1 - 3, the results of this section are built under the following assumptions: Assumption 4. For
+any positive scalar c, there exists a scalar κc such that for all s ∈S and for any t ∈N we have: E [1 + ∥st∥c|s0 = s] ≤
+κc(1 + ∥s∥c).
+Assumption 5. There exists scalars C1 and c1 such that for any function v satisfying |v(s)| ≤C2(1 + ∥s∥c2) for some
+scalars c2 and C2 we have that: P∞
+t=0 |E [v(st)|s0 = s] −E[v(s0)]| ≤C1C2(1 + ∥s0∥c1c2).
+Assumption 6. There exists scalars c and C such that for any s ∈S we have that |R(s, ·)| ≤C(1 + ∥s∥c).
+Theorem 3.4 is proven using a set of results that we now establish. First we prove the following bound holds:
+Lemma F.1. For any Q ∈L2 we have that
+∥FQ −Q′∥≤γ ∥Q −Q′∥,
+(23)
+so that the operator F is a contraction.
+Proof. Now, we first note that by result iv) in the proof of Lemma E.9, we deduced that for any Q, v ∈L2 we have that
+∥MQ −[R(·, a) + γPav′]∥≤γ ∥v −v′∥.
+where Pa
+ss′ =: P
+s′∈S P(s′; a, s).
+25
+
+Learning Robust Multi-Agent Policies
+Hence, using the contraction property of M and results i)-iv) of Lemma E.9, we readily deduce the following bound:
+max
+nMQ −ˆQ
+ ,
+MQ −M ˆQ
+
+o
+≤γ
+Q −ˆQ
+ .
+(24)
+We now observe that F is a contraction. Indeed, since for any Q, Q′ ∈L2 we have that:
+∥FQ −FQ′∥
+=
+R + γP min{ ˆ
+MQ, Q} −
+
+R + γP min{ ˆ
+MQ′, Q′}
+
+= γ
+P min{ ˆ
+MQ, Q} −P min{ ˆ
+MQ′, Q′}
+
+≤γ max {∥Q −Q′∥, γ ∥Q −Q′∥}
+= γ ∥Q −Q′∥
+using the Cauchy-Schwarz inequality, equation 24 and again using the non-expansiveness of P.
+We next show that the following two bounds hold:
+Lemma F.2. For any Q ∈V we have that
+i)
+ΠFQ −ΠF ¯Q
+ ≤γ
+Q −¯Q
+,
+ii)
+∥Φr⋆−Q⋆∥≤
+1
+√
+1−γ2 ∥ΠQ⋆−Q⋆∥.
+Proof. The first result is straightforward since as Π is a projection it is non-expansive and hence:
+ΠFQ −ΠF ¯Q
+ ≤
+FQ −F ¯Q
+ ≤γ
+Q −¯Q
+ ,
+using the contraction property of F. This proves i). For ii), we note that by the orthogonality property of projections we have
+that ⟨Φr⋆−ΠQ⋆, Φr⋆−ΠQ⋆⟩= 0, hence we observe that:
+∥Φr⋆−Q⋆∥2 = ∥Φr⋆−ΠQ⋆∥2 + ∥Q∗−ΠQ⋆∥2
+= ∥ΠFΦr⋆−ΠQ⋆∥2 + ∥Q∗−ΠQ⋆∥2
+≤∥FΦr⋆−Q⋆∥2 + ∥Q∗−ΠQ⋆∥2
+= ∥FΦr⋆−FQ⋆∥2 + ∥Q∗−ΠQ⋆∥2
+≤γ2 ∥Φr⋆−Q⋆∥2 + ∥Q∗−ΠQ⋆∥2 ,
+after which we readily deduce the desired result.
+Lemma F.3. Define the operator H by the following:
+HQ(s, a, b) =
+( ˆ
+MQ(s, a),
+if
+ˆ
+MQ(s, a) < Φr⋆
+Q(s, a),
+otherwise,
+where we define ˜F by: ˜FQ := R + γPHQ.
+For any Q, ¯Q ∈L2 we have that
+˜FQ −˜F ¯Q
+ ≤γ
+Q −¯Q
+
+(25)
+and hence ˜F is a contraction mapping.
+26
+
+Learning Robust Multi-Agent Policies
+Proof. Using equation 24, we now observe that
+˜FQ −˜F ¯Q
+ =
+R + γPHQ −
+ R + γPH ¯Q
+
+≤γ
+HQ −H ¯Q
+
+≤γ
+ max
+n
+ˆ
+MQ −ˆ
+M ¯Q, ˆ
+MQ −¯Q, ˆ
+M ¯Q −Q
+o
+≤γ max
+n  ˆ
+MQ −ˆ
+M ¯Q
+ ,
+ ˆ
+MQ −¯Q
+ ,
+ ˆ
+M ¯Q −Q
+
+o
+≤γ max
+
+γ
+Q −¯Q
+ ,
+Q −¯Q
+	
+= γ
+Q −¯Q
+ ,
+again using equation 24 and the non-expansive property of P.
+Lemma F.4. Define by ˜Q := R + γPv˜σ where
+v˜σ(s) := min
+n
+ˆ
+MQ˜σ(s, a), R(s, a) + γEs′∼P
+
+v˜σ(s′)
+o
+,
+(26)
+then ˜Q is a fixed point of ˜F ˜Q, that is ˜F ˜Q = ˜Q.
+Proof. We begin by observing that
+H ˜Q(s, a) = H
+ R(s, a) + γPa
+ss′v˜σ(s′)
+
+=
+( ˆ
+MQ(s, a),
+if
+ˆ
+MQ(s, a) > Φr⋆
+Q(s, a),
+otherwise,
+=
+( ˆ
+MQ(s, a),
+if
+ˆ
+MQ(s, a) > Φr⋆,
+R(s, a) + γPv˜σ,
+otherwise,
+= v˜σ(s).
+Hence,
+˜F ˜Q = R + γPH ˜Q = R + γPv˜σ = ˜Q.
+(27)
+which proves the result.
+Lemma F.5. The following bound holds:
+E
+
+vˆσ(s0)
+
+−E
+
+v˜σ(s0)
+
+≤2
+h
+(1 −γ)
+p
+(1 −γ2)
+i−1
+∥ΠQ⋆−Q⋆∥.
+(28)
+Proof. By definitions of vˆσ and v˜σ (c.f equation 26) and using Jensen’s inequality and the stationarity property we have
+that,
+E
+
+vˆσ(s0)
+
+−E
+
+v˜σ(s0)
+
+= E
+
+Pvˆσ(s0)
+
+−E
+
+Pv˜σ(s0)
+
+≤
+E
+
+Pvˆσ(s0)
+
+−E
+
+Pv˜σ(s0)
+
+≤
+Pvˆσ −Pv˜σ .
+(29)
+Now recall that ˜Q := R + γPv˜σ and Q⋆:= R + γPvσ⋆, using these expressions in equation 29 we find that
+E
+
+vˆσ(s0)
+
+−E
+
+v˜σ(s0)
+
+≤1
+γ
+ ˜Q −Q⋆ .
+27
+
+Learning Robust Multi-Agent Policies
+Moreover, by the triangle inequality and using the fact that F(Φr⋆) = ˜F(Φr⋆) and that FQ⋆= Q⋆and F ˜Q = ˜Q (c.f.
+equation 28) we have that
+ ˜Q −Q⋆ ≤
+ ˜Q −F(Φr⋆)
+ +
+Q⋆−˜F(Φr⋆)
+
+≤γ
+ ˜Q −Φr⋆ + γ ∥Q⋆−Φr⋆∥
+≤2γ
+ ˜Q −Φr⋆ + γ
+Q⋆−˜Q
+ ,
+which gives the following bound:
+ ˜Q −Q⋆ ≤2γ (1 −γ)−1  ˜Q −Φr⋆ ,
+from which, using Lemma F.2, we deduce that
+ ˜Q −Q⋆ ≤2γ
+h
+(1 −γ)
+p
+(1 −γ2)
+i−1
+∥ΠQ⋆−Q⋆∥, after which by
+equation 30, we finally obtain
+E
+
+vˆσ(s0)
+
+−E
+
+v˜σ(s0)
+
+≤2
+h
+(1 −γ)
+p
+(1 −γ2)
+i−1
+∥ΠQ⋆−Q⋆∥,
+as required.
+Let us rewrite the update in the following way:
+rt+1 = rt + γtΞ(wt, rt),
+where the function Ξ : R2d × Rp →Rp is given by:
+Ξ(w, r) := ϕ(s)
+
+R(s, ·) + γ min{(Φr)(s′), ˆ
+M(Φr)(s′)} −(Φr)(s)
+
+,
+for any w ≡(s, s′) ∈S2 and for any r ∈Rp. Let us also define the function Ξ : Rp →Rp by the following:
+Ξ(r) := Ew0∼(P,P) [Ξ(w0, r)] ; w0 := (s0, z1).
+Lemma F.6. The following statements hold for all z ∈{0, 1} × S:
+i) (r −r⋆)Ξk(r) < 0,
+∀r ̸= r⋆,
+ii) Ξk(r⋆) = 0.
+Proof. To prove the statement, we first note that each component of Ξk(r) admits a representation as an inner product,
+indeed:
+Ξk(r) = E
+h
+ϕk(s0)(R(s0, a0) + γ min{(Φr)(s1), ˆ
+M(Φr)(s1)} −(Φr)(s0)
+i
+= E
+h
+ϕk(s0)(R(s0, a0) + γE
+h
+min{(Φr)(s1), ˆ
+M(Φr)(s1)}|x0
+i
+−(Φr)(s0)
+i
+= E
+h
+ϕk(s0)(R(s0, a0) + γP min{(Φr), ˆ
+M(Φr)}(s0) −(Φr)(s0)
+i
+= ⟨ϕk, FΦr −Φr⟩,
+using the iterated law of expectations and the definitions of P and F.
+We now are in a position to prove (i). Indeed, we now observe the following:
+(r −r⋆) Ξk(r) =
+X
+l=1
+(r(l) −r⋆(l)) ⟨ϕl, FΦr −Φr⟩
+= ⟨Φr −Φr⋆, FΦr −Φr⟩
+= ⟨Φr −Φr⋆, (1 −Π)FΦr + ΠFΦr −Φr⟩
+= ⟨Φr −Φr⋆, ΠFΦr −Φr⟩,
+28
+
+Learning Robust Multi-Agent Policies
+where in the last step we used the orthogonality of (1 −Π). We now recall that ΠFΦr⋆= Φr⋆since Φr⋆is a fixed point of
+ΠF. Additionally, using Lemma F.2 we observe that ∥ΠFΦr −Φr⋆∥≤γ∥Φr −Φr⋆∥. With this we now find that
+⟨Φr −Φr⋆, ΠFΦr −Φr⟩
+= ⟨Φr −Φr⋆, (ΠFΦr −Φr⋆) + Φr⋆−Φr⟩
+≤∥Φr −Φr⋆∥∥ΠFΦr −Φr⋆∥−∥Φr⋆−Φr∥2
+≤(γ −1) ∥Φr⋆−Φr∥2 ,
+which is negative since γ < 1 which completes the proof of part i).
+The proof of part ii) is straightforward since we readily observe that
+Ξk(r⋆) = ⟨ϕl, FΦr⋆−Φr⟩= ⟨ϕl, ΠFΦr⋆−Φr⟩= 0,
+as required and from which we deduce the result.
+To prove the theorem, we make use of a special case of the following result:
+Theorem F.7 (Th. 17, p. 239 in (Benveniste et al., 2012)). Consider a stochastic process rt : R × {∞} × Ω→Rk which
+takes an initial value r0 and evolves according to the following:
+rt+1 = rt + αΞ(st, rt),
+(30)
+for some function s : R2d × Rk →Rk and where the following statements hold:
+1. {st|t = 0, 1, . . .} is a stationary, ergodic Markov process taking values in R2d
+2. For any positive scalar q, there exists a scalar µq such that E [1 + ∥st∥q|s ≡s0] ≤µq (1 + ∥s∥q)
+3. The step size sequence satisfies the Robbins-Monro conditions, that is P∞
+t=0 αt = ∞and P∞
+t=0 α2
+t < ∞
+4. There exists scalars d and q such that ∥Ξ(w, r)∥≤d (1 + ∥w∥q) (1 + ∥r∥)
+5. There exists scalars d and q such that P∞
+t=0 ∥E [Ξ(wt, r)|z0 ≡z] −E [Ξ(w0, r)]∥≤d (1 + ∥w∥q) (1 + ∥r∥)
+6. There exists a scalar d > 0 such that ∥E[Ξ(w0, r)] −E[Ξ(w0, ¯r)]∥≤d∥r −¯r∥
+7. There exists scalars d > 0 and q > 0 such that P∞
+t=0 ∥E [Ξ(wt, r)|w0 ≡w] −E [Ξ(w0, ¯r)]∥≤c∥r −¯r∥(1 + ∥w∥q)
+8. There exists some r⋆∈Rk such that Ξ(r)(r −r⋆) < 0 for all r ̸= r⋆and ¯s(r⋆) = 0.
+Then rt converges to r⋆almost surely.
+In order to apply the Theorem F.7, we show that conditions 1 - 7 are satisfied.
+Proof. Conditions 1-2 are true by assumption while condition 3 can be made true by choice of the learning rates. Therefore
+it remains to verify conditions 4-7 are met.
+To prove 4, we observe that
+∥Ξ(w, r)∥=
+ϕ(s)
+
+R(s, ·) + γ min{(Φr)(s′), ˆ
+M(Φr)(s′)} −(Φr)(s)
+
+≤∥ϕ(s)∥
+R(s, ·) + γ
+
+∥ϕ(s′)∥∥r∥+ ˆ
+MΦ(s′)
+ + ∥ϕ(s)∥∥r∥
+≤∥ϕ(s)∥
+
+∥R(s, ·)∥+ γ∥ˆ
+MΦ(s′)∥
+
++ ∥ϕ(s)∥(γ ∥ϕ(s′)∥+ ∥ϕ(s)∥) ∥r∥.
+Now using the definition of M, we readily observe that ∥MΦ(s′)∥≤∥c∥∞+ ∥R∥+ γ∥Pσ
+s′stΦ∥≤∥c∥∞+ ∥R∥+ γ∥Φ∥
+using the non-expansiveness of P.
+29
+
+Learning Robust Multi-Agent Policies
+Hence, we lastly deduce that
+∥Ξ(w, r)∥≤∥ϕ(s)∥
+
+∥R(s, ·)∥+ γ∥ˆ
+MΦ(s′)∥
+
++ ∥ϕ(s)∥(γ ∥ϕ(s′)∥+ ∥ϕ(s)∥) ∥r∥
+≤∥ϕ(s)∥(∥R(s, ·)∥+ γ (∥c∥∞+ ∥R∥+ |ϕ∥)) + ∥ϕ(s)∥(γ ∥ϕ(s′)∥+ ∥ϕ(s)∥) ∥r∥,
+we then easily deduce the result using the boundedness of ϕ and R.
+Now we observe the following Lipschitz condition on Ξ:
+∥Ξ(w, r) −Ξ(w, ¯r)∥
+=
+ϕ(s)
+
+γ min{(Φr)(s′), ˆ
+MΦ(s′)} −γ min{(Φ¯r)(s′), ˆ
+MΦ(s′)}
+
+−((Φr)(s) −Φ¯r(s))
+
+≤γ ∥ϕ(s)∥
+ min
+n
+ϕ′(s′)r, ˆ
+MΦ′(s′)
+o
+−min
+n
+(ϕ′(s′)¯r), ˆ
+MΦ′(s′)
+o  + ∥ϕ(s)∥∥ϕ′(s)r −ϕ(s)¯r∥
+≤γ ∥ϕ(s)∥∥ϕ′(s′)r −ϕ′(s′)¯r∥+ ∥ϕ(s)∥∥ϕ′(s)r −ϕ′(s)¯r∥
+≤∥ϕ(s)∥(γ ∥ϕ′(s′)∥+ ∥ϕ′(s)∥) ∥r −¯r∥
+≤const. ∥r −¯r∥,
+using Cauchy-Schwarz inequality and that for any scalars a, b, c we have that |max{a, b} −max{b, c}| ≤|a −c| and
+|min{a, b} −min{b, c}| ≤|a −c|, which proves Part 6.
+Using Assumptions 3 and 4, we therefore deduce that
+∞
+X
+t=0
+∥E [Ξ(w, r) −Ξ(w, ¯r)|w0 = w] −E [Ξ(w0, r) −Ξ(w0, ¯r)∥] ≤const. ∥r −¯r∥(1 + ∥w∥l).
+(31)
+which proves Part 7.
+Part 2 is assured by Lemma F.2 while Part 4 (and hence Part 5) is assured by Lemma F.5 and lastly Part 8 is assured by
+Lemma F.6. This result completes the proof of Theorem 3.4.
+Proof of Proposition E.8
+Proof. We begin by re-expressing the activation times at which Switcher agent activates the Adversary. In particular,an
+activation time τk is defined recursively τk = inf{t > τk−1|st ∈A, τk ∈Ft} where A = {s ∈S, g(st) = 1}. The proof
+is given by deriving a contradiction. Therefore suppose that ˆ
+MvS(sτk) > vS(sτk) and suppose that the activation time
+τ ′
+1 > τ1 is an optimal activation time. Construct Switcher g′ and ˜g policy activation times by (τ ′
+0, τ ′
+1, . . . , ) and g′2 policy by
+(τ ′
+0, τ1, . . .) respectively. Define by l = inf{t > 0; ˆ
+Mψ(st = ψ(st} and m = sup{t; t < τ ′
+1}. By construction we have
+that
+vπ,g′
+S
+(s)
+= E
+h
+RS(s0, a0) + E
+h
+. . . + γl−1E
+h
+RS(sτ1−1, aτ1−1) + . . . + γm−l−1E
+h
+RS(sτ ′
+1−1, aτ ′
+1−1) + γ ˆ
+Mvπ,g′
+S
+(s′)
+iiii
+< E
+h
+RS(s0, a0) + E
+h
+. . . + γl−1E
+h
+RS(sτ1−1, aτ1−1) + γ ˆ
+Mvπ,g′
+S
+(sτ1)
+iii
+We now use the following observation E
+h
+RS(sτ1−1, aτ1−1) + γ ˆ
+Mvπ,g′
+S
+(sτ1)
+i
+≥min
+
+ˆ
+Mvπ,g′
+S
+(sτ1), max
+aτ1∈A
+
+RS(sτ1, aτ1) + γ P
+s′∈S P(s′; aτ1, sτ1)vπ,g
+S
+(s′)
+
+.
+Using this we deduce that
+vπ,g′
+S
+(s > E
+"
+RS(s0, a0) + E
+"
+. . .
++ γl−1E
+"
+RS(sτ1−1, aτ1−1) + γ max
+(
+Mπ,˜gvπ,g′
+S
+(sτ1), max
+aτ1∈A
+"
+RS(sτk, aτk) + γ
+X
+s′∈S
+P(s′; aτ1, sτ1)vπ,g
+S
+(s′)
+#)# ##
+= E
+h
+RS(s0, a0) + E
+h
+. . . + γl−1E
+h
+RS(sτ1−1, aτ1−1) + γ
+h
+Tvπ,˜g
+S
+i
+(sτ1)
+iii
+= vπ,˜g
+S
+(s)
+30
+
+Learning Robust Multi-Agent Policies
+where the first inequality is true by assumption on ˆ
+M. This is a contradiction since g′ is an optimal policy for Switcher.
+Using analogous reasoning, we deduce the same result for τ ′
+k < τk after which deduce the result. Moreover, by invoking the
+same reasoning, we can conclude that it must be the case that (τ0, τ1, . . . , τk−1, τk, τk+1, . . . , ) are the optimal activation
+times.
+G. Proof of Theorem D.2
+Proof. The proof of the Theorem is straightforward since by Theorem 3.4, Switcher’s problem can be solved using a
+dynamic programming principle. The proof immediately by application of Theorem 2 in (Sootla et al., 2022).
+31

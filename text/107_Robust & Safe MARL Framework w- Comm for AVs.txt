@@ -1,0 +1,737 @@
+Robust and Safe Multi-Agent Reinforcement
+Learning with Communication for Autonomous
+Vehicles: From Simulation to Hardware
+Keshawn Smith
+Department of ECE
+University of Connecticut
+keshawn.smith@uconn.edu
+Zhili Zhang
+School of Computing
+University of Connecticut
+zhili.zhang@uconn.edu
+H M Sabbir Ahmad
+Department of ECE
+Boston University
+sabbir92@bu.edu
+Ehsan Sabouni
+Department of ECE
+Boston University
+esabouni@bu.edu
+Mainak Mondal
+School of Computing
+University of Connecticut
+mainak.mondal@uconn.edu
+Song Han
+School of Computing
+University of Connecticut
+song.han@uconn.edu
+Wenchao Li
+Department of ECE
+Boston University
+wenchao@bu.edu
+Fei Miao
+School of Computing
+University of Connecticut
+fei.miao@uconn.edu
+Abstract: Deep multi-agent reinforcement learning (MARL) has demonstrated
+strong performance in simulation for connected autonomous driving systems.
+However, most prior work assumes instantaneous and perfectly synchronized
+inter-agent communication, limiting reliable transfer from simulation to hardware,
+where vehicle-to-vehicle (V2V) communication is inherently delayed and asyn-
+chronous. In practical multi-vehicle environments, shared information is subject
+to measurable latency and transmission variability, yet these effects are rarely in-
+corporated into MARL training or validated on hardware. To address this gap,
+we propose RSR-RSMARL, a Robust and Safe MARL framework designed for
+Real-Sim-Real policy transfer under realistic communication constraints. We first
+measure communication latency in our hardware V2V system and use these statis-
+tics to parameterize delay-aware state sharing during simulation training. The pol-
+icy is trained under both fixed and time-varying delay models to improve robust-
+ness to wireless latency. A modular Control Barrier Function (CBF)-based safety
+shield provides formal safety guarantees during execution. We validate the pro-
+posed framework in CARLA simulation and on physical 1/10th-scale connected
+autonomous vehicles (CAVs) with onboard V2V communication. Experimental
+results demonstrate improved coordination stability and safety under realistic la-
+tency conditions, highlighting the importance of hardware-grounded communica-
+tion modeling for scalable and reliable real-to-sim-to-real MARL deployment.
+1
+Introduction
+The U.S. Department of Transportation (USDOT) has recently outlined a national strategy to de-
+ploy Vehicle-to-Everything (V2X) technologies on U.S. roadways, with the goal of reducing traffic-
+related fatalities and improving overall transportation safety [1]. As the potential of Connected and
+Autonomous Vehicles (CAVs) continues to attract interest, a growing body of research has explored
+their applications and societal benefits [2, 3, 4]. Multi-Agent Reinforcement Learning (MARL) has
+emerged as a promising paradigm for decision-making in autonomous driving, demonstrating the
+ability to learn cooperative and adaptive strategies in dynamic traffic environments [2, 5, 6, 7, 8].
+By leveraging inter-agent communication, MARL-based CAV coordination strategies can enhance
+road safety, mitigate congestion, and improve efficiency. Despite these advances, no open-source
+testbed currently supports the full development and evaluation of MARL methods for CAVs. Ex-
+arXiv:2506.00982v3  [cs.RO]  12 May 2026
+
+isting testbeds are often closed-source, incomplete, or lack the necessary components to validate
+end-to-end multi-agent frameworks [9, 3, 10, 11]. This gap significantly limits progress toward
+validating robust and safe MARL algorithms in realistic CAV contexts.
+Deep reinforcement learning has also been widely applied in robotics [11], yet the sim-to-real gap
+remains a fundamental challenge. Policies trained in simulation often degrade in performance when
+deployed in real-world systems due to unmodeled noise, uncertainties, and diverse operating scenar-
+ios. Domain randomization and related techniques [12, 13] can mitigate this discrepancy but at the
+cost of substantially higher computational requirements. For multi-agent CAV systems, these chal-
+lenges are compounded by the critical importance of safety: unsafe actions may cause irreversible
+failures in densely populated environments. Robustness is further challenged by state estimation
+errors, communication delays, and model uncertainties. Therefore, frameworks for MARL in CAVs
+must incorporate safety guarantees not only during training but also throughout deployment in real-
+world environments.
+In this work, we present a robust Real-Sim-Real Multi-Agent Reinforcement Learning (RSR-
+MARL) framework that systematically bridges high-level cooperative decision-making with safety-
+critical vehicle control. Rather than relying solely on domain randomization or post-hoc safety
+corrections, our approach integrates structured robustness directly into the training process. High-
+level decision-making tasks such as lane-keeping and lane-changing are handled by robust MARL
+policies [14, 15], while a CBF-based Safety Shield enforces formal safety constraints by dynamically
+filtering unsafe actions during both training and deployment. This modular architecture is controller-
+agnostic and integrates seamlessly with different low-level controllers (e.g., PID and MPC) without
+altering the learning formulation. Furthermore, we explicitly model inter-agent communication de-
+lays during training, exposing policies to realistic observation latency and enabling inherent robust-
+ness to delayed information exchange. Together, delay-aware learning, formal safety enforcement,
+and controller-flexible design yield policies that maintain strong safety-performance trade-offs and
+support zero-shot transfer to real-world autonomous platforms.
+The key contributions of this work are summarized as follows. (1) We propose RSR-RSMARL,
+a robust and safety-critical MARL framework with inter-agent communication designed for Real-
+Sim-Real policy transfer. The framework integrates delay-aware training and a CBF-based Safety
+Shield to explicitly address communication latency, model uncertainties, and state estimation errors
+while maintaining formal safety guarantees.
+(2) We develop a communication-aware latency modeling and training strategy that explicitly in-
+corporates both fixed and time-varying delays into the MARL learning process. Unlike prior work
+assuming ideal communication, we inject stochastic latency during training to mimic realistic wire-
+less delays, enabling delay-robust coordination before deployment.
+(3) We conduct extensive validation in CARLA and on physical 1/10th-scale connected autonomous
+vehicle platforms, performing structured ablation studies under increasing communication delay and
+demonstrating zero-shot transfer of simulation-trained policies for safe real-world operation.
+Our results demonstrate that the proposed RSR-RSMARL pipeline provides a structured and reli-
+able pathway for transferring MARL-based cooperative decision-making from simulation to phys-
+ical systems while preserving strong safety-performance trade-offs. This work represents a step
+toward the practical deployment of robust, communication-aware multi-agent CAV autonomy in
+real-world environments.
+2
+Related Work
+In this section, we review the existing literature in this area, highlighting its limitations to establish
+the motivation for our proposed approach.
+Deep Reinforcement Learning in Robotics Training RL or MARL policies in simulation ensures
+safety and efficiency by mitigating risks to hardware and its surroundings. While imitation learning
+
+is commonly used for policy transfer [16, 17], its reliance on real-world data often incurs significant
+costs. Our approach focuses on simulator-based training to reduce this dependency while maintain-
+ing robust real-world performance. Addressing the challenges of sim-to-real transfer, prior studies
+have introduced techniques such as domain randomization, state normalization, and noise injection
+to bridge the sim-to-real gap [18, 19, 20]. Building on these advancements, our proposed RSR-
+RSMARL framework aligns simulator and real-world environments by designing state and action
+spaces based on hardware capabilities, enabling efficient policy deployment for execution.
+Multi-Agent Systems and CAV Testbeds Existing multi-agent system and CAV vehicular testbeds
+[9, 3, 10, 11, 21] address diverse research areas such as planning and control, computer vision, col-
+lective behavior, autonomous racing, and human-computer interaction. For instance, Blumenkamp
+et al. [21] introduced the Cambridge RoboMaster platform, which leverages customized DJI Robo-
+Master S1 robots with a tightly integrated hardware, control, and simulation stack. While effective,
+their approach requires a bespoke simulation environment tailored specifically to their robot platform
+in order to train MARL policies, limiting portability to other systems. Moreover, their framework
+does not incorporate explicit safety filtering during policy execution, whereas our work introduces
+a CBF-based Safety Shield (via QP formulations) and CBF/CLF-constrained MPC backend to en-
+force real-time safety guarantees. By contrast, our proposed testbed provides a fully open-source
+and extensible framework, supports Real-Sim-Real transfer without reliance on robot-specific simu-
+lators, and integrates robust MARL with modular safety mechanisms to ensure reliable multi-agent
+autonomy across diverse scenarios.
+Safe and Robust RL and MARL Safety has become a critical focus in RL and MARL, with prior
+work exploring safety shields, barrier functions, and CBF-PID controllers [22, 23, 24, 2, 25, 8], as
+well as robust RL methods for uncertain observations [15, 14, 26]. However, these approaches often
+overlook the combined challenges of communication latency, sensing uncertainty, and explicit safety
+guarantees in multi-agent deployment. Our work advances this area by introducing RSR-RSMARL,
+a Real-Sim-Real framework that aligns simulator states and actions with hardware, incorporates
+V2V delays during training, and enforces safety through a CBF-based Safety Shield with pluggable
+PID or MPC controllers. Experiments in both CARLA and on 1/10th-scale vehicles demonstrate
+how this integration supports safer and more generalizable MARL-based coordination compared to
+existing approaches.
+3
+Approach
+We introduce RSR-RSMARL, a Real-Sim-Real robust and safe multi-agent reinforcement learning
+framework centered on communication-aware policy design for connected autonomous systems.
+Unlike prior approaches that assume idealized information exchange, RSR-RSMARL explicitly in-
+corporates measured real-world communication latency into both the MARL formulation and sim-
+ulation training process. By grounding training in experimentally observed delay statistics, the
+framework enables zero-shot transfer of learned policies to physical testbeds operating under realis-
+tic, delayed, and asynchronous information sharing conditions.
+The architecture (Fig. 1) integrates: (i) a communication-aware state and action design that models
+delayed neighbor information based on measured V2V latency while aligning actions with hardware
+constraints; (ii) latency-informed robust MARL training under fixed and time-varying delay condi-
+tions with a CBF-based safety shield; and (iii) zero-shot deployment on hardware platforms with
+onboard sensing and V2V communication to validate performance under real-world latency.
+3.1
+MARL Formulation with Real-to-Sim Communication-Aware Design
+The design of a robust and safe MARL formulation begins with a grounded understanding of real-
+world operating constraints to ensure practical deployment across the simulation-to-reality gap. In
+this work, the primary real-to-sim design focus is communication-aware state and action model-
+ing, driven by measured V2V communication latency observed on our hardware platform. Rather
+than assuming instantaneous or perfectly synchronized information exchange, we explicitly incor-
+
+Figure 1: Communication-aware RSR-RSMARL framework. Measured real-world V2V latency in-
+forms delay-aware state design and simulation training under fixed and time-varying delay models
+within a decentralized CTDE MARL architecture. A modular CBF-based Safety Shield with plug-
+gable PID or MPC backends enforces safety during both training and deployment. Trained policies
+are transferred zero-shot to hardware, where delayed neighbor information and conservative safety
+filtering ensure robust operation under realistic communication constraints.
+porate real-world communication delay characteristics into both the MARL problem formulation
+and the training process. By aligning inter-agent information sharing, state representations, and
+action execution with measured latency profiles, the framework avoids unrealistic communication
+assumptions commonly present in purely simulated approaches.
+In the multi-agent setting, each connected autonomous vehicle (CAV), referred to as the ego agent
+i, receives its local observation oi and shared observations from neighboring vehicles Ni via V2V
+protocols. Crucially, shared observations are not treated as instantaneous. Instead, they are modeled
+as delayed and potentially asynchronous, reflecting measured fixed and time-varying latency statis-
+tics from the physical communication system. The shared information includes complementary
+perception features such as obstacle presence and lane boundary detections that may not be directly
+observable by the ego vehicle. These measurements are derived from onboard sensing modules in-
+cluding LiDAR and camera-based lane detection models such as UFLD [27], among others [28]. By
+explicitly modeling delayed shared states, the MARL formulation captures the temporal misalign-
+ment and uncertainty inherent in real-world connected autonomy. The MARL policy execution flow
+is illustrated in Figure 2 and elaborated in Section 3.2 and Section 3.3.
+We formulate the MARL problem as a tuple G = (S, A, P, r, γ), where S denotes the joint state
+space. Each agent i has state si = {li, vi, αi, di, ci}, representing position, velocity, acceleration,
+processed vision-based lane features, and LiDAR-based collision indicators. When communication
+is enabled, information shared from agent j to agent i, denoted sj,i, is incorporated as a delay-aware
+shared state consistent with measured V2V latency, ensuring policies are trained on temporally
+misaligned neighbor information encountered during hardware deployment.
+The discrete action space A aligns with real-world actuation capabilities and includes emergency
+stop, lane keeping, lane change maneuvers, and discrete acceleration or braking actions. Action
+selection is conditioned on delayed shared observations, requiring policies to reason under commu-
+nication latency rather than assuming synchronous coordination. The unknown system transition
+dynamics are defined as P : S × A × S →[0, 1].
+
+The reward is defined as
+r(s, a) = w1∥vi∥2 −w2∥ci∥+ w3∥li∥+ rsafe
+i
+,
+(1)
+where w1, w2, and w3 weight speed regulation, collision avoidance, and goal progress, respectively,
+and rsafe
+i
+penalizes Safety Shield interventions to promote intrinsically safe behavior under delayed
+and uncertain shared information.
+During both training and execution, agents operate on delayed observations sdel
+i
+= {oi, odel
+j , j ∈
+Ni}, where neighbor states are delayed according to measured fixed or time-varying V2V latency
+distributions. Embedding these communication characteristics directly into the training loop en-
+ables decentralized policies πθ(ai | sdel
+i
+) to coordinate robustly under realistic network constraints,
+supporting reliable zero-shot transfer to physical multi-vehicle platforms.
+3.2
+Safety Shield and Control Integration
+A central component of the framework is the Safety Shield, which guarantees that only feasible and
+provably safe control actions are executed. The Safety Shield leverages Control Barrier Functions
+(CBFs) enforced through the quadratic program (QP) in (3) to filter unsafe commands prior to actu-
+ation [5, 29]. As shown in Fig. 2, high-level policy outputs are passed through the Safety Shield and
+subsequently executed by a selected low-level controller (PID or MPC).
+min
+u∈Rm
+1
+2∥u −uref∥2
+(2)
+s.t.
+∂h(x, t)
+∂t
++ Lfh(x, t) + Lgh(x, t)u ≥−γh(x, t),
+(3)
+vmin ≤vego ≤vmax,
+amin ≤˙vego ≤amax.
+The QP in (3) minimally modifies the reference control input uref while enforcing forward invari-
+ance of the safe set defined by h(x, t) ≥0. The CBF-QP is solved in a fully decentralized manner.
+Each agent computes its safety filter using locally measured ego states and communicated neighbor
+state estimates received via V2V links, along with known static obstacle information from the map.
+Neighboring vehicles are modeled as dynamic obstacles within the barrier constraints, while static
+obstacles are incorporated through predefined map coordinates. To account for communication la-
+tency and asynchronous updates, neighbor state estimates are treated as bounded-delay observations,
+and safety margins within h(x, t) are conservatively inflated to preserve collision avoidance under
+state uncertainty. This decentralized and delay-aware formulation enforces safety at the agent level
+without centralized coordination, enabling scalable multi-agent deployment.
+To address communication latency and estimation uncertainty, the Safety Shield incorporates con-
+servative robustness mechanisms directly within the constraint of (3). Received neighbor states
+are treated as potentially stale due to measured communication delays and asynchronous updates.
+Safety margins within the CBF condition are therefore inflated to account for state uncertainty, effec-
+tively enlarging the admissible safe set considered by the QP. This delay-aware safety formulation
+preserves collision avoidance guarantees under realistic latency-constrained information sharing.
+To bridge high-level policy outputs with low-level actuation, we employ two controller back-
+ends.
+A PID controller maps discrete policy actions to reference commands using propor-
+tional–integral–derivative feedback for lightweight real-time execution [30]. Alternatively, an MPC
+controller solves a finite-horizon optimization problem at each timestep, incorporating CBF and CLF
+constraints to improve trajectory smoothness and foresight at increased computational cost [31].
+Supporting both controllers highlights the modularity of the Safety Shield and its compatibility
+across heterogeneous control stacks.
+
+Algorithm 1: RSR-RSMARL with Communication-Aware Design and Pluggable Low-Level
+Controller
+1 Initialize policy and critic networks;
+2 Load measured V2V latency model Dlat; select delay mode ∈{none, fixed, time-varying};
+3 Select controller ∈{PID, MPC};
+4 for each episode E do
+5
+Initialize state s = Q
+i si, memory M = ∅;
+6
+Rollout: for each step, agent i do
+7
+Construct delay-aware state sdel
+i
+= {oi, odel
+j , j ∈Ni} by applying measured latency
+model Dlat to received neighbor observations;
+8
+Choose action ai from policy πθi(· | sdel
+i );
+9
+if controller = PID then
+10
+Compute reference uref
+i
+←PID(sdel
+i , ai);
+11
+Filter with Safety Shield: usafe
+i
+←CBF-QP(uref
+i , sdel
+i );
+12
+else
+13
+Solve MPC optimization: usafe
+i
+←MPC(sdel
+i , ai);
+14
+end
+15
+Execute usafe
+i
+, observe s′, compute reward ri;
+16
+Store (sdel
+i , ai, ri, s′
+i) in M; update s ←s′;
+17
+end
+18
+Training: Update critics and policies using PPO and worst-case Q-learning objectives
+under communication-aware state inputs;
+19 end
+3.3
+Algorithm and Training in Simulation
+Our complete algorithmic design is summarized in Algorithm 1. We adopt the framework of cen-
+tralized training with decentralized execution (CTDE); we train robust PPO agents where each agent
+is equipped with an extra worst-case Q network [15, 5] estimating the expected return when agent’s
+action-selection is potentially affected by inaccurate or perturbed observations. During training,
+agents experience delayed states to emulate network latency and improve robustness to real-world
+conditions. The pluggable low-level controllers ensure that the same MARL training loop can be
+used across different control architectures.
+3.4
+Real-World Deployment
+For deployment, the trained policies are executed on a connected vehicle testbed using 1/10th-scale
+autonomous vehicles. Each vehicle estimates its state from onboard LiDAR, cameras, and IMU
+sensors, with additional information exchanged through V2V communication. The MARL policy
+produces high-level actions that are passed through the CBF-based Safety Shield, which filters un-
+safe commands before they reach the low-level controller. Depending on the configuration, safe
+actions are tracked by either a PID controller for lightweight execution or an MPC controller for
+smoother, optimization-based trajectories. This layered design ensures that real-world execution
+remains robust to sensing noise, communication delays, and actuation limits, while preserving the
+safety guarantees established in simulation. Further details on the hardware setup are provided in
+Section 4.1.
+4
+Experiments and Results
+We evaluate the proposed framework along three dimensions: (i) sim-to-hardware robustness via
+zero-shot transfer from CARLA compared against domain randomization; (ii) Safety Shield effec-
+tiveness under controller-agnostic deployment across PID and MPC; and (iii) communication abla-
+
+Figure 2: Policy execution pipeline for agent i. During training, the critic and worst-case Q-network
+update the actor under observation delays. At test time, the actor selects a high-level action from
+delayed observations, which is filtered by a CBF-based Safety Shield before being passed to the
+Controller Module (PID or MPC) for low-level control ui. If no safe action exists, an emergency
+stop is triggered.
+tions including no-delay, fixed (F-2), and time-varying (TV) latency under matched and mismatched
+settings.
+RSR-RSMARL denotes the proposed delay-aware framework with a CBF-based Safety Shield and
+V2V communication (PID or MPC control). Safe-RMM excludes delay modeling [32]; RSR-MARL
+removes the Safety Shield; No-Comm disables V2V; and MARL-DR applies domain randomiza-
+tion [33, 34].
+4.1
+Simulator and Hardware Testbed Setup
+Simulator: We conduct robust policy training and evaluation in the CARLA simulator environ-
+ment [35], where each vehicle is equipped with a suite of onboard sensors, including GPS and IMU
+modules. The simulation was conducted on a server configured with an AMD Ryzen 3970X pro-
+cessor and an NVIDIA Quadro RTX 6000 GPU. Experiments were performed with CARLA 0.9.15,
+Python 3.10, PyTorch 2.6, and CUDA 12.2.
+Hardware Testbed: For real-world evaluation, we deploy trained policies on a fleet of 1/10th-scale
+F1TENTH autonomous vehicles. Each vehicle is equipped with a 2D LiDAR (Hokuyo UST-10LX),
+an Intel RealSense D435i Depth Camera, and an onboard IMU, providing state estimates including
+position, velocity, and yaw rate. Vehicle-to-vehicle (V2V) communication is established through
+Wi-Fi at 5 Hz, with communication latency empirically measured between 10–20 ms.
+Communication delays are measured using synchronized timestamps with full network stack instru-
+mentation. While our controlled testbed achieves 10–20 ms latency, production V2X networks ex-
+hibit higher variability (50–200 ms) due to congestion, handoffs, and security overhead. To account
+for this gap, our training incorporates stochastic delay sampling from realistic delay distributions
+observed in urban V2V deployments.
+The onboard computation platform is an NVIDIA Jetson Orin Nano running ROS Noetic on Ubuntu
+20.04, executing both the MARL policy and the CBF-based Safety Shield in real time. Policy
+inference and safety filtering run at 10 Hz, while low-level control commands are issued to the VESC
+motor controller at 50 Hz. This configuration enables closed-loop execution under realistic sensing,
+communication, and control constraints, closely mirroring the conditions modeled in simulation.
+
+4.2
+Hardware Evaluation
+Figure 3: Hardware multi-agent experimental platform
+We evaluate the proposed framework on hardware platforms across two distinct driving scenarios:
+a 3-lane miniature highway and a 2-lane circular highway as shown in Figure 3. Each environment
+is tested under three levels of complexity corresponding to the number of obstacles introduced.
+During hardware evaluation, obstacles may be repositioned between trials to demonstrate robustness
+to environmental changes while maintaining repeatable experimental conditions.
+Table 1 presents the evaluation results across all scenarios. On the 3-lane highway, both delay-aware
+RSR-RSMARL variants—time-varying (TV) and fixed-delay (F-2)—achieve zero collisions across
+all obstacle levels, with the TV model consistently yielding the lowest completion times. In contrast,
+RSR-MARL, which excludes the Safety Shield module, exhibits a growing number of collisions
+as obstacle density increases. Although RSR-MARL completes some scenarios faster, this speed
+comes at the cost of erratic and risk-prone behavior. These findings underscore that faster completion
+does not imply a safer driving strategy. The slightly slower yet collision-free performance of the TV
+and F-2 variants reflects a deliberate trade-off prioritizing safety under delayed communication.
+The No-Comm RSR-RSMARL variant, which disables V2V communication, results in longer com-
+pletion times and occasional collisions under perturbations, further highlighting the robustness
+gained from explicitly modeling communication delay.
+Domain randomization (MARL-DR) exhibits a more pronounced degradation in hardware perfor-
+mance, with collisions increasing as obstacle density grows. In contrast, both delay-aware variants
+(TV and F-2) remain collision-free, with the TV model consistently outperforming the fixed-delay
+formulation, demonstrating the benefit of time-varying latency modeling during training.
+A comparable trend appears in the 2-lane oval highway scenario. Across both PID and MPC control,
+the TV and F-2 RSR-RSMARL variants maintain zero collisions, with the TV model again achieving
+the most efficient completion times. By contrast, the RSR-MARL baseline degrades as obstacle
+complexity increases, and the No-Comm variant struggles once the environment becomes more
+challenging.
+The integration of MPC within RSR-RSMARL further enhances trajectory smoothness and robust-
+ness. Although MPC introduces a modest increase in computational load relative to PID, the
+delay-aware TV and F-2 policies consistently generate safer and more stable actions.
+Taken together, these results demonstrate that incorporating communication-delay modeling dur-
+ing training directly improves hardware performance under realistic latency conditions. In particu-
+lar, the TV formulation consistently provides the strongest coordination efficiency while preserving
+
+zero-collision safety, indicating that structured latency modeling enhances reliable sim-to-hardware
+transfer in multi-agent environments.
+Table 1: Evaluation Results on 3-Lane Highway and 2-Lane Oval Highway
+Number of Obstacles
+Method
+None
+1
+2
+3-Lane Highway
+RSR-RSMARL (TV, MPC)
+0, 33.1
+0, 34.0
+0, 34.5
+RSR-RSMARL (F-2, MPC)
+0, 33.6
+0, 34.8
+0, 35.2
+RSR-RSMARL (TV, PID)
+0, 34.2
+0, 35.4
+0, 36.1
+RSR-RSMARL (F-2, PID)
+0, 34.8
+0, 36.0
+0, 36.8
+Safe-RMM (MPC)
+0, 34.5
+1, 35.3
+2, 36.1
+RSR-MARL (PID)
+1, 36.8
+2, 37.5
+3, 38.0
+No-Comm RSR-RSMARL (PID)
+0, 36.7
+1, 37.9
+1, 39.5
+MARL-DR
+2, 36.5
+3, 37.8
+5, 39.2
+2-Lane Oval Highway
+RSR-RSMARL (TV, MPC)
+0, 47.5
+0, 48.6
+0, 50.2
+RSR-RSMARL (F-2, MPC)
+0, 48.2
+0, 49.7
+0, 51.4
+RSR-RSMARL (TV, PID)
+0, 48.1
+0, 49.4
+0, 51.6
+RSR-RSMARL (F-2, PID)
+0, 48.9
+0, 50.3
+0, 52.4
+Safe-RMM (MPC)
+0, 50.2
+1, 51.5
+2, 53.0
+RSR-MARL (PID)
+1, 51.3
+2, 52.5
+3, 53.1
+No-Comm RSR-RSMARL (PID)
+0, 54.8
+1, 56.2
+1, 57.1
+MARL-DR
+2, 52.0
+3, 57.6
+5, 59.0
+Summary—The time-varying (TV) delay RSR-RSMARL consistently achieves the strongest safety and effi-
+ciency across both MPC and PID controllers. The fixed-delay (F-2) variant remains robust but exhibits slightly
+increased completion times, highlighting the benefit of time-varying delay modeling.
+4.3
+Ablation and Benchmark Evaluation
+We evaluate our framework in a simulated highway scenario through targeted ablation and bench-
+marking studies isolating the effects of (i) controller backend selection (MPC vs. PID), (ii) removal
+of the CBF-based Safety Shield, (iii) increasing fixed communication delay, and (iv) comparison
+with domain randomization (MARL-DR). These experiments quantify the impact of architectural
+and robustness design choices on training stability, task efficiency, and collision avoidance.
+Figures 4a compares training performance under MPC and PID control.
+In both cases, RSR-
+RSMARL achieves higher discounted efficiency returns and smoother convergence than ablated
+variants. Disabling the Safety Shield results in unstable learning dynamics and degraded long-term
+returns, underscoring the importance of formally enforced safety during training.
+Figure 4b evaluates robustness under increasing fixed communication delays and compares them
+against the TV formulation. While higher fixed delays introduce performance degradation and in-
+creased variance during training, RSR-RSMARL maintains stable learning dynamics and converges
+to competitive returns across all delay levels. Notably, the TV model exhibits improved stability
+relative to large fixed delays, highlighting the benefit of time-varying latency modeling.
+Table 2 reports safety (collisions) and efficiency (discounted return) under different communication
+delay models. Under fixed-delay settings (F-1–F-5), RSR-RSMARL achieves strong task perfor-
+mance, with F-5 yielding the highest peak return (161.90) while maintaining near-zero collisions.
+These policies are optimized for a specific latency regime and therefore maximize efficiency when
+
+(a) Ablation of Safety and Communication Mechanisms During Training
+(b) Varying Communication Delay
+Figure 4: Discounted episode returns during training in the highway scenario. (a) Ablation of safety
+and robustness under the adaptive low-level controller. (b) Robustness under increasing varying
+communication delays.
+communication characteristics are known and stationary. In contrast, the time-varying (TV) delay
+model, where delay is sampled in [0, 5], achieves zero collisions while maintaining competitive ef-
+ficiency (139.71 for MPC, 124.18 for PID). Although slightly lower than the best fixed-delay case,
+TV training optimizes expected performance over a distribution of delays rather than a single latency
+value, producing coordination strategies that are inherently robust to stochastic communication jitter
+encountered in real-world deployment.
+Removing the Safety Shield substantially increases collision frequency (e.g., RSR-MARL and Non-
+Robust RSR-MARL), demonstrating that delay modeling alone is insufficient to guarantee safety.
+We further benchmark against domain randomization (MARL-DR), which injects stochastic obser-
+vation noise to improve sim-to-real robustness. While MARL-DR mitigates degradation relative to
+non-robust baselines, it exhibits higher collision rates and lower efficiency than RSR-RSMARL.
+
+Table 2: Evaluation Results Under Communication Delay Modeling
+Method
+Delay
+Coll.
+Return
+RSR-RSMARL (MPC)
+F-1
+0
+120.23
+F-2
+2
+125,18
+F-5
+1
+161.90
+TV (0–5)
+0
+139.71
+RSR-RSMARL (PID)
+F-2
+2
+129.52
+TV (0–5)
+0
+124.18
+MARL-DR
+F-2
+10
+95.07
+Safe-RMM (MPC)
+F-2
+15
+75.65
+RSR-MARL
+F-2
+42
+28.84
+Non-Robust RSR-MARL
+F-2
+45
+25.26
+F-k: fixed delay of k steps. TV: time-varying delay sampled in
+[0, 5].
+Results averaged over 50 test episodes.
+This comparison underscores a key distinction: noise-based robustness does not explicitly address
+communication latency nor enforce safety constraints. By jointly modeling delay during training
+and integrating a CBF-based Safety Shield, RSR-RSMARL achieves a superior safety–efficiency
+trade-off under realistic communication conditions.
+Figure 5: CBF Intervention Frequency: With vs. Without V2V Communication
+4.4
+Impact of Communication on Safety and Coordination
+We evaluate V2V communication in complex driving scenarios where agents must account for
+neighboring vehicle positions and velocities during maneuvers. Incorporating neighbor state in-
+formation is essential for safe action selection, particularly in the presence of dynamic NCAVs that
+require real-time adaptation and coordinated behavior. Communication latency is modeled during
+training (Sec. 3.3) by injecting stochastic delays into inter-agent messaging, and a time-varying de-
+lay model is deployed on hardware to reflect realistic wireless latency. Policies trained with delay
+
+variability remain stable under real-world latency fluctuations, even when deployment delays differ
+from those encountered in simulation.
+Figure 5 demonstrates that shared information reduces both the need for reactive safety overrides
+and the likelihood of unsafe maneuvers. In dense multi-agent interactions, coordination enabled by
+V2V stabilizes policy outputs and lowers the average CBF intervention rate from 18.7% (no com-
+munication) to 11.4% (with communication), highlighting the role of communication in supporting
+safe and efficient real-world operation.
+5
+Conclusion
+This paper presents RSR-RSMARL, a communication-aware multi-agent reinforcement learning
+framework designed for Real-Sim-Real transfer of connected autonomous vehicles. By explicitly
+incorporating measured V2V communication latency into the MARL state formulation and em-
+bedding both fixed and time-varying delay models into simulation training, the proposed approach
+learns policies that remain robust under asynchronous and delayed information exchange on physical
+hardware. Experimental validation in CARLA and on 1/10th-scale autonomous vehicle platforms
+demonstrates reliable zero-shot sim-to-hardware transfer, improved coordination stability, and con-
+sistent safety performance under realistic communication constraints. These results underscore the
+importance of hardware-grounded latency modeling and safety-aware training for scalable and de-
+pendable multi-agent autonomous systems.
+
+References
+[1] U. I. J. P. Office. Saving lives with connectivity: A plan to accelerate v2x deployment non-
+binding contents, 2024.
+[2] Z. Zhang, S. Han, J. Wang, and F. Miao. Spatial-temporal-aware safe multi-agent reinforce-
+ment learning of connected autonomous vehicles in challenging scenarios. pages 5574–5580,
+2023.
+[3] N. Hyldmar, Y. He, and A. Prorok. A fleet of miniature cars for experiments in cooperative
+driving. Proceedings - IEEE International Conference on Robotics and Automation, 2019-
+May:3238–3244, 5 2019. ISSN 10504729. doi:10.1109/ICRA.2019.8794445.
+[4] A. Miller, K. Rim, P. Chopra, P. Kelkar, and M. Likhachev. Cooperative perception and lo-
+calization for cooperative driving. Proceedings - IEEE International Conference on Robotics
+and Automation, pages 1256–1262, 5 2020. ISSN 10504729. doi:10.1109/ICRA40945.2020.
+9197463.
+[5] Z. Zhang, H. M. S. Ahmad, E. Sabouni, Y. Sun, F. Huang, W. Li, and F. Miao. Safety guar-
+anteed robust multi-agent reinforcement learning with hierarchical control for connected and
+automated vehicles. 9 2023. URL https://arxiv.org/abs/2309.11057v2.
+[6] S. Han, H. Wang, S. Su, Y. Shi, and F. Miao. Stable and efficient shapley value-based reward
+reallocation for multi-agent reinforcement learning of autonomous vehicles. Proceedings -
+IEEE International Conference on Robotics and Automation, pages 8765–8771, 3 2022. ISSN
+10504729. doi:10.1109/ICRA46639.2022.9811626. URL https://arxiv.org/abs/
+2203.06333v2.
+[7] J. Rios-Torres and A. A. Malikopoulos.
+A survey on the coordination of connected and
+automated vehicles at intersections and merging at highway on-ramps.
+IEEE Transac-
+tions on Intelligent Transportation Systems, 18:1066–1077, 5 2017. ISSN 15249050. doi:
+10.1109/TITS.2016.2600504.
+[8] S. Han, S. Zhou, J. Wang, L. Pepin, C. Ding, J. Fu, and F. Miao. A multi-agent reinforcement
+learning approach for safe and efficient behavior planning of connected autonomous vehicles.
+IEEE Transactions on Intelligent Transportation Systems, 25(5):3654–3670, 2024. doi:10.
+1109/TITS.2023.3336670.
+[9] A. Mokhtarian, P. Scheffe, M. Kloock, S. Sch¨afer, Heeseung Bang, Viet-Anh Le, Sangeet
+Ulhas, J. Betz, S. Wilson, S. Berman, A. Prorok, and B. Alrifaee. A survey on small-scale
+testbeds for connected and automated vehicles and robot swarms. 2024. doi:10.13140/RG.2.
+2.16176.74248/1. URL https://arxiv.org/abs/2408.03539.
+[10] Y. Shao, M. A. M. Zulkefli, Z. Sun, and P. Huang. Evaluating connected and autonomous
+vehicles using a hardware-in-the-loop testbed and a living lab. Transportation Research Part
+C: Emerging Technologies, 102:121–135, 5 2019. ISSN 0968-090X. doi:10.1016/J.TRC.2019.
+03.010.
+[11] C. Tang, B. Abbatematteo, J. Hu, R. Chandra, R. Mart´ın-Mart´ın, and P. Stone. Deep reinforce-
+ment learning for robotics: A survey of real-world successes. 8 2024. doi:10.1146/((please).
+URL https://arxiv.org/abs/2408.03539v2.
+[12] Y. Feng, C. Hong, Y. Niu, S. Liu, Y. Yang, W. Yu, T. Zhang, J. Tan, and D. Zhao. Learning
+multi-agent loco-manipulation for long-horizon quadrupedal pushing, accepted, ICRA2025.
+URL https://arxiv.org/abs/2411.07104.
+[13] P. Werner, T. Seyde, P. Drews, T. M. Balch, I. Gilitschenski, W. Schwarting, G. Rosman,
+S. Karaman, and D. Rus. Dynamic multi-team racing: Competitive driving on 1/10-th scale
+vehicles via learning in simulation. In 7th Annual Conference on Robot Learning, 2023. URL
+https://openreview.net/forum?id=fvXFBCHVGn.
+
+[14] S. Han, S. Su, S. He, S. Han, H. Yang, and F. Miao. What is the solution for state adversarial
+multi-agent reinforcement learning? arXiv preprint arXiv:2212.02705, 2022.
+[15] Y. Liang, Y. Sun, R. Zheng, and F. Huang. Efficient adversarial training without attacking:
+Worst-case-aware robust reinforcement learning. Advances in Neural Information Processing
+Systems, 35:22547–22561, 2022.
+[16] M. Torne, A. Simeonov, Z. Li, A. Chan, T. Chen, A. Gupta, and P. Agrawal. Reconciling
+reality through simulation: A real-to-sim-to-real approach for robust manipulation. 3 2024.
+URL https://arxiv.org/abs/2403.03949v1.
+[17] M. T. Villasevil, A. Jain, V. Macha, J. Yuan, L. L. Ankile, A. Simeonov, P. Agrawal, and
+A. Gupta. Scaling robot-learning by crowdsourcing simulation environments.
+[18] W. Zhao, J. P. Queralta, and T. Westerlund. Sim-to-real transfer in deep reinforcement learning
+for robotics: A survey. 2020 IEEE Symposium Series on Computational Intelligence, SSCI
+2020, pages 737–744, 12 2020. doi:10.1109/SSCI47803.2020.9308468.
+[19] Y. Jiang, C. Wang, R. Zhang, J. Wu, and L. Fei-Fei. Transic: Sim-to-real policy transfer by
+learning from online correction. In Conference on Robot Learning, 2024.
+[20] S. S. Sandha, L. Garcia, B. Balaji, F. Anwar, and M. Srivastava. Sim2real transfer for deep
+reinforcement learning with stochastic state transition delays.
+In J. Kober, F. Ramos, and
+C. Tomlin, editors, Proceedings of the 2020 Conference on Robot Learning, volume 155 of
+Proceedings of Machine Learning Research, pages 1066–1083. PMLR, 16–18 Nov 2021. URL
+https://proceedings.mlr.press/v155/sandha21a.html.
+[21] J. Blumenkamp, A. Shankar, M. Bettini, J. Bird, and A. Prorok. The cambridge robomaster:
+An agile multi-robot research platform. 5 2024. URL https://arxiv.org/abs/2405.
+02198v2.
+[22] L. Brunke, M. Greeff, A. W. Hall, Z. Yuan, S. Zhou, J. Panerati, and A. P. Schoellig. Safe learn-
+ing in robotics: From learning-based control to safe reinforcement learning. Annual Review of
+Control, Robotics, and Autonomous Systems, 5:411–444, 2022.
+[23] I. ElSayed-Aly, S. Bharadwaj, C. Amato, R. Ehlers, U. Topcu, and L. Feng.
+Safe multi-
+agent reinforcement learning via shielding. In Proceedings of the 20th International Confer-
+ence on Autonomous Agents and MultiAgent Systems, AAMAS ’21, page 483–491, Richland,
+SC, 2021. International Foundation for Autonomous Agents and Multiagent Systems. ISBN
+9781450383073.
+[24] Z. Cai, H. Cao, W. Lu, L. Zhang, and H. Xiong. Safe multi-agent reinforcement learning
+through decentralized multiple control barrier functions, 2021.
+[25] J. Wang, S. Yang, Z. An, S. Han, Z. Zhang, R. Mangharam, M. Ma, and F. Miao. Multi-
+agent reinforcement learning guided by signal temporal logic specifications. arXiv preprint
+arXiv:2306.06808, 2023.
+[26] S. He, S. Han, S. Su, S. Han, S. Zou, and F. Miao. Robust multi-agent reinforcement learning
+with state uncertainty. Transactions on Machine Learning Research, 2023.
+[27] Z. Qin, H. Wang, and X. Li. Ultra fast structure-aware deep lane detection. In Computer
+Vision–ECCV 2020: 16th European Conference, Glasgow, UK, August 23–28, 2020, Proceed-
+ings, Part XXIV 16, pages 276–291. Springer, 2020.
+[28] Y. Li, D. Ma, Z. An, Z. Wang, Y. Zhong, S. Chen, and C. Feng. V2x-sim: Multi-agent col-
+laborative perception dataset and benchmark for autonomous driving. IEEE Robotics and Au-
+tomation Letters, 7:10914–10921, 2 2022. ISSN 23773766. doi:10.1109/LRA.2022.3192802.
+URL https://arxiv.org/abs/2202.08449v2.
+
+[29] J. Kong, M. Pfeiffer, G. Schildbach, and F. Borrelli. Autonomous driving using model predic-
+tive control and a kinematic bicycle vehicle model. In Intelligent Vehicles Symposium, Seoul,
+Korea, 2015.
+[30] L. Berducci, S. Yang, R. Mangharam, and R. Grosu.
+Learning adaptive safety for multi-
+agent systems. In Proceedings - IEEE International Conference on Robotics and Automa-
+tion, pages 2859–2865. Institute of Electrical and Electronics Engineers Inc., 2024. ISBN
+9798350384574. doi:10.1109/ICRA57147.2024.10611037.
+[31] E. Sabouni, H. M. S. Ahmad, V. Giammarino, C. G. Cassandras, I. C. Paschalidis, and W. Li.
+Reinforcement learning-based receding horizon control using adaptive control barrier func-
+tions for safety-critical systems. In Proceedings of the IEEE Conference on Decision and
+Control, pages 401–406. Institute of Electrical and Electronics Engineers Inc., 2024. ISBN
+9798350316339. doi:10.1109/CDC56724.2024.10886217.
+[32] Z. Zhang, H. M. S. Ahmad, E. Sabouni, Y. Sun, F. Huang, W. Li, and F. Miao. Safety guar-
+anteed robust multi-agent reinforcement learning with hierarchical control for connected and
+automated vehicles. 9 2023. URL https://arxiv.org/abs/2309.11057v2.
+[33] J. Tobin, R. Fong, A. Ray, J. Schneider, W. Zaremba, and P. Abbeel. Domain randomization for
+transferring deep neural networks from simulation to the real world. IEEE International Con-
+ference on Intelligent Robots and Systems, 2017-September:23–30, 3 2017. ISSN 21530866.
+doi:10.1109/IROS.2017.8202133. URL https://arxiv.org/abs/1703.06907v1.
+[34] B. Mehta, M. D. Mila, F. G. Mila, C. J. P. Mila, P. Montr´eal, and C. L. Paull. Active domain
+randomization, 5 2020. ISSN 2640-3498. URL https://proceedings.mlr.press/
+v100/mehta20a.html.
+[35] A. Dosovitskiy, G. Ros, F. Codevilla, A. Lopez, and V. Koltun. CARLA: An open urban
+driving simulator. pages 1–16, 2017.
