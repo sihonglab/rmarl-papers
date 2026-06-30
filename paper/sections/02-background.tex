@@ -1,0 +1,188 @@
+%=====================================================================
+% §2 BACKGROUND & RELATED WORK          OWNER: Lead (+ Theory owner for 2.2)
+% TARGET: ~3 pp
+% Goal: fix notation/terminology ONCE here so all later sections are consistent.
+% DRAFT v1 (auto-drafted). Prose is synthesised, not enumerative; every \cite key
+% resolves in refs.bib. Math uses amsmath only (acmart loads no amssymb).
+%=====================================================================
+\section{Background and Scope}
+\label{sec:background}
+
+This section fixes the notation and terminology used throughout the survey and
+makes our organizing principle precise. We first recall the multi-agent
+reinforcement learning (MARL) model (\S\ref{sec:bg-marl}), then disentangle the
+overloaded vocabulary of \emph{robustness} and define the worst-case objects that
+recur in every later section (\S\ref{sec:bg-robust}). We then state the
+perturbation-source taxonomy that structures the survey (\S\ref{sec:bg-taxonomy})
+and position our scope against prior surveys (\S\ref{sec:bg-related}).
+
+\subsection{Multi-Agent RL Preliminaries}
+\label{sec:bg-marl}
+
+We model multi-agent interaction as a \emph{Markov game} (stochastic game)
+\cite{littman1994markov}, the $n$-agent generalization of the Markov decision
+process, written as the tuple
+\[
+\mathcal{G} = \bigl(\mathcal{N},\,\mathcal{S},\,\{\mathcal{A}_i\}_{i\in\mathcal{N}},
+\,P,\,\{r_i\}_{i\in\mathcal{N}},\,\gamma\bigr),
+\]
+where $\mathcal{N}=\{1,\dots,n\}$ is the set of agents, $\mathcal{S}$ the state
+space, $\mathcal{A}_i$ agent $i$'s action space, and
+$\mathcal{A}=\mathcal{A}_1\times\cdots\times\mathcal{A}_n$ the \emph{joint} action
+space. A joint action is $\mathbf{a}=(a_1,\dots,a_n)$, and $\mathbf{a}_{-i}$
+denotes the actions of all agents other than $i$. The transition kernel
+$P(s'\mid s,\mathbf{a})$ depends on the joint action; each agent receives a reward
+$r_i(s,\mathbf{a})$, and $\gamma\in[0,1)$ discounts the future. Under partial
+observability (a Markov game played over a Dec-POMDP), agent $i$ acts on a local
+observation $o_i$ drawn from an observation model rather than the full state $s$.
+Each agent follows a policy $\pi_i$ (history- or observation-conditioned), and the
+\emph{joint policy} $\boldsymbol{\pi}=(\pi_1,\dots,\pi_n)$ induces the value
+$V_i^{\boldsymbol{\pi}}(s)=\mathbb{E}\!\left[\sum_{t\ge0}\gamma^t
+r_i(s_t,\mathbf{a}_t)\mid s_0=s\right]$. Table~\ref{tab:notation} collects this
+notation.
+
+\paragraph{Cooperation structure.} Three regimes recur. In the
+\emph{cooperative} (team) setting all agents share a single reward
+$r_i\equiv r$ and maximize a common return; value factorization
+(e.g., QMIX \cite{rashid2018qmix}) and centralized-critic policy-gradient methods
+(MADDPG \cite{lowe2017multi}, MAPPO \cite{yu2022surprising}) dominate here. In the
+\emph{competitive} (zero-sum) setting agents have opposed rewards, and the
+relevant solution concept is a (minimax) equilibrium. The \emph{mixed}
+(general-sum) setting interpolates between the two. Most methods are trained under
+\emph{centralized training with decentralized execution} (CTDE): a learner may use
+global information at training time, but each agent must act on its own
+observation at deployment---a gap that, as we will see, is exactly where many
+robustness failures originate. We refer the reader to general MARL surveys
+\cite{zhang2021multi,gronauer2022multi,jin2025comprehensive} for algorithmic
+breadth; our focus is orthogonal.
+
+\paragraph{Solution concepts.} Whereas single-agent RL seeks a single optimal
+policy, MARL targets an \emph{equilibrium}: a joint policy from which no agent (or
+coalition) benefits by unilateral deviation (Nash, correlated, or coarse
+correlated equilibria), or, in the cooperative case, a team-optimal joint policy.
+This shift matters for robustness: a perturbation does not merely degrade one
+policy, it can move the entire equilibrium, and worst-case reasoning must be
+carried out over joint behavior rather than a single agent's.
+
+\input{tab/notation}
+
+\subsection{What ``Robust'' Means: A Terminology Map}
+\label{sec:bg-robust}
+
+The words \emph{robust}, \emph{resilient}, \emph{safe}, and \emph{secure} are used
+inconsistently across the literature. We adopt the following working
+distinctions. \textbf{Robustness} is worst-case performance over a set of
+admissible deviations from the nominal model or inputs---the central object of
+this survey. \textbf{Resilience} emphasizes graceful degradation and recovery
+\emph{after} a disruption (e.g., continued coordination once a fraction of
+teammates fail). \textbf{Safety} constrains behavior to satisfy hard constraints
+(costs, barrier conditions) and is robustness's frequent companion in
+safety-critical applications. \textbf{Security} concerns an adversary with intent
+and capabilities (an attack/threat model). These notions overlap---a certified
+defense against communication attacks is simultaneously a robustness, security,
+and (often) safety statement---and we flag the primary lens when a work spans
+several.
+
+Formally, robustness is defined relative to an \emph{uncertainty set}
+$\mathcal{U}$ that collects the admissible models. Lifting robust dynamic
+programming and robust MDPs \cite{nilim2005robust,iyengar2005robust} to the
+multi-agent setting yields the \emph{robust Markov game} and its distributional
+counterpart, the \emph{distributionally robust Markov game} (DRMG)
+\cite{zhang2020,shi2024sample}, in which transitions (and sometimes rewards) may
+lie anywhere in $\mathcal{U}$. The quantity of interest is the \emph{robust value}
+\[
+\underline{V}_i^{\boldsymbol{\pi}}(s)
+\;=\; \inf_{P\in\mathcal{U}}\; V_i^{\boldsymbol{\pi}}(s; P),
+\]
+the return guaranteed against the worst admissible model, and the solution concept
+becomes a \emph{robust equilibrium}---an equilibrium of the game in which nature
+adversarially selects $P\in\mathcal{U}$. The shape of $\mathcal{U}$ (e.g.,
+total-variation, Kullback--Leibler, or $R$-contamination balls; $(s,a)$- vs.\
+$s$-rectangular sets) governs both tractability and conservativeness and recurs as
+a design axis in \S\ref{sec:model}.
+
+\paragraph{The curse of multiagency.} One MARL-specific obstacle deserves naming
+up front because it reappears throughout. Because dynamics and rewards depend on
+the \emph{joint} action, naive worst-case analysis scales with
+$|\mathcal{A}|=\prod_{i}|\mathcal{A}_i|$, which is exponential in the number of
+agents $n$. This \emph{curse of multiagency}---the explosion of the joint
+action space---is the reason robust MARL is not a mechanical lift of single-agent
+robust RL: guarantees, sample complexity, and equilibrium computation must all be
+made to scale in $n$. Breaking this curse is the central theoretical thread of
+\S\ref{sec:model} \cite{shi2024breaking,qu2026distributionally}.
+
+\subsection{Threat/Uncertainty Model and the Survey Taxonomy}
+\label{sec:bg-taxonomy}
+
+Our organizing question is deliberately simple: \emph{what is being perturbed?}
+Figure~\ref{fig:taxonomy} answers it. Branch~I gathers perturbation sources that
+robust MARL \emph{inherits} from single-agent robust RL---uncertainty in the
+environment/model (\S\ref{sec:model}), in states and observations
+(\S\ref{sec:state}), and in actions and rewards (\S\ref{sec:adversarial}). These
+are real and well studied, but they are not what makes the multi-agent problem
+distinctive. Branch~II collects the dimensions that are \emph{absent in
+single-agent RL and constitute the core argument of this survey}: attacked or
+noisy \emph{communication} channels between agents (\S\ref{sec:comm}),
+\emph{untrustworthy teammates}---Byzantine, faulty, or non-stationary co-players
+(\S\ref{sec:byzantine}), and the \emph{curse of multiagency} on the theory side
+(\S\ref{sec:model}). Branch~III marks emerging frontiers---LLM-based multi-agent
+safety (\S\ref{sec:llm}) and offline/distribution-shift settings
+(\S\ref{sec:offline})---and Branch~IV the cross-cutting concerns of benchmarks
+(\S\ref{sec:benchmarks}) and applications (\S\ref{sec:applications}).
+
+A \emph{secondary, methodological} axis cuts across all branches: distributionally
+robust optimization, adversarial training, certified robustness (e.g., randomized
+smoothing), and regularization are recurring \emph{tools} rather than perturbation
+\emph{sources}. We therefore keep them off the primary axis and instead record,
+per work, which tool is used in the comparison table of each section. A handful of
+works span two perturbation sources (e.g., joint state-and-action adversarial
+training \cite{bukharin2023robust}); we classify each in its primary branch and
+cross-reference the secondary.
+
+\subsection{Related Surveys and Our Differentiation}
+\label{sec:bg-related}
+
+Robustness has been surveyed thoroughly for the \emph{single-agent} case
+\cite{moos2022robust,gu2026robust,mohan2026towards}, typically organized by
+\emph{uncertainty source}---an axis we adopt and extend into the multi-agent
+regime. General \emph{MARL} surveys \cite{zhang2021multi,gronauer2022multi,
+jin2025comprehensive} chart algorithms and applications but treat robustness only
+in passing. The closest prior work is the recent systematization of adversarial
+machine learning in MARL \cite{adversarialml2025}, which is comprehensive on the
+\emph{attack/defence} axis (state, communication, and partial Byzantine threats)
+but, by construction, does not cover distributionally robust game \emph{theory}
+(\S\ref{sec:model}), LLM multi-agent safety (\S\ref{sec:llm}), or
+offline/distribution-shift robustness (\S\ref{sec:offline}).
+
+Table~\ref{tab:related} contrasts coverage. Our contribution is not a new method
+but a \emph{unifying frame}: we place attack/defence work, DRMG theory,
+communication and Byzantine robustness, and the LLM/offline frontiers on a single
+perturbation-source axis, and we use that frame to argue that the three Branch~II
+dimensions---communication, untrustworthy teammates, and multiagency---are where
+single-agent robustness tools do not transfer. These three dimensions recur as a
+refrain in every subsequent section.
+
+\begin{table}[t]\centering\footnotesize
+\caption{Scope comparison with related surveys. \checkmark{} = covered as a
+primary topic; \tcheck{} = partial/peripheral; -- = not covered.}
+\label{tab:related}
+\begin{tabular}{lccccccc}
+\toprule
+Survey & \makecell{Model\\unc.} & \makecell{State/\\Obs} & Comm. & Byzantine
+ & \makecell{DRMG\\theory} & \makecell{LLM-\\MAS} & Offline \\
+\midrule
+Single-agent robust RL \cite{moos2022robust,gu2026robust} & \checkmark & \checkmark & -- & -- & \tcheck & -- & \tcheck \\
+General MARL \cite{zhang2021multi,jin2025comprehensive} & -- & \tcheck & \tcheck & \tcheck & -- & \tcheck & -- \\
+Adv.\ ML in MARL (SoK) \cite{adversarialml2025} & -- & \checkmark & \checkmark & \tcheck & -- & -- & -- \\
+\textbf{This survey} & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Reading guide.} The next section opens with the deepest cluster, the
+theory of robustness to environment/model uncertainty and the curse of
+multiagency (\S\ref{sec:model}); \S\ref{sec:state}--\S\ref{sec:adversarial} treat
+the inherited state/observation and action/reward dimensions;
+\S\ref{sec:comm}--\S\ref{sec:offline} treat the MARL-specific and frontier
+dimensions; and \S\ref{sec:benchmarks}--\S\ref{sec:applications} survey benchmarks and
+applications before we distill open problems in \S\ref{sec:challenges}.
